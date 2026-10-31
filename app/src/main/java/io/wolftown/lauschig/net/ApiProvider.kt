@@ -9,6 +9,7 @@ import io.wolftown.lauschig.connection.ConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -38,6 +39,9 @@ class ApiProvider(
 
     /** The shared connection state (one probe loop for everyone). */
     val connection: Flow<ConnectionState> get() = shared
+
+    /** Same shared state with a synchronous [StateFlow.value] (stays [ConnectionState.Offline] until something collects). */
+    val connectionState: StateFlow<ConnectionState> get() = shared
 
     private val retrofit: Flow<Retrofit?> = shared
         .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(s.baseUrl) } }

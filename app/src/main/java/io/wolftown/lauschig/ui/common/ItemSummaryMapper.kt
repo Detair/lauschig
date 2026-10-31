@@ -3,9 +3,43 @@ package io.wolftown.lauschig.ui.common
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.download.DownloadFiles
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
 
-/** Builds the tile model; does a file-system check, so call it off the main thread. */
-fun ItemEntity.toSummary(files: DownloadFiles, progress: ProgressEntity?, downloaded: Boolean): ItemSummary {
+/**
+ * Resolves local cover paths with one file-system check per downloaded item, remembered until the set of
+ * downloaded items changes ([sync]); progress ticks therefore never touch the disk.
+ */
+class CoverPathCache(
+    private val files: DownloadFiles,
+    private val check: (File) -> Boolean,
+) {
+    @Inject constructor(files: DownloadFiles) : this(files, { it.isFile && it.length() > 0 })
+
+    private val cache = ConcurrentHashMap<String, String>() // "" = checked, no cover
+    private var lastSynced: Set<String>? = null
+
+    /** Forgets everything when the downloaded set differs from the last call (covers may have appeared or gone). */
+    fun sync(downloadedKeys: Set<String>) {
+        if (downloadedKeys != lastSynced) {
+            cache.clear()
+            lastSynced = downloadedKeys
+        }
+    }
+
+    fun pathFor(serverId: String, id: String): String? =
+        cache.getOrPut("$serverId:$id") {
+            try {
+                files.coverFile(serverId, id).takeIf(check)?.path ?: ""
+            } catch (_: Exception) {
+                "" // invalid ids have no directory
+            }
+        }.ifEmpty { null }
+}
+
+/** Builds the tile model; [covers] may hit the file system once per item, so call it off the main thread. */
+fun ItemEntity.toSummary(covers: CoverPathCache, progress: ProgressEntity?, downloaded: Boolean): ItemSummary {
     val duration = progress?.durationSec?.takeIf { it > 0 } ?: durationSec
     val fraction = when {
         progress == null -> 0f
@@ -15,15 +49,10 @@ fun ItemEntity.toSummary(files: DownloadFiles, progress: ProgressEntity?, downlo
     }
     return ItemSummary(
         serverId, id, title, author, seriesName, seriesSequence,
-        coverPath = if (downloaded) localCover(files, serverId, id) else null,
+        coverPath = if (downloaded) covers.pathFor(serverId, id) else null,
         progress = fraction,
         isDownloaded = downloaded,
         isFinished = progress?.isFinished == true,
+        coverVersion = coverUpdatedAt,
     )
-}
-
-private fun localCover(files: DownloadFiles, serverId: String, id: String): String? = try {
-    files.coverFile(serverId, id).takeIf { it.isFile && it.length() > 0 }?.path
-} catch (_: Exception) {
-    null // invalid ids have no directory
 }

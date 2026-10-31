@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -44,21 +45,22 @@ import java.io.File
 @Composable
 fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     val base = LocalServerBaseUrl.current
-    val unavailable = base == null && !item.isDownloaded
+    val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
     val model: Any? = when {
         item.coverPath != null -> File(item.coverPath)
-        base != null -> coverUrl(base, item.id).toString()
+        base != null -> coverUrl(base, item.id).newBuilder()
+            .apply { if (item.coverVersion > 0) addQueryParameter("ts", item.coverVersion.toString()) }
+            .build().toString()
         else -> null
     }
     Column(
         modifier
             .clip(RoundedCornerShape(8.dp))
-            .alpha(if (unavailable) 0.38f else 1f)
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) { if (unavailable) stateDescription = unavailableText },
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).alpha(if (unavailable) 0.38f else 1f).clip(RoundedCornerShape(8.dp))) {
             Initials(item.title)
             if (model != null) {
                 AsyncImage(
@@ -74,7 +76,7 @@ fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> U
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     shape = RoundedCornerShape(bottomEnd = 8.dp),
-                    modifier = Modifier.align(Alignment.TopStart).semantics { contentDescription = description },
+                    modifier = Modifier.align(Alignment.TopStart).clearAndSetSemantics { contentDescription = description },
                 ) {
                     Text(
                         stringResource(R.string.cover_badge_text, seq),

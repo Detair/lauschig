@@ -5,18 +5,15 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.account.Account
-import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.*
 import io.wolftown.lauschig.download.DownloadFiles
-import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -24,13 +21,11 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -47,7 +42,7 @@ class LibraryViewModelTest {
     @get:Rule val tmp = TemporaryFolder()
     private lateinit var db: LauschigDatabase
     private val sid = "aaaaaaaaaaaaaaaa"
-    private val connection = MutableStateFlow<ConnectionState>(ConnectionState.Offline)
+    private val statChecks = java.util.concurrent.atomic.AtomicInteger()
     private val dlRoot by lazy { tmp.newFolder("dl") }
     private val scope = CoroutineScope(Dispatchers.Unconfined)
 
@@ -65,8 +60,7 @@ class LibraryViewModelTest {
     private fun vm(prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") })): LibraryViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
-        val api = ApiProvider(connection as Flow<ConnectionState>, OkHttpClient(), store, scope)
-        return LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), DownloadFiles(dlRoot, db.audioFileDao()), prefs, api)
+        return LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs)
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null) =
@@ -127,10 +121,7 @@ class LibraryViewModelTest {
         db.audioFileDao().setLocal(sid, "dl", 0, "/p/0", 1)
         val vm = vm()
         val s = vm.await { it.items.size == 2 }
-        assertFalse(s.online)
         assertEquals(mapOf("dl" to true, "remote" to false), s.items.associate { it.id to it.isDownloaded })
-        connection.value = ConnectionState.Online("https://abs.example.org/".toHttpUrl(), ConnectionState.Via.PUBLIC)
-        assertTrue(vm.await { it.online }.online)
     }
 
     @Test fun localCover_isUsedOnlyWhenFileExists() = runTest {
@@ -147,5 +138,21 @@ class LibraryViewModelTest {
         val items = vm().await { it.items.size == 2 }.items.associateBy { it.id }
         assertEquals(File(dlRoot, "$sid/withcover/cover.jpg").path, items.getValue("withcover").coverPath)
         assertNull(items.getValue("nocover").coverPath)
+    }
+
+    @Test fun progressTick_doesNotRestatCoverFiles() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("dl")))
+        listen("dl", t = 10.0, last = 1)
+        db.downloadDao().upsert(DownloadEntity(sid, "dl", DownloadState.COMPLETE, 1))
+        db.audioFileDao().replaceFromServer(sid, "dl", listOf(AudioFileEntity(sid, "dl", 0, "i", 10.0, 1, "mp3", null, 0)))
+        db.audioFileDao().setLocal(sid, "dl", 0, "/p/0", 1)
+        val vm = vm()
+        vm.await { it.items.size == 1 && it.items.single().progress == 0.1f }
+        val before = statChecks.get()
+        assertEquals(1, before)
+        listen("dl", t = 50.0, last = 2)
+        assertEquals(0.5f, vm.await { it.items.singleOrNull()?.progress == 0.5f }.items.single().progress)
+        assertEquals(before, statChecks.get())
     }
 }

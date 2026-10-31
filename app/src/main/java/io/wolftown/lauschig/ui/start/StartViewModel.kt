@@ -8,7 +8,7 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.playback.PlayerController
-import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.toSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,7 +26,7 @@ import javax.inject.Inject
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class StartViewModel @Inject constructor(
-    private val files: DownloadFiles,
+    private val covers: CoverPathCache,
     private val accountStore: AccountStore,
     itemDao: ItemDao,
     progressDao: ProgressDao,
@@ -47,7 +47,8 @@ class StartViewModel @Inject constructor(
                 ) { inProgress, downloaded, progress ->
                     val byId = progress.associateBy { it.itemId }
                     val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
-                    fun ItemEntity.summary() = toSummary(files, byId[id], id in downloadedIds)
+                    covers.sync(downloadedIds)
+                    fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds)
                     StartUiState(inProgress.firstOrNull()?.summary(), downloaded.map { it.summary() })
                 }.flowOn(Dispatchers.Default).distinctUntilChanged()
             }

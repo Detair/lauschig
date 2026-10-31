@@ -5,14 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
-import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
-import io.wolftown.lauschig.download.DownloadFiles
-import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.toSummary
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +45,6 @@ data class LibraryUiState(
     val items: List<ItemSummary> = emptyList(),
     /** Only filled for [LibraryTab.Series]. */
     val series: List<SeriesGroup> = emptyList(),
-    val online: Boolean = false,
     /** False until the first Room emission, so the empty hint does not flash. */
     val loaded: Boolean = false,
 )
@@ -60,12 +57,10 @@ class LibraryViewModel @Inject constructor(
     private val itemDao: ItemDao,
     private val libraryDao: LibraryDao,
     private val progressDao: ProgressDao,
-    private val files: DownloadFiles,
+    private val covers: CoverPathCache,
     private val prefs: FilterPreferences,
-    api: ApiProvider,
 ) : ViewModel() {
     private val tab = MutableStateFlow(LibraryTab.InProgress)
-    private val online: Flow<Boolean> = api.connection.map { it is ConnectionState.Online }.distinctUntilChanged()
 
     val state: StateFlow<LibraryUiState> = accountStore.account
         .map { it?.serverId }
@@ -94,7 +89,7 @@ class LibraryViewModel @Inject constructor(
             )
         }.distinctUntilChanged()
 
-        return combine(filter, tab, online, ::Triple).flatMapLatest { (f, t, isOnline) ->
+        return combine(filter, tab, ::Pair).flatMapLatest { (f, t) ->
             val source: Flow<List<ItemEntity>> = when (t) {
                 LibraryTab.InProgress -> itemDao.observeInProgress(sid)
                 LibraryTab.Finished -> itemDao.observeFinished(sid)
@@ -104,12 +99,13 @@ class LibraryViewModel @Inject constructor(
             combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid)) { items, progress, downloaded ->
                 val byId = progress.associateBy { it.itemId }
                 val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
+                covers.sync(downloadedIds)
                 val visible = if (t == LibraryTab.Series) items else items.filter { it.libraryId in f.libraryIds }
-                fun ItemEntity.summary() = toSummary(files, byId[id], id in downloadedIds)
+                fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds)
                 if (t == LibraryTab.Series) {
-                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, isOnline, true)
+                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true)
                 } else {
-                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), isOnline, true)
+                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true)
                 }
             }.flowOn(Dispatchers.Default).distinctUntilChanged()
         }

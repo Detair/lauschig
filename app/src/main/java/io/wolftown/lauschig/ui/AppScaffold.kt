@@ -53,6 +53,24 @@ enum class TopLevelTab(@StringRes val label: Int, val icon: ImageVector) {
 const val OFFLINE_BANNER_DELAY_MS = 2_000L
 
 /**
+ * True once [connection] has been [ConnectionState.Offline] for [OFFLINE_BANNER_DELAY_MS]; false immediately when
+ * online. Shared by the banner and the tile dimming so both settle identically.
+ */
+@Composable
+fun rememberSettledOffline(connection: ConnectionState): Boolean {
+    val isOffline = connection is ConnectionState.Offline
+    var delayElapsed by remember { mutableStateOf(false) }
+    LaunchedEffect(isOffline) {
+        delayElapsed = false
+        if (isOffline) {
+            delay(OFFLINE_BANNER_DELAY_MS)
+            delayElapsed = true
+        }
+    }
+    return isOffline && delayElapsed
+}
+
+/**
  * App frame: offline banner on top, [content] in the middle, [miniPlayer] slot above the bottom bar.
  * [content] receives zero padding; this scaffold already applies the system-bar insets around it.
  */
@@ -68,17 +86,8 @@ fun AppScaffold(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    val isOffline = connection is ConnectionState.Offline
-    var delayElapsed by remember { mutableStateOf(false) }
-    LaunchedEffect(isOffline) {
-        delayElapsed = false
-        if (isOffline) {
-            delay(OFFLINE_BANNER_DELAY_MS)
-            delayElapsed = true
-        }
-    }
     // Derived, so going online hides the banner in the same composition (no effect round trip).
-    val showBanner = showOfflineBanner && isOffline && delayElapsed
+    val showBanner = showOfflineBanner && rememberSettledOffline(connection)
 
     Scaffold(
         modifier = modifier,

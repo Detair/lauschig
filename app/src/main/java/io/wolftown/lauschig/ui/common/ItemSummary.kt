@@ -18,6 +18,8 @@ data class ItemSummary(
     val progress: Float,
     val isDownloaded: Boolean,
     val isFinished: Boolean,
+    /** Server `coverUpdatedAt`; appended to the cover URL so a changed cover bypasses the image cache. */
+    val coverVersion: Long = 0,
 ) {
     /** Stable lazy-list key, unique across servers. */
     val key: String get() = "$serverId:$id"
@@ -25,6 +27,9 @@ data class ItemSummary(
 
 /**
  * Base URL of the server while online, `null` while offline. Provided once at the app root; covers are only
- * requested from the network when this is non-null, and tiles of non-downloaded items are dimmed when it is null.
+ * requested from the network when this is non-null.
  */
 val LocalServerBaseUrl = androidx.compose.runtime.staticCompositionLocalOf<HttpUrl?> { null }
+
+/** True only once offline has settled (see `rememberSettledOffline`); drives dimming, never the cover source. */
+val LocalOfflineDimming = androidx.compose.runtime.staticCompositionLocalOf { false }

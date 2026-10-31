@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.ItemSummary
+import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
@@ -53,15 +54,22 @@ class CoverTileTest {
 
     @Test fun offline_nonDownloadedTile_isMarkedUnavailable_butClickable() {
         var clicks = 0
-        rule.setContent { LauschigTheme { CoverTile(item(downloaded = false), onClick = { clicks++ }) } }
+        rule.setContent {
+            LauschigTheme { CompositionLocalProvider(LocalOfflineDimming provides true) { CoverTile(item(downloaded = false), onClick = { clicks++ }) } }
+        }
         rule.onNode(hasStateDescription("Not available offline")).performClick()
         assertEquals(1, clicks)
+    }
+
+    @Test fun offlineButNotYetSettled_tileIsNotDimmed() {
+        rule.setContent { LauschigTheme { CoverTile(item(downloaded = false)) } } // LocalOfflineDimming defaults to false
+        rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription)).assertDoesNotExist()
     }
 
     @Test fun online_orDownloaded_tileIsNotMarkedUnavailable() {
         rule.setContent {
             LauschigTheme {
-                CompositionLocalProvider(LocalServerBaseUrl provides "https://abs.example.org/".toHttpUrl()) {
+                CompositionLocalProvider(LocalServerBaseUrl provides "https://abs.example.org/".toHttpUrl(), LocalOfflineDimming provides false) {
                     CoverTile(item(downloaded = false))
                 }
             }
