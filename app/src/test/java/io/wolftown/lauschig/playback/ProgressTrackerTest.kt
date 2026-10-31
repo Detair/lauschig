@@ -126,6 +126,17 @@ class ProgressTrackerTest {
         assertNotEquals(sessions[0].id, sessions[1].id)
     }
 
+    @Test fun shutdown_savesCapturedFinalPosition() = runTest {
+        val t = tracker()
+        pos = 10.0
+        t.play(); advanceTimeBy(4_000)
+        pos = 0.0 // the live position is unreliable after release
+        t.onPaused(finalPositionSec = 14.0)
+        assertEquals(14.0, db.progressDao().get(s, "it")!!.currentTimeSec, 0.0)
+        assertEquals(14.0, db.sessionDao().unsynced(s).single().currentTimeSec, 0.0)
+        assertEquals(4.0, db.sessionDao().unsynced(s).single().timeListeningSec, 0.001)
+    }
+
     @Test fun finishedAt99_5Percent() = runTest {
         val t = tracker()
         pos = 994.0

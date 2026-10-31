@@ -67,7 +67,7 @@ class ProgressTracker(
     }
 
     /** Pause, stop or service end: stops ticking and saves once. */
-    suspend fun onPaused() = lock.withLock { halt(ended = false) }
+    suspend fun onPaused(finalPositionSec: Double? = null) = lock.withLock { halt(ended = false, finalPositionSec) }
 
     /** The last file finished: progress is saved as finished at the end of the book. */
     suspend fun onEnded() = lock.withLock { halt(ended = true) }
@@ -75,22 +75,22 @@ class ProgressTracker(
     /** Saves the position without touching listening time (e.g. a seek while paused). No-op without a known item. */
     suspend fun checkpoint() = lock.withLock { if (target != null) save(ended = false) }
 
-    private suspend fun halt(ended: Boolean) {
+    private suspend fun halt(ended: Boolean, finalPositionSec: Double? = null) {
         tickJob?.cancel()
         tickJob = null
         if (target == null) return
-        save(ended)
+        save(ended, finalPositionSec)
         playingSince = null
         pausedAt = clock()
     }
 
-    private suspend fun save(ended: Boolean) {
+    private suspend fun save(ended: Boolean, overridePositionSec: Double? = null) {
         val t = target ?: return
         val now = clock()
         var listening = session?.timeListeningSec ?: 0.0
         playingSince?.let { listening += (now - it) / 1000.0; playingSince = now }
         // The player may already be released when the service is torn down; fall back to the last known position.
-        val pos = if (ended) t.durationSec else try { t.position() } catch (e: IllegalStateException) { lastPosition }
+        val pos = if (ended) t.durationSec else overridePositionSec ?: try { t.position() } catch (e: IllegalStateException) { lastPosition }
         lastPosition = pos
         val finished = ended || (t.durationSec > 0 && pos / t.durationSec >= FINISHED_FRACTION)
         progressDao.saveLocal(t.serverId, t.itemId, pos, t.durationSec, finished, now)

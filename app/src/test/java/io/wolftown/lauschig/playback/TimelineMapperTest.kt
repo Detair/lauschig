@@ -39,6 +39,21 @@ class TimelineMapperTest {
         assertEquals(-1, m.chapterAt(5.0, emptyList()))
     }
 
+    @Test fun chapterAt_chaptersStartingAfterZero_andGaps() {
+        val m = TimelineMapper(listOf(file(0, 1000.0)))
+        val ch = listOf(chapter(0, 30.0, 100.0), chapter(1, 200.0, 300.0))
+        assertEquals(0, m.chapterAt(5.0, ch)) // before the first chapter
+        assertEquals(0, m.chapterAt(150.0, ch)) // gap belongs to the preceding chapter
+        assertEquals(1, m.chapterAt(250.0, ch))
+    }
+
+    @Test fun chapterAt_unsortedChapters_returnIndexInGivenList() {
+        val m = TimelineMapper(listOf(file(0, 1000.0)))
+        val ch = listOf(chapter(1, 200.0, 300.0), chapter(0, 0.0, 200.0))
+        assertEquals(1, m.chapterAt(50.0, ch))
+        assertEquals(0, m.chapterAt(250.0, ch))
+    }
+
     @Test fun chapterAt_worksAcrossFileBoundaries() {
         val m = TimelineMapper(listOf(file(0, 600.0), file(1, 600.0)))
         val ch = listOf(chapter(0, 0.0, 500.0), chapter(1, 500.0, 700.0), chapter(2, 700.0, 1200.0))

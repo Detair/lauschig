@@ -3,6 +3,7 @@ package io.wolftown.lauschig.playback
 import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -18,15 +19,26 @@ import kotlin.coroutines.resumeWithException
 class MediaControllerFacade @Inject constructor(@ApplicationContext private val context: Context) : PlayerFacade {
     private var controller: MediaController? = null
     private var onChange: () -> Unit = {}
+    private var onError: () -> Unit = {}
+    private var onDisconnected: () -> Unit = {}
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = onChange()
+        override fun onPlayerError(error: PlaybackException) = onError()
+    }
+
+    private val controllerListener = object : MediaController.Listener {
+        override fun onDisconnected(controller: MediaController) {
+            if (this@MediaControllerFacade.controller === controller) this@MediaControllerFacade.controller = null
+            controller.release()
+            onDisconnected()
+        }
     }
 
     private suspend fun connect(): MediaController {
         controller?.let { return it }
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token).setListener(controllerListener).buildAsync()
         val c = suspendCancellableCoroutine { cont ->
             future.addListener({
                 try { cont.resume(future.get()) } catch (e: Exception) { cont.resumeWithException(e) }
@@ -53,6 +65,10 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
         val c = controller ?: return PlayerSnapshot(false, 0, 0, 1f)
         return PlayerSnapshot(c.isPlaying, c.currentMediaItemIndex, c.currentPosition.coerceAtLeast(0), c.playbackParameters.speed)
     }
+
+    override fun hasMedia() = controller?.let { it.isConnected && it.mediaItemCount > 0 } == true
+    override fun setOnError(onError: () -> Unit) { this.onError = onError }
+    override fun setOnDisconnected(onDisconnected: () -> Unit) { this.onDisconnected = onDisconnected }
 
     override fun setOnChange(onChange: () -> Unit) { this.onChange = onChange }
 }

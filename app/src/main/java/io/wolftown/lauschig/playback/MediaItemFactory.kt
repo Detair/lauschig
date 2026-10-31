@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import io.wolftown.lauschig.absapi.library.audioFileUrl
 import io.wolftown.lauschig.db.dao.ItemWithDetails
+import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.download.DownloadFiles
 import okhttp3.HttpUrl
 import java.io.File
@@ -16,8 +17,12 @@ import javax.inject.Inject
 class PlaybackUnavailableException(val itemId: String) : Exception("Not playable offline: $itemId")
 
 /** Builds one [MediaItem] per audio file. Streaming auth is handled by the player's data source, not here. */
-class MediaItemFactory(private val coverFile: (serverId: String, itemId: String) -> File?) {
-    @Inject constructor(files: DownloadFiles) : this({ serverId, itemId ->
+class MediaItemFactory(
+    /** A file counts as local only if it still exists on disk. */
+    private val fileExists: (File) -> Boolean = { it.isFile },
+    private val coverFile: (serverId: String, itemId: String) -> File?,
+) {
+    @Inject constructor(files: DownloadFiles) : this(coverFile = { serverId, itemId ->
         try { files.coverFile(serverId, itemId) } catch (e: Exception) { null }
     })
 
@@ -27,11 +32,11 @@ class MediaItemFactory(private val coverFile: (serverId: String, itemId: String)
      */
     fun build(item: ItemWithDetails, baseUrl: HttpUrl?): List<MediaItem> {
         val files = item.audioFiles.sortedBy { it.index }
-        val allLocal = files.isNotEmpty() && files.all { it.localPath != null }
+        val allLocal = isFullyLocal(item)
         if (!allLocal && baseUrl == null) throw PlaybackUnavailableException(item.item.id)
         val cover: Uri? = coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
         return files.map { f ->
-            val uri: Uri = f.localPath?.let { Uri.fromFile(File(it)) } ?: audioFileUrl(baseUrl!!, item.item.id, f.ino).toString().toUri()
+            val uri: Uri = localFile(f)?.let { Uri.fromFile(it) } ?: audioFileUrl(baseUrl!!, item.item.id, f.ino).toString().toUri()
             val extras = Bundle().apply {
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)
@@ -52,6 +57,11 @@ class MediaItemFactory(private val coverFile: (serverId: String, itemId: String)
                 .build()
         }
     }
+
+    private fun localFile(f: AudioFileEntity): File? = f.localPath?.let { File(it) }?.takeIf(fileExists)
+
+    /** True if every audio file is completely downloaded and still present on disk. */
+    fun isFullyLocal(item: ItemWithDetails): Boolean = item.audioFiles.isNotEmpty() && item.audioFiles.all { localFile(it) != null }
 
     companion object {
         const val EXTRA_SERVER_ID = "serverId"

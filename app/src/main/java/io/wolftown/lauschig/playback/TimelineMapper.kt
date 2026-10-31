@@ -29,11 +29,18 @@ class TimelineMapper(files: List<AudioFileEntity>) {
         return starts[i] + offsetMs.coerceAtLeast(0L) / 1000.0
     }
 
-    /** Index into [chapters] of the last chapter starting at or before [globalSec]; -1 if there are none. */
+    /**
+     * Index into [chapters] (in the given list order) of the chapter with the latest start at or before [globalSec].
+     * Chapters need not be sorted. Before the first chapter (it starts > 0) the earliest chapter is returned;
+     * gaps belong to the preceding chapter. -1 if there are none.
+     */
     fun chapterAt(globalSec: Double, chapters: List<ChapterEntity>): Int {
         if (chapters.isEmpty()) return -1
-        var found = 0
-        chapters.forEachIndexed { i, c -> if (c.startSec <= globalSec) found = i }
-        return found
+        var best = -1
+        chapters.forEachIndexed { i, c ->
+            if (c.startSec <= globalSec && (best < 0 || c.startSec >= chapters[best].startSec)) best = i
+        }
+        if (best >= 0) return best
+        return chapters.indices.minBy { chapters[it].startSec }
     }
 }

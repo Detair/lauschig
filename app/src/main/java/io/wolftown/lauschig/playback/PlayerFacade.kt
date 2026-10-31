@@ -14,6 +14,15 @@ interface PlayerFacade {
     fun setSpeed(speed: Float)
     fun snapshot(): PlayerSnapshot
 
+    /** True while the (remote) player is connected and has a queue loaded. */
+    fun hasMedia(): Boolean
+
+    /** Invoked on a playback error (e.g. a file vanished). */
+    fun setOnError(onError: () -> Unit)
+
+    /** Invoked when the service connection was lost (service stopped); the queue is gone. */
+    fun setOnDisconnected(onDisconnected: () -> Unit)
+
     /** [onChange] is invoked on every relevant player event (play state, item, seek, speed). */
     fun setOnChange(onChange: () -> Unit)
 }

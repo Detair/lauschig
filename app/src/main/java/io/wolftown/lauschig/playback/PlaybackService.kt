@@ -20,6 +20,7 @@ import io.wolftown.lauschig.net.ApiProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -39,6 +40,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var sessionDao: SessionDao
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
     private var bridge: PlaybackProgressBridge? = null
@@ -89,12 +91,16 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         connectionJob?.cancel()
+        // Capture the position and detach the listener before release; the final save outlives the service scope.
+        val final = bridge?.currentGlobalSec()
+        bridge?.let { player?.removeListener(it) }
         player?.pause()
-        bridge?.shutdown()
+        bridge?.shutdown(final, appScope)
         session?.release()
         player?.release()
         session = null
         player = null
+        scope.cancel()
         super.onDestroy()
     }
 

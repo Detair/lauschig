@@ -34,6 +34,12 @@ private class FakeFacade : PlayerFacade {
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
     override fun setOnChange(onChange: () -> Unit) { cb = onChange }
+    var errorCb: () -> Unit = {}
+    var disconnectedCb: () -> Unit = {}
+    override fun hasMedia() = items.isNotEmpty()
+    override fun setOnError(onError: () -> Unit) { errorCb = onError }
+    override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
+    fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -52,7 +58,7 @@ class PlayerControllerTest {
     private fun TestScope.controller(facade: FakeFacade, item: ItemWithDetails?, base: String? = null) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
-        factory = MediaItemFactory { _, _ -> null },
+        factory = MediaItemFactory({ true }) { _, _ -> null },
         loadItem = { _, _ -> item },
         onlineBaseUrl = { base?.toHttpUrl() },
         coverFile = { _, _ -> null },
@@ -136,5 +142,26 @@ class PlayerControllerTest {
         c.play(s, "it")
         assertNull(f.started)
         assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun playAfterServiceDisconnect_rebuildsAndPlays() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 100.0, 1800.0, false, 1)))
+        c.play(s, "it", 700.0)
+        f.disconnect()
+        assertTrue(!c.state.value.isPlaying)
+        c.play(s, "it")
+        assertEquals(3, f.items.size)
+        assertEquals(0 to 100_000L, f.started)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun playerError_surfacesInUiState() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        f.errorCb()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+        assertTrue(!c.state.value.isPlaying)
     }
 }

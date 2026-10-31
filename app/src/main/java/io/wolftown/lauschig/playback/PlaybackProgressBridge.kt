@@ -1,10 +1,13 @@
 package io.wolftown.lauschig.playback
 
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Feeds player events into the [ProgressTracker]. Events are processed strictly in order on [scope] (main).
@@ -36,10 +39,21 @@ class PlaybackProgressBridge(
         if (reason == Player.DISCONTINUITY_REASON_SEEK && !player.isPlaying) queue.trySend { tracker.checkpoint() }
     }
 
-    /** Service teardown: saves once more, then lets the queue drain and end. */
-    fun shutdown() {
-        queue.trySend { tracker.onPaused() }
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        val itemId = mediaItem?.mediaMetadata?.extras?.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return
+        if (player.isPlaying && itemId != ctx?.itemId) queue.trySend { startTracking() }
+    }
+
+    /** Current book-wide position, or null if nothing was tracked. Call BEFORE releasing the player. */
+    fun currentGlobalSec(): Double? = ctx?.mapper?.toGlobal(player.currentMediaItemIndex, player.currentPosition)
+
+    /**
+     * Service teardown: stops the queue and saves [finalGlobalSec] (captured before release) on [saveScope],
+     * which must outlive the service; the save is not cancellable.
+     */
+    fun shutdown(finalGlobalSec: Double?, saveScope: CoroutineScope) {
         queue.close()
+        saveScope.launch { withContext(NonCancellable) { tracker.onPaused(finalGlobalSec) } }
     }
 
     private suspend fun startTracking() {

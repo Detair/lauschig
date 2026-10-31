@@ -54,7 +54,7 @@ class PlayerControllerImpl(
         coverFile = { serverId, itemId -> try { files.coverFile(serverId, itemId) } catch (e: Exception) { null } },
     )
 
-    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper)
+    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?)
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -63,17 +63,26 @@ class PlayerControllerImpl(
     private var playJob: Job? = null
     private var pollJob: Job? = null
 
-    init { facade.setOnChange { refresh() } }
+    init {
+        facade.setOnChange { refresh() }
+        facade.setOnError { _state.update { it.copy(isPlaying = false, error = R.string.error_playback_failed) } }
+        facade.setOnDisconnected {
+            // The service is gone; forget the loaded item so the next play() rebuilds the queue.
+            playJob?.cancel(); pollJob?.cancel(); pollJob = null
+            current = null
+            _state.update { it.copy(isPlaying = false) }
+        }
+    }
 
     override fun play(serverId: String, itemId: String, startSec: Double?) {
         playJob?.cancel()
         playJob = scope.launch {
             val cur = current
-            if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null) {
+            if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null && facade.hasMedia()) {
                 facade.play(); refresh(); return@launch
             }
             val item = loadItem(serverId, itemId) ?: return@launch
-            val allLocal = item.audioFiles.isNotEmpty() && item.audioFiles.all { it.localPath != null }
+            val allLocal = factory.isFullyLocal(item)
             val items = try {
                 factory.build(item, if (allLocal) null else onlineBaseUrl())
             } catch (e: PlaybackUnavailableException) {
@@ -83,7 +92,7 @@ class PlayerControllerImpl(
             val mapper = TimelineMapper(item.audioFiles)
             val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
-            current = Current(item, mapper)
+            current = Current(item, mapper, coverFile(serverId, itemId)?.takeIf { it.isFile }?.path)
             _state.value = PlayerUiState(itemId = itemId, title = item.item.title)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
@@ -132,7 +141,7 @@ class PlayerControllerImpl(
             it.copy(
                 itemId = c.item.item.id,
                 title = c.item.item.title,
-                coverPath = coverFile(c.item.item.serverId, c.item.item.id)?.takeIf { f -> f.isFile }?.path,
+                coverPath = c.coverPath,
                 isPlaying = snap.isPlaying,
                 positionSec = pos,
                 durationSec = duration,
@@ -141,7 +150,7 @@ class PlayerControllerImpl(
                 chapterStartSec = chapter?.startSec ?: 0.0,
                 chapterEndSec = chapter?.endSec ?: duration,
                 speed = snap.speed,
-                error = null,
+                error = if (snap.isPlaying) null else it.error,
             )
         }
         if (snap.isPlaying) startPolling() else { pollJob?.cancel(); pollJob = null }

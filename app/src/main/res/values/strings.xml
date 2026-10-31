@@ -4,4 +4,5 @@
     <string name="download_channel_name">Downloads</string>
     <string name="download_notification_text">Downloading audiobook</string>
     <string name="error_not_downloaded_offline">Not downloaded – available when online</string>
+    <string name="error_playback_failed">Playback failed</string>
 </resources>
