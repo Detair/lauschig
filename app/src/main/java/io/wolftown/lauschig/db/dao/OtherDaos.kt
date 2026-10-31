@@ -99,7 +99,26 @@ abstract class AudioFileDao {
             "WHERE serverId = :serverId AND itemId = :itemId AND `index` = :index",
     )
     abstract suspend fun setLocal(serverId: String, itemId: String, index: Int, localPath: String?, completedBytes: Long)
+
+    /** Records partial progress of an in-flight download; never touches `localPath` (only [setLocal] marks completion). */
+    @Query(
+        "UPDATE audio_files SET completedBytes = :completedBytes " +
+            "WHERE serverId = :serverId AND itemId = :itemId AND `index` = :index AND localPath IS NULL",
+    )
+    abstract suspend fun setProgress(serverId: String, itemId: String, index: Int, completedBytes: Long)
+
+    /** Clears all local columns of an item (download removed). */
+    @Query("UPDATE audio_files SET localPath = NULL, completedBytes = 0 WHERE serverId = :serverId AND itemId = :itemId")
+    abstract suspend fun clearLocal(serverId: String, itemId: String)
+
+    @Query(
+        "SELECT COALESCE(SUM(completedBytes), 0) AS done, COALESCE(SUM(sizeBytes), 0) AS total " +
+            "FROM audio_files WHERE serverId = :serverId AND itemId = :itemId",
+    )
+    abstract fun observeBytes(serverId: String, itemId: String): Flow<BytesProgress>
 }
+
+data class BytesProgress(val done: Long, val total: Long)
 
 /** A server row that replaced a local one; input for PositionJump detection. */
 data class ProgressChange(val itemId: String, val oldCurrentTimeSec: Double, val newCurrentTimeSec: Double)
@@ -163,6 +182,19 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND state IN (:states)")
     suspend fun inStates(serverId: String, states: List<DownloadState>): List<DownloadEntity>
+
+    @Query("SELECT * FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
+    fun observe(serverId: String, itemId: String): Flow<DownloadEntity?>
+
+    @Query("UPDATE downloads SET state = :state, error = :error WHERE serverId = :serverId AND itemId = :itemId")
+    suspend fun setState(serverId: String, itemId: String, state: DownloadState, error: String?)
+
+    /** Conditional transition (e.g. RUNNING -> QUEUED when a worker is stopped) that never overrides PAUSED/removed rows. */
+    @Query(
+        "UPDATE downloads SET state = :to, error = :error " +
+            "WHERE serverId = :serverId AND itemId = :itemId AND state = :from",
+    )
+    suspend fun setStateIf(serverId: String, itemId: String, from: DownloadState, to: DownloadState, error: String?)
 
     @Query("DELETE FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun delete(serverId: String, itemId: String)

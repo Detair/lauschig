@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lauschig</string>
+    <string name="download_channel_name">Downloads</string>
+    <string name="download_notification_text">Hörbuch wird heruntergeladen</string>
 </resources>

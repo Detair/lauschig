@@ -28,6 +28,7 @@ class ApiProvider(
     scope: CoroutineScope,
 ) {
     private val cache = HashMap<HttpUrl, Retrofit>()
+    private val clients = HashMap<HttpUrl, OkHttpClient>()
 
     // Shared so that several API flows do not each run their own probe loop.
     private val shared = connection.stateIn(scope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
@@ -43,12 +44,17 @@ class ApiProvider(
     val libraryApi: Flow<LibraryApi?> = retrofit.map { it?.create(LibraryApi::class.java) }
     val meApi: Flow<MeApi?> = retrofit.map { it?.create(MeApi::class.java) }
 
+    /** The authenticated client for [baseUrl] (origin-scoped Bearer + token refresh); also used for file downloads. */
     @Synchronized
-    private fun retrofitFor(baseUrl: HttpUrl): Retrofit = cache.getOrPut(baseUrl) {
-        val client = okHttp.newBuilder()
+    fun clientFor(baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(baseUrl) {
+        okHttp.newBuilder()
             .addInterceptor(AuthInterceptor(store, baseUrl))
             .authenticator(TokenAuthenticator(store, okHttp, baseUrl))
             .build()
-        AbsClientFactory.retrofit(baseUrl, client)
+    }
+
+    @Synchronized
+    private fun retrofitFor(baseUrl: HttpUrl): Retrofit = cache.getOrPut(baseUrl) {
+        AbsClientFactory.retrofit(baseUrl, clientFor(baseUrl))
     }
 }
