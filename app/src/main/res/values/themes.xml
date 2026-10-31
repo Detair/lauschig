@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme only (Compose draws the UI); the -night variant gives a dark window background. -->
+    <style name="Theme.Lauschig" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

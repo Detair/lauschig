@@ -159,6 +159,9 @@ abstract class ProgressDao {
 
     @Query("SELECT * FROM progress WHERE serverId = :serverId")
     abstract suspend fun all(serverId: String): List<ProgressEntity>
+
+    @Query("SELECT * FROM progress WHERE serverId = :serverId")
+    abstract fun observeAll(serverId: String): kotlinx.coroutines.flow.Flow<List<ProgressEntity>>
 }
 
 @Dao

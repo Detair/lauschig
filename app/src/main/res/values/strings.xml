@@ -5,4 +5,16 @@
     <string name="download_notification_text">Downloading audiobook</string>
     <string name="error_not_downloaded_offline">Not downloaded – available when online</string>
     <string name="error_playback_failed">Playback failed</string>
+    <string name="nav_start">Home</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_discover">Discover</string>
+    <string name="nav_search">Search</string>
+    <string name="offline_banner">Offline – downloaded titles only</string>
+    <string name="position_jump">Continued on another device. Go back to %1$s?</string>
+    <string name="position_jump_undo">Undo</string>
+    <string name="coming_soon">Coming soon</string>
+    <string name="start_continue">Continue listening</string>
+    <string name="start_downloaded">Downloaded</string>
+    <string name="start_empty">Nothing here yet – download a book to listen offline</string>
+    <string name="start_progress_percent">%1$d %%</string>
 </resources>
