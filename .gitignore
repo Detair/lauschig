@@ -5,3 +5,12 @@ local.properties
 .gradle/
 build/
 .idea/
+
+# Gradle / Android additions
+*.iml
+.idea/
+.DS_Store
+/captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
