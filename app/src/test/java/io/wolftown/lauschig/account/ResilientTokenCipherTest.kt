@@ -1,8 +1,10 @@
 package io.wolftown.lauschig.account
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.security.GeneralSecurityException
+import java.security.ProviderException
 
 class ResilientTokenCipherTest {
     private class Plain : TokenCipher {
@@ -13,9 +15,8 @@ class ResilientTokenCipherTest {
     @Test
     fun cipherKeyLoss_regeneratesAndAllowsNewSave() {
         var resets = 0
-        var creates = 0
         val c = ResilientTokenCipher(
-            create = { creates++; if (resets == 0) error("master key lost") else Plain() },
+            create = { if (resets == 0) throw GeneralSecurityException("master key lost") else Plain() },
             reset = { resets++ },
         )
         assertEquals("enc:tok", c.encrypt("tok"))
@@ -24,18 +25,34 @@ class ResilientTokenCipherTest {
     }
 
     @Test
-    fun keyInvalidatedAtUse_resetsOnceAndRetries() {
+    fun transientProviderError_doesNotReset() {
         var resets = 0
-        var broken = true
+        val c = ResilientTokenCipher(create = { throw ProviderException("busy") }, reset = { resets++ })
+        assertThrows(ProviderException::class.java) { c.encrypt("x") }
+        assertEquals(0, resets)
+    }
+
+    @Test
+    fun encryptFailure_doesNotReset() {
+        var resets = 0
         val c = ResilientTokenCipher(
             create = { object : TokenCipher {
-                val ok = !broken
-                override fun encrypt(plain: String) = if (ok) "enc:$plain" else error("invalidated")
+                override fun encrypt(plain: String): String = throw GeneralSecurityException("boom")
                 override fun decrypt(encrypted: String) = null
             } },
-            reset = { resets++; broken = false },
+            reset = { resets++ },
         )
-        assertEquals("enc:x", c.encrypt("x"))
-        assertTrue(resets == 1)
+        assertThrows(GeneralSecurityException::class.java) { c.encrypt("x") }
+        assertThrows(GeneralSecurityException::class.java) { c.encrypt("x") }
+        assertEquals(0, resets)
+    }
+
+    @Test
+    fun keyLoss_resetsAtMostOncePerProcess() {
+        var resets = 0
+        val c = ResilientTokenCipher(create = { throw GeneralSecurityException("lost") }, reset = { resets++ })
+        assertThrows(GeneralSecurityException::class.java) { c.encrypt("x") }
+        assertThrows(GeneralSecurityException::class.java) { c.encrypt("x") }
+        assertEquals(1, resets)
     }
 }
