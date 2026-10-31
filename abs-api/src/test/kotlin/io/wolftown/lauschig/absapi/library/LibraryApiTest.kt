@@ -149,6 +149,10 @@ class LibraryApiTest {
             .replace(Regex("\"tags\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"tags\": null")
             .replace(Regex("\"genres\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"genres\": null")
             .replace(Regex("\"series\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"series\": null")
+            .replace(Regex("\"chapters\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"chapters\": null")
+        for (key in listOf("tags", "genres", "series", "chapters")) {
+            assertTrue("fixture replacement for $key did not happen", body.contains("\"$key\": null"))
+        }
         server.enqueue(jsonBody(body))
 
         val m = api.item("li_1").media
@@ -156,6 +160,22 @@ class LibraryApiTest {
         assertTrue(m.tags.isEmpty())
         assertTrue(m.metadata.genres.isEmpty())
         assertTrue(m.metadata.series.isEmpty())
+        assertTrue(m.chapters.isEmpty())
         assertEquals(1, m.audioFiles.size)
+    }
+
+    @Test
+    fun results_nonArray_throws() {
+        for (bad in listOf("{}", "\"oops\"", "5")) {
+            server.enqueue(jsonBody("""{"results":$bad,"total":0,"limit":1,"page":0}"""))
+            val ex = runCatching { runBlocking { api.items("lib_1", 1, 0) } }.exceptionOrNull()
+            assertTrue("expected SerializationException for $bad but got $ex", ex is kotlinx.serialization.SerializationException)
+        }
+    }
+
+    @Test
+    fun results_null_isEmpty() = runBlocking {
+        server.enqueue(jsonBody("""{"results":null,"total":0,"limit":1,"page":0}"""))
+        assertTrue(api.items("lib_1", 1, 0).results.isEmpty())
     }
 }
