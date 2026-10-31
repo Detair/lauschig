@@ -1,3 +1,5 @@
+import java.time.Duration
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -40,7 +42,8 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Robolectric (SDK 36+) reflects into JDK internals (FileDescriptor).
-        unitTests.all { it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+        // A hanging test must fail fast instead of spinning forever.
+        unitTests.all { it.timeout.set(Duration.ofMinutes(10)); it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
     }
 }
 

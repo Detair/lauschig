@@ -3,4 +3,5 @@
     <string name="app_name">Lauschig</string>
     <string name="download_channel_name">Downloads</string>
     <string name="download_notification_text">Hörbuch wird heruntergeladen</string>
+    <string name="error_not_downloaded_offline">Nicht heruntergeladen – online verfügbar</string>
 </resources>
