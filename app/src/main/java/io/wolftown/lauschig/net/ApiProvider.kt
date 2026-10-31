@@ -6,7 +6,10 @@ import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import okhttp3.HttpUrl
@@ -22,10 +25,14 @@ class ApiProvider(
     connection: Flow<ConnectionState>,
     private val okHttp: OkHttpClient,
     private val store: AccountStore,
+    scope: CoroutineScope,
 ) {
     private val cache = HashMap<HttpUrl, Retrofit>()
 
-    private val retrofit: Flow<Retrofit?> = connection
+    // Shared so that several API flows do not each run their own probe loop.
+    private val shared = connection.stateIn(scope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
+
+    private val retrofit: Flow<Retrofit?> = shared
         .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(s.baseUrl) } }
         .distinctUntilChanged()
 
@@ -36,7 +43,7 @@ class ApiProvider(
     @Synchronized
     private fun retrofitFor(baseUrl: HttpUrl): Retrofit = cache.getOrPut(baseUrl) {
         val client = okHttp.newBuilder()
-            .addInterceptor(AuthInterceptor(store))
+            .addInterceptor(AuthInterceptor(store, baseUrl))
             .authenticator(TokenAuthenticator(store, okHttp, baseUrl))
             .build()
         AbsClientFactory.retrofit(baseUrl, client)

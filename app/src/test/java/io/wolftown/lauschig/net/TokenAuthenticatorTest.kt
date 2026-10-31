@@ -28,27 +28,8 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class TokenAuthenticatorTest {
-    private class FakeStore : AccountStore {
-        val acc = MutableStateFlow<Account?>(null)
-        val reauth = MutableStateFlow(false)
-        var access: String? = null
-        var refresh: String? = null
-        override val account: Flow<Account?> = acc
-        override val needsReauth: Flow<Boolean> = reauth
-        override suspend fun save(a: Account, accessToken: String, refreshToken: String) {
-            acc.value = a; access = accessToken; refresh = refreshToken; reauth.value = false
-        }
-        override suspend fun accessToken() = access
-        override suspend fun refreshToken() = refresh
-        override suspend fun updateTokens(access: String, refresh: String) {
-            this.access = access; this.refresh = refresh; reauth.value = false
-        }
-        override suspend fun markNeedsReauth() { reauth.value = true }
-        override suspend fun clear(keepDownloads: Boolean) { acc.value = null; access = null; refresh = null }
-    }
-
     private lateinit var server: MockWebServer
-    private lateinit var store: FakeStore
+    private lateinit var store: FakeAccountStore
     private lateinit var client: OkHttpClient
     private val refreshCalls = AtomicInteger()
 
@@ -72,7 +53,7 @@ class TokenAuthenticatorTest {
     @Before
     fun setUp() {
         server = MockWebServer().also { it.start() }
-        store = FakeStore().apply {
+        store = FakeAccountStore().apply {
             runBlocking {
                 save(
                     Account("s", "u1", "a", false, ServerAddresses(null, server.url("/")), emptySet()),
@@ -82,7 +63,7 @@ class TokenAuthenticatorTest {
         }
         val base = OkHttpClient()
         client = base.newBuilder()
-            .addInterceptor(AuthInterceptor(store))
+            .addInterceptor(AuthInterceptor(store, server.url("/")))
             .authenticator(TokenAuthenticator(store, base, server.url("/")))
             .build()
     }
@@ -140,5 +121,38 @@ class TokenAuthenticatorTest {
         }
         assertEquals(listOf(200, 200), codes)
         assertEquals(1, refreshCalls.get())
+    }
+
+    @Test
+    fun undecryptableToken_marksNeedsReauth() {
+        serve { MockResponse().setBody(refreshBody) }
+        store.refresh = null // ciphertext present but undecryptable -> reads as null
+        assertEquals(401, get().code)
+        assertTrue(store.reauth.value)
+        assertEquals(0, refreshCalls.get())
+    }
+
+    @Test
+    fun foreignHost401_doesNotAttachToken() {
+        serve { MockResponse().setBody(refreshBody) }
+        val other = MockWebServer().also { it.start() }
+        try {
+            other.enqueue(MockResponse().setResponseCode(401))
+            val r = client.newCall(Request.Builder().url(other.url("/x")).build()).execute()
+            assertEquals(401, r.code)
+            assertEquals(null, other.takeRequest().getHeader("Authorization"))
+            assertEquals(0, refreshCalls.get())
+            assertEquals(1, other.requestCount)
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    @Test
+    fun storageFailureOnUpdate_doesNotCrashOrMarkReauth() {
+        serve { MockResponse().setBody(refreshBody) }
+        store.failUpdate = true
+        assertEquals(401, get().code)
+        assertFalse(store.reauth.value)
     }
 }

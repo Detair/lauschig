@@ -7,21 +7,16 @@ import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.integration.android.AndroidKeysetManager
-import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
-import javax.inject.Singleton
+import java.security.KeyStore
 
 /** AES-256-GCM via Tink; the keyset is wrapped by an Android Keystore master key. */
-@Singleton
-class TinkTokenCipher @Inject constructor(
-    @ApplicationContext private val context: Context,
-) : TokenCipher {
-    private val aead: Aead by lazy {
+class TinkTokenCipher(private val context: Context) : TokenCipher {
+    private val aead: Aead = run {
         AeadConfig.register()
         AndroidKeysetManager.Builder()
-            .withSharedPref(context, "lauschig_keyset", "lauschig_keyset_prefs")
+            .withSharedPref(context, "lauschig_keyset", KEYSET_PREFS)
             .withKeyTemplate(KeyTemplates.get("AES256_GCM"))
-            .withMasterKeyUri("android-keystore://lauschig_master_key")
+            .withMasterKeyUri("android-keystore://$MASTER_ALIAS")
             .build()
             .keysetHandle
             .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
@@ -36,7 +31,18 @@ class TinkTokenCipher @Inject constructor(
         null
     }
 
-    private companion object {
-        val ASSOCIATED = "lauschig.tokens".toByteArray()
+    companion object {
+        private const val KEYSET_PREFS = "lauschig_keyset_prefs"
+        private const val MASTER_ALIAS = "lauschig_master_key"
+
+        /** Deletes keyset prefs and the Keystore master key so a fresh keyset can be generated. */
+        fun reset(context: Context) {
+            context.deleteSharedPreferences(KEYSET_PREFS)
+            runCatching {
+                KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(MASTER_ALIAS)
+            }
+        }
+
+        private val ASSOCIATED = "lauschig.tokens".toByteArray()
     }
 }

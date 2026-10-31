@@ -3,6 +3,7 @@ package io.wolftown.lauschig.net
 import io.wolftown.lauschig.absapi.AbsClientFactory
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.account.AccountStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
 import okhttp3.HttpUrl
@@ -24,13 +25,14 @@ import retrofit2.HttpException
 class TokenAuthenticator(
     private val store: AccountStore,
     refreshClient: OkHttpClient,
-    baseUrl: HttpUrl,
+    private val baseUrl: HttpUrl,
 ) : Authenticator {
     private val authApi = AbsClientFactory.retrofit(baseUrl, refreshClient).create(AuthApi::class.java)
     private val lock = Any()
 
     override fun authenticate(route: Route?, response: Response): Request? {
         if (response.priorResponse != null) return null // already retried once
+        if (!response.request.url.sameOrigin(baseUrl)) return null // never send the ABS token elsewhere
         val sentToken = response.request.header("Authorization")?.removePrefix("Bearer ")
         return synchronized(lock) { runBlocking { refreshAndRetry(response.request, sentToken) } }
     }
@@ -38,7 +40,12 @@ class TokenAuthenticator(
     private suspend fun refreshAndRetry(request: Request, sentToken: String?): Request? {
         val current = store.accessToken()
         if (current != null && current != sentToken) return request.withToken(current) // someone else refreshed
-        val refresh = store.refreshToken() ?: return null
+        val refresh = store.refreshToken()
+        if (refresh == null) {
+            // Signed in but no usable refresh token (e.g. undecryptable after keystore loss): ask for re-login.
+            if (store.account.first() != null) store.markNeedsReauth()
+            return null
+        }
         val user = try {
             authApi.refresh(refresh).user
         } catch (e: HttpException) {
@@ -48,10 +55,18 @@ class TokenAuthenticator(
             return null
         }
         val access = user.accessToken ?: return null
-        store.updateTokens(access, user.refreshToken ?: refresh)
+        try {
+            store.updateTokens(access, user.refreshToken ?: refresh)
+        } catch (_: Exception) {
+            return null // storage failure: no crash, no reauth flag
+        }
         return request.withToken(access)
     }
 
     private fun Request.withToken(token: String) =
         newBuilder().header("Authorization", "Bearer $token").build()
 }
+
+/** True when scheme, host and port match, i.e. the request goes to the same server origin. */
+internal fun HttpUrl.sameOrigin(other: HttpUrl) =
+    scheme == other.scheme && host == other.host && port == other.port
