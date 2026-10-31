@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.absapi.library
 
+import io.wolftown.lauschig.absapi.LenientLibraryItemListSerializer
 import kotlinx.serialization.Serializable
 
 /** `GET /api/libraries` wraps the list: `{ "libraries": [...] }`. */
@@ -18,6 +19,7 @@ data class LibraryDto(
 /** `GET /api/libraries/:id/items`; `page` is 0-based, `limit` echoes the request (0 = unlimited). */
 @Serializable
 data class LibraryItemsPage(
+    @Serializable(with = LenientLibraryItemListSerializer::class)
     val results: List<LibraryItemDto>,
     val total: Int,
     val limit: Int,

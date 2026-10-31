@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
 /** `MediaProgress.getOldMediaProgress()`; `lastUpdate` is epoch millis. Shared by `AbsUser` and `GET /api/me`. */
 @Serializable
 data class MediaProgressDto(
-    val libraryItemId: String,
+    /** Null for rows the server could not attribute to an item. */
+    val libraryItemId: String? = null,
     val episodeId: String? = null,
     val currentTime: Double,
     val duration: Double,

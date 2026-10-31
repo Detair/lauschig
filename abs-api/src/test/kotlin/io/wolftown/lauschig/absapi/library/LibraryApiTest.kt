@@ -11,6 +11,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 
 class LibraryApiTest {
     private lateinit var server: MockWebServer
@@ -109,5 +116,46 @@ class LibraryApiTest {
     fun coverUrl_buildsCoverPath_withSubpath() {
         assertEquals("/api/items/li_1/cover", coverUrl("https://h/".toHttpUrl(), "li_1").encodedPath)
         assertEquals("/abs/api/items/li_1/cover", coverUrl("https://h/abs/".toHttpUrl(), "li_1").encodedPath)
+    }
+
+    private fun pageJson(name: String) = checkNotNull(javaClass.getResourceAsStream("/fixtures/$name")).bufferedReader().readText()
+
+    private fun jsonBody(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+
+    @Test
+    fun items_dropsUndecodableItems_keepsOthers() = runBlocking {
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(pageJson("library-items-page.json")).jsonObject
+        val good = root.getValue("results").jsonArray
+        val nullMeta = good[0].jsonObject.toMutableMap().apply {
+            put("media", buildJsonObject { put("metadata", JsonNull) })
+        }.let(::JsonObject)
+        val noTitle = good[0].jsonObject.toMutableMap().apply {
+            put("media", buildJsonObject { put("metadata", buildJsonObject { put("subtitle", "x") }) })
+        }.let(::JsonObject)
+        val results = JsonArray(listOf(nullMeta, good[0], noTitle, good[1]))
+        val body = JsonObject(root + ("results" to results)).toString()
+        server.enqueue(jsonBody(body))
+
+        val page = api.items("lib_1", 4, 0)
+
+        assertEquals(2, page.results.size)
+        assertEquals("Book Three", page.results[0].media.metadata.title)
+        assertEquals("Standalone", page.results[1].media.metadata.title)
+    }
+
+    @Test
+    fun item_nullLists_becomeEmpty() = runBlocking {
+        val body = pageJson("item-expanded-m4b.json")
+            .replace(Regex("\"tags\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"tags\": null")
+            .replace(Regex("\"genres\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"genres\": null")
+            .replace(Regex("\"series\": \\[.*?\\]", RegexOption.DOT_MATCHES_ALL), "\"series\": null")
+        server.enqueue(jsonBody(body))
+
+        val m = api.item("li_1").media
+
+        assertTrue(m.tags.isEmpty())
+        assertTrue(m.metadata.genres.isEmpty())
+        assertTrue(m.metadata.series.isEmpty())
+        assertEquals(1, m.audioFiles.size)
     }
 }

@@ -92,4 +92,17 @@ class AuthApiTest {
 
         assertEquals("/abs/ping", server.takeRequest().path)
     }
+
+    @Test
+    fun login_withBadProgressRows_stillParses() = runBlocking {
+        val rows = """[{"currentTime":1.0,"duration":2.0,"progress":0.5,"isFinished":false,"lastUpdate":6},{"libraryItemId":"x","currentTime":null}]"""
+        val body = fixture("login.json").replace(Regex("\"mediaProgress\": \\[.*?\\n    \\],", RegexOption.DOT_MATCHES_ALL), "\"mediaProgress\": $rows,")
+        server.enqueue(json(body))
+
+        val res = api.login(LoginRequest("alice", "secret"))
+
+        assertEquals(1, res.user.mediaProgress.size)
+        assertNotNull(res.user.accessToken)
+        assertEquals(null, res.user.mediaProgress[0].libraryItemId)
+    }
 }

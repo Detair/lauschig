@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.absapi.auth
 
+import io.wolftown.lauschig.absapi.LenientMediaProgressListSerializer
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
 import kotlinx.serialization.Serializable
 
@@ -25,6 +26,7 @@ data class AbsUser(
     val type: String,
     val accessToken: String? = null,
     val refreshToken: String? = null,
+    @Serializable(with = LenientMediaProgressListSerializer::class)
     val mediaProgress: List<MediaProgressDto> = emptyList(),
 )
 

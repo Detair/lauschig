@@ -6,4 +6,5 @@ import kotlinx.serialization.json.Json
 val AbsJson: Json = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
+    coerceInputValues = true
 }

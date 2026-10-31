@@ -41,15 +41,13 @@ class MeApiTest {
         val me = api.me()
 
         assertEquals("/api/me", server.takeRequest().path)
-        assertNull(me.accessToken())
+        assertNull(me.accessToken)
         assertEquals(2, me.mediaProgress.size)
         assertFalse(me.mediaProgress[0].isFinished)
         assertTrue(me.mediaProgress[1].isFinished)
         assertEquals(0.25, me.mediaProgress[0].progress, 0.0)
         assertNull(me.mediaProgress[0].episodeId)
     }
-
-    private fun io.wolftown.lauschig.absapi.auth.AbsUser.accessToken() = accessToken
 
     @Test
     fun updateProgress_patchesItemProgress() = runBlocking {
@@ -96,5 +94,23 @@ class MeApiTest {
         assertEquals(listOf(true, false), result.results.map { it.success })
         assertEquals(true, result.results[0].progressSynced)
         assertEquals("Media item not found", result.results[1].error)
+    }
+
+    @Test
+    fun me_dropsMalformedProgressRows_keepsValidOnes() = runBlocking {
+        val good = """{"libraryItemId":"li_1","currentTime":1.0,"duration":2.0,"progress":0.5,"isFinished":false,"lastUpdate":5}"""
+        val noItem = """{"currentTime":1.0,"duration":2.0,"progress":0.5,"isFinished":false,"lastUpdate":6}"""
+        val broken = """{"libraryItemId":"li_2","currentTime":"abc"}"""
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "application/json").setBody(
+                """{"id":"u","username":"a","type":"user","mediaProgress":[$good,$broken,$noItem,17]}""",
+            ),
+        )
+
+        val me = api.me()
+
+        assertEquals(2, me.mediaProgress.size)
+        assertEquals("li_1", me.mediaProgress[0].libraryItemId)
+        assertNull(me.mediaProgress[1].libraryItemId)
     }
 }
