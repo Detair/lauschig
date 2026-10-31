@@ -1,0 +1,163 @@
+package io.wolftown.lauschig.ui.setup
+
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.wolftown.lauschig.R
+
+@Composable
+fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: SetupViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.done) { if (state.done) onDone() }
+    val context = LocalContext.current
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.enableSsidBinding() else viewModel.ssidPermissionDenied()
+    }
+    SetupScreen(
+        state = state,
+        onLocal = viewModel::onLocalChanged,
+        onPublic = viewModel::onPublicChanged,
+        onUsername = viewModel::onUsernameChanged,
+        onPassword = viewModel::onPasswordChanged,
+        onSsidBinding = { on ->
+            when {
+                !on -> viewModel.disableSsidBinding()
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED -> viewModel.enableSsidBinding()
+                else -> permission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        },
+        onLogin = viewModel::login,
+        onConfirmCleartext = viewModel::confirmCleartext,
+        onDismissCleartext = viewModel::dismissCleartext,
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun SetupScreen(
+    state: SetupUiState,
+    onLocal: (String) -> Unit,
+    onPublic: (String) -> Unit,
+    onUsername: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onSsidBinding: (Boolean) -> Unit,
+    onLogin: () -> Unit,
+    onConfirmCleartext: () -> Unit,
+    onDismissCleartext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.verticalScroll(rememberScrollState()).imePadding().padding(16.dp).testTag("setupScreen"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+
+        OutlinedTextField(
+            state.local, onLocal, Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text(stringResource(R.string.setup_local_address)) },
+            placeholder = { Text(stringResource(R.string.setup_local_placeholder)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        OutlinedTextField(
+            state.public, onPublic, Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text(stringResource(R.string.setup_public_address)) },
+            placeholder = { Text(stringResource(R.string.setup_public_placeholder)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = state.ssidBinding,
+                onCheckedChange = onSsidBinding,
+                enabled = state.local.isNotBlank(),
+                modifier = Modifier.testTag("ssidCheckbox"),
+            )
+            Text(stringResource(R.string.setup_ssid_binding), style = MaterialTheme.typography.bodyMedium)
+        }
+        if (state.ssidBinding && state.currentSsid != null) {
+            AssistChip(onClick = {}, label = { Text(state.currentSsid) })
+        }
+        if (state.ssidHint) {
+            Text(stringResource(R.string.setup_ssid_unreadable), style = MaterialTheme.typography.bodySmall)
+        }
+
+        OutlinedTextField(
+            state.username, onUsername, Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text(stringResource(R.string.setup_username)) },
+        )
+        OutlinedTextField(
+            state.password, onPassword, Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text(stringResource(R.string.setup_password)) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        )
+
+        state.error?.let {
+            Text(
+                stringResource(it.message()),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("setupError"),
+            )
+        }
+
+        Button(onClick = onLogin, enabled = state.canLogin, modifier = Modifier.fillMaxWidth().testTag("loginButton")) {
+            if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Text(stringResource(R.string.setup_login))
+        }
+    }
+
+    state.cleartextPrompt?.let { hosts ->
+        AlertDialog(
+            onDismissRequest = onDismissCleartext,
+            title = { Text(stringResource(R.string.setup_cleartext_title)) },
+            text = { Text(stringResource(R.string.setup_cleartext_message, hosts.joinToString("\n"))) },
+            confirmButton = { TextButton(onClick = onConfirmCleartext) { Text(stringResource(R.string.setup_cleartext_confirm)) } },
+            dismissButton = { TextButton(onClick = onDismissCleartext) { Text(stringResource(R.string.setup_cancel)) } },
+        )
+    }
+}
+
+private fun SetupError.message(): Int = when (this) {
+    SetupError.INVALID_ADDRESS -> R.string.setup_error_invalid_address
+    SetupError.UNREACHABLE -> R.string.setup_error_unreachable
+    SetupError.WRONG_LOGIN -> R.string.setup_error_wrong_login
+    SetupError.SERVER_TOO_OLD -> R.string.setup_error_server_too_old
+    SetupError.SAVE_FAILED -> R.string.setup_error_save_failed
+}

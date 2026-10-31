@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.account
 
 import io.wolftown.lauschig.connection.ServerAddresses
+import okhttp3.HttpUrl
 import java.security.MessageDigest
 
 /**
@@ -32,3 +33,9 @@ data class Account(
         }
     }
 }
+
+/**
+ * The form in which a cleartext (http://) server is stored in [Account.allowCleartext]:
+ * `scheme://host:port` (no path), so every URL on a confirmed server matches.
+ */
+fun HttpUrl.cleartextKey(): String = "$scheme://$host:$port"

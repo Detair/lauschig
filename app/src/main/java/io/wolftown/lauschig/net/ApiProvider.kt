@@ -23,10 +23,13 @@ import retrofit2.Retrofit
  */
 class ApiProvider(
     connection: Flow<ConnectionState>,
-    private val okHttp: OkHttpClient,
+    okHttp: OkHttpClient,
     private val store: AccountStore,
     scope: CoroutineScope,
 ) {
+    // Every client (also the refresh client) refuses http:// to servers the user has not confirmed.
+    private val okHttp: OkHttpClient = okHttp.newBuilder().addInterceptor(CleartextGuardInterceptor(store)).build()
+
     private val cache = HashMap<HttpUrl, Retrofit>()
     private val clients = HashMap<HttpUrl, OkHttpClient>()
 

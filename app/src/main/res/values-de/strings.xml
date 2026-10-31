@@ -17,4 +17,24 @@
     <string name="start_downloaded">Heruntergeladen</string>
     <string name="start_empty">Noch nichts da – lade ein Buch herunter, um offline zu hören</string>
     <string name="start_progress_percent">%1$d %%</string>
+    <string name="setup_title">Mit Audiobookshelf verbinden</string>
+    <string name="setup_intro">Gib die Serveradresse ein. Du kannst eine lokale Adresse für zu Hause und eine öffentliche für unterwegs angeben.</string>
+    <string name="setup_local_address">Lokale Adresse (optional)</string>
+    <string name="setup_local_placeholder">192.168.1.10:13378</string>
+    <string name="setup_public_address">Öffentliche Adresse (optional)</string>
+    <string name="setup_public_placeholder">https://abs.example.org</string>
+    <string name="setup_ssid_binding">Lokale Adresse nur in diesen WLANs verwenden</string>
+    <string name="setup_ssid_unreadable">Das aktuelle WLAN konnte nicht gelesen werden. Erlaube den Standortzugriff und verbinde dich mit deinem Heim-WLAN, um diese Option zu nutzen.</string>
+    <string name="setup_username">Benutzername</string>
+    <string name="setup_password">Passwort</string>
+    <string name="setup_login">Anmelden</string>
+    <string name="setup_cancel">Abbrechen</string>
+    <string name="setup_cleartext_title">Unverschlüsselte Verbindung</string>
+    <string name="setup_cleartext_message">Diese Adresse nutzt http:// und ist unverschlüsselt. Passwort und Hördaten können von anderen im Netzwerk mitgelesen werden.\n\n%1$s\n\nFahre nur in einem vertrauenswürdigen Netzwerk fort.</string>
+    <string name="setup_cleartext_confirm">Unverschlüsselt verwenden</string>
+    <string name="setup_error_invalid_address">Diese Adresse ist ungültig.</string>
+    <string name="setup_error_unreachable">Der Server ist nicht erreichbar.</string>
+    <string name="setup_error_wrong_login">Benutzername oder Passwort ist falsch.</string>
+    <string name="setup_error_server_too_old">Dieser Audiobookshelf-Server ist zu alt. Bitte auf 2.26 oder neuer aktualisieren.</string>
+    <string name="setup_error_save_failed">Das Konto konnte nicht gespeichert werden.</string>
 </resources>

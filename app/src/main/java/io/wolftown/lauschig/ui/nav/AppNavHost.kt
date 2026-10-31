@@ -11,12 +11,16 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.placeholder.ComingSoonScreen
+import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
 
-/** Task 11 will route to [Setup] when there is no account; for now the graph always starts at [Start]. */
+/**
+ * [startDestination] is [Setup] when there is no account and [Start] otherwise (decided from the local
+ * account store, never from the network). After a successful login [Setup] is removed from the back stack.
+ */
 @Composable
-fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
-    NavHost(navController, startDestination = Start, modifier = modifier) {
+fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
+    NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute() }
         // Library, detail, player and setup screens arrive in later tasks.
         composable<Library> { ComingSoonScreen() }
@@ -24,9 +28,17 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) 
         composable<Search> { ComingSoonScreen() }
         composable<ItemDetail> { ComingSoonScreen() }
         composable<Player> { ComingSoonScreen() }
-        composable<Setup> { ComingSoonScreen() }
+        composable<Setup> {
+            SetupRoute(onDone = {
+                navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
+            })
+        }
     }
 }
+
+@Composable
+fun NavHostController.isOnSetup(): Boolean =
+    currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {

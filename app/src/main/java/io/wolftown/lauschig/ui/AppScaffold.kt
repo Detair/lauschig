@@ -62,6 +62,7 @@ fun AppScaffold(
     miniPlayer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     selectedTab: TopLevelTab? = TopLevelTab.Start,
+    showBottomBar: Boolean = true,
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable (PaddingValues) -> Unit,
@@ -82,7 +83,7 @@ fun AppScaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Column {
+            if (showBottomBar) Column {
                 miniPlayer()
                 NavigationBar {
                     TopLevelTab.entries.forEach { tab ->

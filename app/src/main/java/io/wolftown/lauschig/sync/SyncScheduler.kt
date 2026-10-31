@@ -29,7 +29,7 @@ import javax.inject.Singleton
 class SyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val apiProvider: ApiProvider,
-) {
+) : SyncTrigger {
     private val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
     /** Schedules the periodic sync and a one-time sync on every Offline -> Online transition. */
@@ -52,7 +52,16 @@ class SyncScheduler @Inject constructor(
         }
     }
 
+    /** One-time sync (e.g. right after login); returns immediately, the work runs in WorkManager. */
+    override fun syncNow() {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            NOW, ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(constraints).build(),
+        )
+    }
+
     companion object {
+        const val NOW = "sync-now"
         const val PERIODIC = "sync-periodic"
         const val ON_ONLINE = "sync-on-online"
 
