@@ -2,6 +2,7 @@ package io.wolftown.lauschig.sync
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.absapi.library.BookMediaDto
 import io.wolftown.lauschig.absapi.library.BookMetadataDto
@@ -33,13 +34,14 @@ private class FakeLibrary : LibraryApi {
     var failOnPage: Int? = null
     var reportedTotal: Int? = null
     var detail: LibraryItemDto? = null
+    var ignorePage = false
     val pageSizes = mutableListOf<Int>()
 
     override suspend fun libraries() = LibrariesResponse(listOf(LibraryDto("l1", "Bücher", "book", 0)))
     override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int): LibraryItemsPage {
         pageSizes += limit
         if (failOnPage == page) throw IOException("boom")
-        val chunk = items.drop(page * limit).take(limit)
+        val chunk = items.drop((if (ignorePage) 0 else page) * limit).take(limit)
         return LibraryItemsPage(chunk, reportedTotal ?: items.size, limit, page)
     }
     override suspend fun item(id: String, expanded: Int) = detail!!
@@ -60,6 +62,7 @@ class LibrarySyncTest {
 
     private fun sync(a: LibraryApi? = api) = LibrarySync(
         flowOf(a), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(),
+        { block -> db.withTransaction { block() } },
     )
 
     private fun dto(id: String, series: String? = null) =
@@ -123,6 +126,26 @@ class LibrarySyncTest {
 
         assertFalse(db.itemDao().get(s, "a")!!.detailsLoaded)
         assertTrue(db.itemDao().get(s, "b")!!.detailsLoaded)
+    }
+
+    @Test fun pageWithoutNewIds_stopsAndDeletesNothing() = runTest {
+        api.items = (1..450).map { dto("i$it") }
+        sync().sync_()
+        api.ignorePage = true
+        sync().sync_() // would loop forever / delete on a naive implementation
+        assertEquals(450, db.itemDao().idsInLibrary(s, "l1").size)
+    }
+
+    @Test fun detailsFailure_leavesDetailsUnloaded() = runTest {
+        api.items = listOf(dto("a"))
+        sync().sync_()
+        api.detail = dto("a")
+        val failing = LibrarySync(
+            flowOf(api), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(),
+            { block -> db.withTransaction { block(); throw IOException("late failure") } },
+        )
+        try { failing.loadDetails(s, "a"); fail() } catch (_: IOException) {}
+        assertFalse(db.itemDao().get(s, "a")!!.detailsLoaded)
     }
 
     @Test fun offline_isNoOp() = runTest {

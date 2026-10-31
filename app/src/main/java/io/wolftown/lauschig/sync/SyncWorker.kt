@@ -18,9 +18,11 @@ class SyncWorker @AssistedInject constructor(
     private val librarySync: LibrarySync,
     private val progressSync: ProgressSync,
     private val bus: PositionJumpBus,
+    private val gate: OnlineGate,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val serverId = accounts.account.first()?.serverId ?: return Result.success()
+        if (!gate.awaitOnline()) return Result.retry()
         var ok = true
         try {
             librarySync.syncAll(serverId)

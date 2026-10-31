@@ -11,7 +11,11 @@ import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.net.ApiProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -35,12 +39,15 @@ class SyncScheduler @Inject constructor(
             PERIODIC, ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build(),
         )
-        scope.launch {
-            onlineTransitions(apiProvider.connection).collect {
-                wm.enqueueUniqueWork(
-                    ON_ONLINE, ExistingWorkPolicy.KEEP,
-                    OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(constraints).build(),
-                )
+        // Only probe while the app is visible; background syncs come from the periodic worker.
+        scope.launch(Dispatchers.Main) {
+            ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                onlineTransitions(apiProvider.connection).collect {
+                    wm.enqueueUniqueWork(
+                        ON_ONLINE, ExistingWorkPolicy.KEEP,
+                        OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(constraints).build(),
+                    )
+                }
             }
         }
     }

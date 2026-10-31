@@ -2,6 +2,8 @@ package io.wolftown.lauschig.sync
 
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.library.LibraryItemDto
+import androidx.room.withTransaction
+import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.ChapterDao
 import io.wolftown.lauschig.db.dao.DownloadDao
@@ -29,6 +31,8 @@ class LibrarySync(
     private val audioFiles: AudioFileDao,
     private val progress: ProgressDao,
     private val downloads: DownloadDao,
+    /** Runs the block in one DB transaction (rolled back on exception). */
+    private val transaction: suspend (suspend () -> Unit) -> Unit,
 ) {
     @Inject constructor(
         apiProvider: ApiProvider,
@@ -38,7 +42,8 @@ class LibrarySync(
         audioFiles: AudioFileDao,
         progress: ProgressDao,
         downloads: DownloadDao,
-    ) : this(apiProvider.libraryApi, libraries, items, chapters, audioFiles, progress, downloads)
+        db: LauschigDatabase,
+    ) : this(apiProvider.libraryApi, libraries, items, chapters, audioFiles, progress, downloads, { block -> db.withTransaction { block() } })
 
     /**
      * Syncs every library. Offline (no API) is a no-op. A failing library does not stop the others, but
@@ -76,10 +81,10 @@ class LibrarySync(
             items.upsertFromList(mapped)
             val stale = mapped.filter { m -> before[m.id]?.let { it.seriesName != m.seriesName } == true }.map { it.id }
             if (stale.isNotEmpty()) items.invalidateDetails(serverId, stale)
-            mapped.forEach { seen += it.id }
+            val added = mapped.count { seen.add(it.id) }
             page++
-            // An empty page ends the loop even if the total was not reached; the count check below then blocks deletion.
-        } while (result.results.isNotEmpty() && seen.size < total)
+            // A page without new ids (empty, or a server ignoring `page`) ends the loop; the count check below blocks deletion.
+        } while (added > 0 && seen.size < total)
 
         if (seen.size != total) return
         val missing = before.keys - seen
@@ -104,17 +109,20 @@ class LibrarySync(
             seriesSequence = seq,
             seriesSortKey = seriesSortKey(seq),
         )
-        items.upsertDetails(entity)
-        chapters.replaceFromServer(
-            serverId, itemId,
-            dto.media.chapters.mapIndexed { i, c -> ChapterEntity(serverId, itemId, i, c.start, c.end, c.title) },
-        )
-        audioFiles.replaceFromServer(
-            serverId, itemId,
-            dto.media.audioFiles.sortedBy { it.index }.map {
-                AudioFileEntity(serverId, itemId, it.index, it.ino, it.duration, it.metadata.size, it.metadata.ext.removePrefix("."))
-            },
-        )
+        // Atomic; the item row (detailsLoaded = true) goes last so a failure never leaves it marked loaded.
+        transaction {
+            chapters.replaceFromServer(
+                serverId, itemId,
+                dto.media.chapters.mapIndexed { i, c -> ChapterEntity(serverId, itemId, i, c.start, c.end, c.title) },
+            )
+            audioFiles.replaceFromServer(
+                serverId, itemId,
+                dto.media.audioFiles.sortedBy { it.index }.map {
+                    AudioFileEntity(serverId, itemId, it.index, it.ino, it.duration, it.metadata.size, it.metadata.ext.removePrefix("."))
+                },
+            )
+            items.upsertDetails(entity)
+        }
     }
 
     private fun LibraryItemDto.toListEntity(serverId: String): ItemEntity {
