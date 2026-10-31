@@ -68,6 +68,17 @@ abstract class ItemDao {
     @Query("SELECT id FROM items WHERE serverId = :serverId AND libraryId = :libraryId")
     abstract suspend fun idsInLibrary(serverId: String, libraryId: String): List<String>
 
+    @Query("SELECT * FROM items WHERE serverId = :serverId AND libraryId = :libraryId")
+    abstract suspend fun getByLibrary(serverId: String, libraryId: String): List<ItemEntity>
+
+    @Query("UPDATE items SET detailsLoaded = 0 WHERE serverId = :serverId AND id IN (:ids)")
+    protected abstract suspend fun invalidateChunk(serverId: String, ids: List<String>)
+
+    /** Marks details as stale so they are refetched on next open. */
+    @Transaction
+    open suspend fun invalidateDetails(serverId: String, ids: List<String>) =
+        ids.chunked(CHUNK).forEach { invalidateChunk(serverId, it) }
+
     @Query("DELETE FROM items WHERE serverId = :serverId AND id IN (:ids)")
     protected abstract suspend fun deleteChunk(serverId: String, ids: List<String>)
 

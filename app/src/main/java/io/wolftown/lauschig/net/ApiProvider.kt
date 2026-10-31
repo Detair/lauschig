@@ -32,6 +32,9 @@ class ApiProvider(
     // Shared so that several API flows do not each run their own probe loop.
     private val shared = connection.stateIn(scope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
 
+    /** The shared connection state (one probe loop for everyone). */
+    val connection: Flow<ConnectionState> get() = shared
+
     private val retrofit: Flow<Retrofit?> = shared
         .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(s.baseUrl) } }
         .distinctUntilChanged()
