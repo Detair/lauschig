@@ -7,6 +7,9 @@ import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.CompositionLocalProvider
+import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
 import io.wolftown.lauschig.ui.nav.AppNavHost
 import io.wolftown.lauschig.ui.nav.currentTab
@@ -23,18 +26,21 @@ fun AppRoot(startDestination: Any, miniPlayer: @Composable () -> Unit, viewModel
 
     val onSetup = navController.isOnSetup()
 
-    LauschigTheme {
-        AppScaffold(
-            connection = connection,
-            miniPlayer = if (onSetup) ({}) else miniPlayer,
-            showBottomBar = !onSetup,
-            showOfflineBanner = !onSetup,
-            selectedTab = navController.currentTab(),
-            onTabSelected = navController::navigateToTab,
-            snackbarHostState = snackbarHost,
-        ) {
-            AppNavHost(navController, startDestination)
+    val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
+    CompositionLocalProvider(LocalServerBaseUrl provides baseUrl) {
+        LauschigTheme {
+            AppScaffold(
+                connection = connection,
+                miniPlayer = if (onSetup) ({}) else miniPlayer,
+                showBottomBar = !onSetup,
+                showOfflineBanner = !onSetup,
+                selectedTab = navController.currentTab(),
+                onTabSelected = navController::navigateToTab,
+                snackbarHostState = snackbarHost,
+            ) {
+                AppNavHost(navController, startDestination)
+            }
+            PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
         }
-        PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
     }
 }

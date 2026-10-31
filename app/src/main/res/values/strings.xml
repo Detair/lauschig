@@ -37,4 +37,16 @@
     <string name="setup_error_wrong_login">Username or password is wrong.</string>
     <string name="setup_error_server_too_old">This Audiobookshelf server is too old. Please update to 2.26 or newer.</string>
     <string name="setup_error_save_failed">The account could not be saved.</string>
+    <string name="library_tab_in_progress">In progress</string>
+    <string name="library_tab_finished">Finished</string>
+    <string name="library_tab_downloaded">Downloaded</string>
+    <string name="library_tab_series">Series</string>
+    <string name="library_empty">Nothing here yet</string>
+    <string name="filter_all">All</string>
+    <string name="filter_audiobooks">Audiobooks</string>
+    <string name="filter_radio_plays">Radio plays</string>
+    <string name="cover_badge_description">Book %1$s</string>
+    <string name="cover_badge_text">#%1$s</string>
+    <string name="cover_offline_available">Available offline</string>
+    <string name="cover_not_available_offline">Not available offline</string>
 </resources>

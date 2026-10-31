@@ -4,7 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import io.wolftown.lauschig.ui.start.StartRow
+import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.start.StartScreen
 import io.wolftown.lauschig.ui.start.StartUiState
 import org.junit.Assert.assertEquals
@@ -19,6 +19,9 @@ import org.robolectric.annotation.Config
 class StartScreenTest {
     @get:Rule val rule = createComposeRule()
 
+    private fun summary(id: String, title: String) =
+        ItemSummary("s", id, title, "Author", null, null, null, 0.4f, true, false)
+
     @Test
     fun empty_showsHint() {
         rule.setContent { LauschigTheme { StartScreen(StartUiState(), onPlay = {}) } }
@@ -29,8 +32,8 @@ class StartScreenTest {
     fun rows_showSectionsAndTapPlays() {
         val played = mutableListOf<String>()
         val state = StartUiState(
-            continueItem = StartRow("a", "Book A", "Author A", "42 %"),
-            downloaded = listOf(StartRow("b", "Book B", "Author B", null)),
+            continueItem = summary("a", "Book A"),
+            downloaded = listOf(summary("b", "Book B")),
         )
         rule.setContent { LauschigTheme { StartScreen(state, onPlay = { played += it }) } }
         rule.onNodeWithText("Continue listening").assertIsDisplayed()

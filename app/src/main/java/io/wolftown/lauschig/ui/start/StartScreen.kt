@@ -1,13 +1,13 @@
 package io.wolftown.lauschig.ui.start
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -16,18 +16,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.ItemSummary
 
-/** Phase-1 plain list row; Task 12 replaces it with a cover tile. */
-data class StartRow(val itemId: String, val title: String, val author: String?, val progressText: String?)
-
+@androidx.compose.runtime.Immutable
 data class StartUiState(
-    val continueItem: StartRow? = null,
-    val downloaded: List<StartRow> = emptyList(),
+    val continueItem: ItemSummary? = null,
+    val downloaded: List<ItemSummary> = emptyList(),
 )
 
 @Composable
@@ -45,13 +44,13 @@ fun StartScreen(state: StartUiState, onPlay: (itemId: String) -> Unit, modifier:
         return
     }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        state.continueItem?.let { row ->
+        state.continueItem?.let { item ->
             item(key = "h-continue") { SectionHeader(R.string.start_continue) }
-            item(key = "continue-${row.itemId}") { BookRow(row, onPlay) }
+            item(key = "continue") { TileRow(listOf(item), onPlay) }
         }
         if (state.downloaded.isNotEmpty()) {
             item(key = "h-downloaded") { SectionHeader(R.string.start_downloaded) }
-            items(state.downloaded, key = { "dl-${it.itemId}" }) { BookRow(it, onPlay) }
+            item(key = "downloaded") { TileRow(state.downloaded, onPlay) }
         }
     }
 }
@@ -67,20 +66,13 @@ private fun SectionHeader(textRes: Int) {
 }
 
 @Composable
-private fun BookRow(row: StartRow, onPlay: (String) -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clickable { onPlay(row.itemId) }.padding(horizontal = 16.dp, vertical = 8.dp),
+private fun TileRow(items: List<ItemSummary>, onPlay: (String) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(row.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        val sub = listOfNotNull(row.author, row.progressText).joinToString(" · ")
-        if (sub.isNotEmpty()) {
-            Text(
-                sub,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        items(items, key = ItemSummary::key, contentType = { "tile" }) { item ->
+            CoverTile(item, Modifier.width(140.dp), onClick = { onPlay(item.id) })
         }
     }
 }
