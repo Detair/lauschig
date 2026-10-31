@@ -25,7 +25,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.Call
-import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 /**
@@ -47,7 +46,7 @@ class PlaybackService : MediaLibraryService() {
     private var connectionJob: Job? = null
 
     @Volatile private var online: ConnectionState.Online? = null
-    private val fallbackClient = OkHttpClient()
+    private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
 
     override fun onCreate() {
         super.onCreate()

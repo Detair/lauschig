@@ -47,6 +47,9 @@ class ApiProvider(
     val libraryApi: Flow<LibraryApi?> = retrofit.map { it?.create(LibraryApi::class.java) }
     val meApi: Flow<MeApi?> = retrofit.map { it?.create(MeApi::class.java) }
 
+    /** Guarded client without credentials, for requests while no server is online (they fail fast). */
+    fun unauthenticatedClient(): OkHttpClient = okHttp
+
     /** The authenticated client for [baseUrl] (origin-scoped Bearer + token refresh); also used for file downloads. */
     @Synchronized
     fun clientFor(baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(baseUrl) {
