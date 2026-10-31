@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ChapterEntity
 import io.wolftown.lauschig.db.entities.DownloadEntity
@@ -18,8 +19,42 @@ import kotlinx.coroutines.flow.flatMapLatest
 
 @Dao
 abstract class ItemDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    protected abstract suspend fun insertIgnore(items: List<ItemEntity>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    abstract suspend fun upsertAll(items: List<ItemEntity>)
+    protected abstract suspend fun replace(item: ItemEntity)
+
+    @Query(
+        """UPDATE items SET libraryId = :libraryId, title = :title, subtitle = :subtitle, author = :author,
+           narrator = :narrator, seriesName = :seriesName, seriesSequence = :seriesSequence,
+           seriesSortKey = :seriesSortKey, durationSec = :durationSec, coverUpdatedAt = :coverUpdatedAt,
+           genres = :genres, tags = :tags, updatedAt = :updatedAt, orphaned = 0
+           WHERE serverId = :serverId AND id = :id""",
+    )
+    protected abstract suspend fun updateListColumns(
+        serverId: String, id: String, libraryId: String, title: String, subtitle: String?, author: String?,
+        narrator: String?, seriesName: String?, seriesSequence: String?, seriesSortKey: Double?,
+        durationSec: Double, coverUpdatedAt: Long, genres: List<String>, tags: List<String>, updatedAt: Long,
+    )
+
+    /**
+     * Applies minified list data: inserts new rows, and for existing rows updates only list-level
+     * columns (keeping description, seriesId, detailsLoaded) and clears `orphaned`.
+     */
+    @Transaction
+    open suspend fun upsertFromList(items: List<ItemEntity>) {
+        insertIgnore(items)
+        for (i in items) {
+            updateListColumns(
+                i.serverId, i.id, i.libraryId, i.title, i.subtitle, i.author, i.narrator, i.seriesName,
+                i.seriesSequence, i.seriesSortKey, i.durationSec, i.coverUpdatedAt, i.genres, i.tags, i.updatedAt,
+            )
+        }
+    }
+
+    /** Stores expanded item data (marks `detailsLoaded`, clears `orphaned`). */
+    open suspend fun upsertDetails(item: ItemEntity) = replace(item.copy(detailsLoaded = true, orphaned = false))
 
     @Query("SELECT * FROM items WHERE serverId = :serverId AND id = :id")
     abstract suspend fun get(serverId: String, id: String): ItemEntity?
@@ -34,10 +69,19 @@ abstract class ItemDao {
     abstract suspend fun idsInLibrary(serverId: String, libraryId: String): List<String>
 
     @Query("DELETE FROM items WHERE serverId = :serverId AND id IN (:ids)")
-    abstract suspend fun deleteByIds(serverId: String, ids: List<String>)
+    protected abstract suspend fun deleteChunk(serverId: String, ids: List<String>)
 
     @Query("UPDATE items SET orphaned = :orphaned WHERE serverId = :serverId AND id IN (:ids)")
-    abstract suspend fun setOrphaned(serverId: String, ids: List<String>, orphaned: Boolean)
+    protected abstract suspend fun setOrphanedChunk(serverId: String, ids: List<String>, orphaned: Boolean)
+
+    // Chunked: API 28-29 SQLite allows at most 999 bound variables.
+    @Transaction
+    open suspend fun deleteByIds(serverId: String, ids: List<String>) =
+        ids.chunked(CHUNK).forEach { deleteChunk(serverId, it) }
+
+    @Transaction
+    open suspend fun setOrphaned(serverId: String, ids: List<String>, orphaned: Boolean) =
+        ids.chunked(CHUNK).forEach { setOrphanedChunk(serverId, it, orphaned) }
 
     @Query(
         """SELECT i.* FROM items i JOIN progress p ON p.serverId = i.serverId AND p.itemId = i.id
@@ -97,4 +141,8 @@ abstract class ItemDao {
                 ) { chapters, files, progress, download -> ItemWithDetails(item, chapters, files, progress, download) }
             }
         }
+
+    private companion object {
+        const val CHUNK = 500
+    }
 }
