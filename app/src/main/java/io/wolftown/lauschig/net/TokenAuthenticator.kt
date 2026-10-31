@@ -1,0 +1,57 @@
+package io.wolftown.lauschig.net
+
+import io.wolftown.lauschig.absapi.AbsClientFactory
+import io.wolftown.lauschig.absapi.auth.AuthApi
+import io.wolftown.lauschig.account.AccountStore
+import kotlinx.coroutines.runBlocking
+import okhttp3.Authenticator
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
+import retrofit2.HttpException
+
+/**
+ * On 401 refreshes the tokens once and retries the request.
+ *
+ * - Refresh rejected (401/403): [AccountStore.markNeedsReauth]; account and data stay untouched.
+ * - Network error during refresh: nothing is flagged, the 401 just propagates.
+ * - Concurrent 401s are serialized; later ones reuse the token the first one obtained.
+ *
+ * [refreshClient] must NOT contain this authenticator (avoids recursion).
+ */
+class TokenAuthenticator(
+    private val store: AccountStore,
+    refreshClient: OkHttpClient,
+    baseUrl: HttpUrl,
+) : Authenticator {
+    private val authApi = AbsClientFactory.retrofit(baseUrl, refreshClient).create(AuthApi::class.java)
+    private val lock = Any()
+
+    override fun authenticate(route: Route?, response: Response): Request? {
+        if (response.priorResponse != null) return null // already retried once
+        val sentToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+        return synchronized(lock) { runBlocking { refreshAndRetry(response.request, sentToken) } }
+    }
+
+    private suspend fun refreshAndRetry(request: Request, sentToken: String?): Request? {
+        val current = store.accessToken()
+        if (current != null && current != sentToken) return request.withToken(current) // someone else refreshed
+        val refresh = store.refreshToken() ?: return null
+        val user = try {
+            authApi.refresh(refresh).user
+        } catch (e: HttpException) {
+            if (e.code() == 401 || e.code() == 403) store.markNeedsReauth()
+            return null
+        } catch (_: Exception) {
+            return null
+        }
+        val access = user.accessToken ?: return null
+        store.updateTokens(access, user.refreshToken ?: refresh)
+        return request.withToken(access)
+    }
+
+    private fun Request.withToken(token: String) =
+        newBuilder().header("Authorization", "Bearer $token").build()
+}

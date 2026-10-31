@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trust system and user-installed CAs. Cleartext HTTP is permitted at the platform level because the
+  local server address is usually http://; the app itself only talks cleartext to addresses the user
+  explicitly confirmed during setup (Account.allowCleartext).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
