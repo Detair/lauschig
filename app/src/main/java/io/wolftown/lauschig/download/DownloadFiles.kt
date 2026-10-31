@@ -7,19 +7,40 @@ import java.io.File
 import javax.inject.Inject
 
 /** On-disk layout: `<root>/<serverId>/<itemId>/<index>.<ext>` (+ `.part` while downloading) and `cover.jpg`. */
-class DownloadFiles(private val root: File, private val audioFiles: AudioFileDao) {
+class DownloadFiles(
+    private val root: File,
+    private val audioFiles: AudioFileDao,
+    /** Seam for tests: free bytes on the volume holding the given directory. */
+    private val usableSpace: (File) -> Long = { dir -> generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() }?.usableSpace ?: 0L },
+) {
     @Inject constructor(@ApplicationContext context: Context, audioFiles: AudioFileDao) :
         this(File(context.filesDir, "downloads"), audioFiles)
 
-    fun itemDir(serverId: String, itemId: String) = File(File(root, serverId), itemId)
+    /** Server-controlled ids are validated; anything else is refused (never retried). */
+    fun itemDir(serverId: String, itemId: String): File {
+        if (!SERVER_ID.matches(serverId) || !ITEM_ID.matches(itemId)) throw FatalDownloadException("invalid_path")
+        return guard(File(File(root, serverId), itemId))
+    }
 
-    fun audioFile(serverId: String, itemId: String, index: Int, ext: String) =
-        File(itemDir(serverId, itemId), if (ext.isBlank()) "$index" else "$index.$ext")
+    /** The extension is only used if it is 1-8 alphanumerics; otherwise the file has none. */
+    fun audioFile(serverId: String, itemId: String, index: Int, ext: String): File =
+        guard(File(itemDir(serverId, itemId), if (EXT.matches(ext)) "$index.$ext" else "$index"))
 
-    fun coverFile(serverId: String, itemId: String) = File(itemDir(serverId, itemId), COVER)
+    fun coverFile(serverId: String, itemId: String) = guard(File(itemDir(serverId, itemId), COVER))
 
+    fun usableSpace(serverId: String, itemId: String): Long = usableSpace(itemDir(serverId, itemId))
+
+    /** Defense in depth: every target must resolve (symlinks included) to below the downloads root. */
+    private fun guard(f: File): File {
+        val canonicalRoot = root.canonicalFile
+        if (!f.canonicalFile.startsWith(canonicalRoot) || f.canonicalFile == canonicalRoot) throw FatalDownloadException("invalid_path")
+        return f
+    }
+
+    /** Never deletes outside the root; invalid ids have no directory, so there is nothing to delete. */
     fun deleteItem(serverId: String, itemId: String) {
-        itemDir(serverId, itemId).deleteRecursively()
+        val dir = try { itemDir(serverId, itemId) } catch (e: FatalDownloadException) { return }
+        dir.deleteRecursively()
     }
 
     /**
@@ -32,11 +53,17 @@ class DownloadFiles(private val root: File, private val audioFiles: AudioFileDao
         val keep = audioFiles.forItem(serverId, itemId).mapNotNull { it.localPath }.map { File(it).canonicalPath }.toSet()
         for (f in children) {
             if (f.name == COVER) continue
-            if (f.canonicalPath !in keep) f.deleteRecursively()
+            if (f.canonicalPath !in keep) guard(f).deleteRecursively()
         }
     }
 
     companion object {
         const val COVER = "cover.jpg"
+        private val SERVER_ID = Regex("[0-9a-f]{16}")
+        private val ITEM_ID = Regex("[A-Za-z0-9_-]{1,128}")
+        private val EXT = Regex("[A-Za-z0-9]{1,8}")
     }
 }
+
+/** Unrecoverable download error; [code] is a short machine code stored in `DownloadEntity.error`. */
+class FatalDownloadException(val code: String) : Exception(code)

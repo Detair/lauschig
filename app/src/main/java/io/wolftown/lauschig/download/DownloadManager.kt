@@ -19,7 +19,6 @@ import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -34,8 +33,8 @@ interface DownloadManager {
     /** Cancels the work. `deleteFiles=false` keeps the `.part` data and marks the item PAUSED; `true` removes files and rows. */
     suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean)
 
-    /** Emits only while a download row exists (nothing is emitted for items that were never queued or were removed). */
-    fun observe(serverId: String, itemId: String): Flow<DownloadProgress>
+    /** `null` = no download row (never queued, or removed). */
+    fun observe(serverId: String, itemId: String): Flow<DownloadProgress?>
 }
 
 @Singleton
@@ -74,9 +73,9 @@ class DefaultDownloadManager @Inject constructor(
         }
     }
 
-    override fun observe(serverId: String, itemId: String): Flow<DownloadProgress> =
-        combine(downloads.observe(serverId, itemId).filterNotNull(), audioFiles.observeBytes(serverId, itemId)) { d, b ->
-            DownloadProgress(d.state, b.done, b.total)
+    override fun observe(serverId: String, itemId: String): Flow<DownloadProgress?> =
+        combine(downloads.observe(serverId, itemId), audioFiles.observeBytes(serverId, itemId)) { d, b ->
+            d?.let { DownloadProgress(it.state, b.done, b.total) }
         }
 
     private fun workName(serverId: String, itemId: String) = "download-$serverId-$itemId"

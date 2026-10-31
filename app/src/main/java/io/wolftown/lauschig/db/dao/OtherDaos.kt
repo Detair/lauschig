@@ -103,7 +103,8 @@ abstract class AudioFileDao {
     /** Records partial progress of an in-flight download; never touches `localPath` (only [setLocal] marks completion). */
     @Query(
         "UPDATE audio_files SET completedBytes = :completedBytes " +
-            "WHERE serverId = :serverId AND itemId = :itemId AND `index` = :index AND localPath IS NULL",
+            "WHERE serverId = :serverId AND itemId = :itemId AND `index` = :index AND localPath IS NULL " +
+            "AND EXISTS (SELECT 1 FROM downloads d WHERE d.serverId = :serverId AND d.itemId = :itemId)",
     )
     abstract suspend fun setProgress(serverId: String, itemId: String, index: Int, completedBytes: Long)
 

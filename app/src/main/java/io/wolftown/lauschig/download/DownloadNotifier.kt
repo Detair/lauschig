@@ -28,7 +28,7 @@ class DownloadNotifier @Inject constructor(@ApplicationContext private val conte
                 else setProgress(0, 0, true)
             }
             .build()
-        return ForegroundInfo(itemId.hashCode(), n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        return ForegroundInfo(((itemId.hashCode() and 0x7fffffff) % 1_000_000) + 10_000, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     companion object {

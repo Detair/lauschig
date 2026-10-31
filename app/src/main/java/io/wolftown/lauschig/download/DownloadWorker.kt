@@ -66,6 +66,7 @@ class DownloadWorker @AssistedInject constructor(
     private lateinit var itemId: String
     private var title = ""
     private var lastNotify = 0L
+    private var lastPersist = 0L
 
     override suspend fun doWork(): Result {
         serverId = inputData.getString(KEY_SERVER) ?: return Result.failure()
@@ -82,6 +83,7 @@ class DownloadWorker @AssistedInject constructor(
         downloads.setState(serverId, itemId, DownloadState.RUNNING, null)
         title = items.get(serverId, itemId)?.title.orEmpty()
         try {
+            files.itemDir(serverId, itemId) // validates the server-controlled ids before anything touches the disk
             var list = audioFiles.forItem(serverId, itemId)
             if (list.isEmpty()) {
                 librarySync.loadDetails(serverId, itemId)
@@ -92,26 +94,46 @@ class DownloadWorker @AssistedInject constructor(
             var before = 0L
             notify(0, total, force = true)
             for (f in list) {
-                downloadFile(client, online.baseUrl, f) { done -> notify(before + done, total, force = false) }
+                downloadFile(client, online.baseUrl, f) { done -> tick(f.index, done, before + done, total) }
                 before += f.sizeBytes
             }
-            downloadCover(client, online.baseUrl)
+            // Best effort: a missing cover must not fail the book; the next download run retries it.
+            try {
+                downloadCover(client, online.baseUrl)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+            }
             files.cleanupOrphans(serverId, itemId)
-            downloads.setState(serverId, itemId, DownloadState.COMPLETE, null)
+            downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.COMPLETE, null)
             return Result.success()
         } catch (e: CancellationException) {
             // Stopped by WorkManager (constraints/system) -> back to QUEUED; a user pause/removal already changed the row.
             withContext(NonCancellable) { downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.QUEUED, null) }
             throw e
+        } catch (e: FatalDownloadException) {
+            return fail(e.code)
         } catch (e: Exception) {
-            val msg = e.message ?: e.javaClass.simpleName
-            return if (runAttemptCount + 1 >= MAX_ATTEMPTS) {
-                downloads.setState(serverId, itemId, DownloadState.FAILED, msg)
-                Result.failure()
-            } else {
-                back(msg)
-            }
+            val msg = if (isNoSpace(e)) return fail("storage_full") else e.message ?: e.javaClass.simpleName
+            return if (runAttemptCount + 1 >= MAX_ATTEMPTS) fail(msg) else back(msg)
         }
+    }
+
+    private suspend fun fail(code: String): Result {
+        downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.FAILED, code)
+        return Result.failure()
+    }
+
+    private fun isNoSpace(e: Throwable): Boolean =
+        generateSequence(e) { it.cause }.any { it.message?.contains("ENOSPC") == true || it.message?.contains("No space left", true) == true }
+
+    /** Throttled (~1 s): persists the byte count of the file in flight and updates the notification. */
+    private suspend fun tick(index: Int, fileDone: Long, done: Long, total: Long) {
+        val now = System.currentTimeMillis()
+        if (now - lastPersist < NOTIFY_INTERVAL_MS) return
+        lastPersist = now
+        audioFiles.setProgress(serverId, itemId, index, fileDone)
+        notify(done, total, force = true)
     }
 
     private suspend fun back(message: String): Result {
@@ -151,9 +173,17 @@ class DownloadWorker @AssistedInject constructor(
             var total = existing
             try {
                 if (!(known && existing == f.sizeBytes)) {
-                    val req = Request.Builder().url(audioFileUrl(base, itemId, f.ino))
-                        .apply { if (existing > 0) header("Range", "bytes=$existing-") }.build()
-                    client.newCall(req).execute().use { resp -> total = receive(resp, part, existing, onProgress) }
+                    if (known && files.usableSpace(serverId, itemId) < f.sizeBytes - existing) throw FatalDownloadException("storage_full")
+                    var start = existing
+                    var result: Long? = null
+                    for (attempt in 0..1) {
+                        val req = Request.Builder().url(audioFileUrl(base, itemId, f.ino))
+                            .apply { if (start > 0) header("Range", "bytes=$start-") }.build()
+                        result = client.newCall(req).execute().use { resp -> receive(resp, part, start, onProgress) }
+                        if (result != null) break
+                        start = 0 // range refused or inconsistent: restart the file within this attempt
+                    }
+                    total = result ?: throw IOException("Could not restart file ${f.index}")
                 }
                 if (known && total != f.sizeBytes) {
                     if (total > f.sizeBytes) part.delete()
@@ -170,17 +200,17 @@ class DownloadWorker @AssistedInject constructor(
         }
 
     /** Streams the response into [part]; returns the resulting total length of the part file. */
-    private suspend fun receive(resp: Response, part: File, existing: Long, onProgress: suspend (Long) -> Unit): Long {
+    private suspend fun receive(resp: Response, part: File, existing: Long, onProgress: suspend (Long) -> Unit): Long? {
         val append: Boolean
         when (resp.code) {
             206 -> {
                 val start = resp.header("Content-Range")?.let { RANGE_START.find(it)?.groupValues?.get(1)?.toLongOrNull() }
-                if (start != existing) { part.delete(); throw IOException("Unexpected Content-Range start $start, wanted $existing") }
+                if (start != existing) { part.delete(); return null }
                 append = true
             }
             200 -> append = false // no range support (or fresh download): restart the file
-            416 -> { part.delete(); throw IOException("Range not satisfiable, restarting file") }
-            else -> throw IOException("HTTP ${resp.code}")
+            416 -> { part.delete(); return null }
+            else -> throw httpError(resp.code)
         }
         val body = resp.body
         var written = if (append) existing else 0L
@@ -197,6 +227,8 @@ class DownloadWorker @AssistedInject constructor(
                     onProgress(written)
                 }
             }
+            out.flush()
+            out.fd.sync()
         }
         return written
     }
@@ -208,11 +240,15 @@ class DownloadWorker @AssistedInject constructor(
         val part = File(cover.path + ".part")
         client.newCall(Request.Builder().url(coverUrl(base, itemId)).build()).execute().use { resp ->
             if (resp.code == 404) return@withContext // item without a cover
-            if (!resp.isSuccessful) throw IOException("Cover HTTP ${resp.code}")
+            if (!resp.isSuccessful) throw httpError(resp.code)
             FileOutputStream(part).use { out -> resp.body.byteStream().use { it.copyTo(out) } }
         }
         Files.move(part.toPath(), cover.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
+
+    /** 4xx (except 408/429) will not get better by retrying; 5xx and the rest are transient. */
+    private fun httpError(code: Int): Exception =
+        if (code in 400..499 && code != 408 && code != 429) FatalDownloadException("http_$code") else IOException("http_$code")
 
     companion object {
         const val KEY_SERVER = "serverId"

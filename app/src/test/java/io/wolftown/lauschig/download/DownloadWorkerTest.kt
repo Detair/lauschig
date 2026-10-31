@@ -17,6 +17,10 @@ import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.OnlineGate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -49,6 +53,7 @@ class DownloadWorkerTest {
     private lateinit var server: MockWebServer
     private lateinit var root: File
     private lateinit var files: DownloadFiles
+    private val evil = "../../evil"
     private val a0 = ByteArray(100_000) { (it % 251).toByte() }
     private val a1 = ByteArray(40_000) { (it % 13).toByte() }
     private val cover = ByteArray(500) { 7 }
@@ -102,7 +107,7 @@ class DownloadWorkerTest {
             .setBody(Buffer().write(data, from, data.size - from))
     }
 
-    private suspend fun run(attempt: Int = 0, gate: OnlineGate = OnlineGate { true }, api: Boolean = false): ListenableWorker.Result {
+    private suspend fun run(attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false): ListenableWorker.Result {
         val base = server.url("/")
         val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
         val sync = LibrarySync(flowOf(null), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() })
@@ -111,7 +116,7 @@ class DownloadWorkerTest {
                 c, p, env, gate, sync, db.itemDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
             )
         }
-        return TestListenableWorkerBuilder<DownloadWorker>(ctx, workDataOf(DownloadWorker.KEY_SERVER to s, DownloadWorker.KEY_ITEM to item))
+        return TestListenableWorkerBuilder<DownloadWorker>(ctx, workDataOf(DownloadWorker.KEY_SERVER to s, DownloadWorker.KEY_ITEM to itemId))
             .setWorkerFactory(factory).setRunAttemptCount(attempt).build().doWork()
     }
 
@@ -224,5 +229,108 @@ class DownloadWorkerTest {
         val mgr = DefaultDownloadManager(ctx, db.downloadDao(), db.audioFileDao(), files, DownloadSettings(ctx))
         val p = mgr.observe(s, item).first()
         assertEquals(DownloadProgress(DownloadState.COMPLETE, (a0.size + a1.size).toLong(), (a0.size + a1.size).toLong()), p)
+    }
+
+    @Test fun maliciousExt_isSanitized() = runBlocking {
+        db.audioFileDao().replaceFromServer(
+            s, item,
+            listOf(AudioFileEntity(s, item, 0, "ino0", 10.0, a0.size.toLong(), "../../evil")),
+        )
+        dispatch()
+        assertEquals(ListenableWorker.Result.success(), run())
+        assertTrue(File(itemDir(), "0").readBytes().contentEquals(a0))
+        assertFalse(File(root.parentFile, "evil").exists())
+        assertTrue(db.audioFileDao().forItem(s, item)[0].localPath!!.startsWith(root.canonicalPath))
+    }
+
+    @Test fun maliciousItemId_isRejected_andNothingWrittenOutsideRoot() = runBlocking {
+        db.downloadDao().upsert(DownloadEntity(s, evil, DownloadState.QUEUED, 1))
+        dispatch()
+        assertEquals(ListenableWorker.Result.failure(), run(itemId = evil))
+        val d = db.downloadDao().get(s, evil)!!
+        assertEquals(DownloadState.FAILED, d.state)
+        assertEquals("invalid_path", d.error)
+        assertFalse(File(root.parentFile, "evil").exists())
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test fun deleteItem_neverDeletesOutsideRoot() {
+        val victim = File(root.parentFile, "victim").also { it.mkdirs() }
+        val keep = File(victim, "keep.txt").also { it.writeText("x") }
+        files.deleteItem(s, "../../victim")
+        files.deleteItem("../..", "x")
+        assertTrue(keep.exists())
+        victim.deleteRecursively()
+    }
+
+    @Test fun storageFull_failsFast() = runBlocking {
+        files = DownloadFiles(root, db.audioFileDao(), usableSpace = { 0L })
+        dispatch()
+        assertEquals(ListenableWorker.Result.failure(), run())
+        val d = db.downloadDao().get(s, item)!!
+        assertEquals(DownloadState.FAILED, d.state)
+        assertEquals("storage_full", d.error)
+    }
+
+    @Test fun http404_failsFast() = runBlocking {
+        dispatch { _, _ -> MockResponse().setResponseCode(404) }
+        assertEquals(ListenableWorker.Result.failure(), run())
+        val d = db.downloadDao().get(s, item)!!
+        assertEquals(DownloadState.FAILED, d.state)
+        assertEquals("http_404", d.error)
+    }
+
+    @Test fun http503_retries() = runBlocking {
+        dispatch { _, _ -> MockResponse().setResponseCode(503) }
+        assertEquals(ListenableWorker.Result.retry(), run())
+        val d = db.downloadDao().get(s, item)!!
+        assertEquals(DownloadState.QUEUED, d.state)
+        assertEquals("http_503", d.error)
+    }
+
+    @Test fun coverFailure_stillCompletes() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val p = request.path.orEmpty()
+                return when {
+                    p.endsWith("/cover") -> MockResponse().setResponseCode(500)
+                    p.contains("/file/ino0/") -> ranged(a0, request)
+                    p.contains("/file/ino1/") -> ranged(a1, request)
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        assertEquals(ListenableWorker.Result.success(), run())
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(s, item)!!.state)
+        assertFalse(File(itemDir(), "cover.jpg").exists())
+    }
+
+    @Test fun progress_isPersistedWhileDownloading() = runBlocking {
+        dispatch { i, r -> ranged(if (i == 0) a0 else a1, r).let { if (i == 0) it.throttleBody(20_000, 250, java.util.concurrent.TimeUnit.MILLISECONDS) else it } }
+        val job = launch(Dispatchers.IO) { run() }
+        val mid = withTimeout(10_000) {
+            var v: Long
+            do {
+                delay(100)
+                v = db.audioFileDao().forItem(s, item)[0].completedBytes
+            } while (v == 0L)
+            v
+        }
+        assertTrue(mid in 1 until a0.size)
+        assertNull(db.audioFileDao().forItem(s, item)[0].localPath)
+        job.join()
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(s, item)!!.state)
+    }
+
+    @Test fun observe_neverQueued_emitsNull() = runBlocking {
+        val mgr = DefaultDownloadManager(ctx, db.downloadDao(), db.audioFileDao(), files, DownloadSettings(ctx))
+        assertNull(mgr.observe(s, "other").first())
+    }
+
+    @Test fun observe_afterCancelDelete_emitsNull() = runBlocking {
+        WorkManagerTestInitHelper.initializeTestWorkManager(ctx)
+        val mgr = DefaultDownloadManager(ctx, db.downloadDao(), db.audioFileDao(), files, DownloadSettings(ctx))
+        mgr.cancel(s, item, deleteFiles = true)
+        assertNull(mgr.observe(s, item).first())
     }
 }
