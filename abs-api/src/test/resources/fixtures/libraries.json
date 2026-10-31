@@ -1,0 +1,32 @@
+{
+  "libraries": [
+    {
+      "id": "lib_00000000-0000-4000-8000-0000000000d1",
+      "name": "Hoerbuecher",
+      "folders": [{"id": "fol_00000000-0000-4000-8000-0000000000e1", "fullPath": "/audiobooks", "libraryId": "lib_00000000-0000-4000-8000-0000000000d1", "addedAt": 1700000000000}],
+      "displayOrder": 1,
+      "icon": "audiobookshelf",
+      "mediaType": "book",
+      "provider": "audible",
+      "settings": {"coverAspectRatio": 1, "disableWatcher": false, "skipMatchingMediaWithAsin": false, "skipMatchingMediaWithIsbn": false, "autoScanCronExpression": null, "epubsAllowScriptedContent": false, "hideSingleBookSeries": false, "onlyShowLaterBooksInContinueSeries": false, "metadataPrecedence": ["folderStructure", "audioMetatags", "nfoFile", "txtFiles", "opfFile", "absMetadata"], "markAsFinishedTimeRemaining": 10, "markAsFinishedPercentComplete": null},
+      "lastScan": 1761800000000,
+      "lastScanVersion": "2.37.1",
+      "createdAt": 1700000000000,
+      "lastUpdate": 1761800000000
+    },
+    {
+      "id": "lib_00000000-0000-4000-8000-0000000000d2",
+      "name": "Podcasts",
+      "folders": [],
+      "displayOrder": 2,
+      "icon": "podcast",
+      "mediaType": "podcast",
+      "provider": "itunes",
+      "settings": {"coverAspectRatio": 1},
+      "lastScan": null,
+      "lastScanVersion": null,
+      "createdAt": 1700000000001,
+      "lastUpdate": 1761800000001
+    }
+  ]
+}
