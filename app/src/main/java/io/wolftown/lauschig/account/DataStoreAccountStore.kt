@@ -1,7 +1,9 @@
 package io.wolftown.lauschig.account
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,7 +19,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.accountDataStore by preferencesDataStore(name = "account")
+private val Context.accountDataStore by preferencesDataStore(
+    name = "account",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /** Account metadata as JSON, tokens encrypted with [TokenCipher], all in a Preferences DataStore. */
 @Singleton

@@ -76,6 +76,18 @@ class AppScaffoldTest {
     }
 
     @Test
+    fun setupRoute_showsNoOfflineBanner_afterDelay() {
+        rule.mainClock.autoAdvance = false
+        rule.setContent {
+            LauschigTheme {
+                AppScaffold(ConnectionState.Offline, miniPlayer = {}, showBottomBar = false, showOfflineBanner = false) { Text("content") }
+            }
+        }
+        rule.mainClock.advanceTimeBy(OFFLINE_BANNER_DELAY_MS + 100)
+        rule.onAllNodesWithTag("offlineBanner").assertCountEquals(0)
+    }
+
+    @Test
     fun briefInitialOffline_thenOnline_neverShowsBanner() {
         var state by mutableStateOf<ConnectionState>(ConnectionState.Offline)
         rule.mainClock.autoAdvance = false

@@ -28,6 +28,7 @@ fun AppRoot(startDestination: Any, miniPlayer: @Composable () -> Unit, viewModel
             connection = connection,
             miniPlayer = if (onSetup) ({}) else miniPlayer,
             showBottomBar = !onSetup,
+            showOfflineBanner = !onSetup,
             selectedTab = navController.currentTab(),
             onTabSelected = navController::navigateToTab,
             snackbarHostState = snackbarHost,

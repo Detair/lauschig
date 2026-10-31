@@ -27,8 +27,8 @@ class ApiProvider(
     private val store: AccountStore,
     scope: CoroutineScope,
 ) {
-    // Every client (also the refresh client) refuses http:// to servers the user has not confirmed.
-    private val okHttp: OkHttpClient = okHttp.newBuilder().addInterceptor(CleartextGuardInterceptor(store)).build()
+    // Network interceptor: sees every hop incl. redirects. Every client (also the refresh client) refuses http:// to servers the user has not confirmed.
+    private val okHttp: OkHttpClient = okHttp.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor(store)).build()
 
     private val cache = HashMap<HttpUrl, Retrofit>()
     private val clients = HashMap<HttpUrl, OkHttpClient>()

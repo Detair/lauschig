@@ -21,7 +21,7 @@ class CleartextGuardTest {
     @Before fun setUp() { server = MockWebServer().apply { enqueue(MockResponse().setBody("ok")); start() } }
     @After fun tearDown() { server.shutdown() }
 
-    private fun client() = OkHttpClient.Builder().addInterceptor(CleartextGuardInterceptor(store)).build()
+    private fun client() = OkHttpClient.Builder().addNetworkInterceptor(CleartextGuardInterceptor(store)).build()
     private fun account(allow: Set<String>) = Account(
         "aaaaaaaaaaaaaaaa", "u", "n", false, ServerAddresses(server.url("/"), null), allow,
     )
@@ -50,5 +50,22 @@ class CleartextGuardTest {
             assertEquals(200, it.code)
         }
         assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun httpsToHttpRedirect_toUnconfirmedHost_isRefused() {
+        // A confirmed server redirects to another (unconfirmed) cleartext origin; the hop must be refused.
+        val target = MockWebServer().apply { enqueue(MockResponse().setBody("secret")); start() }
+        try {
+            server.shutdown()
+            server = MockWebServer().apply {
+                enqueue(MockResponse().setResponseCode(302).addHeader("Location", target.url("/x").toString()))
+                start()
+            }
+            store.acc.value = account(setOf(server.url("/").cleartextKey()))
+            val e = runCatching { client().newCall(Request.Builder().url(server.url("/ping")).build()).execute() }.exceptionOrNull()
+            assertTrue("expected IOException, got $e", e is IOException)
+            assertEquals(0, target.requestCount)
+        } finally { target.shutdown() }
     }
 }

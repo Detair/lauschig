@@ -63,6 +63,7 @@ fun AppScaffold(
     modifier: Modifier = Modifier,
     selectedTab: TopLevelTab? = TopLevelTab.Start,
     showBottomBar: Boolean = true,
+    showOfflineBanner: Boolean = true,
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable (PaddingValues) -> Unit,
@@ -77,7 +78,7 @@ fun AppScaffold(
         }
     }
     // Derived, so going online hides the banner in the same composition (no effect round trip).
-    val showBanner = isOffline && delayElapsed
+    val showBanner = showOfflineBanner && isOffline && delayElapsed
 
     Scaffold(
         modifier = modifier,

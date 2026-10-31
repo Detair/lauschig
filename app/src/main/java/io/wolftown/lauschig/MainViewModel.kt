@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.Start
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -23,6 +24,16 @@ class MainViewModel @Inject constructor(accounts: AccountStore) : ViewModel() {
     val startDestination: StateFlow<Any?> = _startDestination
 
     init {
-        viewModelScope.launch { _startDestination.value = if (accounts.account.first() == null) Setup else Start }
+        viewModelScope.launch {
+            // An unreadable store must never crash the start: treat it as "no account".
+            val account = try {
+                accounts.account.first()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            _startDestination.value = if (account == null) Setup else Start
+        }
     }
 }
