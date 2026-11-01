@@ -1,8 +1,7 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
@@ -59,7 +58,7 @@ class StartViewModelTest {
     @get:Rule val tmp = TemporaryFolder()
     private lateinit var db: LauschigDatabase
     private val sid = "aaaaaaaaaaaaaaaa"
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -69,7 +68,7 @@ class StartViewModelTest {
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -85,7 +84,7 @@ class StartViewModelTest {
                 )
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", StartViewModel::class]
+        return viewModels.get(factory, StartViewModel::class)
     }
 
     private fun item(id: String, series: String? = null, key: Double? = null, added: Long = 0, lib: String = "lib1") =

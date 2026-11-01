@@ -1,9 +1,8 @@
 package io.wolftown.lauschig.ui.discover
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
@@ -51,7 +50,7 @@ class DiscoverViewModelTest {
     private lateinit var db: LauschigDatabase
     private val sid = "aaaaaaaaaaaaaaaa"
     private val scope = CoroutineScope(Dispatchers.Unconfined)
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -61,7 +60,7 @@ class DiscoverViewModelTest {
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -83,7 +82,7 @@ class DiscoverViewModelTest {
                 )
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", DiscoverViewModel::class]
+        return viewModels.get(factory, DiscoverViewModel::class)
     }
 
     private fun item(

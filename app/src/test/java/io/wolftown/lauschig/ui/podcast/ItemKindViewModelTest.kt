@@ -1,8 +1,8 @@
 package io.wolftown.lauschig.ui.podcast
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.account.Account
@@ -45,8 +45,12 @@ class ItemKindViewModelTest {
             .allowMainThreadQueries().build()
     }
 
+    /** Owns every VM of a test so their Room observers are finished before the database closes. */
+    private val viewModels = TestViewModels()
+
     @After fun tearDown() {
-        db.close()
+        viewModels.clear()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -64,7 +68,7 @@ class ItemKindViewModelTest {
     private suspend fun kindOf(id: String): Boolean? {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
-        val vm = ItemKindViewModel(SavedStateHandle(mapOf("itemId" to id)), store, db.itemDao(), db.libraryDao())
+        val vm = viewModels.own(ItemKindViewModel(SavedStateHandle(mapOf("itemId" to id)), store, db.itemDao(), db.libraryDao()))
         // Read through the same flow the screen collects.
         return withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { vm.isPodcast.first { it != null } } }
     }

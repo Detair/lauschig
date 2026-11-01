@@ -7,7 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.resetMain
@@ -285,7 +284,7 @@ class RmabRepositoryTest {
         }
     }
 
-    private var vmRef: RmabViewModel? = null
+    private val viewModels = io.wolftown.lauschig.TestViewModels()
 
     @Test fun viewModel_keepsOptimisticWaiting_untilServerReportsAsin() = runBlocking {
         connected()
@@ -294,8 +293,7 @@ class RmabRepositoryTest {
             handler = { r ->
                 if (r.method == "POST") json(201, """{"success":true}""") else json(200, """{"requests":[{"id":"9","status":"downloading","audiobook":{"audibleAsin":"OTHER"}}]}""")
             }
-            val vm = RmabViewModel(repo)
-            vmRef = vm
+            val vm = viewModels.own(RmabViewModel(repo))
             val job = scope.launch { vm.state.collect { } }
             withTimeout(5_000) { while (!vm.state.value.connected) delay(20) }
             vm.request(volume)
@@ -306,7 +304,7 @@ class RmabRepositoryTest {
             assertEquals(false, vm.state.value.outcomes[volume.asin]!!.isError)
             job.cancel()
         } finally {
-            vmRef?.viewModelScope?.cancel()
+            viewModels.clear()
             kotlinx.coroutines.Dispatchers.resetMain()
         }
     }

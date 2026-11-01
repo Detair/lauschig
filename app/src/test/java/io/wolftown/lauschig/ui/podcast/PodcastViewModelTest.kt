@@ -1,8 +1,7 @@
 package io.wolftown.lauschig.ui.podcast
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
@@ -66,7 +65,7 @@ class PodcastViewModelTest {
     private val player = PlayRecorder()
     private val connection = MutableStateFlow<ConnectionState>(ConnectionState.Online("https://abs.example.org".toHttpUrl(), ConnectionState.Via.PUBLIC))
     private val loads = java.util.concurrent.CopyOnWriteArrayList<String>()
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -76,7 +75,7 @@ class PodcastViewModelTest {
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -89,7 +88,7 @@ class PodcastViewModelTest {
                 PodcastViewModel("pod", store, db.itemDao(), db.episodeDao(), db.progressDao(), db.downloadDao(), player, connection, { s, i -> loads += "$s/$i" }, covers)
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", PodcastViewModel::class]
+        return viewModels.get(factory, PodcastViewModel::class)
     }
 
     private suspend fun seed(loaded: Boolean = true, numEpisodes: Int = 3) {

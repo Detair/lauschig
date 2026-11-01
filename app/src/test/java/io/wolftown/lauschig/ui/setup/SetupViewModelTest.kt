@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.setup
 
+import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.absapi.auth.AbsUser
 import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.AuthFormData
@@ -79,9 +80,10 @@ class SetupViewModelTest {
     private val dispatcher = UnconfinedTestDispatcher()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
-    @After fun tearDown() { Dispatchers.resetMain() }
+    private val viewModels = TestViewModels()
+    @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
-    private fun vm() = SetupViewModel(store, login, net, sync, oidc, bus)
+    private fun vm() = viewModels.own(SetupViewModel(store, login, net, sync, oidc, bus))
 
     private fun SetupViewModel.fill(local: String = "", public: String = "", user: String = "fabian", pw: String = "secret") {
         onLocalChanged(local); onPublicChanged(public); onUsernameChanged(user); onPasswordChanged(pw)
@@ -324,7 +326,7 @@ class SetupViewModelTest {
         first.loginWithSso()
         oidc.finishResult = { OidcResult("https://abs.example.org/".toHttpUrl(), ok(), oidc.lastFlow) }
         val freshBus = OidcCallbackBus() // the first VM is gone with its process
-        val second = SetupViewModel(store, login, net, sync, oidc, freshBus)
+        val second = viewModels.own(SetupViewModel(store, login, net, sync, oidc, freshBus))
         freshBus.post(OidcCallback("c", "s", null))
         assertTrue(second.state.value.done)
         assertFalse(first.state.value.done)

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -38,9 +39,10 @@ class PlayerViewModelTest {
     )
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
-    @After fun tearDown() = Dispatchers.resetMain()
+    private val viewModels = TestViewModels()
+    @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
-    private fun vm() = PlayerViewModel(player) { flowOf(chapters.map { ChapterInfo(it.title, it.index * 100.0, it.index * 100.0 + 100.0) }) }
+    private fun vm() = viewModels.own(PlayerViewModel(player) { flowOf(chapters.map { ChapterInfo(it.title, it.index * 100.0, it.index * 100.0 + 100.0) }) })
 
     private fun playing(position: Double, chapter: Int = 1) = PlayerUiState(
         itemId = "b1", title = "Book", positionSec = position, durationSec = 300.0,
