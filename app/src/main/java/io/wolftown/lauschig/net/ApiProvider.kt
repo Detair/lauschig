@@ -20,7 +20,7 @@ import retrofit2.Retrofit
 /**
  * Exposes API interfaces only while online (`null` when [ConnectionState.Offline]).
  * [okHttp] is the base client; per base URL it is extended with [AuthInterceptor] and a
- * [TokenAuthenticator] whose refresh call uses [okHttp] itself (no authenticator, no recursion).
+ * [TokenAuthenticator] whose refresh call uses [okHttp] itself (no authenticator, no recursion, no redirects).
  */
 class ApiProvider(
     connection: Flow<ConnectionState>,

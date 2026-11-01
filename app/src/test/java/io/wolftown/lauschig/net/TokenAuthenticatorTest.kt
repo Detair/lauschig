@@ -155,4 +155,18 @@ class TokenAuthenticatorTest {
         assertEquals(401, get().code)
         assertFalse(store.reauth.value)
     }
+
+    @Test
+    fun refreshRedirect_isNotFollowed_refreshTokenStaysOnServer() {
+        MockWebServer().use { other ->
+            other.enqueue(MockResponse().setBody(refreshBody))
+            serve { MockResponse().setResponseCode(307).setHeader("Location", other.url("/auth/refresh")) }
+            val r = get()
+            assertEquals(401, r.code)
+            r.close()
+            assertEquals("redirect target never sees the refresh token", 0, other.requestCount)
+            assertEquals("old-refresh", store.refresh)
+            assertFalse(store.reauth.value)
+        }
+    }
 }

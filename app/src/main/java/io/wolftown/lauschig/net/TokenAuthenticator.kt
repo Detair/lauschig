@@ -20,14 +20,18 @@ import retrofit2.HttpException
  * - Network error during refresh: nothing is flagged, the 401 just propagates.
  * - Concurrent 401s are serialized; later ones reuse the token the first one obtained.
  *
- * [refreshClient] must NOT contain this authenticator (avoids recursion).
+ * [refreshClient] must NOT contain this authenticator (avoids recursion). Redirects are never followed for the
+ * refresh call: a 3xx would replay the refresh token (307/308 keep the body) to wherever the Location points.
  */
 class TokenAuthenticator(
     private val store: AccountStore,
     refreshClient: OkHttpClient,
     private val baseUrl: HttpUrl,
 ) : Authenticator {
-    private val authApi = AbsClientFactory.retrofit(baseUrl, refreshClient).create(AuthApi::class.java)
+    private val authApi = AbsClientFactory.retrofit(
+        baseUrl,
+        refreshClient.newBuilder().followRedirects(false).followSslRedirects(false).build(),
+    ).create(AuthApi::class.java)
     private val lock = Any()
 
     override fun authenticate(route: Route?, response: Response): Request? {
