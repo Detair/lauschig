@@ -58,15 +58,16 @@ fun SearchRoute(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
+    val openItem: (String) -> Unit = { viewModel.submit(); onOpenItem(it) }
     val autoFocus = remember { viewModel.takeInitialFocus() }
     SearchScreen(
         state, viewModel::setQuery, viewModel::submit, viewModel::setKinds,
         onRecent = { viewModel.setQuery(it); viewModel.submit() },
-        onOpenItem = { viewModel.submit(); onOpenItem(it) },
+        onOpenItem = openItem,
         onOpenBrowse = { kind, name -> viewModel.submit(); onOpenBrowse(kind, name) },
         modifier = modifier, autoFocus = autoFocus, onPlay = actions::play, onMenu = { menuFor = it },
     )
-    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
+    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = openItem, viewModel = actions) }
 }
 
 /** Search field, kind filter, then either the recent terms (empty field) or the sections of the results. */
@@ -129,17 +130,17 @@ fun SearchScreen(
                     )
                 }
             } else {
-                facets("authors", R.string.search_authors, state.authors, BrowseKind.AUTHOR, onOpenBrowse)
-                facets("narrators", R.string.search_narrators, state.narrators, BrowseKind.NARRATOR, onOpenBrowse)
-                facets("series", R.string.search_series, state.series, BrowseKind.SERIES, onOpenBrowse)
-                facets("genres", R.string.search_genres, state.genres, BrowseKind.GENRE, onOpenBrowse)
-                facets("tags", R.string.search_tags, state.tags, BrowseKind.TAG, onOpenBrowse)
                 if (state.titles.isNotEmpty()) {
                     header("titlesHeader", R.string.search_titles)
                     items(state.titles, key = { it.key }, contentType = { "tile" }) { item ->
                         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
                     }
                 }
+                facets("authors", R.string.search_authors, state.authors, BrowseKind.AUTHOR, onOpenBrowse)
+                facets("narrators", R.string.search_narrators, state.narrators, BrowseKind.NARRATOR, onOpenBrowse)
+                facets("series", R.string.search_series, state.series, BrowseKind.SERIES, onOpenBrowse)
+                facets("genres", R.string.search_genres, state.genres, BrowseKind.GENRE, onOpenBrowse)
+                facets("tags", R.string.search_tags, state.tags, BrowseKind.TAG, onOpenBrowse)
             }
         }
     }

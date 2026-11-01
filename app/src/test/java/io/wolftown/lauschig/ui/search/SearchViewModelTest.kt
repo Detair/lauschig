@@ -14,6 +14,7 @@ import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryEntity
+import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.ui.common.CoverPathCache
@@ -22,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -63,7 +65,11 @@ class SearchViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private val catalog = Catalog()
+
     private fun store(name: String) = PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("$name${System.nanoTime()}.preferences_pb") }
+
+    private val searchCalls = mutableListOf<String>()
 
     private fun vm(recent: RecentSearches = RecentSearches(store("r"))): SearchViewModel {
         val accounts = FakeAccountStore()
@@ -73,7 +79,8 @@ class SearchViewModelTest {
             initializer {
                 SearchViewModel(
                     accounts, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(),
-                    covers, FilterPreferences(store("f")), Catalog(), recent,
+                    covers, FilterPreferences(store("f")), recent, UnconfinedTestDispatcher(),
+                    { items, q -> searchCalls += q; catalog.search(items, q) },
                 )
             }
         }
@@ -108,20 +115,35 @@ class SearchViewModelTest {
             item("2", "Krieg und Frieden", author = "Anne Writer", narrator = "Anna Sprecher", series = "Annas Reihe"),
         )
         val v = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.collect {} }
         v.setQuery("a")
         advanceTimeBy(100)
         v.setQuery("ann")
         advanceTimeBy(100)
-        // Neither query has been evaluated yet: only 100 ms have passed since the last keystroke.
-        assertTrue(v.state.value.titles.isEmpty() && !v.state.value.searched)
+        // Only 100 ms since the last keystroke: nothing was searched yet.
+        assertEquals(emptyList<String>(), searchCalls.toList())
         advanceTimeBy(150)
         val s = v.await { it.searched }
-        assertEquals("ann", s.query)
+        assertEquals(listOf("ann"), searchCalls.toList()) // one search, for the final text only
+        assertEquals("ann", s.resultsFor)
         assertEquals(setOf("Anna Karenina", "Krieg und Frieden"), s.titles.map { it.title }.toSet())
         assertEquals("Anna Karenina", s.titles.first().title) // title hits rank first
         assertEquals(listOf("Anne Writer"), s.authors.map { it.name })
         assertEquals(listOf("Anna Sprecher"), s.narrators.map { it.name })
         assertEquals(listOf("Annas Reihe"), s.series.map { it.name })
+    }
+
+    @Test fun search_progressChange_doesNotRerunSearch() = runTest {
+        seed(item("1", "Anna Karenina"))
+        val v = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.collect {} }
+        v.setQuery("ann")
+        advanceTimeBy(250)
+        v.await { it.searched && it.titles.isNotEmpty() }
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "1", 50.0, 100.0, false, 1L)))
+        val s = v.await { it.titles.singleOrNull()?.progress?.let { p -> p > 0f } == true }
+        assertEquals(0.5f, s.titles.single().progress, 0.01f)
+        assertEquals(listOf("ann"), searchCalls.toList())
     }
 
     @Test fun search_recentQueries_storedAndCapped() = runTest {

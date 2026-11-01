@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.catalog.Facet
+import io.wolftown.lauschig.catalog.SearchResult
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -15,10 +16,12 @@ import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverPathCache
+import io.wolftown.lauschig.ui.common.KindFilterState
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.kindFilterState
 import io.wolftown.lauschig.ui.common.toSummary
 import io.wolftown.lauschig.ui.library.FilterPreferences
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -35,6 +38,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @Immutable
@@ -63,7 +67,7 @@ data class SearchUiState(
 /** Local search over the Room catalog (title, author, narrator, series, genre, tag); never touches the network. */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
-class SearchViewModel @Inject constructor(
+class SearchViewModel(
     accountStore: AccountStore,
     private val catalogDao: CatalogDao,
     private val itemDao: ItemDao,
@@ -72,9 +76,20 @@ class SearchViewModel @Inject constructor(
     private val downloadDao: DownloadDao,
     private val covers: CoverPathCache,
     private val prefs: FilterPreferences,
-    private val catalog: Catalog,
     private val recent: RecentSearches,
+    /** Where the search and the tile mapping run; tests pass a test dispatcher. */
+    private val dispatcher: CoroutineDispatcher,
+    /** The actual search ([Catalog.search]); a seam so tests can count invocations. */
+    private val search: (List<ItemEntity>, String) -> SearchResult,
 ) : ViewModel() {
+
+    @Inject constructor(
+        accountStore: AccountStore, catalogDao: CatalogDao, itemDao: ItemDao, libraryDao: LibraryDao, progressDao: ProgressDao,
+        downloadDao: DownloadDao, covers: CoverPathCache, prefs: FilterPreferences, catalog: Catalog, recent: RecentSearches,
+    ) : this(
+        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, recent, Dispatchers.Default, catalog::search,
+    )
+
 
     private val query = MutableStateFlow("")
     private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
@@ -106,24 +121,33 @@ class SearchViewModel @Inject constructor(
     /** True exactly once per view model, so the keyboard opens when the tab is first shown but not after coming back from a page. */
     fun takeInitialFocus(): Boolean = focusPending.also { focusPending = false }
 
+    /**
+     * The search itself only reruns when the catalog, the kind filter or the (debounced) query change; progress and
+     * download changes (progress is written every few seconds while playing) only redo the cheap tile mapping.
+     */
     private fun resultsFor(sid: String): Flow<Results> {
         val debounced = query.map { it.trim() }.distinctUntilChanged().debounce { if (it.isEmpty()) 0L else DEBOUNCE_MS }
+        val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced) { all, f, q ->
+            Triple(f, q, all.filter { it.libraryId in f.libraryIds })
+        }.map { (f, q, visible) ->
+            val found = if (q.isEmpty()) EMPTY else withContext(dispatcher) { search(visible, q) }
+            Hits(f, q, found)
+        }
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)
-        return combine(
-            catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced, itemState,
-        ) { all, f, q, (progress, downloaded, active) ->
+        return combine(hits, itemState) { (f, q, found), (progress, downloaded, active) ->
             val byId = progress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
             covers.sync(downloadedIds)
             val activeIds = active.toHashSet()
-            val found = catalog.search(all.filter { it.libraryId in f.libraryIds }, q)
-            fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
             Results(
-                f.available, f.selected, q, found.titles.map { it.summary() },
+                f.available, f.selected, q,
+                found.titles.map { it.toSummary(covers, byId[it.id], it.id in downloadedIds, it.id in activeIds) },
                 found.authors, found.narrators, found.series, found.genres, found.tags,
             )
-        }.flowOn(Dispatchers.Default)
+        }.flowOn(dispatcher)
     }
+
+    private data class Hits(val filter: KindFilterState, val query: String, val found: SearchResult)
 
     private data class Results(
         val available: Set<LibraryKind> = emptySet(),
@@ -138,6 +162,7 @@ class SearchViewModel @Inject constructor(
     )
 
     companion object {
+        private val EMPTY = SearchResult(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         const val SCREEN = "search"
         const val DEBOUNCE_MS = 200L
     }

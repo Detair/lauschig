@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.search
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -9,6 +10,7 @@ import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +43,8 @@ class SearchScreenTest {
             onOpenBrowse = { k, n -> opened += k to n },
         )
         rule.onNodeWithText("Titles").assertIsDisplayed()
+        val top = { text: String -> rule.onNodeWithText(text).getBoundsInRoot().top }
+        assertTrue(top("Titles") < top("Authors") && top("Authors") < top("Narrators"))
         rule.onNodeWithText("Authors").assertIsDisplayed()
         rule.onNodeWithText("Narrators").assertIsDisplayed()
         rule.onNodeWithText("Anne Writer", substring = true).performClick()
