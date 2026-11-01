@@ -71,7 +71,7 @@ class ItemDetailViewModelTest {
     private val player = FakePlayer()
     private val downloads = FakeDownloads()
     private val connection = MutableStateFlow<ConnectionState>(ConnectionState.Online("https://abs.example.org".toHttpUrl(), ConnectionState.Via.PUBLIC))
-    private val loadCalls = mutableListOf<String>()
+    private val loadCalls = java.util.concurrent.CopyOnWriteArrayList<String>()
     private var loadFails = false
 
     @Before fun setUp() {
@@ -109,6 +109,11 @@ class ItemDetailViewModelTest {
         download?.let { db.downloadDao().upsert(it) }
     }
 
+    /** The details-load trigger runs independently of [ItemDetailViewModel.state]; wait for it instead of racing it. */
+    private suspend fun awaitLoads(n: Int) = withContext(Dispatchers.Default.limitedParallelism(1)) {
+        withTimeout(10_000) { while (loadCalls.size < n) kotlinx.coroutines.delay(10) }
+    }
+
     private fun prog(t: Double, fin: Boolean = false) = ProgressEntity(sid, "b1", t, 300.0, fin, 1, false)
 
     private suspend fun ItemDetailViewModel.await(p: (ItemDetailUiState) -> Boolean) =
@@ -135,6 +140,7 @@ class ItemDetailViewModelTest {
         seed(loaded = false)
         val v = vm()
         v.await { it.found }
+        awaitLoads(1)
         assertEquals(listOf("$sid/b1"), loadCalls)
         // Re-emissions (progress arrives, connection flaps) must not re-trigger after the load was started successfully.
         db.progressDao().mergeFromServer(listOf(prog(10.0)))
@@ -150,10 +156,12 @@ class ItemDetailViewModelTest {
         loadFails = true
         val v = vm()
         v.await { it.found }
+        awaitLoads(1)
         assertEquals(1, loadCalls.size)
         connection.value = ConnectionState.Offline
         connection.value = ConnectionState.Online("https://abs.example.org".toHttpUrl(), ConnectionState.Via.PUBLIC)
         v.await { it.online }
+        awaitLoads(2)
         assertEquals(2, loadCalls.size)
     }
 
