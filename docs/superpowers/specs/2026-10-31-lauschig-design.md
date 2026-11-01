@@ -64,6 +64,9 @@ großer Tippfläche: **Start · Bibliothek · Entdecken · Suche**.
   Episodenliste, neue Episoden auf dem Start-Bildschirm, Episoden-Fortschritt, Download
   einzelner Episoden. Optional werden die neuesten N Episoden automatisch geladen
   (Claudes Vorschlag). Offline gelten dieselben Regeln wie bei Büchern.
+- **Entscheidung (Phase 2b):** Podcast-Episoden nutzen in den bestehenden Tabellen den
+  Playable-Key `<itemId>~<episodeId>`. Das automatische Laden neuer Episoden ist einstellbar:
+  aus / 1 / 3 / 5, Standard aus.
 
 ### 2.3 Serien
 - Egal ob in der eigenen Bibliothek oder im ganzen Katalog: Bei einem Buch, das zu
@@ -75,6 +78,14 @@ großer Tippfläche: **Start · Bibliothek · Entdecken · Suche**.
   ABS für Metadaten nutzt. Dafür braucht der Nutzer kein Konto. Nur online verfügbar.
 - Fehlender Band → Knopf **„Anfragen“** schickt eine Anfrage an **ReadMeABook (RMAB)**.
   Das ist optional: Ohne konfiguriertes RMAB wird der Knopf nicht angezeigt.
+- **Entscheidung (Phase 2b), fehlende Bände:** Quelle ist der öffentliche Audible-Katalog.
+  Weg: eigene ASIN → Serie → Kinder. Die Region kommt aus den Einstellungen (Standard `de`),
+  mit Ausweichen de↔us. Treffer werden 7 Tage gecacht, Fehler 6 Stunden. Der Schalter
+  „Fehlende Bände von Audible ergänzen“ ist standardmäßig an.
+- **Entscheidung (Phase 2b), RMAB:** Die Anmeldung mit RMAB-Benutzername und -Passwort
+  erzeugt einen dauerhaften API-Token namens „Lauschig (<Gerät>)“; nur dieser Token wird
+  verschlüsselt gespeichert, nicht das Passwort. Alternativ kann der Nutzer einen Token
+  einfügen. Jede Anfrage braucht eine Bestätigung.
 
 ### 2.4 Detailansicht eines Buchs
 - Cover, Titel, Bandnummer, Beschreibung, Dauer, Download-Status und -Größe.
@@ -232,6 +243,9 @@ Android-Features nutzen:
   (wie bei der offiziellen App).
 - **Login:** Benutzername/Passwort und OpenID Connect (SSO), weil ABS beides kann und
   Authentik später kommen könnte.
+  **Entscheidung (Phase 2b):** SSO nutzt ABS-OpenID mit PKCE und der Rückkehr-Adresse
+  `lauschig://oauth`. Ein ABS-Admin muss sie unter Einstellungen → Authentifizierung →
+  „Allowed Mobile Redirect URIs“ freigeben.
 - **Server-Adressen (wie bei Storii, von Fabian gewünscht):** In der Einrichtung gibt es zwei
   klar benannte Felder, **„Lokale Adresse“** (z. B. `http://192.168.1.10:13378` im
   Heimnetz) und **„Öffentliche Adresse“** (z. B. `https://abs.example.com` oder die

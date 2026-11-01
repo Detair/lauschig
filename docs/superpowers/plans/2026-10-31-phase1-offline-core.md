@@ -16,7 +16,7 @@
 |---|---|
 | **1 (dieser Plan)** | Fundament, Login (Passwort), lokale/öffentliche Adresse, Room, Sync von Fortschritt und Offline-Sessions, Downloads, Wiedergabe mit Kapiteln, Bibliothek, Detail, Mini-Player und Player, Filter-Chips, Offline-Hinweis, Release-Bundle (2.1, 2.2 teilweise, 2.2a Filter, 2.4 ohne Verlinkung, 2.5 Basis, 5, 6, 6a) |
 | 2a (erledigt, `2026-11-01-phase2a-browse.md`) | Start-Bildschirm vollständig, Entdecken (Store), Suche, Autor-/Sprecher-/Serien-/Genre-/Tag-Seiten, Serienseite mit Lücken aus der eigenen Bibliothek (2.2, 2.3, 2.4) |
-| 2b | Fehlende Bände aus externen Metadaten + RMAB-Anfrage, Podcasts (inkl. Filter-Chip), OIDC-Login (2.2a, 2.3, 6a) |
+| 2b (erledigt, `2026-11-01-phase2b-series-podcasts-sso.md`) | Fehlende Bände aus externen Metadaten + RMAB-Anfrage, Podcasts (inkl. Filter-Chip), OIDC-Login (2.2a, 2.3, 6a) |
 | 3 | Player-Komfort: Sleep-Timer (Fade, Schütteln), Lesezeichen, Hörverlauf, Warteschlange, Sammlungen/Playlists, Geschwindigkeit pro Buch, Stille überspringen, Lautstärke-Boost, Zurückspringen nach Pause, Auto-Resume bei Bluetooth/Auto, Download-Verwaltung, lokale Ordner (Dateien, die nur auf dem Gerät liegen, ohne Server abspielen), nächster Band (vorschlagen/vorladen), „Stand vom Server holen“, wöchentliche Aufräum-Erinnerung (2.5, 2.7a, 2.7b) |
 | 4 | Android-Integration: Android Auto, Homescreen-Widget, Sprachsteuerung (Play from search), App Links, Verbindungsstatus, Admin-Menü, Optik-/Navigations-Einstellungen, „Was ist neu“, Tablet-/Foldable-Layouts (2.7, 2.7a) |
 | 5 | Stats, Achievements, Jahresrückblick (2.6) |
