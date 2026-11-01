@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -50,6 +52,11 @@ import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.external.MissingVolume
+import io.wolftown.lauschig.rmab.RmabMissingActions
+import io.wolftown.lauschig.rmab.RmabStatus
+import io.wolftown.lauschig.rmab.RmabViewModel
+import io.wolftown.lauschig.rmab.label
+import io.wolftown.lauschig.rmab.tileIcon
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.Initials
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
@@ -57,6 +64,7 @@ import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.LocalSnackbarHost
 import io.wolftown.lauschig.ui.detail.Description
 import io.wolftown.lauschig.ui.nav.BrowseKind
 
@@ -68,12 +76,23 @@ fun BrowseRoute(
     modifier: Modifier = Modifier,
     viewModel: BrowseViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
+    rmab: RmabViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
+    val rmabState by rmab.state.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbarHost.current
+    val context = LocalContext.current
+    LaunchedEffect(rmab, snackbar) {
+        rmab.messages.collect { m ->
+            snackbar?.showSnackbar(if (m.arg != null) context.getString(m.res, m.arg) else context.getString(m.res))
+        }
+    }
     BrowseScreen(
         state, onBack, viewModel::setKinds, onOpenItem, onOpenBrowse, modifier,
         onPlay = actions::play, onMenu = { menuFor = it },
+        missingActions = { RmabMissingActions(it.volume, rmabState, rmab::request) },
+        missingStatuses = if (rmabState.connected) rmabState.statuses else emptyMap(),
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
@@ -91,6 +110,8 @@ fun BrowseScreen(
     onMenu: (ItemSummary) -> Unit = {},
     /** Slot below the details of a missing volume (the request button). */
     missingActions: @Composable (MissingVolume) -> Unit = {},
+    /** ReadMeABook status by ASIN; the missing tile shows a small symbol for it. */
+    missingStatuses: Map<String, RmabStatus> = emptyMap(),
 ) {
     var sheetFor by remember { mutableStateOf<MissingVolume?>(null) }
     Column(modifier.fillMaxSize()) {
@@ -127,7 +148,7 @@ fun BrowseScreen(
                         entry.item,
                         onClick = { onOpenItem(entry.item.id) }, onLongClick = { onMenu(entry.item) }, onPlay = { onPlay(entry.item.id) },
                     )
-                    is BrowseEntry.Missing -> MissingTile(entry, onOpen = { sheetFor = it })
+                    is BrowseEntry.Missing -> MissingTile(entry, entry.volume?.let { missingStatuses[it.volume.asin] }, onOpen = { sheetFor = it })
                 }
             }
         }
@@ -178,7 +199,7 @@ private fun AuthorImage(state: BrowseUiState) {
 
 /** Greyed stand-in for a volume number the library lacks; with Audible data it shows the cover and opens the details. */
 @Composable
-private fun MissingTile(entry: BrowseEntry.Missing, onOpen: (MissingVolume) -> Unit) {
+private fun MissingTile(entry: BrowseEntry.Missing, status: RmabStatus?, onOpen: (MissingVolume) -> Unit) {
     val volume = entry.volume
     val grey = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     val hint = when {
@@ -209,6 +230,15 @@ private fun MissingTile(entry: BrowseEntry.Missing, onOpen: (MissingVolume) -> U
                     modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
                         .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
                 )
+                val icon = status?.tileIcon()
+                if (icon != null) {
+                    Icon(
+                        icon, contentDescription = status.label()?.let { stringResource(it) },
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp).testTag("rmabTileStatus")
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape).padding(3.dp),
+                    )
+                }
             }
         }
         Text(hint, style = MaterialTheme.typography.bodySmall, color = grey, modifier = Modifier.padding(top = 4.dp))

@@ -35,3 +35,6 @@ val LocalServerBaseUrl = androidx.compose.runtime.staticCompositionLocalOf<HttpU
 
 /** True only once offline has settled (see `rememberSettledOffline`); drives dimming, never the cover source. */
 val LocalOfflineDimming = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** The app-wide snackbar host (null outside the app frame, e.g. in tests). */
+val LocalSnackbarHost = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.material3.SnackbarHostState?> { null }

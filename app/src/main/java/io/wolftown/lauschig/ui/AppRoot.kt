@@ -13,6 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.CompositionLocalProvider
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
+import io.wolftown.lauschig.ui.common.LocalSnackbarHost
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
 import io.wolftown.lauschig.ui.nav.AppNavHost
@@ -50,7 +51,7 @@ fun AppRoot(
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection)
-    CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
+    CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline, LocalSnackbarHost provides snackbarHost) {
         LauschigTheme {
             AppScaffold(
                 connection = connection,

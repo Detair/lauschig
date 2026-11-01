@@ -119,4 +119,16 @@ class BrowseScreenTest {
         show(BrowseUiState(BrowseKind.SERIES, "Saga", entries = listOf(BrowseEntry.Missing("3", audible("3", upcoming = true))), loaded = true))
         rule.onNodeWithText("Releases on", substring = true).assertIsDisplayed()
     }
+
+    @Test fun missingTile_showsRmabStatusSymbol_onlyWhenKnown() {
+        rule.setContent {
+            LauschigTheme {
+                BrowseScreen(
+                    BrowseUiState(BrowseKind.SERIES, "Saga", entries = listOf(BrowseEntry.Missing("3", audible("3")), BrowseEntry.Missing("4", audible("4"))), loaded = true),
+                    {}, {}, {}, { _, _ -> }, missingStatuses = mapOf("B3" to io.wolftown.lauschig.rmab.RmabStatus.ACTIVE),
+                )
+            }
+        }
+        rule.onAllNodesWithTag("rmabTileStatus", useUnmergedTree = true).assertCountEquals(1)
+    }
 }

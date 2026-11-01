@@ -78,6 +78,7 @@ fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, viewModel: Sett
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion,
+        rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
     )
 }
 
@@ -92,6 +93,8 @@ fun SettingsScreen(
     onMissingVolumes: (Boolean) -> Unit = {},
     onAudibleRegion: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
+    rmabSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -103,6 +106,8 @@ fun SettingsScreen(
         ModeRow(NextVolumeMode.PREFETCH, state.nextVolume, R.string.settings_next_prefetch, R.string.settings_next_prefetch_hint, onNextVolume)
         SwitchRow(R.string.settings_missing_volumes, R.string.settings_missing_volumes_hint, state.missingVolumes, onMissingVolumes, Modifier.testTag("missingVolumesSwitch"))
         RegionRow(state.audibleRegion, state.missingVolumes, onAudibleRegion)
+
+        rmabSection()
 
         Section(R.string.settings_section_downloads)
         SwitchRow(R.string.settings_wifi_only, R.string.settings_wifi_only_hint, state.wifiOnly, onWifiOnly)
