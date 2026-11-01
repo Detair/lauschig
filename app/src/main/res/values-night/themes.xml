@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Lauschig" parent="android:Theme.Material.NoActionBar" />
+
+    <style name="Theme.Lauschig.Starting" parent="Theme.SplashScreen">
+        <item name="postSplashScreenTheme">@style/Theme.Lauschig</item>
+        <item name="windowSplashScreenBackground">#000000</item>
+    </style>
+</resources>

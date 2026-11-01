@@ -1,0 +1,289 @@
+{
+  "id": "li_00000000-0000-4000-8000-0000000000b2",
+  "ino": "1001",
+  "oldLibraryItemId": null,
+  "libraryId": "lib_00000000-0000-4000-8000-0000000000d1",
+  "folderId": "fol_00000000-0000-4000-8000-0000000000e1",
+  "path": "/audiobooks/x",
+  "relPath": "x",
+  "isFile": false,
+  "mtimeMs": 1700000000000,
+  "ctimeMs": 1700000000000,
+  "birthtimeMs": 1700000000000,
+  "addedAt": 1700000000000,
+  "updatedAt": 1761700000000,
+  "isMissing": false,
+  "isInvalid": false,
+  "mediaType": "book",
+  "numFiles": 4,
+  "size": 42000000,
+  "lastScan": 1761800000000,
+  "scanVersion": "2.37.1",
+  "media": {
+    "id": "bk_00000000-0000-4000-8000-0000000000c2",
+    "metadata": {
+      "title": "Standalone",
+      "subtitle": null,
+      "authors": [
+        {
+          "id": "aut_00000000-0000-4000-8000-0000000000f1",
+          "name": "Jane Doe"
+        }
+      ],
+      "narrators": [
+        "Max Sprecher"
+      ],
+      "series": [],
+      "genres": [
+        "Fantasy"
+      ],
+      "publishedYear": "2020",
+      "publishedDate": null,
+      "publisher": "Example Verlag",
+      "description": "<p>A made-up description.</p>",
+      "isbn": null,
+      "asin": null,
+      "language": "German",
+      "explicit": false,
+      "abridged": false,
+      "titleIgnorePrefix": "Standalone",
+      "authorName": "Jane Doe",
+      "authorNameLF": "Doe, Jane",
+      "narratorName": "Max Sprecher",
+      "seriesName": "",
+      "descriptionPlain": "A made-up description."
+    },
+    "coverPath": "/audiobooks/x/cover.jpg",
+    "tags": [
+      "favorite"
+    ],
+    "numTracks": 3,
+    "numAudioFiles": 3,
+    "numChapters": 0,
+    "duration": 5397.75,
+    "size": 42000000,
+    "ebookFormat": null,
+    "libraryItemId": "li_00000000-0000-4000-8000-0000000000b2",
+    "audioFiles": [
+      {
+        "index": 1,
+        "ino": "3001",
+        "metadata": {
+          "filename": "01 - Part One.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/01 - Part One.mp3",
+          "relPath": "01 - Part One.mp3",
+          "size": 14000000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        },
+        "addedAt": 1700000000000,
+        "updatedAt": 1700000000000,
+        "trackNumFromMeta": 1,
+        "discNumFromMeta": null,
+        "trackNumFromFilename": null,
+        "discNumFromFilename": null,
+        "manuallyVerified": false,
+        "exclude": false,
+        "error": null,
+        "format": "MP2/3 (MPEG audio layer 2/3)",
+        "duration": 1800.5,
+        "bitRate": 64000,
+        "language": null,
+        "codec": "mp3",
+        "timeBase": "1/14112000",
+        "channels": 2,
+        "channelLayout": "stereo",
+        "chapters": [],
+        "embeddedCoverArt": null,
+        "metaTags": {
+          "tagAlbum": "Example"
+        },
+        "mimeType": "audio/mpeg"
+      },
+      {
+        "index": 2,
+        "ino": "3002",
+        "metadata": {
+          "filename": "02 - Part Two.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/02 - Part Two.mp3",
+          "relPath": "02 - Part Two.mp3",
+          "size": 13900000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        },
+        "addedAt": 1700000000000,
+        "updatedAt": 1700000000000,
+        "trackNumFromMeta": 2,
+        "discNumFromMeta": null,
+        "trackNumFromFilename": null,
+        "discNumFromFilename": null,
+        "manuallyVerified": false,
+        "exclude": false,
+        "error": null,
+        "format": "MP2/3 (MPEG audio layer 2/3)",
+        "duration": 1795.25,
+        "bitRate": 64000,
+        "language": null,
+        "codec": "mp3",
+        "timeBase": "1/14112000",
+        "channels": 2,
+        "channelLayout": "stereo",
+        "chapters": [],
+        "embeddedCoverArt": null,
+        "metaTags": {
+          "tagAlbum": "Example"
+        },
+        "mimeType": "audio/mpeg"
+      },
+      {
+        "index": 3,
+        "ino": "3003",
+        "metadata": {
+          "filename": "03 - Part Three.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/03 - Part Three.mp3",
+          "relPath": "03 - Part Three.mp3",
+          "size": 14100000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        },
+        "addedAt": 1700000000000,
+        "updatedAt": 1700000000000,
+        "trackNumFromMeta": 3,
+        "discNumFromMeta": null,
+        "trackNumFromFilename": null,
+        "discNumFromFilename": null,
+        "manuallyVerified": false,
+        "exclude": false,
+        "error": null,
+        "format": "MP2/3 (MPEG audio layer 2/3)",
+        "duration": 1802.0,
+        "bitRate": 64000,
+        "language": null,
+        "codec": "mp3",
+        "timeBase": "1/14112000",
+        "channels": 2,
+        "channelLayout": "stereo",
+        "chapters": [],
+        "embeddedCoverArt": null,
+        "metaTags": {
+          "tagAlbum": "Example"
+        },
+        "mimeType": "audio/mpeg"
+      }
+    ],
+    "chapters": [],
+    "ebookFile": null,
+    "tracks": [
+      {
+        "index": 1,
+        "startOffset": 0,
+        "duration": 1800.5,
+        "title": "01 - Part One.mp3",
+        "contentUrl": "/api/items/li_00000000-0000-4000-8000-0000000000b2/file/3001",
+        "mimeType": "audio/mpeg",
+        "metadata": {
+          "filename": "01 - Part One.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/01 - Part One.mp3",
+          "relPath": "01 - Part One.mp3",
+          "size": 14000000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        }
+      },
+      {
+        "index": 2,
+        "startOffset": 0,
+        "duration": 1795.25,
+        "title": "02 - Part Two.mp3",
+        "contentUrl": "/api/items/li_00000000-0000-4000-8000-0000000000b2/file/3002",
+        "mimeType": "audio/mpeg",
+        "metadata": {
+          "filename": "02 - Part Two.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/02 - Part Two.mp3",
+          "relPath": "02 - Part Two.mp3",
+          "size": 13900000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        }
+      },
+      {
+        "index": 3,
+        "startOffset": 0,
+        "duration": 1802.0,
+        "title": "03 - Part Three.mp3",
+        "contentUrl": "/api/items/li_00000000-0000-4000-8000-0000000000b2/file/3003",
+        "mimeType": "audio/mpeg",
+        "metadata": {
+          "filename": "03 - Part Three.mp3",
+          "ext": ".mp3",
+          "path": "/audiobooks/x/03 - Part Three.mp3",
+          "relPath": "03 - Part Three.mp3",
+          "size": 14100000,
+          "mtimeMs": 1700000000000,
+          "ctimeMs": 1700000000000,
+          "birthtimeMs": 1700000000000
+        }
+      }
+    ]
+  },
+  "libraryFiles": [
+    {
+      "ino": "3001",
+      "metadata": {
+        "filename": "01 - Part One.mp3",
+        "ext": ".mp3",
+        "path": "/audiobooks/x/01 - Part One.mp3",
+        "relPath": "01 - Part One.mp3",
+        "size": 14000000,
+        "mtimeMs": 1700000000000,
+        "ctimeMs": 1700000000000,
+        "birthtimeMs": 1700000000000
+      },
+      "addedAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "fileType": "audio"
+    },
+    {
+      "ino": "3002",
+      "metadata": {
+        "filename": "02 - Part Two.mp3",
+        "ext": ".mp3",
+        "path": "/audiobooks/x/02 - Part Two.mp3",
+        "relPath": "02 - Part Two.mp3",
+        "size": 13900000,
+        "mtimeMs": 1700000000000,
+        "ctimeMs": 1700000000000,
+        "birthtimeMs": 1700000000000
+      },
+      "addedAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "fileType": "audio"
+    },
+    {
+      "ino": "3003",
+      "metadata": {
+        "filename": "03 - Part Three.mp3",
+        "ext": ".mp3",
+        "path": "/audiobooks/x/03 - Part Three.mp3",
+        "relPath": "03 - Part Three.mp3",
+        "size": 14100000,
+        "mtimeMs": 1700000000000,
+        "ctimeMs": 1700000000000,
+        "birthtimeMs": 1700000000000
+      },
+      "addedAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "fileType": "audio"
+    }
+  ]
+}

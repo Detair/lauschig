@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme only (Compose draws the UI); the -night variant gives a dark window background. -->
+    <style name="Theme.Lauschig" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Launch theme: the system splash is held only while the local account read is pending. -->
+    <style name="Theme.Lauschig.Starting" parent="Theme.SplashScreen">
+        <item name="postSplashScreenTheme">@style/Theme.Lauschig</item>
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+    </style>
+</resources>
