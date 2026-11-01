@@ -44,6 +44,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.catalog.Catalog
+import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.Initials
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
@@ -56,6 +58,7 @@ fun ItemDetailRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenItem: (itemId: String) -> Unit = {},
+    onOpenBrowse: (BrowseKind, String) -> Unit = { _, _ -> },
     viewModel: ItemDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -65,6 +68,7 @@ fun ItemDetailRoute(
         viewModel::deleteDownload, viewModel::onChapter, modifier,
         topActions = { if (state.found) ProgressMenuButton(state.itemId) },
         finished = { if (state.found) FinishedCard(state.itemId, onOpenItem, Modifier.padding(top = 16.dp)) },
+        onOpenBrowse = onOpenBrowse,
     )
 }
 
@@ -80,6 +84,7 @@ fun ItemDetailScreen(
     modifier: Modifier = Modifier,
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
+    onOpenBrowse: (BrowseKind, String) -> Unit = { _, _ -> },
 ) {
     val settledOffline = LocalOfflineDimming.current
     LazyColumn(modifier.fillMaxSize()) {
@@ -96,7 +101,7 @@ fun ItemDetailScreen(
             }
             return@LazyColumn
         }
-        item("header") { Header(state, onPrimary, onDownload, onPause, onDeleteDownload) }
+        item("header") { Header(state, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
         item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
         item("chapters-title") {
             Text(
@@ -120,14 +125,14 @@ fun ItemDetailScreen(
 }
 
 @Composable
-private fun Header(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit) {
+private fun Header(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Cover(state)
         Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
         state.subtitle?.let {
             Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
         }
-        Chips(state)
+        Chips(state, onOpenBrowse)
         PrimaryButton(state, onPrimary)
         DownloadControls(state, onDownload, onPause, onDelete)
         state.description?.let { Description(it) }
@@ -145,30 +150,36 @@ private fun Cover(state: ItemDetailUiState) {
     }
 }
 
-/** Phase 1: purely informational. No click handler, so no ripple and no click semantics. */
+private class ChipSpec(val label: String, val target: Pair<BrowseKind, String>)
+
+private val people = Catalog()
+
+/** One chip per author and narrator, the series and each genre; all open the matching entity page. */
 @Composable
-private fun Chips(state: ItemDetailUiState) {
-    val labels = buildList {
-        state.author?.let { add(it) }
-        state.narrator?.let { add(it) }
-        state.seriesName?.let { name ->
-            add(state.seriesSequence?.let { stringResource(R.string.detail_series_band, name, it) } ?: name)
-        }
-        addAll(state.genres)
+private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    val seriesLabel = state.seriesName?.let { name ->
+        state.seriesSequence?.let { stringResource(R.string.detail_series_band, name, it) } ?: name
     }
-    if (labels.isEmpty()) return
+    val specs = buildList {
+        people.splitPeople(state.author).forEach { add(ChipSpec(it, BrowseKind.AUTHOR to it)) }
+        people.splitPeople(state.narrator).forEach { add(ChipSpec(it, BrowseKind.NARRATOR to it)) }
+        state.seriesName?.let { add(ChipSpec(seriesLabel ?: it, BrowseKind.SERIES to it)) }
+        state.genres.forEach { add(ChipSpec(it, BrowseKind.GENRE to it)) }
+    }
+    if (specs.isEmpty()) return
     androidx.compose.foundation.layout.FlowRow(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        labels.forEach { Chip(it) }
+        specs.forEach { Chip(it.label) { onOpenBrowse(it.target.first, it.target.second) } }
     }
 }
 
 @Composable
-private fun Chip(text: String) {
+private fun Chip(text: String, onClick: () -> Unit) {
     Surface(
+        onClick = onClick,
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -259,7 +270,7 @@ private fun Hint(text: String) =
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
 @Composable
-private fun Description(text: String) {
+internal fun Description(text: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var overflows by remember(text) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {

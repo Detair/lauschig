@@ -142,4 +142,13 @@
         <item quantity="other">%1$d finished books use %2$s</item>
     </plurals>
     <string name="start_open_library">Go to library</string>
+    <plurals name="browse_title_count">
+        <item quantity="one">%d title</item>
+        <item quantity="other">%d titles</item>
+    </plurals>
+    <string name="browse_series_row">Series</string>
+    <string name="browse_missing_volume">Volume %s</string>
+    <string name="browse_missing_hint">not in the library</string>
+    <string name="browse_empty">Nothing here (in the selected libraries)</string>
+    <string name="browse_author_image">Photo of %s</string>
 </resources>

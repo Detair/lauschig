@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsEnabled
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
@@ -41,11 +42,26 @@ class ItemDetailScreenTest {
             }
         }
 
-    @Test fun chips_showAllAndAreNotClickable() {
-        show(base)
-        for (t in listOf("Ann Author", "Nick Narrator", "Saga · Book 3", "Fantasy")) {
-            rule.onNodeWithText(t).assertIsDisplayed().assertHasNoClickAction()
+    @Test fun detailChips_openBrowse_perPerson() {
+        val opened = mutableListOf<Pair<BrowseKind, String>>()
+        rule.setContent {
+            LauschigTheme {
+                ItemDetailScreen(
+                    base.copy(author = "Lucy Hawking, Stephen Hawking", narrator = "Nick Narrator"), {}, {}, {}, {}, {}, {},
+                    onOpenBrowse = { k, n -> opened += k to n },
+                )
+            }
         }
+        for (t in listOf("Lucy Hawking", "Stephen Hawking", "Nick Narrator", "Saga · Book 3", "Fantasy")) {
+            rule.onNodeWithText(t).assertIsDisplayed().performClick()
+        }
+        assertEquals(
+            listOf(
+                BrowseKind.AUTHOR to "Lucy Hawking", BrowseKind.AUTHOR to "Stephen Hawking", BrowseKind.NARRATOR to "Nick Narrator",
+                BrowseKind.SERIES to "Saga", BrowseKind.GENRE to "Fantasy",
+            ),
+            opened,
+        )
     }
 
     @Test fun primary_texts() {

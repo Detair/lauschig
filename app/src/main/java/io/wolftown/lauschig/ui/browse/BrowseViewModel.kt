@@ -1,0 +1,168 @@
+package io.wolftown.lauschig.ui.browse
+
+import androidx.compose.runtime.Immutable
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.navigation.toRoute
+import dagger.hilt.android.lifecycle.HiltViewModel
+import io.wolftown.lauschig.absapi.library.AuthorDto
+import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.catalog.Catalog
+import io.wolftown.lauschig.catalog.Facet
+import io.wolftown.lauschig.catalog.PersonRole
+import io.wolftown.lauschig.catalog.SeriesEntry
+import io.wolftown.lauschig.db.dao.CatalogDao
+import io.wolftown.lauschig.db.dao.DownloadDao
+import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.db.dao.LibraryDao
+import io.wolftown.lauschig.db.dao.ProgressDao
+import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.ui.common.CoverPathCache
+import io.wolftown.lauschig.ui.common.ItemSummary
+import io.wolftown.lauschig.ui.common.toSummary
+import io.wolftown.lauschig.ui.library.FilterPreferences
+import io.wolftown.lauschig.ui.nav.Browse
+import io.wolftown.lauschig.ui.nav.BrowseKind
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/** One cell of an entity page: a title we have, or (series only) a gap in the volume numbers. */
+sealed interface BrowseEntry {
+    @Immutable data class Tile(val item: ItemSummary) : BrowseEntry
+    @Immutable data class Missing(val sequence: String) : BrowseEntry
+}
+
+@Immutable
+data class BrowseUiState(
+    val kind: BrowseKind = BrowseKind.AUTHOR,
+    val name: String = "",
+    val availableKinds: Set<LibraryKind> = emptySet(),
+    val selectedKinds: Set<LibraryKind> = emptySet(),
+    val entries: List<BrowseEntry> = emptyList(),
+    /** Number of titles (placeholders not counted). */
+    val count: Int = 0,
+    /** Author pages: series of the author's titles, for the "Series" row. */
+    val series: List<Facet> = emptyList(),
+    /** Author pages: image/bio, once loaded online. */
+    val author: AuthorDto? = null,
+    /** False until the first Room emission, so the empty hint does not flash. */
+    val loaded: Boolean = false,
+)
+
+/** Entity page data straight from Room; only the optional author extras ever touch the network (in [AuthorInfoCache]). */
+@OptIn(ExperimentalCoroutinesApi::class)
+@HiltViewModel
+class BrowseViewModel(
+    private val kind: BrowseKind,
+    private val name: String,
+    private val accountStore: AccountStore,
+    private val catalogDao: CatalogDao,
+    private val itemDao: ItemDao,
+    private val libraryDao: LibraryDao,
+    private val progressDao: ProgressDao,
+    private val downloadDao: DownloadDao,
+    private val covers: CoverPathCache,
+    private val prefs: FilterPreferences,
+    private val catalog: Catalog,
+    private val authorInfo: AuthorInfoCache,
+) : ViewModel() {
+
+    @Inject constructor(
+        savedState: SavedStateHandle,
+        accountStore: AccountStore,
+        catalogDao: CatalogDao,
+        itemDao: ItemDao,
+        libraryDao: LibraryDao,
+        progressDao: ProgressDao,
+        downloadDao: DownloadDao,
+        covers: CoverPathCache,
+        prefs: FilterPreferences,
+        catalog: Catalog,
+        authorInfo: AuthorInfoCache,
+    ) : this(
+        savedState.toRoute<Browse>().kind, savedState.toRoute<Browse>().name,
+        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, catalog, authorInfo,
+    )
+
+    private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
+
+    init {
+        if (kind == BrowseKind.AUTHOR) {
+            viewModelScope.launch { serverId.collect { sid -> if (sid != null) authorInfo.ensureLoaded(sid) } }
+        }
+    }
+
+    val state: StateFlow<BrowseUiState> = serverId
+        .flatMapLatest { sid -> if (sid == null) flowOf(BrowseUiState(kind, name)) else stateFor(sid) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrowseUiState(kind, name))
+
+    fun setKinds(kinds: Set<LibraryKind>) {
+        viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
+    }
+
+    private fun stateFor(sid: String): Flow<BrowseUiState> {
+        val filter = combine(libraryDao.observeAll(sid), prefs.kinds(SCREEN)) { libs, stored ->
+            val available = libs.map { it.effectiveKind }.filter { it != LibraryKind.PODCAST }.toSet()
+            val selected = stored.intersect(available)
+            val effective = selected.ifEmpty { available }
+            Filter(available, selected, libs.filter { it.effectiveKind in effective }.map { it.id }.toSet())
+        }.distinctUntilChanged()
+
+        val author = authorInfo.authors.map { it[AuthorInfoCache.key(sid, name)] }.distinctUntilChanged()
+
+        return combine(
+            catalogDao.observeAll(sid), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
+        ) { all, f, progress, downloaded, active ->
+            val byId = progress.associateBy { it.itemId }
+            val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
+            covers.sync(downloadedIds)
+            val activeIds = active.toHashSet()
+            fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
+
+            val visible = all.filter { it.libraryId in f.libraryIds }
+            val entries: List<BrowseEntry> = when (kind) {
+                BrowseKind.SERIES -> catalog.bySeries(visible, name).map {
+                    when (it) {
+                        is SeriesEntry.Volume -> BrowseEntry.Tile(it.item.summary())
+                        is SeriesEntry.Missing -> BrowseEntry.Missing(it.sequence)
+                    }
+                }
+                else -> pageItems(visible).map { BrowseEntry.Tile(it.summary()) }
+            }
+            val series = if (kind == BrowseKind.AUTHOR) catalog.facets(pageItems(visible)).series else emptyList()
+            BrowseUiState(
+                kind, name, f.available, f.selected, entries,
+                count = entries.count { it is BrowseEntry.Tile }, series = series, loaded = true,
+            )
+        }.flowOn(Dispatchers.Default).combine(author) { s, a -> s.copy(author = a) }.distinctUntilChanged()
+    }
+
+    private fun pageItems(items: List<ItemEntity>): List<ItemEntity> = when (kind) {
+        BrowseKind.AUTHOR -> catalog.byPerson(items, PersonRole.AUTHOR, name)
+        BrowseKind.NARRATOR -> catalog.byPerson(items, PersonRole.NARRATOR, name)
+        BrowseKind.GENRE -> catalog.byGenre(items, name)
+        BrowseKind.TAG -> catalog.byTag(items, name)
+        BrowseKind.SERIES -> emptyList()
+    }
+
+    private data class Filter(val available: Set<LibraryKind>, val selected: Set<LibraryKind>, val libraryIds: Set<String>)
+
+    companion object {
+        /** One saved filter shared by all entity pages. */
+        const val SCREEN = "browse"
+    }
+}

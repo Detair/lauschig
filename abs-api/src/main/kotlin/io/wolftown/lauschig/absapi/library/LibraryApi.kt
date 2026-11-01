@@ -18,6 +18,10 @@ interface LibraryApi {
         @Query("minified") minified: Int = 1,
     ): LibraryItemsPage
 
+    /** All authors of a library (`{ "authors": [...] }`); used for the optional author image and bio. */
+    @GET("api/libraries/{id}/authors")
+    suspend fun authors(@Path("id") id: String): AuthorsResponse
+
     @GET("api/items/{id}")
     suspend fun item(
         @Path("id") id: String,

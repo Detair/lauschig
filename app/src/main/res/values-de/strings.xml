@@ -142,4 +142,13 @@
         <item quantity="other">%1$d fertig gehörte Bücher belegen %2$s</item>
     </plurals>
     <string name="start_open_library">Zur Bibliothek</string>
+    <plurals name="browse_title_count">
+        <item quantity="one">%d Titel</item>
+        <item quantity="other">%d Titel</item>
+    </plurals>
+    <string name="browse_series_row">Serien</string>
+    <string name="browse_missing_volume">Band %s</string>
+    <string name="browse_missing_hint">nicht in der Bibliothek</string>
+    <string name="browse_empty">Hier ist nichts (in den gewählten Bibliotheken)</string>
+    <string name="browse_author_image">Foto von %s</string>
 </resources>

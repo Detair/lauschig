@@ -48,6 +48,24 @@ class LibraryApiTest {
     }
 
     @Test
+    fun authors_unwrapsAuthorsObject_lenient() = runBlocking {
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "application/json").setBody(
+                """{"authors":[{"id":"a1","asin":null,"name":"Lucy Hawking","description":"Bio","imagePath":"/m/a1.jpg","numBooks":3,"addedAt":1},
+                    {"id":"a2","name":"Ann","description":null}]}""",
+            ),
+        )
+
+        val authors = api.authors("lib_1").authors
+
+        assertEquals("/api/libraries/lib_1/authors", server.takeRequest().path)
+        assertEquals(listOf("Lucy Hawking", "Ann"), authors.map { it.name })
+        assertEquals("/m/a1.jpg", authors[0].imagePath)
+        assertEquals(null, authors[1].imagePath)
+        assertEquals(null, authors[1].description)
+    }
+
+    @Test
     fun items_paginates_andParsesSeriesSequence() = runBlocking {
         server.enqueue(json("library-items-page.json"))
 

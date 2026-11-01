@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.player.PlayerRoute
@@ -33,7 +34,20 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> { ComingSoonScreen() }
         composable<Search> { ComingSoonScreen() }
-        composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+        composable<ItemDetail> {
+            ItemDetailRoute(
+                onBack = { navController.popBackStack() },
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
+        composable<Browse> {
+            BrowseRoute(
+                onBack = { navController.popBackStack() },
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
         composable<Player> {
             PlayerRoute(
                 onClose = { navController.popBackStack() },

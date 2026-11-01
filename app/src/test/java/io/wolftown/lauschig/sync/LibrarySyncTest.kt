@@ -30,6 +30,7 @@ import org.robolectric.RobolectricTestRunner
 import java.io.IOException
 
 private class FakeLibrary : LibraryApi {
+    override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
     var items: List<LibraryItemDto> = emptyList()
     var failOnPage: Int? = null
     var reportedTotal: Int? = null

@@ -1,0 +1,176 @@
+package io.wolftown.lauschig.ui.browse
+
+import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.absapi.library.AuthorDto
+import io.wolftown.lauschig.absapi.library.AuthorsResponse
+import io.wolftown.lauschig.absapi.library.LibraryApi
+import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.catalog.Catalog
+import io.wolftown.lauschig.connection.ServerAddresses
+import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.LibraryEntity
+import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.ui.common.CoverPathCache
+import io.wolftown.lauschig.ui.library.FilterPreferences
+import io.wolftown.lauschig.ui.nav.BrowseKind
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = android.app.Application::class)
+class BrowseViewModelTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private lateinit var db: LauschigDatabase
+    private val sid = "aaaaaaaaaaaaaaaa"
+    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    private val viewModels = ViewModelStore()
+
+    @Before fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
+            .allowMainThreadQueries().build()
+    }
+
+    @After fun tearDown() {
+        viewModels.clear()
+        db.close()
+        Dispatchers.resetMain()
+    }
+
+    private val authors = AuthorInfoCache(flowOf(null)) { emptyList() }
+
+    private fun vm(
+        kind: BrowseKind, name: String,
+        prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
+        info: AuthorInfoCache = authors,
+    ): BrowseViewModel {
+        val store = FakeAccountStore()
+        store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
+        val factory = viewModelFactory {
+            initializer {
+                BrowseViewModel(kind, name, store, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers, prefs, Catalog(), info)
+            }
+        }
+        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", BrowseViewModel::class]
+    }
+
+    private fun item(id: String, lib: String = "lib1", title: String = id, author: String? = null, series: String? = null, key: Double? = null) =
+        ItemEntity(serverId = sid, id = id, libraryId = lib, title = title, author = author, seriesName = series, seriesSequence = key?.toInt()?.toString(), seriesSortKey = key, durationSec = 100.0)
+
+    private suspend fun libs() = db.libraryDao().upsertFromServer(
+        listOf(LibraryEntity(sid, "lib1", "Books", "book", 0), LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)),
+    )
+
+    private suspend fun BrowseViewModel.await(p: (BrowseUiState) -> Boolean) =
+        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    @Test fun authorPage_offline_showsBooksWithoutBio() = runTest {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("a", title = "Alpha", author = "Lucy Hawking, Stephen Hawking", series = "Saga", key = 1.0),
+                item("b", title = "Beta", author = "Lucy Hawking"),
+                item("c", title = "Other", author = "Lucy Hawkins"),
+            ),
+        )
+        val s = vm(BrowseKind.AUTHOR, "lucy hawking").await { it.loaded }
+        assertEquals(listOf("Alpha", "Beta"), s.entries.map { (it as BrowseEntry.Tile).item.title })
+        assertEquals(2, s.count)
+        assertEquals(listOf("Saga"), s.series.map { it.name })
+        assertNull(s.author)
+    }
+
+    @Test fun authorPage_bioAppearsOnceCached() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("a", author = "Ann")))
+        val api = object : LibraryApi {
+            override suspend fun libraries() = error("unused")
+            override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
+            override suspend fun authors(id: String) = AuthorsResponse(listOf(AuthorDto("a1", "ANN", "Bio", "/x.jpg")))
+            override suspend fun item(id: String, expanded: Int) = error("unused")
+        }
+        val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache(flowOf(api)) { listOf("lib1") }).await { it.author != null }
+        assertEquals("Bio", s.author?.description)
+    }
+
+    @Test fun authorInfo_failureLeavesCacheEmpty_neverThrows() = runTest {
+        val api = object : LibraryApi {
+            override suspend fun libraries() = error("unused")
+            override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
+            override suspend fun authors(id: String): AuthorsResponse = throw java.io.IOException("down")
+            override suspend fun item(id: String, expanded: Int) = error("unused")
+        }
+        val cache = AuthorInfoCache(flowOf(api)) { listOf("lib1") }
+        cache.ensureLoaded(sid)
+        assertEquals(emptyMap<String, AuthorDto>(), cache.authors.value)
+    }
+
+    @Test fun seriesPage_ordersBySequence_andShowsGaps() = runTest {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("v4", title = "D", series = "Saga", key = 4.0),
+                item("v1", title = "A", series = "saga", key = 1.0),
+                item("v2", title = "B", series = "Saga", key = 2.0),
+                item("other", series = "Another", key = 1.0),
+            ),
+        )
+        val s = vm(BrowseKind.SERIES, "Saga").await { it.loaded }
+        assertEquals(
+            listOf("A", "B", "missing:3", "D"),
+            s.entries.map { if (it is BrowseEntry.Tile) it.item.title else "missing:" + (it as BrowseEntry.Missing).sequence },
+        )
+        assertEquals(3, s.count)
+    }
+
+    @Test fun genrePage_listsMatchingTitles() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("a").copy(genres = listOf("Horror")), item("b").copy(genres = listOf("Krimi"))))
+        assertEquals(listOf("a"), vm(BrowseKind.GENRE, "horror").await { it.loaded }.entries.map { (it as BrowseEntry.Tile).item.id })
+    }
+
+    @Test fun browse_kindFilter_appliesAndIsSaved() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("book", "lib1", author = "Ann"), item("play", "lib2", author = "Ann")))
+        val prefs = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("pf.preferences_pb") })
+        val vm = vm(BrowseKind.AUTHOR, "Ann", prefs)
+        val all = vm.await { it.count == 2 }
+        assertEquals(setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), all.availableKinds)
+        vm.setKinds(setOf(LibraryKind.HOERSPIEL))
+        val s = vm.await { it.count == 1 }
+        assertEquals(listOf("play"), s.entries.map { (it as BrowseEntry.Tile).item.id })
+        assertEquals(setOf(LibraryKind.HOERSPIEL), prefs.kinds("browse").first { it.isNotEmpty() })
+    }
+}

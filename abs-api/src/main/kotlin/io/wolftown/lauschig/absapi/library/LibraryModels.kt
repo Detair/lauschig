@@ -16,6 +16,19 @@ data class LibraryDto(
     val displayOrder: Int = 0,
 )
 
+/** `GET /api/libraries/:id/authors` wraps the list: `{ "authors": [...] }`. */
+@Serializable
+data class AuthorsResponse(val authors: List<AuthorDto> = emptyList())
+
+/** Author with the optional bio and image (`imagePath` is a server path; null = no image). */
+@Serializable
+data class AuthorDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val imagePath: String? = null,
+)
+
 /** `GET /api/libraries/:id/items`; `page` is 0-based, `limit` echoes the request (0 = unlimited). */
 @Serializable
 data class LibraryItemsPage(

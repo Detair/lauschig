@@ -7,6 +7,11 @@ import kotlinx.serialization.Serializable
 @Serializable data object Discover
 @Serializable data object Search
 @Serializable data class ItemDetail(val itemId: String)
+
+/** What an entity page lists: everything of one author, narrator, series, genre or tag. */
+enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
+
+@Serializable data class Browse(val kind: BrowseKind, val name: String)
 @Serializable data object Player
 @Serializable data object Setup
 @Serializable data object Settings
