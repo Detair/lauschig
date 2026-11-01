@@ -1,6 +1,13 @@
 package io.wolftown.lauschig.playback
 
+import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.EpisodeEntity
+import io.wolftown.lauschig.download.DownloadFiles
+import org.junit.After
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
@@ -55,6 +62,93 @@ class PlayerControllerTest {
         listOf(chapter(0, 0.0, 500.0), chapter(1, 500.0, 1000.0), chapter(2, 1000.0, 1800.0)), files, progress, null,
     )
 
+    private val db by lazy {
+        Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
+            .allowMainThreadQueries().setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build() // synchronous: the controller runs on the test scheduler
+    }
+    private val dlRoot = File(System.getProperty("java.io.tmpdir"), "pc-test-${System.nanoTime()}")
+
+    @After fun cleanUp() {
+        db.close(); dlRoot.deleteRecursively()
+    }
+
+    private val epKey = PlayableKey.episode("pod", "ep1")
+
+    private suspend fun seedEpisode(withFile: Boolean, localPath: String? = null) {
+        db.itemDao().upsertDetails(ItemEntity(s, "pod", "lib", "The Podcast"))
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1", durationSec = 900.0)))
+        if (withFile) db.audioFileDao().replaceFromServer(s, epKey, listOf(AudioFileEntity(s, epKey, 1, "epino", 900.0, 1, "mp3")))
+        if (localPath != null) db.audioFileDao().setLocal(s, epKey, 1, localPath, 1)
+    }
+
+    private fun TestScope.episodeController(facade: FakeFacade, base: String?, files: DownloadFiles, loadDetails: suspend (String, String) -> Unit = { _, _ -> }) =
+        controller(
+            facade, { null }, base,
+            factory = MediaItemFactory({ true }) { sid, id -> files.playableCover(sid, id) },
+            coverFile = { sid, id -> files.playableCover(sid, id) },
+            loadDetails = loadDetails,
+            loadById = { sid, id -> loadPlayable(db.itemDao(), db.episodeDao(), sid, id) },
+        )
+
+    @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
+        seedEpisode(withFile = true)
+        val files = DownloadFiles(dlRoot, db.audioFileDao())
+        files.coverFile(s, "pod").apply { parentFile!!.mkdirs(); writeText("jpg") }
+        val f = FakeFacade()
+        val c = episodeController(f, "https://abs.example/", files)
+        c.play(s, epKey)
+        assertEquals(epKey, c.state.value.itemId)
+        assertEquals("Folge 1", c.state.value.title)
+        assertEquals(900.0, c.state.value.durationSec, 0.0)
+        assertEquals(files.coverFile(s, "pod").path, c.state.value.coverPath)
+        val m = f.items.single()
+        assertEquals("https://abs.example/api/items/pod/file/epino/download", m.localConfiguration!!.uri.toString())
+        assertEquals("The Podcast", m.mediaMetadata.artist)
+        assertEquals("Folge 1", m.mediaMetadata.title)
+        assertEquals(files.coverFile(s, "pod").toURI().path, m.mediaMetadata.artworkUri!!.path)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun downloadedEpisode_playsOffline() = runTest {
+        val audio = File(dlRoot, "ep.mp3").apply { parentFile!!.mkdirs(); writeText("x") }
+        seedEpisode(withFile = true, localPath = audio.path)
+        val f = FakeFacade()
+        val c = episodeController(f, null, DownloadFiles(dlRoot, db.audioFileDao()))
+        c.play(s, epKey)
+        assertNull(c.state.value.error)
+        assertEquals("file", f.items.single().localConfiguration!!.uri.scheme)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun episode_withoutFiles_online_loadsEpisodes() = runTest {
+        seedEpisode(withFile = false)
+        val loaded = mutableListOf<Pair<String, String>>()
+        val f = FakeFacade()
+        val c = episodeController(f, "https://abs.example/", DownloadFiles(dlRoot, db.audioFileDao())) { sid, id ->
+            loaded += sid to id
+            db.audioFileDao().replaceFromServer(sid, id, listOf(AudioFileEntity(sid, id, 1, "epino", 900.0, 1, "mp3")))
+        }
+        c.play(s, epKey)
+        assertEquals(listOf(s to epKey), loaded)
+        assertEquals(1, f.items.size)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun episode_withoutFiles_offline_failsNotDownloaded() = runTest {
+        seedEpisode(withFile = false)
+        val f = FakeFacade()
+        val c = episodeController(f, null, DownloadFiles(dlRoot, db.audioFileDao()))
+        c.play(s, epKey)
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+    }
+
+    @Test fun episode_withoutPodcastRow_doesNotStart() = runTest {
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1")))
+        val f = FakeFacade()
+        episodeController(f, "https://abs.example/", DownloadFiles(dlRoot, db.audioFileDao())).play(s, epKey)
+        assertTrue(f.items.isEmpty())
+    }
+
     private val threeFiles get() = listOf(file(0, 600.0), file(1, 300.0), file(2, 900.0))
 
     private fun TestScope.controller(facade: FakeFacade, item: ItemWithDetails?, base: String? = null) =
@@ -68,11 +162,12 @@ class PlayerControllerTest {
         io: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
         coverFile: (String, String) -> File? = { _, _ -> null },
         loadDetails: suspend (String, String) -> Unit = { _, _ -> },
+        loadById: suspend (String, String) -> ItemWithDetails? = { _, _ -> load() },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
         factory = factory,
-        loadItem = { _, _ -> load() },
+        loadItem = loadById,
         onlineBaseUrl = { base?.toHttpUrl() },
         coverFile = coverFile,
         loadDetails = loadDetails,

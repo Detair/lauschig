@@ -11,10 +11,12 @@ import io.wolftown.lauschig.absapi.library.coverUrl
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.DownloadDao
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.OnlineGate
 import kotlinx.coroutines.CancellationException
@@ -56,6 +58,7 @@ class DownloadWorker @AssistedInject constructor(
     private val gate: OnlineGate,
     private val librarySync: LibrarySync,
     private val items: ItemDao,
+    private val episodes: EpisodeDao,
     private val audioFiles: AudioFileDao,
     private val downloads: DownloadDao,
     private val files: DownloadFiles,
@@ -63,7 +66,10 @@ class DownloadWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     private lateinit var serverId: String
+    /** Playable key: a book's item id or an episode's `itemId~episodeId`; files and rows are stored under it. */
     private lateinit var itemId: String
+    /** The library item the server knows (the podcast for an episode): used for URLs and detail loads. */
+    private lateinit var libraryItemId: String
     private var title = ""
     private var lastNotify = 0L
     private var lastPersist = 0L
@@ -71,6 +77,8 @@ class DownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         serverId = inputData.getString(KEY_SERVER) ?: return Result.failure()
         itemId = inputData.getString(KEY_ITEM) ?: return Result.failure()
+        val parsed = PlayableKey.parse(itemId)
+        libraryItemId = parsed.libraryItemId
         val row = downloads.get(serverId, itemId)
         // Removed (cancel + delete) or paused by the user while this work was waiting: nothing to do.
         if (row == null || row.state == DownloadState.PAUSED) return Result.success()
@@ -81,12 +89,12 @@ class DownloadWorker @AssistedInject constructor(
         val client = env.client(online.baseUrl)
 
         downloads.setState(serverId, itemId, DownloadState.RUNNING, null)
-        title = items.get(serverId, itemId)?.title.orEmpty()
+        title = (parsed.episodeId?.let { episodes.get(serverId, libraryItemId, it)?.title } ?: items.get(serverId, itemId)?.title).orEmpty()
         try {
             files.itemDir(serverId, itemId) // validates the server-controlled ids before anything touches the disk
             var list = audioFiles.forItem(serverId, itemId)
             if (list.isEmpty()) {
-                librarySync.loadDetails(serverId, itemId)
+                librarySync.loadDetails(serverId, libraryItemId)
                 list = audioFiles.forItem(serverId, itemId)
                 if (list.isEmpty()) throw IOException("No audio files known for item")
             }
@@ -95,8 +103,8 @@ class DownloadWorker @AssistedInject constructor(
             } catch (e: FatalDownloadException) {
                 // 404: the server may have rescanned the item (new file ids). Reload the details once and retry.
                 if (e.code != "http_404") throw e
-                items.invalidateDetails(serverId, listOf(itemId))
-                librarySync.loadDetails(serverId, itemId)
+                items.invalidateDetails(serverId, listOf(libraryItemId))
+                librarySync.loadDetails(serverId, libraryItemId)
                 val fresh = audioFiles.forItem(serverId, itemId)
                 if (fresh.isEmpty()) throw e
                 downloadAll(client, online.baseUrl, fresh)
@@ -191,7 +199,7 @@ class DownloadWorker @AssistedInject constructor(
                     var start = existing
                     var result: Long? = null
                     for (attempt in 0..1) {
-                        val req = Request.Builder().url(audioFileUrl(base, itemId, f.ino))
+                        val req = Request.Builder().url(audioFileUrl(base, libraryItemId, f.ino))
                             .apply { if (start > 0) header("Range", "bytes=$start-") }.build()
                         result = client.newCall(req).execute().use { resp -> receive(resp, part, start, onProgress) }
                         if (result != null) break
@@ -252,7 +260,7 @@ class DownloadWorker @AssistedInject constructor(
         if (cover.isFile && cover.length() > 0) return@withContext
         cover.parentFile!!.mkdirs()
         val part = File(cover.path + ".part")
-        client.newCall(Request.Builder().url(coverUrl(base, itemId)).build()).execute().use { resp ->
+        client.newCall(Request.Builder().url(coverUrl(base, libraryItemId)).build()).execute().use { resp ->
             if (resp.code == 404) return@withContext // item without a cover
             if (!resp.isSuccessful) throw httpError(resp.code)
             FileOutputStream(part).use { out -> resp.body.byteStream().use { it.copyTo(out) } }

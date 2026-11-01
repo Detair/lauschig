@@ -3,6 +3,7 @@ package io.wolftown.lauschig.playback
 import android.util.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
@@ -52,6 +53,7 @@ class PlayerControllerImpl(
         facade: MediaControllerFacade,
         factory: MediaItemFactory,
         itemDao: ItemDao,
+        episodeDao: EpisodeDao,
         api: ApiProvider,
         files: DownloadFiles,
         librarySync: LibrarySync,
@@ -59,12 +61,13 @@ class PlayerControllerImpl(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
         factory = factory,
-        loadItem = { serverId, itemId -> itemDao.observeItem(serverId, itemId).first() },
+        loadItem = { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) },
         onlineBaseUrl = {
             withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
         },
-        coverFile = { serverId, itemId -> try { files.coverFile(serverId, itemId) } catch (e: Exception) { null } },
-        loadDetails = librarySync::loadDetails,
+        coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
+        // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
+        loadDetails = { serverId, itemId -> librarySync.loadDetails(serverId, PlayableKey.parse(itemId).libraryItemId) },
     )
 
     private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?, val streaming: Boolean)

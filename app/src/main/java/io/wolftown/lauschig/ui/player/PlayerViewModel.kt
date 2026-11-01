@@ -60,7 +60,7 @@ class PlayerViewModel(
         this(player, { itemId ->
             accountStore.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
                 if (sid == null) flowOf(emptyList())
-                else itemDao.observeItem(sid, itemId).map { d -> d?.chapters.orEmpty().map { ChapterInfo(it.title, it.startSec, it.endSec) } }
+                else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
             }
         })
 

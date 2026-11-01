@@ -70,6 +70,10 @@ abstract class EpisodeDao {
     @Query("SELECT * FROM episodes WHERE serverId = :serverId AND itemId = :itemId AND id = :id")
     abstract suspend fun get(serverId: String, itemId: String, id: String): EpisodeEntity?
 
-    @Query("SELECT * FROM episodes WHERE serverId = :serverId AND recent = 1 ORDER BY publishedAt DESC, id LIMIT :limit")
+    /** Joined with `items` so rows whose podcast is gone (and which no library sync can reset any more) never show. */
+    @Query(
+        """SELECT e.* FROM episodes e JOIN items i ON i.serverId = e.serverId AND i.id = e.itemId
+           WHERE e.serverId = :serverId AND e.recent = 1 ORDER BY e.publishedAt DESC, e.id LIMIT :limit""",
+    )
     abstract fun observeRecent(serverId: String, limit: Int): Flow<List<EpisodeEntity>>
 }

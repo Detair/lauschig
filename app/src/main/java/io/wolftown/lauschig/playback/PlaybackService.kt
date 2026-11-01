@@ -13,6 +13,7 @@ import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
@@ -35,6 +36,7 @@ import javax.inject.Inject
 class PlaybackService : MediaLibraryService() {
     @Inject lateinit var api: ApiProvider
     @Inject lateinit var itemDao: ItemDao
+    @Inject lateinit var episodeDao: EpisodeDao
     @Inject lateinit var progressDao: ProgressDao
     @Inject lateinit var sessionDao: SessionDao
 
@@ -69,7 +71,7 @@ class PlaybackService : MediaLibraryService() {
         player = exo
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
-        bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> itemDao.observeItem(serverId, itemId).first() }, scope)
+        bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
             .also { exo.addListener(it) }
 
         val activity = PendingIntent.getActivity(

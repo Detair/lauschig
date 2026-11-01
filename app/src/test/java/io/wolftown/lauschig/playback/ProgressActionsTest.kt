@@ -10,6 +10,7 @@ import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
 import io.wolftown.lauschig.absapi.me.ProgressUpdate
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.EpisodeEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.sync.SyncTrigger
@@ -126,6 +127,44 @@ class ProgressActionsTest {
         assertFalse(actions(api = null).pullFromServer(s, "b1"))
         assertFalse(actions().pullFromServer(s, "b1"))
         assertEquals(900.0, db.progressDao().get(s, "b1")!!.currentTimeSec, 0.0)
+    }
+
+    private val key = PlayableKey.episode("pod", "ep1")
+    private suspend fun seedEpisode() {
+        db.itemDao().upsertDetails(ItemEntity(s, "pod", "l", "Podcast"))
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1", durationSec = 900.0)))
+    }
+
+    @Test fun markFinished_episodeWithoutProgress_usesEpisodeDuration() = runTest {
+        seedEpisode()
+        actions().markFinished(s, key)
+        val p = db.progressDao().get(s, key)!!
+        assertTrue(p.isFinished)
+        assertEquals(900.0, p.currentTimeSec, 0.0)
+        assertEquals(900.0, p.durationSec, 0.0)
+        assertTrue(p.dirty)
+    }
+
+    @Test fun pullFromServer_episodeKey_matchesEpisodeRowOnly() = runTest {
+        seedEpisode()
+        me.rows = listOf(
+            MediaProgressDto("pod", null, 1.0, 900.0, 0.0, false, 20_000),
+            MediaProgressDto("pod", "other", 2.0, 900.0, 0.0, false, 20_000),
+            MediaProgressDto("pod", "ep1", 300.0, 900.0, 300.0 / 900, false, 20_000),
+        )
+        assertTrue(actions().pullFromServer(s, key))
+        assertEquals(300.0, db.progressDao().get(s, key)!!.currentTimeSec, 0.0)
+        assertNull(db.progressDao().get(s, "pod"))
+    }
+
+    @Test fun markFinished_stopsOnlyTheLoadedKey() = runTest {
+        seedEpisode()
+        // The player carries the playable key: an episode of the same podcast is not "the loaded title" for the podcast id.
+        player.state.value = PlayerUiState(itemId = key, isPlaying = true)
+        actions().markFinished(s, "pod")
+        assertEquals(0, player.toggles)
+        actions().markFinished(s, key)
+        assertEquals(1, player.toggles)
     }
 
     @Test fun nextVolume_findsFollowingSequence_caseInsensitive() = runTest {

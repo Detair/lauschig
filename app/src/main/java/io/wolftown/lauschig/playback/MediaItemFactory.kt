@@ -16,14 +16,17 @@ import javax.inject.Inject
 /** Thrown when an item is neither fully downloaded nor reachable (no [HttpUrl] given). */
 class PlaybackUnavailableException(val itemId: String) : Exception("Not playable offline: $itemId")
 
-/** Builds one [MediaItem] per audio file. Streaming auth is handled by the player's data source, not here. */
+/**
+ * Builds one [MediaItem] per audio file. For an episode the item is the synthetic one of [loadPlayable]: title = episode,
+ * artist (notification/lock-screen subtitle) = podcast. Streaming auth is handled by the player's data source, not here.
+ */
 class MediaItemFactory(
     /** A file counts as local only if it still exists on disk. */
     private val fileExists: (File) -> Boolean = { it.isFile },
     private val coverFile: (serverId: String, itemId: String) -> File?,
 ) {
     @Inject constructor(files: DownloadFiles) : this(coverFile = { serverId, itemId ->
-        try { files.coverFile(serverId, itemId) } catch (e: Exception) { null }
+        try { files.playableCover(serverId, itemId) } catch (e: Exception) { null }
     })
 
     /**
@@ -36,7 +39,7 @@ class MediaItemFactory(
         if (!allLocal && baseUrl == null) throw PlaybackUnavailableException(item.item.id)
         val cover: Uri? = coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
         return files.map { f ->
-            val uri: Uri = localFile(f)?.let { Uri.fromFile(it) } ?: audioFileUrl(baseUrl!!, item.item.id, f.ino).toString().toUri()
+            val uri: Uri = localFile(f)?.let { Uri.fromFile(it) } ?: audioFileUrl(baseUrl!!, PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
             val extras = Bundle().apply {
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)

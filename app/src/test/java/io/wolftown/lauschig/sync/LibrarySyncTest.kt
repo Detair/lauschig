@@ -266,10 +266,17 @@ class LibrarySyncTest {
     @Test fun recentEpisodes_failure_doesNotFailSync() = runTest {
         api.libraryType = "podcast"
         api.items = listOf(podcast())
+        api.detail = podcast(ep("e1"))
+        sync().loadDetails(s, "pod")
+        api.recent = listOf(ep("e1", "pod"))
+        sync().sync_()
+        assertEquals(listOf("e1"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
+
         api.recentFails = true
         sync().sync_() // must not throw
         assertNotNull(db.itemDao().get(s, "pod"))
-        assertTrue(db.episodeDao().observeRecent(s, 10).first().isEmpty())
+        // A failed recent call must not wipe the flags of the last good one.
+        assertEquals(listOf("e1"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
     }
 
     @Test fun offline_isNoOp() = runTest {

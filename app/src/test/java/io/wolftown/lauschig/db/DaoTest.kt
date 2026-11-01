@@ -248,6 +248,7 @@ class DaoTest {
     }
 
     @Test fun episodes_replaceForItem_keepsRecentFlag() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
         db.episodeDao().upsert(listOf(episode("e1", 1, recent = true), episode("e2", 2)))
         db.episodeDao().replaceForItem(s, "pod", listOf(episode("e1", 1), episode("e2", 2), episode("e3", 3)))
         assertEquals(listOf("e1"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
@@ -264,7 +265,14 @@ class DaoTest {
         assertEquals(listOf("book"), db.itemDao().observeDownloaded(s).first().map { it.id })
     }
 
+    @Test fun episodes_observeRecent_hidesRowsWithoutPodcast() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
+        db.episodeDao().upsert(listOf(episode("a", 10, recent = true), episode("gone", 20, item = "removed", recent = true)))
+        assertEquals(listOf("a"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
+    }
+
     @Test fun episodes_observeRecent_onlyRecentFlag_limited() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
         db.episodeDao().upsert(listOf(episode("a", 10, recent = true), episode("b", 30, recent = true), episode("c", 20, recent = true), episode("d", 99)))
         assertEquals(listOf("b", "c"), db.episodeDao().observeRecent(s, 2).first().map { it.id })
     }
