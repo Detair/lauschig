@@ -16,7 +16,7 @@ import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.player.PlayerRoute
-import io.wolftown.lauschig.ui.placeholder.ComingSoonScreen
+import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
@@ -33,7 +33,12 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }) }
         composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
-        composable<Discover> { ComingSoonScreen() }
+        composable<Discover> {
+            DiscoverRoute(
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
         composable<Search> {
             SearchRoute(
                 onOpenItem = { navController.navigate(ItemDetail(it)) },

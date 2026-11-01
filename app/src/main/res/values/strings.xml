@@ -15,7 +15,6 @@
     <string name="reauth_action">Sign in again</string>
     <string name="position_jump">Continued on another device. Go back to %1$s?</string>
     <string name="position_jump_undo">Undo</string>
-    <string name="coming_soon">Coming soon</string>
     <string name="start_continue">Continue listening</string>
     <string name="start_downloaded">Downloaded</string>
     <string name="start_empty">Nothing listened to yet – have a look in the library</string>
@@ -161,4 +160,18 @@
     <string name="search_genres">Genres</string>
     <string name="search_tags">Tags</string>
     <string name="search_nothing_found">Nothing found for “%s”</string>
+    <string name="discover_recent">Recently added</string>
+    <string name="discover_series">Series</string>
+    <string name="discover_genres">Genres</string>
+    <string name="discover_authors">Authors</string>
+    <string name="discover_all">All titles</string>
+    <string name="discover_sort">Sort: %s</string>
+    <string name="discover_sort_title">Title</string>
+    <string name="discover_sort_author">Author</string>
+    <string name="discover_sort_added">Recently added</string>
+    <string name="discover_sort_duration">Duration</string>
+    <plurals name="discover_volumes">
+        <item quantity="one">%d volume</item>
+        <item quantity="other">%d volumes</item>
+    </plurals>
 </resources>
