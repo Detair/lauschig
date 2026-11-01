@@ -10,6 +10,17 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+// Release signing comes from the environment (or Gradle properties); never from the repo.
+// Without all four values, bundleRelease still succeeds but produces an UNSIGNED bundle (with a warning).
+fun signingValue(name: String): String? =
+    (System.getenv(name) ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
+
+val keystorePath = signingValue("LAUSCHIG_KEYSTORE")
+val hasReleaseSigning = keystorePath != null &&
+    signingValue("LAUSCHIG_KEYSTORE_PASSWORD") != null &&
+    signingValue("LAUSCHIG_KEY_ALIAS") != null &&
+    signingValue("LAUSCHIG_KEY_PASSWORD") != null
+
 android {
     namespace = "io.wolftown.lauschig"
     compileSdk = 37
@@ -21,17 +32,6 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
-
-    // Release signing comes from the environment (or Gradle properties); never from the repo.
-    // Without it, bundleRelease still succeeds but produces an UNSIGNED bundle.
-    fun signingValue(name: String): String? =
-        (System.getenv(name) ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
-
-    val keystorePath = signingValue("LAUSCHIG_KEYSTORE")
-    val hasReleaseSigning = keystorePath != null &&
-        signingValue("LAUSCHIG_KEYSTORE_PASSWORD") != null &&
-        signingValue("LAUSCHIG_KEY_ALIAS") != null &&
-        signingValue("LAUSCHIG_KEY_PASSWORD") != null
 
     if (hasReleaseSigning) {
         signingConfigs {
@@ -75,10 +75,14 @@ kotlin {
     jvmToolchain(21)
 }
 
-if (System.getenv("LAUSCHIG_KEYSTORE").isNullOrBlank() && providers.gradleProperty("LAUSCHIG_KEYSTORE").orNull.isNullOrBlank()) {
+// Warn whenever a release artifact is built without complete signing config (any of the four values missing).
+if (!hasReleaseSigning) {
     gradle.taskGraph.whenReady {
         if (allTasks.any { it.project == project && it.name.contains("Release") && (it.name.startsWith("bundle") || it.name.startsWith("assemble") || it.name.startsWith("package")) }) {
-            logger.warn("WARNING: LAUSCHIG_KEYSTORE* signing variables not set: the release build will be UNSIGNED.")
+            logger.warn(
+                "WARNING: release signing incomplete (LAUSCHIG_KEYSTORE, LAUSCHIG_KEYSTORE_PASSWORD, LAUSCHIG_KEY_ALIAS, " +
+                    "LAUSCHIG_KEY_PASSWORD must all be set): the release build will be UNSIGNED.",
+            )
         }
     }
 }

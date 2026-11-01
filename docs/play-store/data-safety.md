@@ -15,6 +15,7 @@ Basis: the app talks only to the user-entered Audiobookshelf server; the develop
 
 - Access and refresh tokens (encrypted with Tink / Android Keystore-backed key where available)
 - Library metadata, covers, listening progress, downloaded audio files, settings
+- Home Wi-Fi names (SSIDs) for the optional local-address binding — stored on device only
 
 ## Permissions and their purpose
 

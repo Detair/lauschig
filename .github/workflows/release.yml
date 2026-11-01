@@ -35,7 +35,11 @@ jobs:
           LAUSCHIG_KEYSTORE_PASSWORD: ${{ secrets.LAUSCHIG_KEYSTORE_PASSWORD }}
           LAUSCHIG_KEY_ALIAS: ${{ secrets.LAUSCHIG_KEY_ALIAS }}
           LAUSCHIG_KEY_PASSWORD: ${{ secrets.LAUSCHIG_KEY_PASSWORD }}
-        run: ./gradlew :app:bundleRelease
+        run: |
+          for v in LAUSCHIG_KEYSTORE_PASSWORD LAUSCHIG_KEY_ALIAS LAUSCHIG_KEY_PASSWORD; do
+            test -n "${!v}" || { echo "$v secret is missing"; exit 1; }
+          done
+          ./gradlew :app:bundleRelease
       - name: Remove keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.keystore"
