@@ -26,7 +26,9 @@ import io.wolftown.lauschig.ui.nav.BrowseKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import java.util.Collections
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -36,7 +38,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import io.wolftown.lauschig.external.AudibleVolume
 import io.wolftown.lauschig.external.MissingVolume
-import org.junit.Assert.assertTrue
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -223,22 +224,29 @@ class BrowseViewModelTest {
         assertEquals(listOf("A", "B", "C", "D", "missing:5=Audible 5"), s.entries.map { it.label() })
     }
 
-    @Test fun series_offline_keepsPlainGaps() = runTest {
+    /** Starts with [gate] closed: the plain page is checked, then the gate opens and the lookup result is the positive control. */
+    private suspend fun gatedRun(online: MutableStateFlow<Boolean>, enabled: MutableStateFlow<Boolean>, open: () -> Unit) {
         ownSaga()
-        var asked = false
-        val source = MissingVolumesSource(flowOf(false), flowOf(true)) { _, _, _, _ -> asked = true; listOf(mv("3")) }
-        val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { it.loaded }
-        assertEquals(listOf("A", "B", "missing:3", "D"), s.entries.map { it.label() })
-        assertTrue(!asked)
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val source = MissingVolumesSource(online, enabled) { _, lib, _, _ -> calls += lib; listOf(mv("3")) }
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = source)
+        val plain = vm.await { it.loaded }
+        assertEquals(listOf("A", "B", "missing:3", "D"), plain.entries.map { it.label() })
+        open()
+        val merged = vm.await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf("A", "B", "missing:3=Audible 3", "D"), merged.entries.map { it.label() })
+        // Exactly the one lookup after opening: nothing was asked while the gate was closed.
+        assertEquals(listOf("lib1"), calls.toList())
+    }
+
+    @Test fun series_offline_keepsPlainGaps() = runTest {
+        val online = MutableStateFlow(false)
+        gatedRun(online, MutableStateFlow(true)) { online.value = true }
     }
 
     @Test fun series_disabled_noLookup() = runTest {
-        ownSaga()
-        var asked = false
-        val source = MissingVolumesSource(flowOf(true), flowOf(false)) { _, _, _, _ -> asked = true; listOf(mv("3")) }
-        val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { it.loaded }
-        assertEquals(listOf("A", "B", "missing:3", "D"), s.entries.map { it.label() })
-        assertTrue(!asked)
+        val enabled = MutableStateFlow(false)
+        gatedRun(MutableStateFlow(true), enabled) { enabled.value = true }
     }
 
     @Test fun series_lookupReturnsNull_keepsPlainGaps() = runTest {
@@ -250,9 +258,13 @@ class BrowseViewModelTest {
 
     @Test fun authorPage_neverLooksUpVolumes() = runTest {
         ownSaga()
-        var asked = false
-        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, _, _, _ -> asked = true; null }
-        vm(BrowseKind.GENRE, "x", missing = source).await { it.loaded }
-        assertTrue(!asked)
+        db.itemDao().upsertFromList(listOf(item("w1", title = "W", author = "Ann")))
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, series, _ -> calls += "$lib/$series"; listOf(mv("3")) }
+        val author = vm(BrowseKind.AUTHOR, "Ann", missing = source).await { it.loaded && it.count == 1 }
+        assertEquals(listOf("W"), author.entries.map { it.label() })
+        // Positive control: a series page on the same source does look up, so the pipeline was live.
+        vm(BrowseKind.SERIES, "Saga", missing = source).await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf("lib1/Saga"), calls.toList())
     }
 }

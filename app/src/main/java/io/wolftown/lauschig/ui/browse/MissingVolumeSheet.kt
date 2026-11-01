@@ -68,4 +68,4 @@ internal fun formatDate(date: LocalDate): String = date.format(DateTimeFormatter
 
 /** Audible summaries are small HTML snippets; the sheet shows them as plain text. */
 internal fun plainText(html: String): String =
-    HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().replace("￼", "").trim()
+    HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().replace("\uFFFC", "").trim()

@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -124,16 +125,19 @@ class BrowseViewModel(
 
         val author = authorInfo.authors.map { it[AuthorInfoCache.key(sid, name)] }.distinctUntilChanged()
 
+        // One Room observer for both the lookup and the page.
+        val catalogRows = catalogDao.observeAll(sid).shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
         // Audible lookups run apart from Room so the plain page shows first; null = no data (offline, off, failed).
         val missing: Flow<List<MissingVolume>?> =
             if (kind != BrowseKind.SERIES) flowOf(null)
-            else combine(catalogDao.observeAll(sid), filter) { all, f -> ownedByLibrary(all.filter { it.libraryId in f.libraryIds }) }
+            else combine(catalogRows, filter) { all, f -> ownedByLibrary(all.filter { it.libraryId in f.libraryIds }) }
                 .distinctUntilChanged()
                 .flatMapLatest { missingVolumes.forSeries(sid, it) }
                 .onStart { emit(null) }
 
         return combine(
-            combine(catalogDao.observeAll(sid), missing, ::Pair), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
+            combine(catalogRows, missing, ::Pair), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
         ) { (all, audible), f, progress, downloaded, active ->
             val byId = progress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }

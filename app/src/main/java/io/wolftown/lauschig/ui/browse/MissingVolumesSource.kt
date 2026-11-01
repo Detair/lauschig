@@ -68,7 +68,7 @@ internal fun mergeMissing(
             e.item.seriesSortKey?.let { keyed += it to tile } ?: unkeyed.add(tile)
         }
         is SeriesEntry.Missing -> {
-            val key = e.sequence.toDouble()
+            val key = e.sequence.toDoubleOrNull() ?: continue // gaps are whole numbers; anything else is not placeable
             val v = byKey[key]
             if (v != null) usedKeys += key
             keyed += key to BrowseEntry.Missing(v?.sequence ?: e.sequence, v)
