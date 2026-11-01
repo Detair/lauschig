@@ -1,12 +1,18 @@
 package io.wolftown.lauschig.ui.browse
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import io.wolftown.lauschig.external.AudibleVolume
+import io.wolftown.lauschig.external.MissingVolume
+import java.time.LocalDate
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.absapi.library.AuthorDto
 import io.wolftown.lauschig.catalog.Facet
@@ -28,7 +34,11 @@ class BrowseScreenTest {
     private fun tile(id: String, title: String) = BrowseEntry.Tile(ItemSummary("s", id, title, "Tile Writer", null, null, null, 0f, false, false))
 
     private fun show(state: BrowseUiState, onOpenBrowse: (BrowseKind, String) -> Unit = { _, _ -> }, onOpenItem: (String) -> Unit = {}) =
-        rule.setContent { LauschigTheme { BrowseScreen(state, {}, {}, onOpenItem, onOpenBrowse) } }
+        rule.setContent {
+            LauschigTheme {
+                BrowseScreen(state, {}, {}, onOpenItem, onOpenBrowse, missingActions = { androidx.compose.material3.Text("Request", androidx.compose.ui.Modifier.testTag("missingActions")) })
+            }
+        }
 
     @Test fun authorPage_offline_showsBooksWithoutBio() {
         val opened = mutableListOf<String>()
@@ -78,5 +88,35 @@ class BrowseScreenTest {
     @Test fun emptyPage_showsHint() {
         show(BrowseUiState(BrowseKind.GENRE, "Horror", loaded = true))
         rule.onNodeWithText("Nothing here (in the selected libraries)").assertIsDisplayed()
+    }
+
+    private fun audible(seq: String, upcoming: Boolean = false) = MissingVolume(
+        seq, seq.toDouble(),
+        AudibleVolume(
+            "B$seq", "Audible Title $seq", subtitle = "Sub $seq", authors = listOf("Ann Author"), narrators = listOf("Nick Narrator"),
+            sequence = seq, releaseDate = LocalDate.of(2027, 3, 12), runtimeMin = 372, summary = "<p>A <b>bold</b> plot.</p>",
+        ),
+        upcoming,
+    )
+
+    @Test fun missingTile_tap_opensSheet() {
+        show(
+            BrowseUiState(
+                BrowseKind.SERIES, "Saga", entries = listOf(tile("1", "Vol 1"), BrowseEntry.Missing("3", audible("3"))), count = 1, loaded = true,
+            ),
+        )
+        rule.onNodeWithContentDescription("Volume 3, not in the library").assertIsDisplayed().performClick()
+        rule.onNodeWithText("Audible Title 3").assertIsDisplayed()
+        rule.onNodeWithText("Sub 3").assertIsDisplayed()
+        rule.onNodeWithText("By Ann Author").assertIsDisplayed()
+        rule.onNodeWithText("Narrated by Nick Narrator").assertIsDisplayed()
+        rule.onNodeWithText("6 h 12 min", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("A bold plot.").assertIsDisplayed()
+        rule.onNodeWithTag("missingActions").assertIsDisplayed()
+    }
+
+    @Test fun missingTile_upcoming_showsReleaseDate() {
+        show(BrowseUiState(BrowseKind.SERIES, "Saga", entries = listOf(BrowseEntry.Missing("3", audible("3", upcoming = true))), loaded = true))
+        rule.onNodeWithText("Releases on", substring = true).assertIsDisplayed()
     }
 }

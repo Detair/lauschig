@@ -183,4 +183,16 @@
         <item quantity="other">Show all %d titles</item>
     </plurals>
     <string name="discover_empty">Nothing here yet – the library loads the next time the server is reachable</string>
+    <string name="missing_not_in_library">Not in the library</string>
+    <string name="missing_tile_description">Volume %s, not in the library</string>
+    <string name="missing_by">By %s</string>
+    <string name="missing_narrated">Narrated by %s</string>
+    <string name="missing_releases">Releases on %s</string>
+    <string name="missing_released">Released on %s</string>
+    <string name="missing_duration_min">%d min</string>
+    <string name="missing_duration_h_min">%1$d h %2$d min</string>
+    <string name="settings_missing_volumes">Add missing volumes from Audible</string>
+    <string name="settings_missing_volumes_hint">Looks volumes up in the public Audible catalog. Only book ASINs are sent, nothing about you.</string>
+    <string name="settings_audible_region">Audible region</string>
+    <string name="settings_audible_region_hint">Catalog used for the lookup.</string>
 </resources>

@@ -183,4 +183,16 @@
         <item quantity="other">Alle %d Titel anzeigen</item>
     </plurals>
     <string name="discover_empty">Noch nichts da – die Bibliothek wird beim nächsten Verbinden geladen</string>
+    <string name="missing_not_in_library">Nicht in der Bibliothek</string>
+    <string name="missing_tile_description">Band %s, nicht in der Bibliothek</string>
+    <string name="missing_by">Von %s</string>
+    <string name="missing_narrated">Gesprochen von %s</string>
+    <string name="missing_releases">Erscheint am %s</string>
+    <string name="missing_released">Erschienen am %s</string>
+    <string name="missing_duration_min">%d Min.</string>
+    <string name="missing_duration_h_min">%1$d Std. %2$d Min.</string>
+    <string name="settings_missing_volumes">Fehlende Bände von Audible ergänzen</string>
+    <string name="settings_missing_volumes_hint">Schlägt Bände im öffentlichen Audible-Katalog nach. Es werden nur ASINs der Bücher gesendet, nichts über dich.</string>
+    <string name="settings_audible_region">Audible-Region</string>
+    <string name="settings_audible_region_hint">Katalog für die Suche.</string>
 </resources>
