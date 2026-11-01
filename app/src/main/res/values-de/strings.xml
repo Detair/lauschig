@@ -151,4 +151,14 @@
     <string name="browse_missing_hint">nicht in der Bibliothek</string>
     <string name="browse_empty">Hier ist nichts (in den gewählten Bibliotheken)</string>
     <string name="browse_author_image">Foto von %s</string>
+    <string name="search_hint">Titel, Autoren, Serien suchen…</string>
+    <string name="search_clear">Suche löschen</string>
+    <string name="search_recent">Zuletzt gesucht</string>
+    <string name="search_titles">Titel</string>
+    <string name="search_authors">Autoren</string>
+    <string name="search_narrators">Sprecher</string>
+    <string name="search_series">Serien</string>
+    <string name="search_genres">Genres</string>
+    <string name="search_tags">Tags</string>
+    <string name="search_nothing_found">Nichts gefunden für „%s“</string>
 </resources>

@@ -21,6 +21,7 @@ import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
+import io.wolftown.lauschig.ui.common.kindFilterState
 import io.wolftown.lauschig.ui.common.toSummary
 import io.wolftown.lauschig.ui.library.FilterPreferences
 import io.wolftown.lauschig.ui.nav.Browse
@@ -115,12 +116,7 @@ class BrowseViewModel(
     }
 
     private fun stateFor(sid: String): Flow<BrowseUiState> {
-        val filter = combine(libraryDao.observeAll(sid), prefs.kinds(SCREEN)) { libs, stored ->
-            val available = libs.map { it.effectiveKind }.filter { it != LibraryKind.PODCAST }.toSet()
-            val selected = stored.intersect(available)
-            val effective = selected.ifEmpty { available }
-            Filter(available, selected, libs.filter { it.effectiveKind in effective }.map { it.id }.toSet())
-        }.distinctUntilChanged()
+        val filter = kindFilterState(libraryDao, prefs, sid, SCREEN)
 
         val author = authorInfo.authors.map { it[AuthorInfoCache.key(sid, name)] }.distinctUntilChanged()
 
@@ -158,8 +154,6 @@ class BrowseViewModel(
         BrowseKind.TAG -> catalog.byTag(items, name)
         BrowseKind.SERIES -> emptyList()
     }
-
-    private data class Filter(val available: Set<LibraryKind>, val selected: Set<LibraryKind>, val libraryIds: Set<String>)
 
     companion object {
         /** One saved filter shared by all entity pages. */
