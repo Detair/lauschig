@@ -7,7 +7,9 @@ import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ChapterEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -55,13 +57,24 @@ class PlayerControllerTest {
 
     private val threeFiles get() = listOf(file(0, 600.0), file(1, 300.0), file(2, 900.0))
 
-    private fun TestScope.controller(facade: FakeFacade, item: ItemWithDetails?, base: String? = null) = PlayerControllerImpl(
+    private fun TestScope.controller(facade: FakeFacade, item: ItemWithDetails?, base: String? = null) =
+        controller(facade, { item }, base)
+
+    private fun TestScope.controller(
+        facade: FakeFacade,
+        load: () -> ItemWithDetails?,
+        base: String? = null,
+        factory: MediaItemFactory = MediaItemFactory({ true }) { _, _ -> null },
+        io: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
+        coverFile: (String, String) -> File? = { _, _ -> null },
+    ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
-        factory = MediaItemFactory({ true }) { _, _ -> null },
-        loadItem = { _, _ -> item },
+        factory = factory,
+        loadItem = { _, _ -> load() },
         onlineBaseUrl = { base?.toHttpUrl() },
-        coverFile = { _, _ -> null },
+        coverFile = coverFile,
+        io = io,
     )
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
@@ -173,5 +186,80 @@ class PlayerControllerTest {
         f.errorCb()
         assertEquals(R.string.error_playback_failed, c.state.value.error)
         assertTrue(!c.state.value.isPlaying)
+    }
+
+    @Test fun resumeLoadedPausedItem_afterNewerSyncedProgress_seeksToSyncedPosition() = runTest {
+        val f = FakeFacade()
+        var saved = ProgressEntity(s, "it", 100.0, 1800.0, false, 1)
+        val c = controller(f, { item(threeFiles, saved) })
+        c.play(s, "it", 100.0)
+        c.togglePlayPause() // paused at 100 s, the item stays loaded
+        saved = ProgressEntity(s, "it", 950.0, 1800.0, false, 2) // sync merged a newer position from another device
+        f.started = null
+        c.play(s, "it")
+        assertNull(f.started) // still the fast path, no rebuild
+        assertEquals(2 to 50_000L, f.snap.mediaIndex to f.snap.positionMs)
+        assertTrue(c.state.value.isPlaying)
+        assertEquals(950.0, c.state.value.positionSec, 0.001)
+    }
+
+    @Test fun togglePlay_onLoadedPausedItem_afterNewerSyncedProgress_seeksToSyncedPosition() = runTest {
+        val f = FakeFacade()
+        var saved = ProgressEntity(s, "it", 100.0, 1800.0, false, 1)
+        val c = controller(f, { item(threeFiles, saved) })
+        c.play(s, "it", 100.0)
+        c.togglePlayPause()
+        saved = ProgressEntity(s, "it", 950.0, 1800.0, false, 2)
+        c.togglePlayPause() // mini-player play button
+        assertEquals(2 to 50_000L, f.snap.mediaIndex to f.snap.positionMs)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun resumeLoadedPausedItem_smallDifference_keepsPlayerPosition() = runTest {
+        val f = FakeFacade()
+        var saved = ProgressEntity(s, "it", 100.0, 1800.0, false, 1)
+        val c = controller(f, { item(threeFiles, saved) })
+        c.play(s, "it", 100.0)
+        c.togglePlayPause()
+        saved = ProgressEntity(s, "it", 130.0, 1800.0, false, 2)
+        c.play(s, "it")
+        assertEquals(0 to 100_000L, f.snap.mediaIndex to f.snap.positionMs)
+    }
+
+    @Test fun togglePlayPause_afterServiceStopped_restartsLastItem() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.play(s, "it")
+        f.disconnect()
+        assertEquals("it", c.state.value.itemId) // the mini-player still shows the title
+        c.togglePlayPause()
+        assertEquals(3, f.items.size)
+        assertEquals(1 to 100_000L, f.started)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun togglePlayPause_withNothingEverPlayed_doesNothing() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.togglePlayPause()
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun play_fileChecksRunOnIoDispatcher() = runTest {
+        var onIo = false
+        val io = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                onIo = true
+                try { block.run() } finally { onIo = false }
+            }
+        }
+        val checks = mutableListOf<Boolean>()
+        val factory = MediaItemFactory({ checks += onIo; true }) { _, _ -> checks += onIo; null }
+        val f = FakeFacade()
+        val c = controller(f, { item(threeFiles) }, factory = factory, io = io, coverFile = { _, _ -> checks += onIo; null })
+        c.play(s, "it")
+        assertEquals(3, f.items.size)
+        assertTrue(checks.isNotEmpty())
+        assertTrue("file stats on main: $checks", checks.all { it })
     }
 }
