@@ -149,7 +149,7 @@ class LibrarySync(
             publishedYear = m.publishedYear?.takeIf { it.isNotBlank() },
             asin = m.asin?.takeIf { it.isNotBlank() },
             language = m.language?.takeIf { it.isNotBlank() },
-            numEpisodes = media.numEpisodes ?: 0,
+            numEpisodes = media.numEpisodes ?: media.episodes.size,
         )
     }
 
