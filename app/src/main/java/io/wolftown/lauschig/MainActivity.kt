@@ -1,5 +1,6 @@
 package io.wolftown.lauschig
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +11,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.ui.AppRoot
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -20,9 +22,29 @@ class MainActivity : ComponentActivity() {
         installSplashScreen().setKeepOnScreenCondition { viewModel.startDestination.value == null }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleOpen(intent)
         setContent {
             val start by viewModel.startDestination.collectAsStateWithLifecycle()
-            start?.let { AppRoot(startDestination = it) }
+            val open by openRequest.collectAsStateWithLifecycle()
+            start?.let { AppRoot(startDestination = it, openRequest = open, onOpenHandled = { openRequest.value = null }) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleOpen(intent)
+    }
+
+    /** A notification asked for a screen (e.g. "Clean up"); AppRoot navigates once and clears it. */
+    private val openRequest = MutableStateFlow<String?>(null)
+
+    private fun handleOpen(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
+        intent?.removeExtra(EXTRA_OPEN)
+    }
+
+    companion object {
+        const val EXTRA_OPEN = "open"
+        const val OPEN_CLEANUP = "cleanup"
     }
 }

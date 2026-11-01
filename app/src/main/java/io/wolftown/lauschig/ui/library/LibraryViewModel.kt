@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
@@ -59,6 +60,7 @@ class LibraryViewModel @Inject constructor(
     private val progressDao: ProgressDao,
     private val covers: CoverPathCache,
     private val prefs: FilterPreferences,
+    private val downloadDao: DownloadDao,
 ) : ViewModel() {
     private val tab = MutableStateFlow(LibraryTab.InProgress)
 
@@ -96,12 +98,13 @@ class LibraryViewModel @Inject constructor(
                 LibraryTab.Downloaded -> itemDao.observeDownloaded(sid)
                 LibraryTab.Series -> itemDao.observeByLibraryKinds(sid, f.effective.toList())
             }
-            combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid)) { items, progress, downloaded ->
+            combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid)) { items, progress, downloaded, active ->
                 val byId = progress.associateBy { it.itemId }
                 val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
                 covers.sync(downloadedIds)
                 val visible = if (t == LibraryTab.Series) items else items.filter { it.libraryId in f.libraryIds }
-                fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds)
+                val activeIds = active.toHashSet()
+                fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
                 if (t == LibraryTab.Series) {
                     LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true)
                 } else {

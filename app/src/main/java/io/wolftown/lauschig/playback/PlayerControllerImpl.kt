@@ -1,12 +1,15 @@
 package io.wolftown.lauschig.playback
 
+import android.util.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.ProgressSync
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +41,8 @@ class PlayerControllerImpl(
     /** Waits briefly for an online base URL; only called when the item is not fully local. */
     private val onlineBaseUrl: suspend () -> HttpUrl?,
     private val coverFile: (serverId: String, itemId: String) -> File?,
+    /** Fetches chapters and audio files from the server; used when a title is played before its details were loaded. */
+    private val loadDetails: suspend (serverId: String, itemId: String) -> Unit = { _, _ -> },
     private val pollMs: Long = 1_000,
     /** File-system checks (local files, cover) run here, never on the main thread. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -49,6 +54,7 @@ class PlayerControllerImpl(
         itemDao: ItemDao,
         api: ApiProvider,
         files: DownloadFiles,
+        librarySync: LibrarySync,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -58,9 +64,10 @@ class PlayerControllerImpl(
             withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
         },
         coverFile = { serverId, itemId -> try { files.coverFile(serverId, itemId) } catch (e: Exception) { null } },
+        loadDetails = librarySync::loadDetails,
     )
 
-    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?)
+    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?, val streaming: Boolean)
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -69,16 +76,22 @@ class PlayerControllerImpl(
     /** The last loaded title; survives a service stop so play/pause can start it again. */
     private var last: Pair<String, String>? = null
     private var playJob: Job? = null
+    /** From [play] until the player reports playing (or the start failed). */
+    private var starting = false
     private var pollJob: Job? = null
 
     init {
         facade.setOnChange { refresh() }
-        facade.setOnError { _state.update { it.copy(isPlaying = false, error = R.string.error_playback_failed) } }
+        facade.setOnError {
+            starting = false
+            _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
+        }
         facade.setOnDisconnected {
             // The service is gone; forget the loaded item so the next play() rebuilds the queue.
             playJob?.cancel(); pollJob?.cancel(); pollJob = null
             current = null
-            _state.update { it.copy(isPlaying = false) }
+            starting = false
+            _state.update { it.copy(isPlaying = false, isLoading = false) }
         }
     }
 
@@ -89,22 +102,57 @@ class PlayerControllerImpl(
             if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null && facade.hasMedia()) {
                 resumeLoaded(cur); return@launch
             }
-            val item = loadItem(serverId, itemId) ?: return@launch
+            var item = loadItem(serverId, itemId) ?: return@launch
+            // Feedback right away: details, connection and buffering can take a few seconds when streaming.
+            val previous = current
+            if (previous != null) {
+                current = null
+                pollJob?.cancel(); pollJob = null
+                if (facade.snapshot().isPlaying) facade.pause()
+            }
+            starting = true
+            last = serverId to itemId
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isLoading = true)
+            /** Start failed: the previous title (if any) stays loaded, the error is shown. */
+            fun fail(error: Int) {
+                starting = false
+                current = previous
+                if (previous == null) _state.update { it.copy(isLoading = false, error = error) }
+                else { refresh(); _state.update { it.copy(error = error) } }
+            }
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
             val base = if (allLocal) null else onlineBaseUrl()
+            if (item.audioFiles.isEmpty()) {
+                // The library list carries no audio files; they arrive with the details, which may not be loaded yet.
+                if (base == null) {
+                    fail(R.string.error_not_downloaded_offline)
+                    return@launch
+                }
+                item = try {
+                    loadDetails(serverId, itemId)
+                    loadItem(serverId, itemId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "loading details for playback failed", e)
+                    null
+                }?.takeIf { it.audioFiles.isNotEmpty() } ?: run {
+                    fail(R.string.error_item_not_playable)
+                    return@launch
+                }
+            }
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {
-                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                fail(R.string.error_not_downloaded_offline)
                 return@launch
             }
             val mapper = TimelineMapper(item.audioFiles)
             val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
-            current = Current(item, mapper, coverPath)
-            last = serverId to itemId
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title)
+            current = Current(item, mapper, coverPath, streaming = !allLocal)
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
@@ -131,12 +179,20 @@ class PlayerControllerImpl(
 
     override fun togglePlayPause() {
         val c = current
+        if (c == null && starting) {
+            // Tapped while the title is still being prepared: cancel the start.
+            playJob?.cancel()
+            starting = false
+            _state.update { it.copy(isLoading = false) }
+            return
+        }
         if (c == null) {
             // The service was stopped (e.g. app swiped away while paused): start the last title again.
             last?.let { (serverId, itemId) -> play(serverId, itemId) }
             return
         }
-        if (facade.snapshot().isPlaying) {
+        if (facade.snapshot().isPlaying || starting) {
+            starting = false
             facade.pause(); refresh()
         } else {
             playJob?.cancel()
@@ -175,6 +231,7 @@ class PlayerControllerImpl(
     private fun refresh() {
         val c = current ?: return
         val snap = facade.snapshot()
+        if (snap.isPlaying) starting = false
         val pos = c.mapper.toGlobal(snap.mediaIndex, snap.positionMs)
         val duration = c.mapper.totalSec.takeIf { it > 0 } ?: c.item.item.durationSec
         val chapters = c.item.chapters
@@ -193,14 +250,20 @@ class PlayerControllerImpl(
                 chapterStartSec = chapter?.startSec ?: 0.0,
                 chapterEndSec = chapter?.endSec ?: duration,
                 speed = snap.speed,
+                isStreaming = c.streaming,
+                isLoading = (starting && !snap.isPlaying) || snap.isBuffering,
                 error = if (snap.isPlaying) null else it.error,
             )
         }
-        if (snap.isPlaying) startPolling() else { pollJob?.cancel(); pollJob = null }
+        if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
     }
 
     private fun startPolling() {
         if (pollJob?.isActive == true) return
         pollJob = scope.launch { while (true) { delay(pollMs); refresh() } }
+    }
+
+    private companion object {
+        const val TAG = "PlayerController"
     }
 }

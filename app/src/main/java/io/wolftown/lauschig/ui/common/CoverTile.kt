@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.ui.common
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -38,12 +42,19 @@ import io.wolftown.lauschig.absapi.library.coverUrl
 import java.io.File
 
 /**
- * Cover with series badge (top start), offline icon (bottom end) and progress bar (bottom).
+ * Cover with series badge (top start), offline/downloading icon (bottom end), optional play button (bottom start)
+ * and progress bar (bottom). Tap = [onClick], long-press = [onLongClick] (menu), the play button = [onPlay].
  * Cover source: local file if present, else the server URL only while online, else the title initials
  * (which are always drawn underneath, so a failed load degrades to the placeholder).
  */
 @Composable
-fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+fun CoverTile(
+    item: ItemSummary,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
+    onPlay: (() -> Unit)? = null,
+) {
     val base = LocalServerBaseUrl.current
     val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
@@ -51,7 +62,7 @@ fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> U
     Column(
         modifier
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = if (onLongClick != null) stringResource(R.string.cover_actions) else null)
             .semantics(mergeDescendants = true) { if (unavailable) stateDescription = unavailableText },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).alpha(if (unavailable) 0.38f else 1f).clip(RoundedCornerShape(8.dp))) {
@@ -78,6 +89,30 @@ fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> U
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
+            }
+            if (onPlay != null && !unavailable) {
+                val playLabel = stringResource(R.string.cover_play, item.title)
+                FilledIconButton(
+                    onClick = onPlay,
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), contentColor = MaterialTheme.colorScheme.onSurface),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 10.dp).size(36.dp).testTag("coverPlay"),
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = playLabel, modifier = Modifier.size(24.dp))
+                }
+            }
+            if (item.isDownloading) {
+                Icon(
+                    Icons.Rounded.Downloading,
+                    contentDescription = stringResource(R.string.cover_downloading),
+                    tint = MaterialTheme.colorScheme.onSecondary,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 6.dp, end = 4.dp)
+                        .background(MaterialTheme.colorScheme.secondary, RoundedCornerShape(50))
+                        .padding(2.dp)
+                        .size(16.dp)
+                        .testTag("coverDownloading"),
+                )
             }
             if (item.isDownloaded) {
                 Icon(

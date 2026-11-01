@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.db
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -23,8 +24,9 @@ import io.wolftown.lauschig.db.entities.ProgressEntity
         LibraryEntity::class, ItemEntity::class, ChapterEntity::class, AudioFileEntity::class,
         ProgressEntity::class, LocalSessionEntity::class, DownloadEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 @TypeConverters(Converters::class)
 abstract class LauschigDatabase : RoomDatabase() {

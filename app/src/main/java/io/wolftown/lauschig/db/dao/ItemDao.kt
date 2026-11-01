@@ -59,6 +59,28 @@ abstract class ItemDao {
     @Query("SELECT * FROM items WHERE serverId = :serverId AND id = :id")
     abstract suspend fun get(serverId: String, id: String): ItemEntity?
 
+    /**
+     * The next volume of the same series (same name, case-insensitive) that is not finished yet: smallest sort key
+     * above [afterKey]. Volumes already heard are skipped.
+     */
+    @Query(
+        """SELECT * FROM items i WHERE serverId = :serverId AND seriesName IS NOT NULL
+             AND lower(trim(seriesName)) = lower(trim(:seriesName)) AND seriesSortKey > :afterKey
+             AND NOT EXISTS (SELECT 1 FROM progress p WHERE p.serverId = i.serverId AND p.itemId = i.id AND p.isFinished = 1)
+           ORDER BY seriesSortKey, title COLLATE NOCASE LIMIT 1""",
+    )
+    abstract suspend fun nextInSeries(serverId: String, seriesName: String, afterKey: Double): ItemEntity?
+
+    /** Finished titles whose download is complete: candidates for the cleanup reminder. */
+    @Query(
+        """SELECT i.* FROM items i
+           JOIN progress p ON p.serverId = i.serverId AND p.itemId = i.id
+           JOIN downloads d ON d.serverId = i.serverId AND d.itemId = i.id
+           WHERE i.serverId = :serverId AND p.isFinished = 1 AND d.state = 'COMPLETE'
+           ORDER BY i.title COLLATE NOCASE""",
+    )
+    abstract fun observeFinishedDownloaded(serverId: String): Flow<List<ItemEntity>>
+
     @Query("SELECT * FROM items WHERE serverId = :serverId AND id = :id")
     abstract fun observeItemRow(serverId: String, id: String): Flow<ItemEntity?>
 

@@ -140,6 +140,27 @@ Android-Features nutzen:
 - **Optional automatisch weiterspielen, sobald Auto oder Bluetooth-Kopfhörer verbunden
   werden.**
 
+### 2.7b Aus dem ersten Gerätetest (Fabian, 2026-11-01)
+- **Fortschritt verwalten** (Long-Press-Menü, Detailseite, Player-Menü): als gehört
+  markieren, als ungehört markieren (Position bleibt), von vorn beginnen, aus
+  „Weiterhören“ entfernen (ABS-Funktion, wird synchronisiert).
+- **Nach „gehört“ den Download löschen**: Nach dem Markieren und am Ende eines Buchs
+  fragt die App „Download löschen und Platz freigeben?“.
+- **Nächster Band einer Serie**, als Einstellung mit zwei Stufen:
+  - *Vorschlagen* (**Standard**): Am Ende eines Bands erscheint „Weiter mit Band N“ mit
+    Abspiel- und Download-Knopf.
+  - *Automatisch vorladen*: Ab etwa 80 % eines Bands lädt die App den nächsten Band
+    herunter (nur wenn Downloads gerade erlaubt sind, z. B. WLAN-Regel).
+- **„Stand vom Server holen“**: holt die Position eines Titels manuell vom Server, falls
+  die automatische Synchronisierung danebenliegt.
+- **Aufräum-Erinnerung**, einmal pro Woche (abschaltbar): Eine Benachrichtigung nennt
+  die fertig gehörten Bücher, die noch heruntergeladen sind, und wie viel Platz sie
+  belegen. Antippen öffnet die Seite „Aufräumen“ mit einer Liste. Pro Buch gibt es eine
+  Auswahl zum Löschen und eine Checkbox „Nicht mehr daran erinnern“. Die Auswahl merkt
+  sich die App auf dem Gerät. Ohne solche Bücher kommt keine Benachrichtigung.
+  (Checkboxen direkt in der Benachrichtigung erlaubt Android nicht, daher die eigene
+  Seite.)
+
 ### 2.8 Später: TV-Modus (Android TV / Google TV)
 - Eigenes, an den Fernseher angepasstes Design (Compose for TV, Bedienung mit
   Fernbedienung/D-Pad, große Cover, 10-Fuß-Abstand). Bibliothek und Player wie auf dem

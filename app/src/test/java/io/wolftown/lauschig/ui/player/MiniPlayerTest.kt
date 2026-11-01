@@ -46,4 +46,13 @@ class MiniPlayerTest {
         rule.setContent { LauschigTheme { MiniPlayer(PlayerUiState(), {}, {}) } }
         rule.onNodeWithContentDescription("Play").assertDoesNotExist()
     }
+
+    @Test fun miniPlayer_loading_showsSpinner_andToggleStillWorks() {
+        var toggles = 0
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(isLoading = true), { toggles++ }, {}) } }
+        rule.onNodeWithContentDescription("Loading…").assertExists()
+        rule.onNodeWithContentDescription("Play").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Loading…").performClick()
+        assertEquals(1, toggles)
+    }
 }

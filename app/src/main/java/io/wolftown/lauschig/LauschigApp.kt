@@ -7,7 +7,9 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
+import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.playback.NextVolumePrefetcher
 import io.wolftown.lauschig.sync.SyncScheduler
 import io.wolftown.lauschig.ui.common.newCoverImageLoader
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var syncScheduler: SyncScheduler
     @Inject lateinit var apiProvider: ApiProvider
+    @Inject lateinit var prefetcher: NextVolumePrefetcher
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -33,5 +36,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Off the main thread; nothing here awaits network I/O.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch { syncScheduler.start(scope) }
+        // The player state is main-thread bound; the prefetcher only reads it.
+        prefetcher.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
+        CleanupReminderWorker.schedule(this)
     }
 }

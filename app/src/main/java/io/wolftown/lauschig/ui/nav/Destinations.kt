@@ -9,3 +9,5 @@ import kotlinx.serialization.Serializable
 @Serializable data class ItemDetail(val itemId: String)
 @Serializable data object Player
 @Serializable data object Setup
+@Serializable data object Settings
+@Serializable data object Cleanup

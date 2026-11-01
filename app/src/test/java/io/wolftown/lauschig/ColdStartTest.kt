@@ -8,6 +8,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
@@ -210,7 +211,8 @@ class ColdStartTest {
             compose.onAllNodesWithTag("setupScreen").assertCountEquals(0)
             compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertCountEquals(0)
 
-            compose.onNodeWithText(TITLE).performClick()
+            // The cover's play button starts it (tapping the cover opens the details).
+            compose.onNodeWithContentDescription("Play $TITLE").performClick()
             awaitMainThread(2_000) { player.state.value.isPlaying }
             assertTrue(player.state.value.isPlaying)
             assertEquals(TITLE, player.state.value.title)

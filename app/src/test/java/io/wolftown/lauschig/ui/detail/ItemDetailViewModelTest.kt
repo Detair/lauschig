@@ -29,6 +29,10 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,7 +84,11 @@ class ItemDetailViewModelTest {
             .allowMainThreadQueries().build()
     }
 
+    /** Owns every VM of a test so their Room observers are cancelled before the database closes. */
+    private val viewModels = ViewModelStore()
+
     @After fun tearDown() {
+        viewModels.clear()
         db.close()
         Dispatchers.resetMain()
     }
@@ -89,10 +97,15 @@ class ItemDetailViewModelTest {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
-        return ItemDetailViewModel("b1", store, db.itemDao(), downloads, player, connection, { s, i ->
-            loadCalls += "$s/$i"
-            if (loadFails) throw java.io.IOException("down")
-        }, covers)
+        val factory = viewModelFactory {
+            initializer {
+                ItemDetailViewModel("b1", store, db.itemDao(), downloads, player, connection, { s, i ->
+                    loadCalls += "$s/$i"
+                    if (loadFails) throw java.io.IOException("down")
+                }, covers)
+            }
+        }
+        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", ItemDetailViewModel::class]
     }
 
     private suspend fun seed(loaded: Boolean = true, progress: ProgressEntity? = null, download: DownloadEntity? = null) {

@@ -61,7 +61,10 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
                         if (model != null) AsyncImage(model, null, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp))
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(state.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(state.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            SourceIndicator(state.isStreaming, Modifier.padding(start = 6.dp), showLabel = false)
+                        }
                         val sub = state.error?.let { stringResource(it) } ?: state.chapterTitle
                         if (sub != null) {
                             Text(
@@ -75,11 +78,15 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
                     }
                 }
                 IconButton(onClick = onToggle, modifier = Modifier.size(MiniToggleSize)) {
-                    Icon(
-                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
-                        modifier = Modifier.size(36.dp),
-                    )
+                    if (state.isLoading) {
+                        LoadingIndicator(Modifier.size(28.dp))
+                    } else {
+                        Icon(
+                            if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
                 }
             }
             LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().testTag("miniProgress"), gapSize = 0.dp, drawStopIndicator = {})

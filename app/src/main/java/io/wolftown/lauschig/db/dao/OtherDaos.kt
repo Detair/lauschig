@@ -117,9 +117,18 @@ abstract class AudioFileDao {
             "FROM audio_files WHERE serverId = :serverId AND itemId = :itemId",
     )
     abstract fun observeBytes(serverId: String, itemId: String): Flow<BytesProgress>
+
+    /** Bytes on disk per downloaded item (for the cleanup page). */
+    @Query(
+        "SELECT itemId, COALESCE(SUM(completedBytes), 0) AS bytes FROM audio_files " +
+            "WHERE serverId = :serverId AND localPath IS NOT NULL GROUP BY itemId",
+    )
+    abstract fun observeLocalBytes(serverId: String): Flow<List<ItemBytes>>
 }
 
 data class BytesProgress(val done: Long, val total: Long)
+
+data class ItemBytes(val itemId: String, val bytes: Long)
 
 /** A server row that replaced a local one; input for PositionJump detection. */
 data class ProgressChange(val itemId: String, val oldCurrentTimeSec: Double, val newCurrentTimeSec: Double)
@@ -146,6 +155,12 @@ abstract class ProgressDao {
     open suspend fun saveLocal(
         serverId: String, itemId: String, currentTimeSec: Double, durationSec: Double, isFinished: Boolean, lastUpdate: Long,
     ) = put(ProgressEntity(serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty = true))
+
+    /** Explicit user action (mark finished, start over, hide): written like a player save, so it syncs as newest. */
+    open suspend fun saveUserAction(row: ProgressEntity) = put(row.copy(dirty = true))
+
+    /** "Fetch from server": takes the server row as-is, even if the local one is newer. */
+    open suspend fun replaceFromServer(row: ProgressEntity) = put(row.copy(dirty = false))
 
     /** Clears dirty only if no newer local write happened since [lastUpdate] was read. */
     @Query("UPDATE progress SET dirty = 0 WHERE serverId = :serverId AND itemId = :itemId AND lastUpdate = :lastUpdate")
@@ -189,6 +204,10 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     fun observe(serverId: String, itemId: String): Flow<DownloadEntity?>
+
+    /** Items whose download is queued or running (for the "downloading" cover badge). */
+    @Query("SELECT itemId FROM downloads WHERE serverId = :serverId AND state IN ('QUEUED', 'RUNNING')")
+    fun observeActiveIds(serverId: String): Flow<List<String>>
 
     @Query("UPDATE downloads SET state = :state, error = :error WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun setState(serverId: String, itemId: String, state: DownloadState, error: String?)

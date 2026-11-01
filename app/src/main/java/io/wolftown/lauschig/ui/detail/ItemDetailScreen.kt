@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -43,18 +44,27 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.coverModel
 
 @Composable
-fun ItemDetailRoute(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: ItemDetailViewModel = hiltViewModel()) {
+fun ItemDetailRoute(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenItem: (itemId: String) -> Unit = {},
+    viewModel: ItemDetailViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val askNotifications = rememberNotificationPermissionOnce()
     ItemDetailScreen(
         state, onBack, viewModel::onPrimary, { viewModel.download(); askNotifications() }, viewModel::pauseDownload,
         viewModel::deleteDownload, viewModel::onChapter, modifier,
+        topActions = { if (state.found) ProgressMenuButton(state.itemId) },
+        finished = { if (state.found) FinishedCard(state.itemId, onOpenItem, Modifier.padding(top = 16.dp)) },
     )
 }
 
@@ -68,11 +78,17 @@ fun ItemDetailScreen(
     onDeleteDownload: () -> Unit,
     onChapter: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    topActions: @Composable () -> Unit = {},
+    finished: @Composable () -> Unit = {},
 ) {
     val settledOffline = LocalOfflineDimming.current
     LazyColumn(modifier.fillMaxSize()) {
         item("back") {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
+                Spacer(Modifier.weight(1f))
+                topActions()
+            }
         }
         if (!state.found) {
             item("missing") {
@@ -81,6 +97,7 @@ fun ItemDetailScreen(
             return@LazyColumn
         }
         item("header") { Header(state, onPrimary, onDownload, onPause, onDeleteDownload) }
+        item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
         item("chapters-title") {
             Text(
                 stringResource(R.string.detail_chapters),

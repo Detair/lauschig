@@ -63,7 +63,10 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
 
     override fun snapshot(): PlayerSnapshot {
         val c = controller ?: return PlayerSnapshot(false, 0, 0, 1f)
-        return PlayerSnapshot(c.isPlaying, c.currentMediaItemIndex, c.currentPosition.coerceAtLeast(0), c.playbackParameters.speed)
+        return PlayerSnapshot(
+            c.isPlaying, c.currentMediaItemIndex, c.currentPosition.coerceAtLeast(0), c.playbackParameters.speed,
+            isBuffering = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
+        )
     }
 
     override fun hasMedia() = controller?.let { it.isConnected && it.mediaItemCount > 0 } == true

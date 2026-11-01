@@ -17,6 +17,9 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -26,6 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.ItemActionsSheet
+import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
 
@@ -38,9 +43,16 @@ private fun LibraryTab.label(): Int = when (this) {
 }
 
 @Composable
-fun LibraryRoute(onOpenItem: (itemId: String) -> Unit, modifier: Modifier = Modifier, viewModel: LibraryViewModel = hiltViewModel()) {
+fun LibraryRoute(
+    onOpenItem: (itemId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: LibraryViewModel = hiltViewModel(),
+    actions: ItemActionsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LibraryScreen(state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier)
+    var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
+    LibraryScreen(state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it })
+    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
 
 @Composable
@@ -50,7 +62,12 @@ fun LibraryScreen(
     onKinds: (Set<LibraryKind>) -> Unit,
     onOpenItem: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
+    onPlay: (itemId: String) -> Unit = {},
+    onMenu: (ItemSummary) -> Unit = {},
 ) {
+    val tile: @Composable (ItemSummary) -> Unit = { item ->
+        CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
+    }
     Column(modifier.fillMaxSize()) {
         PrimaryScrollableTabRow(selectedTabIndex = state.tab.ordinal, edgePadding = 8.dp) {
             LibraryTab.entries.forEach { t ->
@@ -64,13 +81,13 @@ fun LibraryScreen(
                 Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyLarge)
             }
         } else {
-            LibraryGrid(state, onOpenItem)
+            LibraryGrid(state, tile)
         }
     }
 }
 
 @Composable
-private fun LibraryGrid(state: LibraryUiState, onOpenItem: (String) -> Unit) {
+private fun LibraryGrid(state: LibraryUiState, tile: @Composable (ItemSummary) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
         contentPadding = PaddingValues(16.dp),
@@ -83,15 +100,10 @@ private fun LibraryGrid(state: LibraryUiState, onOpenItem: (String) -> Unit) {
                 item(key = "series:${group.name.lowercase()}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
                     Text(group.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 }
-                items(group.items, key = ItemSummary::key, contentType = { "tile" }) { Tile(it, onOpenItem) }
+                items(group.items, key = ItemSummary::key, contentType = { "tile" }) { tile(it) }
             }
         } else {
-            items(state.items, key = ItemSummary::key, contentType = { "tile" }) { Tile(it, onOpenItem) }
+            items(state.items, key = ItemSummary::key, contentType = { "tile" }) { tile(it) }
         }
     }
-}
-
-@Composable
-private fun Tile(item: ItemSummary, onOpenItem: (String) -> Unit) {
-    CoverTile(item, onClick = { onOpenItem(item.id) })
 }

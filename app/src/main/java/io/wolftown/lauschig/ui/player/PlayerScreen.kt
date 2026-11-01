@@ -14,9 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -59,7 +62,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.DownloadIconButton
+import io.wolftown.lauschig.ui.common.FinishedCard
+import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.ItemActionsViewModel
+import io.wolftown.lauschig.ui.common.QuickDownload
+import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.detail.chapterItems
@@ -67,10 +76,25 @@ import java.text.NumberFormat
 import kotlin.math.roundToInt
 
 @Composable
-fun PlayerRoute(onClose: () -> Unit, modifier: Modifier = Modifier, viewModel: PlayerViewModel = hiltViewModel()) {
+fun PlayerRoute(
+    onClose: () -> Unit,
+    onOpenDetails: (itemId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: PlayerViewModel = hiltViewModel(),
+    actions: ItemActionsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val itemId = state.itemId
+    val download by remember(itemId) { actions.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
+    val askNotifications = rememberNotificationPermissionOnce()
     PlayerScreen(
         state, onClose, modifier,
+        onOpenDetails = { itemId?.let(onOpenDetails) },
+        download = download,
+        onDownload = { itemId?.let { actions.download(it); askNotifications() } },
+        onDeleteDownload = { itemId?.let(actions::deleteDownload) },
+        topActions = { itemId?.let { ProgressMenuButton(it, viewModel = actions) } },
+        finished = { itemId?.let { FinishedCard(it, onOpenDetails, Modifier.padding(vertical = 8.dp), viewModel = actions) } },
         onToggle = viewModel::togglePlayPause,
         onSeekBy = viewModel::seekBy,
         onSeekInChapter = viewModel::seekInChapter,
@@ -104,6 +128,12 @@ fun PlayerScreen(
     onNext: () -> Unit = {},
     onChapter: (Int) -> Unit = {},
     onSpeed: (Float) -> Unit = {},
+    onOpenDetails: () -> Unit = {},
+    download: QuickDownload = QuickDownload.None,
+    onDownload: () -> Unit = {},
+    onDeleteDownload: () -> Unit = {},
+    topActions: @Composable () -> Unit = {},
+    finished: @Composable () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -118,15 +148,35 @@ fun PlayerScreen(
     val hasChapters = state.chapters.isNotEmpty()
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
+        val detailsLabel = stringResource(R.string.player_open_details)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
+            Spacer(Modifier.weight(1f))
+            if (state.itemId != null) {
+                DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
+                IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
+                topActions()
+            }
+        }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             val model = coverModel(LocalServerBaseUrl.current, state.itemId.orEmpty(), state.coverPath, 0)
-            Box(Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).testTag("playerCover")) {
+            Box(
+                Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = detailsLabel, onClick = onOpenDetails).testTag("playerCover"),
+            ) {
                 Initials(state.title)
                 if (model != null) AsyncImage(model, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
         }
-        Text(state.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
+        Text(
+            state.title,
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable(onClickLabel = detailsLabel, onClick = onOpenDetails),
+        )
+        if (state.itemId != null) {
+            Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) { SourceIndicator(state.isStreaming) }
+        }
         state.chapterTitle?.let {
             Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
@@ -162,11 +212,15 @@ fun PlayerScreen(
                 Icon(Icons.Rounded.Replay30, stringResource(R.string.player_back_30), Modifier.size(36.dp))
             }
             FilledIconButton(onClick = onToggle, modifier = Modifier.size(80.dp)) {
-                Icon(
-                    if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
-                    Modifier.size(56.dp),
-                )
+                if (state.isLoading) {
+                    LoadingIndicator(Modifier.size(40.dp), color = MaterialTheme.colorScheme.onPrimary)
+                } else {
+                    Icon(
+                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+                        Modifier.size(56.dp),
+                    )
+                }
             }
             IconButton(onClick = { onSeekBy(30) }, modifier = Modifier.size(56.dp)) {
                 Icon(Icons.Rounded.Forward30, stringResource(R.string.player_forward_30), Modifier.size(36.dp))
@@ -176,6 +230,7 @@ fun PlayerScreen(
             }
         }
 
+        finished()
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             val speedDescription = stringResource(R.string.player_speed_button, formatSpeed(state.speed))
             OutlinedButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("speedButton").semantics { contentDescription = speedDescription }) {

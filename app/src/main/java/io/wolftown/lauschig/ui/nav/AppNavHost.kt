@@ -9,6 +9,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.getValue
+import io.wolftown.lauschig.cleanup.CleanupRoute
+import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
@@ -25,13 +27,20 @@ import io.wolftown.lauschig.ui.start.StartRoute
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
-        composable<Start> { StartRoute() }
-        // Library, detail, player and setup screens arrive in later tasks.
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }) }
+        composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }) }
+        composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> { ComingSoonScreen() }
         composable<Search> { ComingSoonScreen() }
-        composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }) }
-        composable<Player> { PlayerRoute(onClose = { navController.popBackStack() }) }
+        composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+        composable<Player> {
+            PlayerRoute(
+                onClose = { navController.popBackStack() },
+                // The details replace the player, so "back" from them returns to where the player was opened from.
+                onOpenDetails = { id -> navController.navigate(ItemDetail(id)) { popUpTo<Player> { inclusive = true } } },
+            )
+        }
         composable<Setup> {
             SetupRoute(onDone = {
                 // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.

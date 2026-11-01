@@ -2,6 +2,9 @@ package io.wolftown.lauschig.ui
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import io.wolftown.lauschig.MainActivity
+import io.wolftown.lauschig.ui.nav.Cleanup
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -23,8 +26,19 @@ import io.wolftown.lauschig.ui.nav.navigateToTab
 
 /** Wires ViewModel state, navigation and the shell together; hosts the mini player above the bottom bar. */
 @Composable
-fun AppRoot(startDestination: Any, viewModel: AppViewModel = hiltViewModel()) {
+fun AppRoot(
+    startDestination: Any,
+    viewModel: AppViewModel = hiltViewModel(),
+    openRequest: String? = null,
+    onOpenHandled: () -> Unit = {},
+) {
     val navController = rememberNavController()
+    LaunchedEffect(openRequest) {
+        if (openRequest == MainActivity.OPEN_CLEANUP) {
+            navController.navigate(Cleanup) { launchSingleTop = true }
+            onOpenHandled()
+        }
+    }
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
     val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
