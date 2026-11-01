@@ -40,6 +40,8 @@ private class FakePlayer(initial: PlayerUiState = PlayerUiState()) : PlayerContr
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += Triple(serverId, itemId, startSec) }
     override fun togglePlayPause() {}
     override fun seekBy(deltaSec: Int) { seeks += deltaSec }
+    val absSeeks = mutableListOf<Double>()
+    override fun seekTo(globalSec: Double) { absSeeks += globalSec }
     override fun seekToChapter(index: Int) {}
     override fun setSpeed(speed: Float) {}
 }
@@ -116,8 +118,9 @@ class AppScaffoldTest {
         rule.onNodeWithText("Continued on another device. Go back to 1:02:05?").assertIsDisplayed()
 
         rule.onNodeWithText("Undo").performClick()
-        rule.waitUntil(5_000) { player.seeks.isNotEmpty() }
-        assertEquals(listOf(-275), player.seeks)
+        rule.waitUntil(5_000) { player.absSeeks.isNotEmpty() }
+        assertEquals(listOf(3_725.0), player.absSeeks)
+        assertEquals(emptyList<Int>(), player.seeks)
         rule.waitUntil(5_000) { bus.pending.value.none { it.itemId == "book1" } }
         assertEquals(listOf("other"), bus.pending.value.map { it.itemId })
     }

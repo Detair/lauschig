@@ -23,6 +23,7 @@ private class RecordingPlayer : PlayerController {
     override fun play(serverId: String, itemId: String, startSec: Double?) { calls += "play" }
     override fun togglePlayPause() { calls += "toggle" }
     override fun seekBy(deltaSec: Int) { calls += "seekBy:$deltaSec" }
+    override fun seekTo(globalSec: Double) { calls += "seekTo:$globalSec" }
     override fun seekToChapter(index: Int) { calls += "chapter:$index" }
     override fun setSpeed(speed: Float) { calls += "speed:$speed" }
 }
@@ -75,10 +76,11 @@ class PlayerViewModelTest {
         assertEquals(listOf("chapter:1", "chapter:0", "chapter:2"), player.calls)
     }
 
-    @Test fun seekInChapter_sendsDeltaFromCurrentPosition() = runTest {
+    @Test fun sliderSeek_usesAbsolutePosition() = runTest {
         player.state.value = playing(125.0)
         val v = vm(); v.state.first { it.chapters.isNotEmpty() }
         v.seekInChapter(0.75f)
-        assertEquals(listOf("seekBy:50"), player.calls)
+        v.seekInChapter(1.0f)
+        assertEquals(listOf("seekTo:175.0", "seekTo:199.0"), player.calls)
     }
 }

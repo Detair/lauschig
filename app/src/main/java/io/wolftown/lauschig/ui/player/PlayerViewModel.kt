@@ -32,6 +32,7 @@ data class PlayerScreenState(
     val coverPath: String? = null,
     val isPlaying: Boolean = false,
     val chapterTitle: String? = null,
+    val chapterStartSec: Double = 0.0,
     /** 0..1 within the current chapter (whole book if there are no chapters). */
     val chapterProgress: Float = 0f,
     val chapterPositionSec: Double = 0.0,
@@ -76,6 +77,7 @@ class PlayerViewModel(
             coverPath = p.coverPath,
             isPlaying = p.isPlaying,
             chapterTitle = p.chapterTitle,
+            chapterStartSec = start,
             chapterProgress = if (length > 0) (inChapter / length).toFloat() else 0f,
             chapterPositionSec = inChapter,
             chapterDurationSec = length,
@@ -96,10 +98,11 @@ class PlayerViewModel(
     fun togglePlayPause() = player.togglePlayPause()
     fun seekBy(deltaSec: Int) = player.seekBy(deltaSec)
 
-    /** Seek to [fraction] (0..1) of the current chapter; sent as a delta from the current position. */
+    /** Seek to [fraction] (0..1) of the current chapter as an absolute position; 1.0 lands 1 s before the chapter end. */
     fun seekInChapter(fraction: Float) {
         val s = state.value
-        player.seekBy((fraction.coerceIn(0f, 1f) * s.chapterDurationSec - s.chapterPositionSec).roundToInt())
+        val offset = (fraction.coerceIn(0f, 1f) * s.chapterDurationSec).coerceAtMost((s.chapterDurationSec - 1.0).coerceAtLeast(0.0))
+        player.seekTo(s.chapterStartSec + offset)
     }
 
     /** More than [RESTART_THRESHOLD_SEC] into the chapter restarts it, else jumps to the previous one. */

@@ -27,6 +27,9 @@ interface PlayerController {
     fun play(serverId: String, itemId: String, startSec: Double? = null)
     fun togglePlayPause()
     fun seekBy(deltaSec: Int)
+
+    /** Seeks to the absolute book-wide position [globalSec] (clamped to the book). */
+    fun seekTo(globalSec: Double)
     fun seekToChapter(index: Int)
     fun setSpeed(speed: Float)
 }

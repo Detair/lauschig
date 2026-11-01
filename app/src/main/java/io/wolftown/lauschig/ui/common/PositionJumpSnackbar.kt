@@ -14,7 +14,6 @@ import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.sync.PositionJump
 import io.wolftown.lauschig.sync.PositionJumpBus
-import kotlin.math.roundToInt
 
 /** Picks the pending jump to show: the loaded item's, or the first pending one if nothing is loaded. */
 internal fun jumpToShow(pending: List<PositionJump>, loadedItemId: String?): PositionJump? =
@@ -23,7 +22,7 @@ internal fun jumpToShow(pending: List<PositionJump>, loadedItemId: String?): Pos
 /** Seeks back to [PositionJump.fromSec]; starts the item there if it is not the loaded one. */
 internal fun undoPositionJump(jump: PositionJump, player: PlayerController, state: PlayerUiState, serverId: String?) {
     if (state.itemId == jump.itemId) {
-        player.seekBy((jump.fromSec - state.positionSec).roundToInt())
+        player.seekTo(jump.fromSec)
     } else if (serverId != null) {
         player.play(serverId, jump.itemId, jump.fromSec)
     }

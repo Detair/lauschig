@@ -49,6 +49,7 @@ private class FakePlayer : PlayerController {
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += Triple(serverId, itemId, startSec) }
     override fun togglePlayPause() {}
     override fun seekBy(deltaSec: Int) {}
+    override fun seekTo(globalSec: Double) {}
     override fun seekToChapter(index: Int) { chapterSeeks += index }
     override fun setSpeed(speed: Float) {}
 }

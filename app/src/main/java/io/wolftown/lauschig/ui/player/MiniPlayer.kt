@@ -47,12 +47,13 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
     } else if (state.durationSec > 0) {
         (state.positionSec / state.durationSec).toFloat()
     } else 0f
+    val openLabel = stringResource(R.string.player_mini_open)
     val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, 0)
     Surface(modifier.fillMaxWidth().testTag("miniPlayer"), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 3.dp) {
         Column {
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    Modifier.weight(1f).clickable(role = Role.Button, onClick = onOpen),
+                    Modifier.weight(1f).clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpen),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))) {

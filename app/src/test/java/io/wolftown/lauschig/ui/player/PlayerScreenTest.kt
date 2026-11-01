@@ -8,7 +8,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.detail.ChapterRow
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,7 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h1200dp")
+@Config(sdk = [35], application = Application::class, qualifiers = "w360dp-h1200dp")
 class PlayerScreenTest {
     @get:Rule val rule = createComposeRule()
 
@@ -49,5 +53,22 @@ class PlayerScreenTest {
         rule.onNodeWithTag("speedButton").performClick()
         rule.onNodeWithTag("preset1.5").performClick()
         assertEquals(listOf(1.5f), speeds)
+    }
+
+    @Test fun controlsRow_fitsAt360dp_withLargeFont() {
+        rule.setContent {
+            val d = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1.5f),
+            ) {
+                LauschigTheme { PlayerScreen(state, {}) }
+            }
+        }
+        val root = rule.onRoot().getUnclippedBoundsInRoot()
+        for (d in listOf("Previous chapter", "Next chapter", "Play")) {
+            val b = rule.onNodeWithContentDescription(d).getUnclippedBoundsInRoot()
+            assertTrue("$d clipped", b.left >= 0.dp && b.right <= root.right)
+        }
+        rule.onNodeWithContentDescription("Playback speed 1.25×").assertExists()
     }
 }

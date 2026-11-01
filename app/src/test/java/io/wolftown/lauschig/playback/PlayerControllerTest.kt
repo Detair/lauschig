@@ -121,6 +121,16 @@ class PlayerControllerTest {
         assertEquals(0, f.snap.mediaIndex); assertEquals(0L, f.snap.positionMs)
     }
 
+    @Test fun seekTo_mapsAbsoluteAcrossFileBoundary() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it", 10.0)
+        c.seekTo(750.0)
+        assertEquals(1 to 150_000L, f.snap.mediaIndex to f.snap.positionMs)
+        c.seekTo(-5.0)
+        assertEquals(0 to 0L, f.snap.mediaIndex to f.snap.positionMs)
+    }
+
     @Test fun seekToChapter_andToggleAndSpeed() = runTest {
         val f = FakeFacade()
         val c = controller(f, item(threeFiles))

@@ -112,6 +112,11 @@ class PlayerControllerImpl(
         seekGlobal(c, c.mapper.toGlobal(snap.mediaIndex, snap.positionMs) + deltaSec)
     }
 
+    override fun seekTo(globalSec: Double) {
+        val c = current ?: return
+        seekGlobal(c, globalSec)
+    }
+
     override fun seekToChapter(index: Int) {
         val c = current ?: return
         val chapter = c.item.chapters.getOrNull(index) ?: return
