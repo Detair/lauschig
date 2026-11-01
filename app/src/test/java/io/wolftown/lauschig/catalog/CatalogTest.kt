@@ -67,6 +67,23 @@ class CatalogTest {
         assertEquals(listOf("a", "b", "m1", "c"), shape)
     }
 
+    @Test fun bySeries_hugeSortKey_returnsPromptlyWithoutGaps() {
+        val items = listOf(item("a", series = "S", seq = 1.0), item("b", series = "S", seq = 20231015.0))
+        val result = catalog.bySeries(items, "S")
+        assertEquals(2, result.size)
+        assertTrue(result.all { it is SeriesEntry.Volume })
+    }
+
+    @Test fun bySeries_nonFiniteKeys_doNotCrashOrCreateGaps() {
+        val items = listOf(
+            item("a", series = "S", seq = 1.0), item("n", series = "S", seq = Double.NaN),
+            item("i", series = "S", seq = Double.POSITIVE_INFINITY), item("c", series = "S", seq = 3.0),
+        )
+        val result = catalog.bySeries(items, "S")
+        assertEquals(1, result.count { it is SeriesEntry.Missing })
+        assertEquals(4, result.count { it is SeriesEntry.Volume })
+    }
+
     @Test fun byGenreAndTag_exactIgnoringCase() {
         val items = listOf(item("a", genres = listOf("Fantasy")), item("b", genres = listOf("Fantasy-Epos"), tags = listOf("Fav")))
         assertEquals(listOf("a"), catalog.byGenre(items, "fantasy").map { it.id })

@@ -2,6 +2,7 @@ package io.wolftown.lauschig.catalog
 
 import io.wolftown.lauschig.db.entities.ItemEntity
 import java.text.Normalizer
+import kotlin.math.abs
 import javax.inject.Inject
 
 enum class PersonRole { AUTHOR, NARRATOR }
@@ -61,10 +62,12 @@ class Catalog @Inject constructor() {
         val keyed = volumes.filter { it.seriesSortKey != null }.sortedWith(compareBy({ it.seriesSortKey }, { it.title.lowercase() }))
         val unkeyed = volumes.filter { it.seriesSortKey == null }.sortedBy { it.title.lowercase() }
 
-        val present = keyed.mapNotNull { it.seriesSortKey }.filter { it % 1.0 == 0.0 }.map { it.toLong() }.toSet()
+        // Sequences are free text on the server ("20231015" happens): only finite, plausibly small keys mark gaps.
+        val present = keyed.mapNotNull { it.seriesSortKey }
+            .filter { it.isFinite() && it % 1.0 == 0.0 && abs(it) <= MAX_GAP_KEY }.map { it.toLong() }.toSet()
         val missing: List<Long> =
-            if (present.size < 2) emptyList()
-            else (present.min() + 1 until present.max()).filter { it !in present }.take(MAX_GAPS)
+            if (present.size < 2 || present.max() - present.min() > MAX_GAP_SPAN) emptyList()
+            else (present.min() + 1 until present.max()).asSequence().filter { it !in present }.take(MAX_GAPS).toList()
 
         val entries = ArrayList<Pair<Double, SeriesEntry>>(keyed.size + missing.size)
         keyed.forEach { entries += it.seriesSortKey!! to SeriesEntry.Volume(it) }
@@ -163,6 +166,10 @@ class Catalog @Inject constructor() {
 
     private companion object {
         const val MAX_GAPS = 1000
+
+        /** Gaps are only marked when the whole-numbered keys span at most this many numbers; wider means it is not a volume count. */
+        const val MAX_GAP_SPAN = 500L
+        const val MAX_GAP_KEY = 1e9
         val DIACRITICS = Regex("\\p{Mn}+")
         val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
     }
