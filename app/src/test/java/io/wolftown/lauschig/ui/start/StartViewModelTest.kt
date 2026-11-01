@@ -12,6 +12,7 @@ import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.LibraryEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.FakeAccountStore
@@ -77,7 +78,7 @@ class StartViewModelTest {
         val factory = viewModelFactory {
             initializer {
                 StartViewModel(
-                    covers, accounts, db.catalogDao(), db.itemDao(), db.progressDao(), db.downloadDao(), NoopPlayer(), Catalog(),
+                    covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), NoopPlayer(), Catalog(),
                     UnconfinedTestDispatcher(),
                 )
             }
@@ -85,8 +86,8 @@ class StartViewModelTest {
         return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", StartViewModel::class]
     }
 
-    private fun item(id: String, series: String? = null, key: Double? = null, added: Long = 0) =
-        ItemEntity(serverId = sid, id = id, libraryId = "lib1", title = id, seriesName = series, seriesSortKey = key, addedAt = added, durationSec = 100.0)
+    private fun item(id: String, series: String? = null, key: Double? = null, added: Long = 0, lib: String = "lib1") =
+        ItemEntity(serverId = sid, id = id, libraryId = lib, title = id, seriesName = series, seriesSortKey = key, addedAt = added, durationSec = 100.0)
 
     private suspend fun progress(id: String, t: Double = 10.0, fin: Boolean = false, last: Long = 1, hidden: Boolean = false) =
         db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, id, t, 100.0, fin, last, false, hidden)))
@@ -132,5 +133,39 @@ class StartViewModelTest {
         db.itemDao().upsertFromList((1..12).map { item("n$it", added = it * 10L) } + item("unknown", added = 0))
         val s = vm().await { it.recentlyAdded.isNotEmpty() }
         assertEquals((12 downTo 3).map { "n$it" }, s.recentlyAdded.map { it.id })
+    }
+
+    @Test fun start_podcastLibraryItems_neverAppear() = runTest {
+        db.libraryDao().upsertFromServer(
+            listOf(LibraryEntity(sid, "lib1", "Bücher", "book", 0), LibraryEntity(sid, "pod", "Podcasts", "podcast", 1)),
+        )
+        db.itemDao().upsertFromList(
+            listOf(
+                item("b1", "Reihe A", 1.0), item("b2", "Reihe A", 2.0, added = 5),
+                item("p1", "Cast", 1.0, added = 50, lib = "pod"), item("p2", "Cast", 2.0, added = 60, lib = "pod"),
+            ),
+        )
+        progress("b1", fin = true, last = 2)
+        progress("p1", fin = true, last = 9)
+        val s = vm().await { it.nextInSeries.isNotEmpty() }
+        assertEquals(listOf("b2"), s.next())
+        assertEquals(listOf("b2"), s.recentlyAdded.map { it.id })
+    }
+
+    @Test fun start_sameSeriesNameInTwoLibraries_isTwoSeries() = runTest {
+        db.libraryDao().upsertFromServer(
+            listOf(LibraryEntity(sid, "lib1", "Bücher", "book", 0), LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)),
+        )
+        db.itemDao().upsertFromList(
+            listOf(
+                item("book50", "Die drei ???", 50.0),                                  // nothing after it in this library
+                item("play50", "Die drei ???", 50.0, lib = "lib2"), item("play51", "Die drei ???", 51.0, lib = "lib2"),
+                item("x1", "Reihe X", 1.0), item("x2", "Reihe X", 2.0),
+            ),
+        )
+        progress("book50", fin = true, last = 5)
+        progress("x1", fin = true, last = 1)
+        val s = vm().await { it.nextInSeries.isNotEmpty() }
+        assertEquals(listOf("x2"), s.next())
     }
 }

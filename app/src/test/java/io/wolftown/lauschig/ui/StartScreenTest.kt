@@ -80,9 +80,9 @@ class StartScreenTest {
         assertEquals(y.sorted(), y)
         rule.onNodeWithText("Downloaded").assertDoesNotExist()
         rule.onNodeWithTag("seeAll-continue").performClick()
-        rule.onNodeWithTag("seeAll-next").performClick()
+        rule.onNodeWithTag("seeAll-next").assertDoesNotExist()
         rule.onNodeWithTag("seeAll-recent").performClick()
         assertEquals(1, library)
-        assertEquals(2, discover)
+        assertEquals(1, discover)
     }
 }

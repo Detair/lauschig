@@ -163,4 +163,14 @@ class SearchViewModelTest {
         val s = v.await { it.searched }
         assertTrue(s.titles.isEmpty() && s.authors.isEmpty())
     }
+
+    @Test fun search_itemWithoutAuthorGenreSeries_isFoundByTitle() = runTest {
+        seed(item("1", "Nur ein Titel"))
+        val v = vm()
+        v.setQuery("titel")
+        advanceTimeBy(250)
+        val s = v.await { it.searched }
+        assertEquals(listOf("Nur ein Titel"), s.titles.map { it.title })
+        assertTrue(s.authors.isEmpty() && s.narrators.isEmpty() && s.series.isEmpty() && s.genres.isEmpty() && s.tags.isEmpty())
+    }
 }

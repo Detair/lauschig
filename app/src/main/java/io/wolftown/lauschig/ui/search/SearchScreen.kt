@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -88,6 +91,9 @@ fun SearchScreen(
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(autoFocus) { if (autoFocus) focus.requestFocus() }
+    var titlesExpanded by remember { mutableStateOf(false) }
+    var expandedFacets by remember { mutableStateOf(emptySet<String>()) }
+    val expandFacet: (String) -> Unit = { expandedFacets = expandedFacets + it }
 
     Column(modifier.fillMaxSize()) {
         OutlinedTextField(
@@ -132,15 +138,23 @@ fun SearchScreen(
             } else {
                 if (state.titles.isNotEmpty()) {
                     header("titlesHeader", R.string.search_titles)
-                    items(state.titles, key = { it.key }, contentType = { "tile" }) { item ->
+                    val shown = if (titlesExpanded) state.titles else state.titles.take(TITLES_COLLAPSED)
+                    items(shown, key = { it.key }, contentType = { "tile" }) { item ->
                         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
                     }
+                    if (shown.size < state.titles.size) {
+                        full("titlesMore") {
+                            TextButton(onClick = { titlesExpanded = true }, modifier = Modifier.testTag("showAllTitles")) {
+                                Text(pluralStringResource(R.plurals.search_show_all_titles, state.titles.size, state.titles.size))
+                            }
+                        }
+                    }
                 }
-                facets("authors", R.string.search_authors, state.authors, BrowseKind.AUTHOR, onOpenBrowse)
-                facets("narrators", R.string.search_narrators, state.narrators, BrowseKind.NARRATOR, onOpenBrowse)
-                facets("series", R.string.search_series, state.series, BrowseKind.SERIES, onOpenBrowse)
-                facets("genres", R.string.search_genres, state.genres, BrowseKind.GENRE, onOpenBrowse)
-                facets("tags", R.string.search_tags, state.tags, BrowseKind.TAG, onOpenBrowse)
+                facets("authors", R.string.search_authors, state.authors, BrowseKind.AUTHOR, onOpenBrowse, "authors" in expandedFacets, expandFacet)
+                facets("narrators", R.string.search_narrators, state.narrators, BrowseKind.NARRATOR, onOpenBrowse, "narrators" in expandedFacets, expandFacet)
+                facets("series", R.string.search_series, state.series, BrowseKind.SERIES, onOpenBrowse, "series" in expandedFacets, expandFacet)
+                facets("genres", R.string.search_genres, state.genres, BrowseKind.GENRE, onOpenBrowse, "genres" in expandedFacets, expandFacet)
+                facets("tags", R.string.search_tags, state.tags, BrowseKind.TAG, onOpenBrowse, "tags" in expandedFacets, expandFacet)
             }
         }
     }
@@ -154,13 +168,23 @@ private fun LazyGridScope.header(key: String, title: Int) = full(key) {
     Text(stringResource(title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
 
-/** Section of chips ("name · count"); tapping one opens the matching entity page. */
-private fun LazyGridScope.facets(key: String, title: Int, list: List<Facet>, kind: BrowseKind, onOpen: (BrowseKind, String) -> Unit) {
+private const val TITLES_COLLAPSED = 6
+private const val FACETS_COLLAPSED = 12
+
+/** Section of chips ("name · count"), the first [FACETS_COLLAPSED] until expanded by the "+n" chip; tapping one opens the matching entity page. */
+private fun LazyGridScope.facets(
+    key: String, title: Int, list: List<Facet>, kind: BrowseKind, onOpen: (BrowseKind, String) -> Unit,
+    expanded: Boolean, onExpand: (String) -> Unit,
+) {
     if (list.isEmpty()) return
     header("${key}Header", title)
     full(key) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            list.forEach { f -> AssistChip(onClick = { onOpen(kind, f.name) }, label = { Text("${f.name} · ${f.count}") }) }
+            val shown = if (expanded) list else list.take(FACETS_COLLAPSED)
+            shown.forEach { f -> AssistChip(onClick = { onOpen(kind, f.name) }, label = { Text("${f.name} · ${f.count}") }) }
+            if (shown.size < list.size) {
+                AssistChip(onClick = { onExpand(key) }, label = { Text(stringResource(R.string.search_more_chip, list.size - shown.size)) })
+            }
         }
     }
 }

@@ -177,4 +177,10 @@
         <item quantity="one">%d volume</item>
         <item quantity="other">%d volumes</item>
     </plurals>
+    <string name="search_more_chip">+%d</string>
+    <plurals name="search_show_all_titles">
+        <item quantity="one">Show all %d title</item>
+        <item quantity="other">Show all %d titles</item>
+    </plurals>
+    <string name="discover_empty">Nothing here yet – the library loads the next time the server is reachable</string>
 </resources>

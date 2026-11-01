@@ -44,12 +44,12 @@ data class SearchResult(
 class Catalog @Inject constructor() {
 
     /**
-     * Numbered volumes per series (name trimmed, case-insensitive), each list ordered by `seriesSortKey`.
-     * Unnumbered volumes are left out. Depends on the catalog only, so callers can cache it across progress writes.
+     * Numbered volumes per series (library and name, name trimmed and case-insensitive: the same series name in two
+     * libraries, e.g. Hörbuch and Hörspiel, are two series), each list ordered by `seriesSortKey`. Unnumbered volumes are left out. Depends on the catalog only, so callers can cache it across progress writes.
      */
     fun seriesGroups(items: List<ItemEntity>): List<List<ItemEntity>> =
         items.filter { it.seriesSortKey != null && !it.seriesName.isNullOrBlank() }
-            .groupBy { it.seriesName!!.trim().lowercase() }.values
+            .groupBy { it.libraryId to it.seriesName!!.trim().lowercase() }.values
             .map { v -> v.sortedWith(compareBy({ it.seriesSortKey }, { it.title.lowercase() })) }
 
     /**

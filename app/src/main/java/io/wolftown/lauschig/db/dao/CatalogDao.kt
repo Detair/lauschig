@@ -10,7 +10,4 @@ import kotlinx.coroutines.flow.Flow
 interface CatalogDao {
     @Query("SELECT * FROM items WHERE serverId = :serverId")
     fun observeAll(serverId: String): Flow<List<ItemEntity>>
-
-    @Query("SELECT * FROM items WHERE serverId = :serverId ORDER BY addedAt DESC, title COLLATE NOCASE LIMIT :limit")
-    fun observeRecentlyAdded(serverId: String, limit: Int): Flow<List<ItemEntity>>
 }

@@ -62,4 +62,31 @@ class SearchScreenTest {
         rule.onNodeWithText("tolstoi").performClick()
         assertEquals(listOf("tolstoi"), picked)
     }
+
+    private fun tile(i: Int) = ItemSummary("s", "$i", "Titel $i", "Writer", null, null, null, 0f, false, false)
+
+    @Test fun searchScreen_manyTitles_collapsedUntilShowAll() {
+        show(SearchUiState(query = "titel", searched = true, titles = (1..20).map(::tile), authors = listOf(Facet("Anne Writer", 3, "1"))))
+        rule.onNodeWithText("Show all 20 titles").assertIsDisplayed()
+        rule.onNodeWithText("Titel 6").assertExists()
+        rule.onNodeWithText("Titel 7").assertDoesNotExist()
+        rule.onNodeWithText("Show all 20 titles").performClick()
+        rule.onNodeWithText("Titel 7").assertExists()
+        rule.onNodeWithText("Show all 20 titles").assertDoesNotExist()
+    }
+
+    @Test fun searchScreen_fewTitles_noShowAllButton() {
+        show(SearchUiState(query = "titel", searched = true, titles = (1..6).map(::tile)))
+        rule.onNodeWithText("Titel 6").assertExists()
+        rule.onNodeWithText("Show all", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun searchScreen_manyFacets_cappedUntilPlusChip() {
+        show(SearchUiState(query = "a", searched = true, genres = (1..15).map { Facet("Genre $it", 1, "1") }))
+        rule.onNodeWithText("Genre 12 · 1").assertExists()
+        rule.onNodeWithText("Genre 13 · 1").assertDoesNotExist()
+        rule.onNodeWithText("+3").performClick()
+        rule.onNodeWithText("Genre 15 · 1").assertExists()
+        rule.onNodeWithText("+3").assertDoesNotExist()
+    }
 }

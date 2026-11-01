@@ -14,6 +14,7 @@ import io.wolftown.lauschig.absapi.library.LibraryItemsPage
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.db.entities.ItemEntity
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -77,6 +78,21 @@ class LibrarySyncTest {
         val first = db.itemDao().get(s, "i1")!!
         assertEquals("Saga", first.seriesName)
         assertEquals("3", first.seriesSequence)
+    }
+
+    @Test fun sync_writesAndUpdatesAddedAtAndPublishedYear() = runTest {
+        db.itemDao().upsertFromList(listOf(ItemEntity(serverId = s, id = "old", libraryId = "l1", title = "Told", durationSec = 10.0, addedAt = 0)))
+        api.items = listOf(
+            LibraryItemDto("old", "l1", "book", 1, BookMediaDto(BookMetadataDto(title = "Told", publishedYear = "1999"), duration = 10.0), addedAt = 1234L),
+            LibraryItemDto("new", "l1", "book", 1, BookMediaDto(BookMetadataDto(title = "Tnew", publishedYear = " "), duration = 10.0), addedAt = 5678L),
+        )
+        sync().sync_()
+        val old = db.itemDao().get(s, "old")!!
+        assertEquals(1234L, old.addedAt)
+        assertEquals("1999", old.publishedYear)
+        val new = db.itemDao().get(s, "new")!!
+        assertEquals(5678L, new.addedAt)
+        assertNull(new.publishedYear)
     }
 
     @Test fun serverRemovedItem_withDownload_isKeptAsOrphan() = runTest {

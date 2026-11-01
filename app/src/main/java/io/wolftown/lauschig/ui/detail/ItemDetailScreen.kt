@@ -164,7 +164,7 @@ private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -
         people.splitPeople(state.author).forEach { add(ChipSpec(it, BrowseKind.AUTHOR to it)) }
         people.splitPeople(state.narrator).forEach { add(ChipSpec(it, BrowseKind.NARRATOR to it)) }
         state.seriesName?.let { add(ChipSpec(seriesLabel ?: it, BrowseKind.SERIES to it)) }
-        state.genres.forEach { add(ChipSpec(it, BrowseKind.GENRE to it)) }
+        state.genres.map { it.trim() }.filter { it.isNotEmpty() }.distinct().forEach { add(ChipSpec(it, BrowseKind.GENRE to it)) }
     }
     if (specs.isEmpty()) return
     androidx.compose.foundation.layout.FlowRow(

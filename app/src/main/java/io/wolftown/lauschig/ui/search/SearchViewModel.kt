@@ -36,9 +36,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @Immutable
@@ -129,8 +129,9 @@ class SearchViewModel(
         val debounced = query.map { it.trim() }.distinctUntilChanged().debounce { if (it.isEmpty()) 0L else DEBOUNCE_MS }
         val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced) { all, f, q ->
             Triple(f, q, all.filter { it.libraryId in f.libraryIds })
-        }.map { (f, q, visible) ->
-            val found = if (q.isEmpty()) EMPTY else withContext(dispatcher) { search(visible, q) }
+        }.mapLatest { (f, q, visible) ->
+            // Runs on [dispatcher] via the flowOn below; a newer query/catalog cancels a search still in flight.
+            val found = if (q.isEmpty()) EMPTY else search(visible, q)
             Hits(f, q, found)
         }
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)

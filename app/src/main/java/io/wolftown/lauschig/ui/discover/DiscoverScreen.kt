@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,6 +93,16 @@ fun DiscoverScreen(
         modifier = modifier.fillMaxSize(),
     ) {
         full("kinds") { KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(horizontal = 0.dp)) }
+        if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() &&
+            state.authors.isEmpty() && state.all.isEmpty()
+        ) {
+            full("empty") {
+                Text(
+                    stringResource(R.string.discover_empty), style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(vertical = 24.dp).testTag("discoverEmpty"),
+                )
+            }
+        }
         if (state.recent.isNotEmpty()) {
             header("recentHeader", R.string.discover_recent)
             full("recent") {

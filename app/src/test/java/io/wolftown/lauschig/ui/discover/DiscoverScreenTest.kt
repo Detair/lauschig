@@ -58,4 +58,9 @@ class DiscoverScreenTest {
         rule.onNodeWithText("Duration").performClick()
         assertEquals(listOf(DiscoverSort.DURATION), picked)
     }
+
+    @Test fun discoverScreen_emptyCatalog_showsHint() {
+        rule.setContent { LauschigTheme { DiscoverScreen(DiscoverUiState(), {}, {}, {}, { _, _ -> }) } }
+        rule.onNodeWithText("Nothing here yet", substring = true).assertIsDisplayed()
+    }
 }

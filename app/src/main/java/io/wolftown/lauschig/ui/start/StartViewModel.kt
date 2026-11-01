@@ -8,8 +8,10 @@ import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.toSummary
@@ -38,6 +40,7 @@ class StartViewModel(
     private val covers: CoverPathCache,
     private val accountStore: AccountStore,
     private val catalogDao: CatalogDao,
+    private val libraryDao: LibraryDao,
     private val itemDao: ItemDao,
     private val progressDao: ProgressDao,
     private val downloadDao: DownloadDao,
@@ -48,9 +51,9 @@ class StartViewModel(
 ) : ViewModel() {
 
     @Inject constructor(
-        covers: CoverPathCache, accountStore: AccountStore, catalogDao: CatalogDao, itemDao: ItemDao, progressDao: ProgressDao,
-        downloadDao: DownloadDao, player: PlayerController, catalog: Catalog,
-    ) : this(covers, accountStore, catalogDao, itemDao, progressDao, downloadDao, player, catalog, Dispatchers.Default)
+        covers: CoverPathCache, accountStore: AccountStore, catalogDao: CatalogDao, libraryDao: LibraryDao, itemDao: ItemDao,
+        progressDao: ProgressDao, downloadDao: DownloadDao, player: PlayerController, catalog: Catalog,
+    ) : this(covers, accountStore, catalogDao, libraryDao, itemDao, progressDao, downloadDao, player, catalog, Dispatchers.Default)
 
     private var serverId: String? = null
 
@@ -66,7 +69,10 @@ class StartViewModel(
 
     private fun stateFor(sid: String): Flow<StartUiState> {
         // The grouping runs on catalog changes only; progress writes (every few seconds while playing) only re-pick.
-        val catalogView = catalogDao.observeAll(sid).map { all ->
+        val catalogView = combine(catalogDao.observeAll(sid), libraryDao.observeAll(sid)) { items, libs ->
+            // Podcast libraries are not browsable yet (same rule as Discover, Search and Library).
+            val podcasts = libs.filter { it.effectiveKind == LibraryKind.PODCAST }.mapTo(HashSet()) { it.id }
+            val all = items.filter { it.libraryId !in podcasts }
             CatalogView(
                 recent = all.filter { it.addedAt > 0 }
                     .sortedWith(compareByDescending<ItemEntity> { it.addedAt }.thenBy { it.title.lowercase() }).take(ROW_LIMIT),

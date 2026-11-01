@@ -177,4 +177,10 @@
         <item quantity="one">%d Band</item>
         <item quantity="other">%d Bände</item>
     </plurals>
+    <string name="search_more_chip">+%d</string>
+    <plurals name="search_show_all_titles">
+        <item quantity="one">Alle %d Titel anzeigen</item>
+        <item quantity="other">Alle %d Titel anzeigen</item>
+    </plurals>
+    <string name="discover_empty">Noch nichts da – die Bibliothek wird beim nächsten Verbinden geladen</string>
 </resources>

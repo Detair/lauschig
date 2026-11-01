@@ -96,7 +96,7 @@ fun StartScreen(
     }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         section("continue", R.string.start_continue, state.continueItems, onOpenLibrary, onOpen, onPlay, onMenu)
-        section("next", R.string.start_next_in_series, state.nextInSeries, onOpenDiscover, onOpen, onPlay, onMenu)
+        section("next", R.string.start_next_in_series, state.nextInSeries, null, onOpen, onPlay, onMenu)
         section("recent", R.string.start_recently_added, state.recentlyAdded, onOpenDiscover, onOpen, onPlay, onMenu)
         section("downloaded", R.string.start_downloaded, state.downloaded, null, onOpen, onPlay, onMenu)
     }

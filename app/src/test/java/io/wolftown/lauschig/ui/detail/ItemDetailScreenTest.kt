@@ -146,4 +146,14 @@ class ItemDetailScreenTest {
         assertEquals("44:15", formatClock(2655.0))
         assertEquals("1:02:03", formatClock(3723.0))
     }
+
+    @Test fun detailGenres_blankEntriesGetNoChip() {
+        val genres = androidx.compose.runtime.mutableStateOf(listOf("Fantasy"))
+        rule.setContent { LauschigTheme { ItemDetailScreen(base.copy(genres = genres.value), {}, {}, {}, {}, {}, {}) } }
+        val clickable = { rule.onAllNodes(androidx.compose.ui.test.hasClickAction()).fetchSemanticsNodes().size }
+        val before = clickable()
+        genres.value = listOf("Fantasy", " ", "", "  Fantasy ")
+        rule.waitForIdle()
+        assertEquals(before, clickable())
+    }
 }
