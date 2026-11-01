@@ -68,7 +68,12 @@ class PlaybackProgressBridge(
     // PositionInfo.mediaItem is the only way to identify the item of a queue that has already been replaced.
     @OptIn(UnstableApi::class)
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-        if (reason == Player.DISCONTINUITY_REASON_SEEK && !player.isPlaying) { queue.trySend { tracker.checkpoint() }; return }
+        if (reason == Player.DISCONTINUITY_REASON_SEEK && !player.isPlaying) {
+            // Only persist a paused seek for the title being tracked, never for a title whose queue was replaced.
+            val seeked = newPosition.mediaItem?.key()
+            queue.trySend { if (seeked != null && ctx?.key == seeked) tracker.checkpoint() }
+            return
+        }
         val old = oldPosition.mediaItem?.key() ?: return
         if (reason != Player.DISCONTINUITY_REASON_REMOVE && old == newPosition.mediaItem?.key()) return
         // The old queue is gone: save the old title at its own last position (no-op if it was already paused).

@@ -143,6 +143,34 @@ class PlaybackProgressBridgeTest {
         assertEquals(before, db.progressDao().get(s, "A"))
     }
 
+    @Test fun seekWhileNewBookBuffering_doesNotResaveOldBook() = runTest {
+        val (p, br) = playingA()
+        p.playing = false
+        br.onIsPlayingChanged(false); runCurrent()
+        val before = db.progressDao().get(s, "A")!!
+        advanceTimeBy(60_000)
+        val old = p.switchToB()
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_REMOVE)
+        runCurrent()
+        // B still buffering (not playing); the user seeks.
+        val beforeSeek = p.positionInfo()
+        p.positionMs = 120_000
+        br.onPositionDiscontinuity(beforeSeek, p.positionInfo(), Player.DISCONTINUITY_REASON_SEEK)
+        runCurrent()
+        assertEquals(before, db.progressDao().get(s, "A"))
+    }
+
+    @Test fun seekWhilePaused_sameBook_isPersisted() = runTest {
+        val (p, br) = playingA()
+        p.playing = false
+        br.onIsPlayingChanged(false); runCurrent()
+        val beforeSeek = p.positionInfo()
+        p.positionMs = 50_000 // second file, 50 s → global 650 s
+        br.onPositionDiscontinuity(beforeSeek, p.positionInfo(), Player.DISCONTINUITY_REASON_SEEK)
+        runCurrent()
+        assertEquals(650.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
     @Test fun currentGlobalSec_isNull_whenQueueHoldsAnotherItem() = runTest {
         val (p, br) = playingA()
         assertEquals(800.0, br.currentGlobalSec()!!, 0.0)
