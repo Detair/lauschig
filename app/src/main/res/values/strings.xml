@@ -17,6 +17,9 @@
     <string name="position_jump_undo">Undo</string>
     <string name="start_continue">Continue listening</string>
     <string name="start_downloaded">Downloaded</string>
+    <string name="start_next_in_series">Next in your series</string>
+    <string name="start_recently_added">New on the server</string>
+    <string name="start_see_all">See all</string>
     <string name="start_empty">Nothing listened to yet – have a look in the library</string>
     <string name="start_progress_percent">%1$d %%</string>
     <string name="setup_title">Connect to Audiobookshelf</string>

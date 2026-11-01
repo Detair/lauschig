@@ -1,9 +1,11 @@
 package io.wolftown.lauschig.ui
 
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
@@ -38,7 +40,7 @@ class StartScreenTest {
     fun rows_showSections_tapOpensDetails_playButtonPlays_longPressOpensMenu() {
         val calls = mutableListOf<String>()
         val state = StartUiState(
-            continueItem = summary("a", "Book A"),
+            continueItems = listOf(summary("a", "Book A")),
             downloaded = listOf(summary("b", "Book B")),
         )
         rule.setContent {
@@ -54,8 +56,33 @@ class StartScreenTest {
 
     @Test
     fun downloadingTile_showsBadge() {
-        val state = StartUiState(continueItem = summary("a", "Book A").copy(isDownloaded = false, isDownloading = true))
+        val state = StartUiState(continueItems = listOf(summary("a", "Book A").copy(isDownloaded = false, isDownloading = true)))
         rule.setContent { LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}) } }
         rule.onNodeWithContentDescription("Downloading").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w400dp-h2400dp")
+    fun startScreen_sectionsInOrder_emptyOnesHidden() {
+        var library = 0
+        var discover = 0
+        val state = StartUiState(
+            continueItems = listOf(summary("a", "Book A")),
+            recentlyAdded = listOf(summary("r", "Book R")),
+            nextInSeries = listOf(summary("n", "Book N")),
+        )
+        rule.setContent {
+            LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}, onOpenLibrary = { library++ }, onOpenDiscover = { discover++ }) }
+        }
+        val y = listOf("Continue listening", "Next in your series", "New on the server").map {
+            rule.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
+        }
+        assertEquals(y.sorted(), y)
+        rule.onNodeWithText("Downloaded").assertDoesNotExist()
+        rule.onNodeWithTag("seeAll-continue").performClick()
+        rule.onNodeWithTag("seeAll-next").performClick()
+        rule.onNodeWithTag("seeAll-recent").performClick()
+        assertEquals(1, library)
+        assertEquals(2, discover)
     }
 }

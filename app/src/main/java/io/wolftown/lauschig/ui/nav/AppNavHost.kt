@@ -29,7 +29,7 @@ import io.wolftown.lauschig.ui.start.StartRoute
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }) }
         composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }

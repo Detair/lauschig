@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.catalog
 
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.ProgressEntity
 import java.text.Normalizer
 import kotlin.math.abs
 import javax.inject.Inject
@@ -41,6 +42,32 @@ data class SearchResult(
  * Pure functions, so callers run them on Dispatchers.Default.
  */
 class Catalog @Inject constructor() {
+
+    /**
+     * Numbered volumes per series (name trimmed, case-insensitive), each list ordered by `seriesSortKey`.
+     * Unnumbered volumes are left out. Depends on the catalog only, so callers can cache it across progress writes.
+     */
+    fun seriesGroups(items: List<ItemEntity>): List<List<ItemEntity>> =
+        items.filter { it.seriesSortKey != null && !it.seriesName.isNullOrBlank() }
+            .groupBy { it.seriesName!!.trim().lowercase() }.values
+            .map { v -> v.sortedWith(compareBy({ it.seriesSortKey }, { it.title.lowercase() })) }
+
+    /**
+     * "Next in your series": for every series with a finished or started volume the first volume above the highest
+     * such key (never finished, never started by construction). Newest activity (progress `lastUpdate` in the series)
+     * first, at most [limit].
+     */
+    fun nextInSeries(groups: List<List<ItemEntity>>, progress: Map<String, ProgressEntity>, limit: Int): List<ItemEntity> {
+        fun heard(p: ProgressEntity?) = p != null && (p.isFinished || p.currentTimeSec > 0)
+        val found = ArrayList<Pair<Long, ItemEntity>>()
+        for (volumes in groups) {
+            val maxHeard = volumes.filter { heard(progress[it.id]) }.maxOfOrNull { it.seriesSortKey!! } ?: continue
+            val next = volumes.firstOrNull { it.seriesSortKey!! > maxHeard && !heard(progress[it.id]) } ?: continue
+            found += (volumes.maxOf { progress[it.id]?.lastUpdate ?: 0L }) to next
+        }
+        return found.sortedWith(compareByDescending<Pair<Long, ItemEntity>> { it.first }.thenBy { it.second.seriesName!!.lowercase() })
+            .take(limit).map { it.second }
+    }
 
     /** ABS joins several people as "A, B"; trimmed, empty entries dropped. */
     fun splitPeople(names: String?): List<String> =
