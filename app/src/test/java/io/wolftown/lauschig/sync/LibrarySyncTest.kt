@@ -141,6 +141,55 @@ class LibrarySyncTest {
         assertNull(db.itemDao().get(s, "d"))
     }
 
+    private fun listPod(episodes: Int, updatedAt: Long) =
+        LibraryItemDto("pod", "l1", "podcast", updatedAt, BookMediaDto(BookMetadataDto(title = "Pod"), numEpisodes = episodes))
+
+    @Test fun removedPodcast_withDownloadedEpisode_isKeptAsOrphan() = runTest {
+        api.items = listOf(listPod(3, 1), dto("a"), dto("pod2"))
+        sync().sync_()
+        val key = PlayableKey.episode("pod", "e1")
+        db.episodeDao().upsert(listOf(io.wolftown.lauschig.db.entities.EpisodeEntity(s, "pod", "e1", "Folge", publishedAt = 1)))
+        db.downloadDao().upsert(DownloadEntity(s, key, DownloadState.COMPLETE, 1))
+        api.items = listOf(dto("a"))
+
+        sync().sync_()
+
+        assertTrue(db.itemDao().get(s, "pod")!!.orphaned)
+        assertNotNull(db.episodeDao().get(s, "pod", "e1"))
+        assertNull(db.itemDao().get(s, "pod2")) // a prefix-sharing id without rows is still deleted
+    }
+
+    @Test fun podcast_changedEpisodeCountOrUpdatedAt_invalidatesDetails_unchangedDoesNot() = runTest {
+        api.items = listOf(listPod(3, 1))
+        sync().sync_()
+        api.detail = podcast(ep("e1"), ep("e2"), ep("e3")) // same count and updatedAt (1) as the list item
+        sync().loadDetails(s, "pod")
+        assertTrue(db.itemDao().get(s, "pod")!!.detailsLoaded)
+
+        api.items = listOf(listPod(3, 1))
+        sync().sync_()
+        assertTrue(db.itemDao().get(s, "pod")!!.detailsLoaded)
+
+        api.items = listOf(listPod(4, 1))
+        sync().sync_()
+        assertFalse(db.itemDao().get(s, "pod")!!.detailsLoaded)
+
+        sync().loadDetails(s, "pod")
+        api.items = listOf(listPod(4, 2))
+        sync().sync_()
+        assertFalse(db.itemDao().get(s, "pod")!!.detailsLoaded)
+    }
+
+    @Test fun book_updatedAtChange_doesNotInvalidateDetails() = runTest {
+        api.items = listOf(dto("a"))
+        sync().sync_()
+        api.detail = dto("a")
+        sync().loadDetails(s, "a")
+        api.items = listOf(dto("a").copy(updatedAt = 99))
+        sync().sync_()
+        assertTrue(db.itemDao().get(s, "a")!!.detailsLoaded)
+    }
+
     @Test fun partialFetch_deletesNothing() = runTest {
         api.items = (1..300).map { dto("i$it") }
         sync().sync_()

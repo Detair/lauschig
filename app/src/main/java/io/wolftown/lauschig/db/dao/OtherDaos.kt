@@ -169,6 +169,10 @@ abstract class ProgressDao {
     @Query("SELECT * FROM progress WHERE serverId = :serverId AND itemId = :itemId")
     abstract suspend fun get(serverId: String, itemId: String): ProgressEntity?
 
+    /** True if [itemId] or any of its episodes (`itemId~episodeId`) has a progress row. ABS ids never contain `~` or LIKE wildcards, so a prefix compare is exact. */
+    @Query("SELECT EXISTS(SELECT 1 FROM progress WHERE serverId = :serverId AND (itemId = :itemId OR substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'))")
+    abstract suspend fun hasAnyForItem(serverId: String, itemId: String): Boolean
+
     @Query("SELECT * FROM progress WHERE serverId = :serverId AND dirty = 1")
     abstract suspend fun dirty(serverId: String): List<ProgressEntity>
 
@@ -198,6 +202,10 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun get(serverId: String, itemId: String): DownloadEntity?
+
+    /** True if [itemId] or any of its episodes (`itemId~episodeId`) has a downloads row. ABS ids never contain `~` or LIKE wildcards, so a prefix compare is exact. */
+    @Query("SELECT EXISTS(SELECT 1 FROM downloads WHERE serverId = :serverId AND (itemId = :itemId OR substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'))")
+    suspend fun hasAnyForItem(serverId: String, itemId: String): Boolean
 
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND state IN (:states)")
     suspend fun inStates(serverId: String, states: List<DownloadState>): List<DownloadEntity>

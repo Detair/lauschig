@@ -33,21 +33,30 @@ class EpisodeAutoDownloader(
         val count = mode.first().count
         if (count <= 0) return
         val recent = episodes.recent(serverId)
-        // Keys that dropped out of the recent set are forgotten, so the stored set stays small.
+        // Remembered as "serverId:key". Keys that dropped out of the recent set are forgotten, so the stored set stays small;
+        // other servers' keys are left alone. Old unprefixed keys are migrated when still live, otherwise dropped.
+        val prefix = "$serverId:"
         val live = recent.mapTo(HashSet()) { PlayableKey.episode(it.itemId, it.id) }
         val before = queuedBefore()
-        val handled = before.filterTo(HashSet()) { it in live }
+        val handled = HashSet<String>()
+        for (k in before) {
+            when {
+                k.startsWith(prefix) -> if (k.removePrefix(prefix) in live) handled += k
+                ':' in k -> handled += k // another server's key
+                k in live -> handled += prefix + k // legacy unprefixed key
+            }
+        }
         if (handled != before) saveQueued(handled.toSet())
         for ((itemId, list) in recent.groupBy { it.itemId }) {
             val window = list.filter { progress.get(serverId, PlayableKey.episode(itemId, it.id))?.isFinished != true }.take(count)
             for (ep in window) {
                 val key = PlayableKey.episode(itemId, ep.id)
-                if (key in handled) continue
+                if (prefix + key in handled) continue
                 // Every key in the window counts as handled, whether queued here or already having a row (e.g. a manual
                 // download): if the user removes it later, it must not come back.
                 if (downloadRows.get(serverId, key) == null) downloads.enqueue(serverId, key)
-                handled += key
-                saveQueued(handled.toSet())
+                handled += prefix + key
+                saveQueued(handled.toSet()) // after each enqueue, so a crash never re-queues what was already handled
             }
         }
     }

@@ -102,7 +102,7 @@ class LibrarySync(
             total = result.total
             val mapped = result.results.map { it.toListEntity(serverId) }
             items.upsertFromList(mapped)
-            val stale = mapped.filter { m -> before[m.id]?.let { it.seriesName != m.seriesName } == true }.map { it.id }
+            val stale = mapped.filter { m -> before[m.id]?.let { isStale(it, m) } == true }.map { it.id }
             if (stale.isNotEmpty()) items.invalidateDetails(serverId, stale)
             val added = mapped.count { seen.add(it.id) }
             page++
@@ -112,9 +112,19 @@ class LibrarySync(
         if (seen.size != total) return
         val missing = before.keys - seen
         if (missing.isEmpty()) return
-        val (keep, drop) = missing.partition { progress.get(serverId, it) != null || downloads.get(serverId, it) != null }
+        val (keep, drop) = missing.partition { progress.hasAnyForItem(serverId, it) || downloads.hasAnyForItem(serverId, it) }
         if (keep.isNotEmpty()) items.setOrphaned(serverId, keep, true)
         if (drop.isNotEmpty()) items.deleteByIds(serverId, drop)
+    }
+
+    /**
+     * Details are stale after a series change; podcasts (episode count > 0) also after a changed episode count or
+     * `updatedAt`, so the podcast page picks up episodes added or removed on the server.
+     */
+    private fun isStale(old: ItemEntity, new: ItemEntity): Boolean {
+        if (old.seriesName != new.seriesName) return true
+        val podcast = old.numEpisodes > 0 || new.numEpisodes > 0
+        return podcast && (old.numEpisodes != new.numEpisodes || old.updatedAt != new.updatedAt)
     }
 
     /** Same as [loadDetails]; reads better where only the episodes of a podcast are wanted. */

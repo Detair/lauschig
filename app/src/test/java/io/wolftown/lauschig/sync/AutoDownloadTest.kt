@@ -121,7 +121,26 @@ class AutoDownloadTest {
         seed()
         saved = setOf("p1~gone", "p1~a")
         downloader(AutoDownloadMode.NEWEST_1).run(s)
-        assertEquals(setOf("p1~a", "p2~x"), saved)
+        assertEquals(setOf("$s:p1~a", "$s:p2~x"), saved)
         assertEquals(setOf("p2~x"), enqueued.toSet())
+    }
+
+    @Test fun memory_isScopedByServer_andOtherServersKeysSurvive() = runTest {
+        seed()
+        saved = setOf("bbbbbbbbbbbbbbbb:p1~a", "$s:p1~gone")
+        downloader(AutoDownloadMode.NEWEST_1).run(s)
+        assertEquals(setOf("p1~a", "p2~x"), enqueued.toSet()) // the other server's memory does not suppress ours
+        assertEquals(setOf("bbbbbbbbbbbbbbbb:p1~a", "$s:p1~a", "$s:p2~x"), saved)
+    }
+
+    @Test fun unchangedMemory_isNotWrittenAgain() = runTest {
+        seed()
+        saved = setOf("$s:p1~a", "$s:p2~x")
+        var writes = 0
+        EpisodeAutoDownloader(
+            flowOf(AutoDownloadMode.NEWEST_1), db.episodeDao(), db.progressDao(), db.downloadDao(), manager, { saved }, { saved = it; writes++ },
+        ).run(s)
+        assertEquals(0, writes)
+        assertTrue(enqueued.isEmpty())
     }
 }

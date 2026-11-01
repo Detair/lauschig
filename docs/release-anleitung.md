@@ -173,6 +173,8 @@ Damit der Server Lauschig zulässt, muss ein Admin die Rückkehr-Adresse freigeb
 2. Bei „Allowed Mobile Redirect URIs“ den Eintrag `lauschig://oauth` hinzufügen (der Standard enthält nur `audiobookshelf://oauth`).
 3. Speichern. Ohne diesen Eintrag zeigt Lauschig: „Dein Server erlaubt Lauschig noch nicht für SSO.“
 
+Hinweis: Audiobookshelf erwartet `code` und `code_verifier` als URL-Parameter; ein Reverse-Proxy vor Audiobookshelf sollte daher für `/auth/openid/callback` keine Query-Strings loggen.
+
 ## RMAB-Hinweis (Bände anfragen)
 
 Beim Verbinden mit ReadMeABook erzeugt Lauschig einen dauerhaften API-Token namens „Lauschig (<Gerät>)“; dein RMAB-Passwort wird nicht gespeichert. Der Token ist in RMAB unter den API-Tokens des Nutzers sichtbar und lässt sich dort jederzeit widerrufen.

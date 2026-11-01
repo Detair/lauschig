@@ -47,7 +47,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     val missingVolumesEnabled: Flow<Boolean> = store.data.map { it[MISSING_VOLUMES] ?: true }
 
     /** Audible catalog region (`de`, `us`, ...). Default `de`. */
-    val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: "de" }
+    val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: io.wolftown.lauschig.external.AudibleRegions.DEFAULT }
 
     /** Auto-download of new podcast episodes. Default off. */
     val autoDownload: Flow<AutoDownloadMode> = store.data.map { prefs ->

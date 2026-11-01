@@ -10,9 +10,6 @@ import retrofit2.http.Query
 
 /** ReadMeABook endpoints (research doc section 3). Bearer auth only; the repository adds the header. */
 interface RmabApi {
-    @GET("api/auth/providers")
-    suspend fun providers(): Response<RmabProviders>
-
     @POST("api/auth/local/login")
     suspend fun localLogin(@Body body: RmabLoginBody): Response<RmabLoginResponse>
 
@@ -33,8 +30,6 @@ interface RmabApi {
         @Query("cursor") cursor: String? = null,
     ): Response<RmabRequestList>
 }
-
-@Serializable data class RmabProviders(val providers: List<String> = emptyList())
 
 @Serializable data class RmabLoginBody(val username: String, val password: String)
 
