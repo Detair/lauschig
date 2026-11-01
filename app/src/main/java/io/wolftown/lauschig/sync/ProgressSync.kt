@@ -5,12 +5,14 @@ import io.wolftown.lauschig.absapi.me.LocalSessionDto
 import io.wolftown.lauschig.absapi.me.LocalSessionsBody
 import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.absapi.me.ProgressUpdate
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.playback.PlayableKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import retrofit2.HttpException
@@ -31,6 +33,7 @@ class ProgressSync(
     private val progress: ProgressDao,
     private val sessions: SessionDao,
     private val items: ItemDao,
+    private val episodes: EpisodeDao,
     private val deviceInfo: () -> DeviceInfoDto,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
@@ -39,22 +42,24 @@ class ProgressSync(
         progress: ProgressDao,
         sessions: SessionDao,
         items: ItemDao,
+        episodes: EpisodeDao,
         device: DeviceInfoProvider,
-    ) : this(apiProvider.meApi, progress, sessions, items, device::get)
+    ) : this(apiProvider.meApi, progress, sessions, items, episodes, device::get)
 
     suspend fun sync(serverId: String): List<PositionJump> {
         val api = api.first() ?: return emptyList()
         uploadSessions(api, serverId)
 
         // Fetched after the session upload: the server may have advanced progress from the sessions.
+        // Keyed like local rows: a book by its item id, an episode by its playable key.
         val server = api.me().mediaProgress
-            .filter { it.libraryItemId != null && it.episodeId == null }
-            .associateBy { it.libraryItemId!! }
+            .filter { it.libraryItemId != null }
+            .associateBy { it.episodeId?.let { ep -> PlayableKey.episode(it.libraryItemId!!, ep) } ?: it.libraryItemId!! }
 
         for (local in progress.dirty(serverId)) push(api, serverId, local, server[local.itemId]?.lastUpdate)
 
-        val rows = server.values.map {
-            ProgressEntity(serverId, it.libraryItemId!!, it.currentTime, it.duration, it.isFinished, it.lastUpdate, hideFromContinue = it.hideFromContinueListening)
+        val rows = server.map { (key, it) ->
+            ProgressEntity(serverId, key, it.currentTime, it.duration, it.isFinished, it.lastUpdate, hideFromContinue = it.hideFromContinueListening)
         }
         return progress.mergeFromServer(rows)
             .filter { abs(it.newCurrentTimeSec - it.oldCurrentTimeSec) > JUMP_THRESHOLD_SEC }
@@ -81,17 +86,17 @@ class ProgressSync(
             return
         }
         val dur = local.durationSec
+        val update = ProgressUpdate(
+            currentTime = local.currentTimeSec,
+            duration = dur,
+            progress = if (dur > 0) (local.currentTimeSec / dur).coerceIn(0.0, 1.0) else 0.0,
+            isFinished = local.isFinished,
+            hideFromContinueListening = local.hideFromContinue,
+        )
+        val key = PlayableKey.parse(local.itemId)
         try {
-            api.updateProgress(
-                local.itemId,
-                ProgressUpdate(
-                    currentTime = local.currentTimeSec,
-                    duration = dur,
-                    progress = if (dur > 0) (local.currentTimeSec / dur).coerceIn(0.0, 1.0) else 0.0,
-                    isFinished = local.isFinished,
-                    hideFromContinueListening = local.hideFromContinue,
-                ),
-            )
+            if (key.episodeId != null) api.updateEpisodeProgress(key.libraryItemId, key.episodeId, update)
+            else api.updateProgress(key.libraryItemId, update)
         } catch (e: HttpException) {
             if (e.code() == 404) return // item is gone on the server; keep the row dirty, do not block the rest
             throw e
@@ -100,14 +105,17 @@ class ProgressSync(
     }
 
     private suspend fun toDto(s: LocalSessionEntity, device: DeviceInfoDto): LocalSessionDto {
-        val item = items.get(s.serverId, s.itemId)
+        val key = PlayableKey.parse(s.itemId)
+        val item = items.get(s.serverId, key.libraryItemId)
+        val episode = key.episodeId?.let { episodes.get(s.serverId, key.libraryItemId, it) }
         val day = Instant.ofEpochMilli(s.startedAt).atZone(zone)
         return LocalSessionDto(
             id = s.id,
-            libraryItemId = s.itemId,
-            mediaType = "book",
-            displayTitle = item?.title ?: s.itemId,
-            duration = item?.durationSec ?: 0.0,
+            libraryItemId = key.libraryItemId,
+            episodeId = key.episodeId,
+            mediaType = if (key.episodeId != null) "podcast" else "book",
+            displayTitle = episode?.title ?: item?.title ?: key.libraryItemId,
+            duration = episode?.durationSec ?: item?.durationSec ?: 0.0,
             startTime = s.startTimeSec,
             currentTime = s.currentTimeSec,
             timeListening = s.timeListeningSec,

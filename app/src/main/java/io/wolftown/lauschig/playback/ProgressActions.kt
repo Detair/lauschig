@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import io.wolftown.lauschig.absapi.me.MeApi
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ProgressEntity
@@ -21,6 +22,7 @@ import javax.inject.Singleton
 class ProgressActions(
     private val progress: ProgressDao,
     private val items: ItemDao,
+    private val episodes: EpisodeDao,
     private val player: PlayerController,
     private val meApi: Flow<MeApi?>,
     private val sync: SyncTrigger,
@@ -28,8 +30,8 @@ class ProgressActions(
     /** Time for the paused player's own save to land before the action overwrites it. */
     private val settleMs: Long = 400,
 ) {
-    @Inject constructor(progress: ProgressDao, items: ItemDao, player: PlayerController, api: ApiProvider, sync: SyncTrigger) :
-        this(progress, items, player, api.meApi, sync)
+    @Inject constructor(progress: ProgressDao, items: ItemDao, episodes: EpisodeDao, player: PlayerController, api: ApiProvider, sync: SyncTrigger) :
+        this(progress, items, episodes, player, api.meApi, sync)
 
     suspend fun markFinished(serverId: String, itemId: String) {
         val duration = duration(serverId, itemId)
@@ -58,8 +60,9 @@ class ProgressActions(
      */
     suspend fun pullFromServer(serverId: String, itemId: String): Boolean {
         val api = meApi.first() ?: return false
+        val key = PlayableKey.parse(itemId)
         val dto = try {
-            api.me().mediaProgress.firstOrNull { it.libraryItemId == itemId && it.episodeId == null }
+            api.me().mediaProgress.firstOrNull { it.libraryItemId == key.libraryItemId && it.episodeId == key.episodeId }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             null
@@ -72,8 +75,13 @@ class ProgressActions(
         return true
     }
 
-    private suspend fun duration(serverId: String, itemId: String): Double =
-        progress.get(serverId, itemId)?.durationSec?.takeIf { it > 0 } ?: items.get(serverId, itemId)?.durationSec ?: 0.0
+    private suspend fun duration(serverId: String, itemId: String): Double {
+        val saved = progress.get(serverId, itemId)?.durationSec?.takeIf { it > 0 }
+        if (saved != null) return saved
+        val key = PlayableKey.parse(itemId)
+        return if (key.episodeId != null) episodes.get(serverId, key.libraryItemId, key.episodeId)?.durationSec ?: 0.0
+        else items.get(serverId, itemId)?.durationSec ?: 0.0
+    }
 
     /** Pauses the title if it is playing, and waits for its own progress save so the action is written last. */
     private suspend fun stopIfLoaded(itemId: String): Boolean {

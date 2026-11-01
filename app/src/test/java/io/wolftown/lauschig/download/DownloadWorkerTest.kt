@@ -121,7 +121,7 @@ class DownloadWorkerTest {
     ): ListenableWorker.Result {
         val base = server.url("/")
         val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
-        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() })
+        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() })
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
                 c, p, env, gate, sync, db.itemDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),

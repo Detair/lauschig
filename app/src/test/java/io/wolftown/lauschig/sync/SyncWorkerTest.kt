@@ -69,8 +69,8 @@ class SyncWorkerTest {
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = SyncWorker(
                 c, p, store,
-                LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() }),
-                ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), { DeviceInfoDto() }),
+                LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() }),
+                ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
                 PositionJumpBus(), gate,
             )
         }

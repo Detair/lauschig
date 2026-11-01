@@ -21,11 +21,46 @@ abstract class EpisodeDao {
     )
     protected abstract suspend fun deleteUnused(serverId: String, itemId: String)
 
-    /** Replaces the item's episodes with [episodes]; rows with a download or progress survive even if absent from the list. */
+    @Query("SELECT id FROM episodes WHERE serverId = :serverId AND itemId = :itemId AND recent = 1")
+    protected abstract suspend fun recentIds(serverId: String, itemId: String): List<String>
+
+    /** Drops audio files and chapters stored under the keys of episodes that no longer exist. */
+    @Query(
+        """DELETE FROM audio_files WHERE serverId = :serverId AND substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'
+           AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.serverId = audio_files.serverId AND e.itemId || '~' || e.id = audio_files.itemId)""",
+    )
+    protected abstract suspend fun deleteOrphanFiles(serverId: String, itemId: String)
+
+    @Query(
+        """DELETE FROM chapters WHERE serverId = :serverId AND substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'
+           AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.serverId = chapters.serverId AND e.itemId || '~' || e.id = chapters.itemId)""",
+    )
+    protected abstract suspend fun deleteOrphanChapters(serverId: String, itemId: String)
+
+    /**
+     * Replaces the item's episodes with [episodes]; rows with a download or progress survive even if absent from the list.
+     * The `recent` flag of an existing row is kept (it is owned by the recent-episodes sync).
+     */
     @Transaction
     open suspend fun replaceForItem(serverId: String, itemId: String, episodes: List<EpisodeEntity>) {
+        val recent = recentIds(serverId, itemId).toSet()
         deleteUnused(serverId, itemId)
-        upsert(episodes)
+        upsert(episodes.map { it.copy(recent = it.recent || it.id in recent) })
+        deleteOrphanFiles(serverId, itemId)
+        deleteOrphanChapters(serverId, itemId)
+    }
+
+    @Query(
+        """UPDATE episodes SET recent = 0 WHERE serverId = :serverId AND recent = 1
+           AND itemId IN (SELECT id FROM items WHERE serverId = :serverId AND libraryId = :libraryId)""",
+    )
+    protected abstract suspend fun clearRecent(serverId: String, libraryId: String)
+
+    /** Makes [episodes] (flagged `recent`) the library's recent set: resets the library's flags, then upserts them. */
+    @Transaction
+    open suspend fun replaceRecent(serverId: String, libraryId: String, episodes: List<EpisodeEntity>) {
+        clearRecent(serverId, libraryId)
+        upsert(episodes.map { it.copy(recent = true) })
     }
 
     /** Newest first. */

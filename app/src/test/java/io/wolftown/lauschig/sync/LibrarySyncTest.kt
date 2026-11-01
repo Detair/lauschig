@@ -6,6 +6,10 @@ import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.absapi.library.BookMediaDto
 import io.wolftown.lauschig.absapi.library.BookMetadataDto
+import io.wolftown.lauschig.absapi.library.AudioFileDto
+import io.wolftown.lauschig.absapi.library.ChapterDto
+import io.wolftown.lauschig.absapi.library.EpisodeDto
+import io.wolftown.lauschig.absapi.library.FileMetadataDto
 import io.wolftown.lauschig.absapi.library.LibrariesResponse
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.library.LibraryDto
@@ -15,6 +19,8 @@ import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.playback.PlayableKey
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -39,14 +45,20 @@ private class FakeLibrary : LibraryApi {
     var ignorePage = false
     val pageSizes = mutableListOf<Int>()
 
-    override suspend fun libraries() = LibrariesResponse(listOf(LibraryDto("l1", "Bücher", "book", 0)))
+    var libraryType = "book"
+    var recent: List<EpisodeDto>? = null
+    var recentFails = false
+    override suspend fun libraries() = LibrariesResponse(listOf(LibraryDto("l1", "Bücher", libraryType, 0)))
     override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int): LibraryItemsPage {
         pageSizes += limit
         if (failOnPage == page) throw IOException("boom")
         val chunk = items.drop((if (ignorePage) 0 else page) * limit).take(limit)
         return LibraryItemsPage(chunk, reportedTotal ?: items.size, limit, page)
     }
-    override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
+    override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse {
+        if (recentFails) throw IOException("404")
+        return io.wolftown.lauschig.absapi.library.RecentEpisodesResponse(recent ?: error("unused"))
+    }
     override suspend fun item(id: String, expanded: Int) = detail!!
 }
 
@@ -64,7 +76,7 @@ class LibrarySyncTest {
     @After fun tearDown() = db.close()
 
     private fun sync(a: LibraryApi? = api) = LibrarySync(
-        flowOf(a), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(),
+        flowOf(a), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
         { block -> db.withTransaction { block() } },
     )
 
@@ -177,11 +189,87 @@ class LibrarySyncTest {
         sync().sync_()
         api.detail = dto("a")
         val failing = LibrarySync(
-            flowOf(api), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(),
+            flowOf(api), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
             { block -> db.withTransaction { block(); throw IOException("late failure") } },
         )
         try { failing.loadDetails(s, "a"); fail() } catch (_: IOException) {}
         assertFalse(db.itemDao().get(s, "a")!!.detailsLoaded)
+    }
+
+    private fun ep(id: String, item: String? = null, ino: String = "ino-$id") = EpisodeDto(
+        id = id, title = "Folge $id", publishedAt = 1_000, duration = 600.0, size = 5_000, libraryItemId = item,
+        audioFile = AudioFileDto(1, ino, 600.0, FileMetadataDto("$id.mp3", ".mp3", 5_000)),
+        chapters = listOf(ChapterDto(0, 0.0, 600.0, "Kap")),
+    )
+
+    private fun podcast(vararg eps: EpisodeDto) = LibraryItemDto(
+        "pod", "l1", "podcast", 1, BookMediaDto(BookMetadataDto(title = "Pod", author = "Host"), numEpisodes = eps.size, episodes = eps.toList()),
+    )
+
+    @Test fun podcastDetails_storeEpisodesAndFilesUnderKeys() = runTest {
+        api.detail = podcast(ep("e1"), ep("e2"))
+        sync().loadEpisodes(s, "pod")
+
+        assertEquals(listOf("e2", "e1"), db.episodeDao().observeForItem(s, "pod").first().map { it.id }.sortedDescending())
+        assertEquals(600.0, db.episodeDao().get(s, "pod", "e1")!!.durationSec, 0.0)
+        val key = PlayableKey.episode("pod", "e1")
+        val f = db.audioFileDao().forItem(s, key).single()
+        assertEquals(1, f.index)
+        assertEquals("ino-e1", f.ino)
+        assertEquals("mp3", f.ext)
+        assertEquals(1, db.chapterDao().forItem(s, key).size)
+        assertTrue(db.audioFileDao().forItem(s, "pod").isEmpty())
+        assertTrue(db.itemDao().get(s, "pod")!!.detailsLoaded)
+    }
+
+    @Test fun replaceForItem_keepsDownloadedEpisodes() = runTest {
+        api.detail = podcast(ep("e1"), ep("e2"))
+        sync().loadDetails(s, "pod")
+        val k1 = PlayableKey.episode("pod", "e1")
+        val k2 = PlayableKey.episode("pod", "e2")
+        db.audioFileDao().setLocal(s, k1, 1, "/x/e1.mp3", 5_000)
+        db.downloadDao().upsert(DownloadEntity(s, k1, DownloadState.COMPLETE, 1))
+
+        api.detail = podcast(ep("e3")) // e1 downloaded -> kept, e2 dropped
+        sync().loadDetails(s, "pod")
+
+        assertEquals(setOf("e1", "e3"), db.episodeDao().observeForItem(s, "pod").first().map { it.id }.toSet())
+        assertEquals("/x/e1.mp3", db.audioFileDao().forItem(s, k1).single().localPath)
+        assertTrue(db.audioFileDao().forItem(s, k2).isEmpty())
+        assertTrue(db.chapterDao().forItem(s, k2).isEmpty())
+
+        // Refetching the same episode keeps its local file.
+        api.detail = podcast(ep("e1"), ep("e3"))
+        sync().loadDetails(s, "pod")
+        assertEquals("/x/e1.mp3", db.audioFileDao().forItem(s, k1).single().localPath)
+    }
+
+    @Test fun recentEpisodes_flagged_resetPerLibrary_andInsertMissing() = runTest {
+        api.libraryType = "podcast"
+        api.items = listOf(podcast())
+        api.detail = podcast(ep("e1"), ep("e2"))
+        sync().loadDetails(s, "pod")
+        api.recent = listOf(ep("e1", "pod"), ep("e9", "pod"))
+        sync().sync_()
+        assertEquals(setOf("e1", "e9"), db.episodeDao().observeRecent(s, 10).first().map { it.id }.toSet())
+        assertEquals("ino-e9", db.audioFileDao().forItem(s, PlayableKey.episode("pod", "e9")).single().ino)
+
+        // Re-opening the podcast keeps the flags; the next recent sync clears stale ones.
+        api.detail = podcast(ep("e1"), ep("e2"), ep("e9"))
+        sync().loadDetails(s, "pod")
+        assertEquals(setOf("e1", "e9"), db.episodeDao().observeRecent(s, 10).first().map { it.id }.toSet())
+        api.recent = listOf(ep("e2", "pod"))
+        sync().sync_()
+        assertEquals(listOf("e2"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
+    }
+
+    @Test fun recentEpisodes_failure_doesNotFailSync() = runTest {
+        api.libraryType = "podcast"
+        api.items = listOf(podcast())
+        api.recentFails = true
+        sync().sync_() // must not throw
+        assertNotNull(db.itemDao().get(s, "pod"))
+        assertTrue(db.episodeDao().observeRecent(s, 10).first().isEmpty())
     }
 
     @Test fun offline_isNoOp() = runTest {

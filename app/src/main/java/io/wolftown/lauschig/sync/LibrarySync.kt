@@ -1,22 +1,26 @@
 package io.wolftown.lauschig.sync
 
 import io.wolftown.lauschig.absapi.library.LibraryApi
+import io.wolftown.lauschig.absapi.library.EpisodeDto
 import io.wolftown.lauschig.absapi.library.LibraryItemDto
 import androidx.room.withTransaction
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.ChapterDao
 import io.wolftown.lauschig.db.dao.DownloadDao
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ChapterEntity
+import io.wolftown.lauschig.db.entities.EpisodeEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryEntity
 import io.wolftown.lauschig.db.parseMinifiedSeries
 import io.wolftown.lauschig.db.seriesSortKey
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.playback.PlayableKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -31,6 +35,7 @@ class LibrarySync(
     private val audioFiles: AudioFileDao,
     private val progress: ProgressDao,
     private val downloads: DownloadDao,
+    private val episodes: EpisodeDao,
     /** Runs the block in one DB transaction (rolled back on exception). */
     private val transaction: suspend (suspend () -> Unit) -> Unit,
 ) {
@@ -42,8 +47,9 @@ class LibrarySync(
         audioFiles: AudioFileDao,
         progress: ProgressDao,
         downloads: DownloadDao,
+        episodes: EpisodeDao,
         db: LauschigDatabase,
-    ) : this(apiProvider.libraryApi, libraries, items, chapters, audioFiles, progress, downloads, { block -> db.withTransaction { block() } })
+    ) : this(apiProvider.libraryApi, libraries, items, chapters, audioFiles, progress, downloads, episodes, { block -> db.withTransaction { block() } })
 
     /**
      * Syncs every library. Offline (no API) is a no-op. A failing library does not stop the others, but
@@ -65,8 +71,25 @@ class LibrarySync(
             } catch (e: Exception) {
                 if (failure == null) failure = e else failure.addSuppressed(e)
             }
+            if (lib.mediaType.equals("podcast", ignoreCase = true)) syncRecentEpisodes(api, serverId, lib.id)
         }
         failure?.let { throw it }
+    }
+
+    /** Marks the library's newest unheard episodes as `recent`. Best effort: a failure never fails the sync. */
+    private suspend fun syncRecentEpisodes(api: LibraryApi, serverId: String, libraryId: String) {
+        try {
+            val fetched = api.recentEpisodes(libraryId, RECENT_LIMIT, 0).episodes.filter { it.libraryItemId != null }
+            // Flags are reset only after a successful fetch, so a failure keeps the previous set.
+            transaction {
+                episodes.replaceRecent(serverId, libraryId, fetched.map { it.toEntity(serverId, it.libraryItemId!!, recent = true) })
+                fetched.forEach { storeEpisodeFiles(serverId, it.libraryItemId!!, it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // keep the previous recent set
+        }
     }
 
     private suspend fun syncLibrary(api: LibraryApi, serverId: String, libraryId: String) {
@@ -94,6 +117,9 @@ class LibrarySync(
         if (drop.isNotEmpty()) items.deleteByIds(serverId, drop)
     }
 
+    /** Same as [loadDetails]; reads better where only the episodes of a podcast are wanted. */
+    suspend fun loadEpisodes(serverId: String, itemId: String) = loadDetails(serverId, itemId)
+
     /** Fetches the expanded item and stores details, chapters and audio files. */
     suspend fun loadDetails(serverId: String, itemId: String) {
         val api = api.first() ?: return
@@ -111,6 +137,10 @@ class LibrarySync(
         )
         // Atomic; the item row (detailsLoaded = true) goes last so a failure never leaves it marked loaded.
         transaction {
+            if (dto.mediaType.equals("podcast", ignoreCase = true)) {
+                episodes.replaceForItem(serverId, itemId, dto.media.episodes.map { it.toEntity(serverId, itemId) })
+                dto.media.episodes.forEach { storeEpisodeFiles(serverId, itemId, it) }
+            }
             chapters.replaceFromServer(
                 serverId, itemId,
                 dto.media.chapters.mapIndexed { i, c -> ChapterEntity(serverId, itemId, i, c.start, c.end, c.title) },
@@ -124,6 +154,33 @@ class LibrarySync(
             items.upsertDetails(entity)
         }
     }
+
+    /** The episode's single audio file (index 1) and chapters, stored under its playable key. */
+    private suspend fun storeEpisodeFiles(serverId: String, itemId: String, ep: EpisodeDto) {
+        val key = PlayableKey.episode(itemId, ep.id)
+        // No audio file in the payload: keep what is stored (it may be downloaded).
+        val file = ep.audioFile ?: return
+        audioFiles.replaceFromServer(
+            serverId, key,
+            listOf(AudioFileEntity(serverId, key, 1, file.ino, file.duration, file.metadata.size, file.metadata.ext.removePrefix("."))),
+        )
+        chapters.replaceFromServer(serverId, key, ep.chapters.mapIndexed { i, c -> ChapterEntity(serverId, key, i, c.start, c.end, c.title) })
+    }
+
+    private fun EpisodeDto.toEntity(serverId: String, itemId: String, recent: Boolean = false) = EpisodeEntity(
+        serverId = serverId,
+        itemId = itemId,
+        id = id,
+        title = title,
+        subtitle = subtitle,
+        description = description,
+        season = season?.takeIf { it.isNotBlank() },
+        episode = episode?.takeIf { it.isNotBlank() },
+        publishedAt = publishedAt ?: 0,
+        durationSec = duration ?: audioFile?.duration ?: 0.0,
+        sizeBytes = size ?: audioFile?.metadata?.size ?: 0,
+        recent = recent,
+    )
 
     private fun LibraryItemDto.toListEntity(serverId: String): ItemEntity {
         val m = media.metadata
@@ -155,5 +212,6 @@ class LibrarySync(
 
     companion object {
         const val PAGE_SIZE = 200
+        const val RECENT_LIMIT = 30
     }
 }
