@@ -1,0 +1,13 @@
+{
+  "app": "audiobookshelf",
+  "serverVersion": "2.37.1",
+  "isInit": true,
+  "language": "en-us",
+  "authMethods": ["local", "openid"],
+  "authFormData": {
+    "authLoginCustomMessage": null,
+    "authOpenIDButtonText": "Login with Authentik",
+    "authOpenIDAutoLaunch": false
+  },
+  "ConfigPath": "/config"
+}

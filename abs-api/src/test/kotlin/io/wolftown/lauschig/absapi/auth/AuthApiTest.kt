@@ -105,4 +105,29 @@ class AuthApiTest {
         assertNotNull(res.user.accessToken)
         assertEquals(null, res.user.mediaProgress[0].libraryItemId)
     }
+
+    @Test
+    fun status_parsesAuthMethods_andFormData() = runBlocking {
+        server.enqueue(json(fixture("status.json")))
+
+        val st = api.status()
+
+        assertEquals("/status", server.takeRequest().path)
+        assertEquals("2.37.1", st.serverVersion)
+        assertEquals(listOf("local", "openid"), st.authMethods)
+        assertEquals("Login with Authentik", st.authFormData!!.authOpenIDButtonText)
+        assertEquals(false, st.authFormData!!.authOpenIDAutoLaunch)
+        assertEquals(null, st.authFormData!!.authLoginCustomMessage)
+    }
+
+    @Test
+    fun status_minimalBody_usesDefaults() = runBlocking {
+        server.enqueue(json("""{"isInit":true}"""))
+
+        val st = api.status()
+
+        assertEquals(null, st.serverVersion)
+        assertTrue(st.authMethods.isEmpty())
+        assertEquals(null, st.authFormData)
+    }
 }

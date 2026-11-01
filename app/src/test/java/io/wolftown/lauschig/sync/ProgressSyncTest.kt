@@ -40,6 +40,7 @@ private class FakeMe : MeApi {
     var events = mutableListOf<String>()
 
     override suspend fun me() = AbsUser("u", "n", "user", mediaProgress = server).also { events += "me" }
+    override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
     override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {
         if (failOnPatch) throw IOException("boom")
         patches += itemId to u

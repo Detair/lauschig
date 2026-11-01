@@ -46,6 +46,7 @@ private class FakeLibrary : LibraryApi {
         val chunk = items.drop((if (ignorePage) 0 else page) * limit).take(limit)
         return LibraryItemsPage(chunk, reportedTotal ?: items.size, limit, page)
     }
+    override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
     override suspend fun item(id: String, expanded: Int) = detail!!
 }
 
@@ -93,6 +94,24 @@ class LibrarySyncTest {
         val new = db.itemDao().get(s, "new")!!
         assertEquals(5678L, new.addedAt)
         assertNull(new.publishedYear)
+    }
+
+    @Test fun sync_mapsAsinLanguageNumEpisodes_andPodcastAuthor() = runTest {
+        api.items = listOf(
+            LibraryItemDto("b", "l1", "book", 1, BookMediaDto(BookMetadataDto(title = "Book", authorName = "Ann", asin = "B0ABC", language = "German"), duration = 10.0)),
+            LibraryItemDto("p", "l1", "podcast", 1, BookMediaDto(BookMetadataDto(title = "Pod", author = "Host", language = "de"), numEpisodes = 7)),
+        )
+        sync().sync_()
+        sync().sync_() // second run goes through the update path
+        val book = db.itemDao().get(s, "b")!!
+        assertEquals("B0ABC", book.asin)
+        assertEquals("German", book.language)
+        assertEquals("Ann", book.author)
+        assertEquals(0, book.numEpisodes)
+        val pod = db.itemDao().get(s, "p")!!
+        assertEquals("Host", pod.author)
+        assertEquals(7, pod.numEpisodes)
+        assertNull(pod.asin)
     }
 
     @Test fun serverRemovedItem_withDownload_isKeptAsOrphan() = runTest {

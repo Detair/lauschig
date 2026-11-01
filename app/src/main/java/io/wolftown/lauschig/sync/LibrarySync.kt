@@ -134,7 +134,8 @@ class LibrarySync(
             libraryId = libraryId,
             title = m.title,
             subtitle = m.subtitle,
-            author = m.authorName,
+            // Podcasts carry the author in `author`, books in `authorName`.
+            author = m.authorName ?: m.author,
             narrator = m.narratorName,
             seriesName = series?.first,
             seriesSequence = series?.second,
@@ -146,6 +147,9 @@ class LibrarySync(
             updatedAt = updatedAt,
             addedAt = addedAt,
             publishedYear = m.publishedYear?.takeIf { it.isNotBlank() },
+            asin = m.asin?.takeIf { it.isNotBlank() },
+            language = m.language?.takeIf { it.isNotBlank() },
+            numEpisodes = media.numEpisodes ?: 0,
         )
     }
 

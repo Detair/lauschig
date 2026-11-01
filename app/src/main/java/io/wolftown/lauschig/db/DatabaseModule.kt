@@ -25,4 +25,5 @@ object DatabaseModule {
     @Provides fun progressDao(db: LauschigDatabase) = db.progressDao()
     @Provides fun sessionDao(db: LauschigDatabase) = db.sessionDao()
     @Provides fun downloadDao(db: LauschigDatabase) = db.downloadDao()
+    @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
 }

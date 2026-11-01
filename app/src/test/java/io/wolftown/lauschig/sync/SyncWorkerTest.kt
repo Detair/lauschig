@@ -52,11 +52,13 @@ class SyncWorkerTest {
     private val lib = object : LibraryApi {
         override suspend fun libraries(): LibrariesResponse { calls.incrementAndGet(); return LibrariesResponse(emptyList()) }
         override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = LibraryItemsPage(emptyList(), 0, limit, page)
+        override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
         override suspend fun item(id: String, expanded: Int): LibraryItemDto = error("unused")
         override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
     }
     private val me = object : MeApi {
         override suspend fun me() = AbsUser("u", "n", "user")
+        override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
         override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {}
         override suspend fun syncLocalSessions(body: LocalSessionsBody) = LocalSessionsResult(emptyList())
     }

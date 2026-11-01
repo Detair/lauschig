@@ -119,6 +119,7 @@ class BrowseViewModelTest {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String) = AuthorsResponse(listOf(AuthorDto("a1", "ANN", "Bio", "/x.jpg")))
+            override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
         val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache(flowOf(api)) { listOf("lib1") }).await { it.author != null }
@@ -130,6 +131,7 @@ class BrowseViewModelTest {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String): AuthorsResponse = throw java.io.IOException("down")
+            override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
         val cache = AuthorInfoCache(flowOf(api)) { listOf("lib1") }

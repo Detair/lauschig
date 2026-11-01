@@ -14,6 +14,10 @@ interface AuthApi {
     @POST("auth/refresh")
     suspend fun refresh(@Header("x-refresh-token") refreshToken: String): LoginResponse
 
+    /** Unauthenticated; tells which sign-in methods the server offers (`openid` only when OIDC is configured). */
+    @GET("status")
+    suspend fun status(): StatusResponse
+
     @GET("ping")
     suspend fun ping(): PingResponse
 }

@@ -65,6 +65,17 @@ class MeApiTest {
     }
 
     @Test
+    fun updateEpisodeProgress_patchesEpisodePath() = runBlocking {
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/plain; charset=utf-8").setBody("OK"))
+
+        api.updateEpisodeProgress("li_pod1", "ep_2", ProgressUpdate(10.0, 1800.0, 0.005, false))
+
+        val req = server.takeRequest()
+        assertEquals("PATCH", req.method)
+        assertEquals("/api/me/progress/li_pod1/ep_2", req.path)
+    }
+
+    @Test
     fun localAll_postsSessions() = runBlocking {
         server.enqueue(
             MockResponse().setHeader("Content-Type", "application/json").setBody(

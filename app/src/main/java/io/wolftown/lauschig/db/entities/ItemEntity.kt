@@ -27,6 +27,10 @@ data class ItemEntity(
     /** Epoch ms the item was added to the library on the server. */
     @ColumnInfo(defaultValue = "0") val addedAt: Long = 0,
     @ColumnInfo(defaultValue = "NULL") val publishedYear: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val asin: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val language: String? = null,
+    /** Podcasts only; 0 for books. */
+    @ColumnInfo(defaultValue = "0") val numEpisodes: Int = 0,
     val detailsLoaded: Boolean = false,
     /** Removed on the server but kept because it has a download or progress. */
     val orphaned: Boolean = false,

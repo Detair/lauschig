@@ -14,6 +14,13 @@ interface MeApi {
     @PATCH("api/me/progress/{itemId}")
     suspend fun updateProgress(@Path("itemId") itemId: String, @Body u: ProgressUpdate)
 
+    @PATCH("api/me/progress/{itemId}/{episodeId}")
+    suspend fun updateEpisodeProgress(
+        @Path("itemId") itemId: String,
+        @Path("episodeId") episodeId: String,
+        @Body u: ProgressUpdate,
+    )
+
     @POST("api/session/local-all")
     suspend fun syncLocalSessions(@Body body: LocalSessionsBody): LocalSessionsResult
 }

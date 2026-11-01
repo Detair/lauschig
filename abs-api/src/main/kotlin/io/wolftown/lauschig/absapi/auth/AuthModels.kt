@@ -41,3 +41,19 @@ data class ServerSettings(
 
 @Serializable
 data class PingResponse(val success: Boolean)
+
+/** `GET /status` (no login needed). */
+@Serializable
+data class StatusResponse(
+    val serverVersion: String? = null,
+    /** "local" and/or "openid". */
+    val authMethods: List<String> = emptyList(),
+    val authFormData: AuthFormData? = null,
+)
+
+@Serializable
+data class AuthFormData(
+    val authOpenIDButtonText: String? = null,
+    val authOpenIDAutoLaunch: Boolean = false,
+    val authLoginCustomMessage: String? = null,
+)

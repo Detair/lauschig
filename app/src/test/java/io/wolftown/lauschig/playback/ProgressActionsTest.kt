@@ -42,6 +42,7 @@ private class RecordingPlayer : PlayerController {
 
 private class ServerMe(var rows: List<MediaProgressDto>) : MeApi {
     override suspend fun me() = AbsUser("u", "n", "user", mediaProgress = rows)
+    override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
     override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {}
     override suspend fun syncLocalSessions(body: LocalSessionsBody) = LocalSessionsResult(emptyList())
 }

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.absapi.library
 
+import io.wolftown.lauschig.absapi.LenientEpisodeListSerializer
 import io.wolftown.lauschig.absapi.LenientLibraryItemListSerializer
 import kotlinx.serialization.Serializable
 
@@ -61,6 +62,11 @@ data class BookMediaDto(
     val chapters: List<ChapterDto> = emptyList(),
     val audioFiles: List<AudioFileDto> = emptyList(),
     val tags: List<String> = emptyList(),
+    /** Podcasts only: episode count (present in list results, which carry no `episodes`). */
+    val numEpisodes: Int? = null,
+    /** Podcasts only, and only in the expanded item. */
+    @Serializable(with = LenientEpisodeListSerializer::class)
+    val episodes: List<EpisodeDto> = emptyList(),
 )
 
 @Serializable
@@ -76,6 +82,10 @@ data class BookMetadataDto(
     val description: String? = null,
     /** Free text on the server, usually a four-digit year. */
     val publishedYear: String? = null,
+    val asin: String? = null,
+    val language: String? = null,
+    /** Podcast author (books use [authorName]). */
+    val author: String? = null,
 )
 
 @Serializable
@@ -109,4 +119,32 @@ data class FileMetadataDto(
     /** Includes the leading dot, e.g. ".m4b". */
     val ext: String,
     val size: Long,
+)
+
+/** Podcast episode in an expanded item, or in `recent-episodes` (then with [libraryItemId]). */
+@Serializable
+data class EpisodeDto(
+    val id: String,
+    val index: Int? = null,
+    /** Free text on the server, usually empty. */
+    val season: String? = null,
+    val episode: String? = null,
+    val title: String,
+    val subtitle: String? = null,
+    val description: String? = null,
+    /** Epoch ms. */
+    val publishedAt: Long? = null,
+    val duration: Double? = null,
+    val size: Long? = null,
+    val audioFile: AudioFileDto? = null,
+    val chapters: List<ChapterDto> = emptyList(),
+    /** Only set in `recent-episodes` results. */
+    val libraryItemId: String? = null,
+)
+
+/** `GET /api/libraries/:id/recent-episodes`: `{ "episodes": [...] }`. */
+@Serializable
+data class RecentEpisodesResponse(
+    @Serializable(with = LenientEpisodeListSerializer::class)
+    val episodes: List<EpisodeDto> = emptyList(),
 )
