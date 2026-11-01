@@ -47,7 +47,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         store.edit { it[MISSING_VOLUMES] = enabled }
     }
 
+    /** Ignores codes that are not an Audible region. */
     suspend fun setAudibleRegion(region: String) {
+        if (region !in io.wolftown.lauschig.external.AudibleRegions.all) return
         store.edit { it[AUDIBLE_REGION] = region }
     }
 

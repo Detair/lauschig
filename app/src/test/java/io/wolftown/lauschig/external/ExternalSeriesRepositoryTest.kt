@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.settings.AppSettings
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.Dispatcher
@@ -151,5 +153,53 @@ class ExternalSeriesRepositoryTest {
     @Test fun noAsin_noRequest() = runTest {
         assertNull(repo.missingFor("srv", "lib", "Die Serie", owned.map { it.copy(asin = null) }))
         assertEquals(0, paths.size)
+    }
+
+    @Test fun walksOwnedAsins_untilOneResolves() = runTest {
+        val two = listOf(
+            owned[0].copy(id = "x", asin = "UNKNOWN"),
+            owned[0].copy(id = "y", asin = "OWN1"),
+        )
+        val r = repo.missingFor("srv", "lib", "Die Serie", two)
+        assertEquals(listOf("C2"), r!!.map { it.volume.asin })
+        // UNKNOWN tried in both regions (404), then OWN1 resolves.
+        assertEquals(2, paths.count { it.startsWith("/1.0/catalog/products/UNKNOWN") })
+    }
+
+    @Test fun noData_isNegativeCachedForSixHours() = runTest {
+        val unknown = owned.map { it.copy(asin = "UNKNOWN") }
+        assertNull(repo.missingFor("srv", "lib", "Die Serie", unknown))
+        val before = paths.size
+        now = now.plusSeconds(5L * 3600)
+        assertNull(repo.missingFor("srv", "lib", "Die Serie", unknown))
+        assertEquals(before, paths.size)
+        now = now.plusSeconds(2L * 3600)
+        assertNull(repo.missingFor("srv", "lib", "Die Serie", unknown))
+        assertEquals(true, paths.size > before)
+    }
+
+    @Test fun failure_withStaleCache_isNotRetriedFor6Hours() = runTest {
+        repo.missingFor("srv", "lib", "Die Serie", owned)
+        now = now.plusSeconds(8L * 24 * 3600)
+        failing = true
+        paths.clear()
+        assertEquals(1, repo.missingFor("srv", "lib", "Die Serie", owned)!!.size)
+        val n = paths.size
+        assertEquals(1, repo.missingFor("srv", "lib", "Die Serie", owned)!!.size)
+        assertEquals(n, paths.size)
+    }
+
+    @Test fun concurrentCalls_shareOneRequestChain() = runTest {
+        val a = async { repo.missingFor("srv", "lib", "Die Serie", owned) }
+        val b = async { repo.missingFor("srv", "lib", "Die Serie", owned) }
+        assertEquals(1, a.await()!!.size)
+        assertEquals(1, b.await()!!.size)
+        assertEquals(3, paths.size)
+    }
+
+    @Test fun setAudibleRegion_ignoresUnknownCodes() = runTest {
+        settings.setAudibleRegion("uk")
+        settings.setAudibleRegion("xx")
+        assertEquals("uk", settings.audibleRegion.first())
     }
 }

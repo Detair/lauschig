@@ -37,25 +37,41 @@ class ExternalSeriesRepository @Inject constructor(
     }
 
     private suspend fun volumesFor(serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>): List<AudibleVolume>? {
-        fresh(dao.get(serverId, libraryId, seriesName))?.let { return it }
+        fresh(dao.get(serverId, libraryId, seriesName))?.let { return it.takeIf(List<AudibleVolume>::isNotEmpty) }
         // One load per series at a time; whoever waits finds the result in the cache afterwards.
         val lock = locks.getOrPut("$serverId\u0000$libraryId\u0000$seriesName") { Mutex() }
         return lock.withLock {
-            val cached = dao.get(serverId, libraryId, seriesName)
-            fresh(cached)?.let { return@withLock it }
-            val loaded = try {
-                val asin = owned.firstNotNullOfOrNull { it.asin?.takeIf(String::isNotBlank) } ?: return@withLock decode(cached)
-                load(asin, seriesName)
+            val cached = try {
+                dao.get(serverId, libraryId, seriesName)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 null
             }
-            if (loaded.isNullOrEmpty()) return@withLock decode(cached)
-            dao.upsert(
-                ExternalSeriesEntity(serverId, libraryId, seriesName, AbsJson.encodeToString(listSerializer, loaded), clock.millis()),
-            )
-            loaded
+            fresh(cached)?.let { return@withLock it.takeIf(List<AudibleVolume>::isNotEmpty) }
+            val asins = owned.mapNotNull { it.asin?.takeIf(String::isNotBlank) }.distinct().take(MAX_ASINS)
+            val loaded = try {
+                load(asins, seriesName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            val stale = decode(cached).orEmpty()
+            val result = loaded?.takeIf { it.isNotEmpty() }
+            // Success: full TTL. No data / failure: keep the old list but do not ask again for NEGATIVE_TTL_MS.
+            val stampedAt = if (result != null) clock.millis() else clock.millis() - TTL_MS + NEGATIVE_TTL_MS
+            val toStore = result ?: stale
+            try {
+                dao.upsert(
+                    ExternalSeriesEntity(serverId, libraryId, seriesName, AbsJson.encodeToString(listSerializer, toStore), stampedAt),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Cache write failed: the loaded data is still good for this call.
+            }
+            toStore.takeIf { it.isNotEmpty() }
         }
     }
 
@@ -65,18 +81,24 @@ class ExternalSeriesRepository @Inject constructor(
     private fun decode(row: ExternalSeriesEntity?): List<AudibleVolume>? =
         row?.let { runCatching { AbsJson.decodeFromString(listSerializer, it.json) }.getOrNull() }
 
-    /** Tries the configured region, then its alternative when the ASIN is unknown there. Throws on network/server errors. */
-    private suspend fun load(asin: String, seriesName: String): List<AudibleVolume>? {
+    /**
+     * Walks the owned ASINs until one resolves to a non-empty series. Unknown ASINs (404, no series) move on to the next;
+     * network and server errors throw, since another ASIN would not help.
+     */
+    private suspend fun load(asins: List<String>, seriesName: String): List<AudibleVolume>? {
         val primary = settings.audibleRegion.first()
-        for (region in listOf(primary, AudibleRegions.alternative(primary))) {
-            val api = apis.forRegion(region)
-            val product = try {
-                api.product(asin).product
-            } catch (e: HttpException) {
-                if (e.code() == 404) null else throw e
+        for (asin in asins) {
+            for (region in listOf(primary, AudibleRegions.alternative(primary))) {
+                val api = apis.forRegion(region)
+                val product = try {
+                    api.product(asin).product
+                } catch (e: HttpException) {
+                    if (e.code() == 404) null else throw e
+                }
+                val series = pickSeries(product?.series, seriesName)?.takeIf { !it.asin.isNullOrBlank() } ?: continue
+                val volumes = children(api, series.asin!!)
+                if (volumes.isNotEmpty()) return volumes
             }
-            val series = pickSeries(product?.series, seriesName)?.takeIf { !it.asin.isNullOrBlank() } ?: continue
-            return children(api, series.asin!!)
         }
         return null
     }
@@ -116,5 +138,7 @@ class ExternalSeriesRepository @Inject constructor(
 
     companion object {
         val TTL_MS: Long = TimeUnit.DAYS.toMillis(7)
+        val NEGATIVE_TTL_MS: Long = TimeUnit.HOURS.toMillis(6)
+        private const val MAX_ASINS = 5
     }
 }
