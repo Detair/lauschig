@@ -10,6 +10,7 @@ import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.sync.PositionJumpBus
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
@@ -26,4 +27,9 @@ class AppViewModel @Inject constructor(
 
     val serverId: StateFlow<String?> =
         accountStore.account.map { it?.serverId }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** A refresh was rejected: show the "sign in again" hint. Never logs out; local data stays usable. */
+    val needsReauth: StateFlow<Boolean> =
+        combine(accountStore.account, accountStore.needsReauth) { account, flag -> account != null && flag }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 }

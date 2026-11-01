@@ -15,6 +15,7 @@ import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
 import io.wolftown.lauschig.ui.nav.AppNavHost
 import io.wolftown.lauschig.ui.nav.currentTab
 import io.wolftown.lauschig.ui.nav.Player
+import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.isOnPlayer
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
@@ -26,6 +27,7 @@ fun AppRoot(startDestination: Any, viewModel: AppViewModel = hiltViewModel()) {
     val navController = rememberNavController()
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
+    val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
 
     val onSetup = navController.isOnSetup()
@@ -49,6 +51,8 @@ fun AppRoot(startDestination: Any, viewModel: AppViewModel = hiltViewModel()) {
                 },
                 showBottomBar = !onSetup,
                 showOfflineBanner = !onSetup,
+                showReauthBanner = needsReauth && !onSetup,
+                onReauth = { navController.navigate(Setup) { launchSingleTop = true } },
                 selectedTab = navController.currentTab(),
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,

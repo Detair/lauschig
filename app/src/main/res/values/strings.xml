@@ -10,6 +10,8 @@
     <string name="nav_discover">Discover</string>
     <string name="nav_search">Search</string>
     <string name="offline_banner">Offline – downloaded titles only</string>
+    <string name="reauth_banner">Session expired – please sign in again</string>
+    <string name="reauth_action">Sign in again</string>
     <string name="position_jump">Continued on another device. Go back to %1$s?</string>
     <string name="position_jump_undo">Undo</string>
     <string name="coming_soon">Coming soon</string>

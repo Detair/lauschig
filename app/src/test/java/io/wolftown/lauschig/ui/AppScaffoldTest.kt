@@ -142,4 +142,23 @@ class AppScaffoldTest {
         rule.waitUntil(5_000) { player.plays.isNotEmpty() }
         assertEquals(Triple("srv", "book2", 60.0), player.plays.single())
     }
+
+    @Test
+    fun reauthBanner_showsHintAndSignInAgainAction() {
+        var clicks = 0
+        rule.setContent {
+            LauschigTheme { AppScaffold(ONLINE, miniPlayer = {}, showReauthBanner = true, onReauth = { clicks++ }) { Text("content") } }
+        }
+        rule.onNodeWithTag("reauthBanner").assertIsDisplayed()
+        rule.onNodeWithText("Session expired – please sign in again").assertIsDisplayed()
+        rule.onNodeWithText("Sign in again").performClick()
+        assertEquals(1, clicks)
+        rule.onNodeWithText("content").assertIsDisplayed() // local content stays visible
+    }
+
+    @Test
+    fun reauthBanner_hiddenByDefault() {
+        rule.setContent { LauschigTheme { AppScaffold(ONLINE, miniPlayer = {}) { Text("content") } } }
+        rule.onAllNodesWithTag("reauthBanner").assertCountEquals(0)
+    }
 }

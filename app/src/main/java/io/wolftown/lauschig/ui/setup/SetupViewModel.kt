@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -30,6 +31,8 @@ data class SetupUiState(
     val password: String = "",
     val ssidBinding: Boolean = false,
     val currentSsid: String? = null,
+    /** Home SSIDs of the existing account (re-auth), kept while the binding stays on. */
+    val keptSsids: Set<String> = emptySet(),
     /** The SSID could not be read (permission denied or no Wi-Fi), so the binding stays off. */
     val ssidHint: Boolean = false,
     val loading: Boolean = false,
@@ -54,12 +57,32 @@ class SetupViewModel @Inject constructor(
 
     private val confirmed = mutableSetOf<String>()
 
+    init {
+        // Re-auth: pre-fill everything but the password from the current account (read locally, no network).
+        viewModelScope.launch {
+            val a = accounts.account.first() ?: return@launch
+            confirmed += a.allowCleartext
+            val ssids = a.addresses.homeSsids
+            _state.update {
+                if (it.local.isNotEmpty() || it.public.isNotEmpty() || it.username.isNotEmpty()) it
+                else it.copy(
+                    local = a.addresses.local?.toString()?.trimEnd('/').orEmpty(),
+                    public = a.addresses.public?.toString()?.trimEnd('/').orEmpty(),
+                    username = a.username,
+                    ssidBinding = ssids.isNotEmpty(),
+                    currentSsid = ssids.firstOrNull(),
+                    keptSsids = ssids,
+                )
+            }
+        }
+    }
+
     fun onLocalChanged(v: String) = _state.update { it.copy(local = v, error = null) }
     fun onPublicChanged(v: String) = _state.update { it.copy(public = v, error = null) }
     fun onUsernameChanged(v: String) = _state.update { it.copy(username = v, error = null) }
     fun onPasswordChanged(v: String) = _state.update { it.copy(password = v, error = null) }
 
-    fun disableSsidBinding() = _state.update { it.copy(ssidBinding = false, ssidHint = false) }
+    fun disableSsidBinding() = _state.update { it.copy(ssidBinding = false, ssidHint = false, keptSsids = emptySet()) }
 
     /** Called once the location permission is granted: pre-fills the current SSID, or shows a hint and stays off. */
     fun enableSsidBinding() {
@@ -113,7 +136,7 @@ class SetupViewModel @Inject constructor(
                 if (access == null || refresh == null) return fail(SetupError.SERVER_TOO_OLD)
                 val addresses = ServerAddresses(
                     local, public,
-                    if (s.ssidBinding && local != null) setOfNotNull(s.currentSsid) else emptySet(),
+                    if (s.ssidBinding && local != null) s.keptSsids + setOfNotNull(s.currentSsid) else emptySet(),
                 )
                 val account = Account(
                     serverId = Account.computeServerId(addresses, user.id),

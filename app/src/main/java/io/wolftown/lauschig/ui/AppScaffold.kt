@@ -21,6 +21,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,7 +74,7 @@ fun rememberSettledOffline(connection: ConnectionState): Boolean {
 }
 
 /**
- * App frame: offline banner on top, [content] in the middle, [miniPlayer] slot above the bottom bar.
+ * App frame: re-auth hint and offline banner on top, [content] in the middle, [miniPlayer] slot above the bottom bar.
  * [content] receives zero padding; this scaffold already applies the system-bar insets around it.
  */
 @Composable
@@ -82,6 +85,8 @@ fun AppScaffold(
     selectedTab: TopLevelTab? = TopLevelTab.Start,
     showBottomBar: Boolean = true,
     showOfflineBanner: Boolean = true,
+    showReauthBanner: Boolean = false,
+    onReauth: () -> Unit = {},
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable (PaddingValues) -> Unit,
@@ -109,6 +114,7 @@ fun AppScaffold(
         },
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
+            if (showReauthBanner) ReauthBanner(onReauth)
             if (showBanner) OfflineBanner()
             Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
         }
@@ -128,5 +134,27 @@ private fun OfflineBanner() {
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         )
+    }
+}
+
+/** Persistent hint after a refresh failed with 401: local data and playback keep working, sign-in is offered. */
+@Composable
+private fun ReauthBanner(onReauth: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier.fillMaxWidth().testTag("reauthBanner"),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+        ) {
+            Text(
+                stringResource(R.string.reauth_banner),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+            )
+            TextButton(onClick = onReauth) { Text(stringResource(R.string.reauth_action)) }
+        }
     }
 }

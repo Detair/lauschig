@@ -3,7 +3,9 @@ package io.wolftown.lauschig.ui.setup
 import io.wolftown.lauschig.absapi.auth.AbsUser
 import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.LoginResponse
+import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.cleartextKey
+import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.sync.SyncTrigger
@@ -167,5 +169,37 @@ class SetupViewModelTest {
         assertEquals("HomeNet", v.state.value.currentSsid)
         v.login()
         assertEquals(setOf("HomeNet"), store.acc.value!!.addresses.homeSsids)
+    }
+
+    private fun existingAccount(): Account {
+        val addresses = ServerAddresses("http://192.168.1.5:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl(), setOf("HomeNet"))
+        return Account(Account.computeServerId(addresses, "u1"), "u1", "fabian", false, addresses, setOf("http://192.168.1.5:13378"))
+    }
+
+    @Test fun reauth_prefillsAddressesUsernameAndSsidFromCurrentAccount() {
+        store.acc.value = existingAccount()
+        store.reauth.value = true
+        val st = vm().state.value
+        assertEquals("http://192.168.1.5:13378", st.local)
+        assertEquals("https://abs.example.org", st.public)
+        assertEquals("fabian", st.username)
+        assertEquals("", st.password)
+        assertTrue(st.ssidBinding)
+        assertEquals("HomeNet", st.currentSsid)
+    }
+
+    @Test fun reauth_success_keepsServerIdAndSsids_clearsFlag_withoutCleartextPromptAgain() {
+        val before = existingAccount()
+        store.acc.value = before
+        store.reauth.value = true
+        val v = vm()
+        v.onPasswordChanged("secret")
+        v.login()
+        assertNull("confirmed earlier", v.state.value.cleartextPrompt)
+        assertTrue(v.state.value.done)
+        assertEquals(before.serverId, store.acc.value!!.serverId)
+        assertEquals(setOf("HomeNet"), store.acc.value!!.addresses.homeSsids)
+        assertEquals("acc", store.access)
+        assertFalse(store.reauth.value)
     }
 }

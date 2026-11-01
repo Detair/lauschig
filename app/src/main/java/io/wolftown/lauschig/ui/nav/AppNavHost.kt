@@ -20,6 +20,7 @@ import io.wolftown.lauschig.ui.start.StartRoute
 /**
  * [startDestination] is [Setup] when there is no account and [Start] otherwise (decided from the local
  * account store, never from the network). After a successful login [Setup] is removed from the back stack.
+ * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
@@ -33,7 +34,9 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         composable<Player> { PlayerRoute(onClose = { navController.popBackStack() }) }
         composable<Setup> {
             SetupRoute(onDone = {
-                navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
+                // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.
+                if (navController.previousBackStackEntry != null) navController.popBackStack()
+                else navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
             })
         }
     }
