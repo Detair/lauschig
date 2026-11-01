@@ -1,0 +1,171 @@
+package io.wolftown.lauschig.ui.start
+
+import android.content.Context
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.catalog.Catalog
+import io.wolftown.lauschig.connection.ServerAddresses
+import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.LibraryEntity
+import io.wolftown.lauschig.db.entities.ProgressEntity
+import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.playback.PlayerController
+import io.wolftown.lauschig.playback.PlayerUiState
+import io.wolftown.lauschig.ui.common.CoverPathCache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+private class NoopPlayer : PlayerController {
+    override val state = MutableStateFlow(PlayerUiState())
+    override fun play(serverId: String, itemId: String, startSec: Double?) {}
+    override fun togglePlayPause() {}
+    override fun seekBy(deltaSec: Int) {}
+    override fun seekTo(globalSec: Double) {}
+    override fun seekToChapter(index: Int) {}
+    override fun setSpeed(speed: Float) {}
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = android.app.Application::class)
+class StartViewModelTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private lateinit var db: LauschigDatabase
+    private val sid = "aaaaaaaaaaaaaaaa"
+    private val viewModels = ViewModelStore()
+
+    @Before fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
+            .allowMainThreadQueries().build()
+    }
+
+    @After fun tearDown() {
+        viewModels.clear()
+        db.close()
+        Dispatchers.resetMain()
+    }
+
+    private fun vm(): StartViewModel {
+        val accounts = FakeAccountStore()
+        accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
+        val factory = viewModelFactory {
+            initializer {
+                StartViewModel(
+                    covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), NoopPlayer(), Catalog(),
+                    UnconfinedTestDispatcher(),
+                )
+            }
+        }
+        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", StartViewModel::class]
+    }
+
+    private fun item(id: String, series: String? = null, key: Double? = null, added: Long = 0, lib: String = "lib1") =
+        ItemEntity(serverId = sid, id = id, libraryId = lib, title = id, seriesName = series, seriesSortKey = key, addedAt = added, durationSec = 100.0)
+
+    private suspend fun progress(id: String, t: Double = 10.0, fin: Boolean = false, last: Long = 1, hidden: Boolean = false) =
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, id, t, 100.0, fin, last, false, hidden)))
+
+    private suspend fun StartViewModel.await(p: (StartUiState) -> Boolean) =
+        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    private fun StartUiState.next() = nextInSeries.map { it.id }
+
+    @Test fun start_nextInSeries_skipsHeardAndStarted() = runTest {
+        db.itemDao().upsertFromList(
+            listOf(
+                item("a1", "Reihe A", 1.0), item("a2", "Reihe A", 2.0), item("a3", "Reihe A", 3.0), item("a4", "Reihe A", 4.0),
+                item("b1", "reihe b ", 1.0), item("b2", "Reihe B", 2.0),            // case/whitespace variants are one series
+                item("c1", "Reihe C", 1.0),                                       // nothing after the last volume
+                item("d1", "Reihe D", 1.0), item("d2", "Reihe D", 2.0),           // nothing heard
+                item("e1", "Reihe E", 1.0), item("e2", "Reihe E", 2.0), item("e3", "Reihe E", 3.0), // e2 has a zero-position progress row: not started, so it is the next volume
+                item("f1", "Reihe F", null), item("f2", "Reihe F", 2.0),          // unkeyed volumes are ignored
+            ),
+        )
+        progress("a1", fin = true, last = 5)
+        progress("a3", t = 20.0, last = 7)                                         // a2 is skipped (below a3), a4 is next
+        progress("b1", fin = true, last = 9)
+        progress("c1", fin = true, last = 3)
+        progress("e1", fin = true, last = 4)
+        progress("e2", t = 0.0, last = 6)                                          // zero position is not started
+        progress("f1", fin = true, last = 2)
+        val s = vm().await { it.nextInSeries.isNotEmpty() }
+        assertEquals(listOf("b2", "a4", "e2"), s.next())
+    }
+
+    @Test fun start_continueRow_excludesHidden_newestFirst() = runTest {
+        db.itemDao().upsertFromList((1..12).map { item("i$it") } + item("hid") + item("fin") + item("none"))
+        (1..12).forEach { progress("i$it", last = it.toLong()) }
+        progress("hid", last = 100, hidden = true)
+        progress("fin", fin = true, last = 101)
+        progress("none", t = 0.0, last = 102)
+        val s = vm().await { it.continueItems.isNotEmpty() }
+        assertEquals((12 downTo 3).map { "i$it" }, s.continueItems.map { it.id })
+    }
+
+    @Test fun start_recentlyAdded_fromAddedAt() = runTest {
+        db.itemDao().upsertFromList((1..12).map { item("n$it", added = it * 10L) } + item("unknown", added = 0))
+        val s = vm().await { it.recentlyAdded.isNotEmpty() }
+        assertEquals((12 downTo 3).map { "n$it" }, s.recentlyAdded.map { it.id })
+    }
+
+    @Test fun start_podcastLibraryItems_neverAppear() = runTest {
+        db.libraryDao().upsertFromServer(
+            listOf(LibraryEntity(sid, "lib1", "Bücher", "book", 0), LibraryEntity(sid, "pod", "Podcasts", "podcast", 1)),
+        )
+        db.itemDao().upsertFromList(
+            listOf(
+                item("b1", "Reihe A", 1.0), item("b2", "Reihe A", 2.0, added = 5),
+                item("p1", "Cast", 1.0, added = 50, lib = "pod"), item("p2", "Cast", 2.0, added = 60, lib = "pod"),
+            ),
+        )
+        progress("b1", fin = true, last = 2)
+        progress("p1", fin = true, last = 9)
+        val s = vm().await { it.nextInSeries.isNotEmpty() }
+        assertEquals(listOf("b2"), s.next())
+        assertEquals(listOf("b2"), s.recentlyAdded.map { it.id })
+    }
+
+    @Test fun start_sameSeriesNameInTwoLibraries_isTwoSeries() = runTest {
+        db.libraryDao().upsertFromServer(
+            listOf(LibraryEntity(sid, "lib1", "Bücher", "book", 0), LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)),
+        )
+        db.itemDao().upsertFromList(
+            listOf(
+                item("book50", "Die drei ???", 50.0),                                  // nothing after it in this library
+                item("play50", "Die drei ???", 50.0, lib = "lib2"), item("play51", "Die drei ???", 51.0, lib = "lib2"),
+                item("x1", "Reihe X", 1.0), item("x2", "Reihe X", 2.0),
+            ),
+        )
+        progress("book50", fin = true, last = 5)
+        progress("x1", fin = true, last = 1)
+        val s = vm().await { it.nextInSeries.isNotEmpty() }
+        assertEquals(listOf("x2"), s.next())
+    }
+}

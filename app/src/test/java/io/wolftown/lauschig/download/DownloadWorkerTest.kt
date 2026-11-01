@@ -295,6 +295,7 @@ class DownloadWorkerTest {
     private inner class DetailsApi : LibraryApi {
         var calls = 0
         override suspend fun libraries() = LibrariesResponse(emptyList())
+        override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
         override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = throw UnsupportedOperationException()
         override suspend fun item(id: String, expanded: Int): LibraryItemDto {
             calls++

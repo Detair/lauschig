@@ -15,9 +15,11 @@
     <string name="reauth_action">Erneut anmelden</string>
     <string name="position_jump">Auf einem anderen Gerät weitergehört. Zurück zu %1$s?</string>
     <string name="position_jump_undo">Zurück</string>
-    <string name="coming_soon">Kommt bald</string>
     <string name="start_continue">Weiterhören</string>
     <string name="start_downloaded">Heruntergeladen</string>
+    <string name="start_next_in_series">Als Nächstes in deinen Serien</string>
+    <string name="start_recently_added">Neu auf dem Server</string>
+    <string name="start_see_all">Alle</string>
     <string name="start_empty">Noch nichts gehört – schau doch mal in die Bibliothek</string>
     <string name="start_progress_percent">%1$d %%</string>
     <string name="setup_title">Mit Audiobookshelf verbinden</string>
@@ -142,4 +144,43 @@
         <item quantity="other">%1$d fertig gehörte Bücher belegen %2$s</item>
     </plurals>
     <string name="start_open_library">Zur Bibliothek</string>
+    <plurals name="browse_title_count">
+        <item quantity="one">%d Titel</item>
+        <item quantity="other">%d Titel</item>
+    </plurals>
+    <string name="browse_series_row">Serien</string>
+    <string name="browse_missing_volume">Band %s</string>
+    <string name="browse_missing_hint">nicht in der Bibliothek</string>
+    <string name="browse_empty">Hier ist nichts (in den gewählten Bibliotheken)</string>
+    <string name="browse_author_image">Foto von %s</string>
+    <string name="search_hint">Titel, Autoren, Serien suchen…</string>
+    <string name="search_clear">Suche löschen</string>
+    <string name="search_recent">Zuletzt gesucht</string>
+    <string name="search_titles">Titel</string>
+    <string name="search_authors">Autoren</string>
+    <string name="search_narrators">Sprecher</string>
+    <string name="search_series">Serien</string>
+    <string name="search_genres">Genres</string>
+    <string name="search_tags">Tags</string>
+    <string name="search_nothing_found">Nichts gefunden für „%s“</string>
+    <string name="discover_recent">Neu hinzugefügt</string>
+    <string name="discover_series">Serien</string>
+    <string name="discover_genres">Genres</string>
+    <string name="discover_authors">Autoren</string>
+    <string name="discover_all">Alle Titel</string>
+    <string name="discover_sort">Sortierung: %s</string>
+    <string name="discover_sort_title">Titel</string>
+    <string name="discover_sort_author">Autor</string>
+    <string name="discover_sort_added">Neu hinzugefügt</string>
+    <string name="discover_sort_duration">Dauer</string>
+    <plurals name="discover_volumes">
+        <item quantity="one">%d Band</item>
+        <item quantity="other">%d Bände</item>
+    </plurals>
+    <string name="search_more_chip">+%d</string>
+    <plurals name="search_show_all_titles">
+        <item quantity="one">Alle %d Titel anzeigen</item>
+        <item quantity="other">Alle %d Titel anzeigen</item>
+    </plurals>
+    <string name="discover_empty">Noch nichts da – die Bibliothek wird beim nächsten Verbinden geladen</string>
 </resources>

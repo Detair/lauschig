@@ -16,6 +16,19 @@ data class LibraryDto(
     val displayOrder: Int = 0,
 )
 
+/** `GET /api/libraries/:id/authors` wraps the list: `{ "authors": [...] }`. */
+@Serializable
+data class AuthorsResponse(val authors: List<AuthorDto> = emptyList())
+
+/** Author with the optional bio and image (`imagePath` is a server path; null = no image). */
+@Serializable
+data class AuthorDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val imagePath: String? = null,
+)
+
 /** `GET /api/libraries/:id/items`; `page` is 0-based, `limit` echoes the request (0 = unlimited). */
 @Serializable
 data class LibraryItemsPage(
@@ -37,6 +50,8 @@ data class LibraryItemDto(
     val mediaType: String,
     val updatedAt: Long,
     val media: BookMediaDto,
+    /** Epoch ms the item was added to the library; 0 when the server omits it. */
+    val addedAt: Long = 0,
 )
 
 @Serializable
@@ -59,6 +74,8 @@ data class BookMetadataDto(
     val series: List<SeriesRefDto> = emptyList(),
     val genres: List<String> = emptyList(),
     val description: String? = null,
+    /** Free text on the server, usually a four-digit year. */
+    val publishedYear: String? = null,
 )
 
 @Serializable

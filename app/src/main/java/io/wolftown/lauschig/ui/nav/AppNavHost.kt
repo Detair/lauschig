@@ -12,10 +12,12 @@ import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.player.PlayerRoute
-import io.wolftown.lauschig.ui.placeholder.ComingSoonScreen
+import io.wolftown.lauschig.ui.discover.DiscoverRoute
+import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
 
@@ -27,13 +29,36 @@ import io.wolftown.lauschig.ui.start.StartRoute
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }) }
         composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
-        composable<Discover> { ComingSoonScreen() }
-        composable<Search> { ComingSoonScreen() }
-        composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+        composable<Discover> {
+            DiscoverRoute(
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
+        composable<Search> {
+            SearchRoute(
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
+        composable<ItemDetail> {
+            ItemDetailRoute(
+                onBack = { navController.popBackStack() },
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
+        composable<Browse> {
+            BrowseRoute(
+                onBack = { navController.popBackStack() },
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+            )
+        }
         composable<Player> {
             PlayerRoute(
                 onClose = { navController.popBackStack() },

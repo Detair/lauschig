@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +41,9 @@ import io.wolftown.lauschig.ui.common.ItemSummary
 
 @androidx.compose.runtime.Immutable
 data class StartUiState(
-    val continueItem: ItemSummary? = null,
+    val continueItems: List<ItemSummary> = emptyList(),
+    val nextInSeries: List<ItemSummary> = emptyList(),
+    val recentlyAdded: List<ItemSummary> = emptyList(),
     val downloaded: List<ItemSummary> = emptyList(),
 )
 
@@ -49,6 +53,7 @@ fun StartRoute(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    onOpenDiscover: () -> Unit = {},
     viewModel: StartViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -60,7 +65,7 @@ fun StartRoute(
                 Icon(Icons.Rounded.Settings, stringResource(R.string.settings_title))
             }
         }
-        StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary, modifier = Modifier.weight(1f))
+        StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary, onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f))
     }
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem) }
 }
@@ -74,8 +79,9 @@ fun StartScreen(
     modifier: Modifier = Modifier,
     onMenu: (ItemSummary) -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    onOpenDiscover: () -> Unit = {},
 ) {
-    if (state.continueItem == null && state.downloaded.isEmpty()) {
+    if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty()) {
         Column(
             modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
@@ -89,25 +95,34 @@ fun StartScreen(
         return
     }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        state.continueItem?.let { item ->
-            item(key = "h-continue") { SectionHeader(R.string.start_continue) }
-            item(key = "continue") { TileRow(listOf(item), onOpen, onPlay, onMenu) }
-        }
-        if (state.downloaded.isNotEmpty()) {
-            item(key = "h-downloaded") { SectionHeader(R.string.start_downloaded) }
-            item(key = "downloaded") { TileRow(state.downloaded, onOpen, onPlay, onMenu) }
-        }
+        section("continue", R.string.start_continue, state.continueItems, onOpenLibrary, onOpen, onPlay, onMenu)
+        section("next", R.string.start_next_in_series, state.nextInSeries, null, onOpen, onPlay, onMenu)
+        section("recent", R.string.start_recently_added, state.recentlyAdded, onOpenDiscover, onOpen, onPlay, onMenu)
+        section("downloaded", R.string.start_downloaded, state.downloaded, null, onOpen, onPlay, onMenu)
     }
 }
 
+/** A header (with an optional "See all" link) plus a tile row; empty sections are left out. */
+private fun LazyListScope.section(
+    key: String, titleRes: Int, items: List<ItemSummary>, onSeeAll: (() -> Unit)?,
+    onOpen: (String) -> Unit, onPlay: (String) -> Unit, onMenu: (ItemSummary) -> Unit,
+) {
+    if (items.isEmpty()) return
+    item(key = "h-$key", contentType = "header") { SectionHeader(titleRes, onSeeAll, Modifier.testTag("seeAll-$key")) }
+    item(key = key, contentType = "row") { TileRow(items, onOpen, onPlay, onMenu) }
+}
+
 @Composable
-private fun SectionHeader(textRes: Int) {
-    Text(
-        stringResource(textRes),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-    )
+private fun SectionHeader(textRes: Int, onSeeAll: (() -> Unit)?, seeAllModifier: Modifier) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(textRes),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+        )
+        if (onSeeAll != null) TextButton(onClick = onSeeAll, modifier = seeAllModifier) { Text(stringResource(R.string.start_see_all)) }
+    }
 }
 
 @Composable

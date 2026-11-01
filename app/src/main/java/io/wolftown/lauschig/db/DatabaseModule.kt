@@ -19,6 +19,7 @@ object DatabaseModule {
 
     @Provides fun libraryDao(db: LauschigDatabase) = db.libraryDao()
     @Provides fun itemDao(db: LauschigDatabase) = db.itemDao()
+    @Provides fun catalogDao(db: LauschigDatabase) = db.catalogDao()
     @Provides fun chapterDao(db: LauschigDatabase) = db.chapterDao()
     @Provides fun audioFileDao(db: LauschigDatabase) = db.audioFileDao()
     @Provides fun progressDao(db: LauschigDatabase) = db.progressDao()

@@ -46,7 +46,7 @@ Es gibt keine Deadline, die App ist fertig, wenn sie fertig ist.
 Die Navigation besteht aus vier Reitern unten, jeweils **mit Icon und Text** und
 großer Tippfläche: **Start · Bibliothek · Entdecken · Suche**.
 
-- **Start:** „Weiterhören“ (das aktuelle Buch, ein Tipp startet es), „Als Nächstes in
+- **Start:** „Weiterhören“ (die angefangenen Bücher; nach dem ersten Gerätetest: Tippen öffnet die Details, der ▶-Knopf auf dem Cover startet sofort), „Als Nächstes in
   deinen Serien“ (der nächste Band jeder Serie, die man hört) und „Neu auf dem Server“.
 - **Bibliothek (meine):** Tabs für *Am Hören*, *Gehört*, *Heruntergeladen* und *Serien*.
   Die lokale Bibliothek muss genauso gut aussehen wie die Server-Bibliothek, mit
