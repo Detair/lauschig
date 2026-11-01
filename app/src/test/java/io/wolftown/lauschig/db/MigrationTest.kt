@@ -119,4 +119,42 @@ class MigrationTest {
             room.close()
         }
     }
+
+    @Test fun v4ToV5_keepsData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v5.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/4.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO items (serverId, id, libraryId, title, durationSec, coverUpdatedAt, genres, tags, updatedAt, addedAt, publishedYear, asin, language, numEpisodes, detailsLoaded, orphaned) VALUES ('s', 'a', 'l', 'T', 1.0, 0, '', '', 5, 9, '2001', 'B0X', 'German', 3, 0, 0)")
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty, hideFromContinue) VALUES ('s', 'a', 12.5, 100.0, 0, 7, 1, 0)")
+            db.execSQL("INSERT INTO downloads (serverId, itemId, state, requestedAt) VALUES ('s', 'a', 'COMPLETE', 3)")
+            db.execSQL("INSERT INTO local_sessions (id, serverId, itemId, startTimeSec, currentTimeSec, timeListeningSec, startedAt, updatedAt, synced) VALUES ('sess', 's', 'a', 0.0, 5.0, 5.0, 1, 2, 0)")
+            db.version = 4
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            val item = room.itemDao().get("s", "a")!!
+            assertEquals("T", item.title)
+            assertEquals("2001", item.publishedYear)
+            assertEquals("B0X", item.asin)
+            assertEquals("German", item.language)
+            assertEquals(3, item.numEpisodes)
+            assertEquals(null, room.externalSeriesDao().get("s", "l", "x"))
+            assertEquals(12.5, room.progressDao().get("s", "a")!!.currentTimeSec, 0.0)
+            assertEquals(DownloadState.COMPLETE, room.downloadDao().get("s", "a")!!.state)
+            assertEquals(1, room.sessionDao().unsynced("s").size)
+            assertEquals(emptyList<EpisodeEntity>(), room.episodeDao().observeForItem("s", "a").first())
+        } finally {
+            room.close()
+        }
+    }
 }

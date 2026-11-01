@@ -26,4 +26,5 @@ object DatabaseModule {
     @Provides fun sessionDao(db: LauschigDatabase) = db.sessionDao()
     @Provides fun downloadDao(db: LauschigDatabase) = db.downloadDao()
     @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
+    @Provides fun externalSeriesDao(db: LauschigDatabase) = db.externalSeriesDao()
 }

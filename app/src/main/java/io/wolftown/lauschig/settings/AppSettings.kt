@@ -37,6 +37,20 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     /** Titles ("serverId:itemId") the user does not want to be reminded about again. */
     val cleanupIgnored: Flow<Set<String>> = store.data.map { it[CLEANUP_IGNORED] ?: emptySet() }
 
+    /** Fill series gaps from the Audible catalog (only ASINs are sent). Default on. */
+    val missingVolumesEnabled: Flow<Boolean> = store.data.map { it[MISSING_VOLUMES] ?: true }
+
+    /** Audible catalog region (`de`, `us`, ...). Default `de`. */
+    val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: "de" }
+
+    suspend fun setMissingVolumesEnabled(enabled: Boolean) {
+        store.edit { it[MISSING_VOLUMES] = enabled }
+    }
+
+    suspend fun setAudibleRegion(region: String) {
+        store.edit { it[AUDIBLE_REGION] = region }
+    }
+
     suspend fun setNextVolumeMode(mode: NextVolumeMode) {
         store.edit { it[NEXT_VOLUME] = mode.name }
     }
@@ -55,6 +69,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private companion object {
         val NEXT_VOLUME = stringPreferencesKey("next_volume_mode")
         val CLEANUP_REMINDER = booleanPreferencesKey("cleanup_reminder")
+        val MISSING_VOLUMES = booleanPreferencesKey("missing_volumes_enabled")
+        val AUDIBLE_REGION = stringPreferencesKey("audible_region")
         val CLEANUP_IGNORED = stringSetPreferencesKey("cleanup_ignored")
     }
 }
