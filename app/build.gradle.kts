@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.room)
+    alias(libs.plugins.baselineprofile)
 }
 
 android {
@@ -21,8 +22,36 @@ android {
         versionName = "0.1.0"
     }
 
+    // Release signing comes from the environment (or Gradle properties); never from the repo.
+    // Without it, bundleRelease still succeeds but produces an UNSIGNED bundle.
+    fun signingValue(name: String): String? =
+        (System.getenv(name) ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
+
+    val keystorePath = signingValue("LAUSCHIG_KEYSTORE")
+    val hasReleaseSigning = keystorePath != null &&
+        signingValue("LAUSCHIG_KEYSTORE_PASSWORD") != null &&
+        signingValue("LAUSCHIG_KEY_ALIAS") != null &&
+        signingValue("LAUSCHIG_KEY_PASSWORD") != null
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = signingValue("LAUSCHIG_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("LAUSCHIG_KEY_ALIAS")
+                keyPassword = signingValue("LAUSCHIG_KEY_PASSWORD")
+            }
+        }
+    } else {
+        logger.warn(
+            "WARNING: LAUSCHIG_KEYSTORE / LAUSCHIG_KEYSTORE_PASSWORD / LAUSCHIG_KEY_ALIAS / " +
+                "LAUSCHIG_KEY_PASSWORD not set: the release build will be UNSIGNED.",
+        )
+    }
+
     buildTypes {
         release {
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -94,6 +123,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.androidx.profileinstaller)
+    "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Headphones with a sound wave between the ear cups; kept inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M32,60 L32,54 A22,22 0 0 1 76,54 L76,60" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M28,58 L36,58 Q38,58 38,60 L38,72 Q38,74 36,74 L32,74 Q28,74 28,70 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M80,58 L72,58 Q70,58 70,60 L70,72 Q70,74 72,74 L76,74 Q80,74 80,70 Z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M46,62 L46,70 M54,56 L54,76 M62,62 L62,70" />
+</vector>
