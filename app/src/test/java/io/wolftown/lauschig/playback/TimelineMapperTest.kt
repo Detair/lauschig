@@ -28,6 +28,12 @@ class TimelineMapperTest {
         assertEquals(900.0, m.toGlobal(7, 0), 0.0)
     }
 
+    @Test fun toGlobal_clampsOffsetToFileDuration() {
+        val m = TimelineMapper(listOf(file(0, 600.0), file(1, 300.0)))
+        assertEquals(600.0, m.toGlobal(0, 899_000), 0.0)
+        assertEquals(900.0, m.toGlobal(1, 5_000_000), 0.0)
+    }
+
     @Test fun chapterAt_usesChapterStarts_notFiles() {
         val m = TimelineMapper(listOf(file(0, 1000.0)))
         val ch = listOf(chapter(0, 0.0, 100.0), chapter(1, 100.0, 300.0), chapter(2, 300.0, 600.0), chapter(3, 600.0, 900.0), chapter(4, 900.0, 1000.0))

@@ -66,8 +66,17 @@ class ProgressTracker(
         }
     }
 
-    /** Pause, stop or service end: stops ticking and saves once. */
+    /**
+     * Pause, stop or service end: stops ticking and saves once. Idempotent: when already paused nothing is saved,
+     * so a newer position merged by sync meanwhile is never overwritten (a seek while paused uses [checkpoint]).
+     */
     suspend fun onPaused(finalPositionSec: Double? = null) = lock.withLock { halt(ended = false, finalPositionSec) }
+
+    /** Like [onPaused], but only if [itemId] is still the tracked title (its queue may already be gone). */
+    suspend fun onPausedFor(serverId: String, itemId: String, finalPositionSec: Double) = lock.withLock {
+        val t = target
+        if (t != null && t.serverId == serverId && t.itemId == itemId) halt(ended = false, finalPositionSec)
+    }
 
     /** The last file finished: progress is saved as finished at the end of the book. */
     suspend fun onEnded() = lock.withLock { halt(ended = true) }
@@ -78,7 +87,7 @@ class ProgressTracker(
     private suspend fun halt(ended: Boolean, finalPositionSec: Double? = null) {
         tickJob?.cancel()
         tickJob = null
-        if (target == null) return
+        if (target == null || (playingSince == null && !ended)) return
         save(ended, finalPositionSec)
         playingSince = null
         pausedAt = clock()

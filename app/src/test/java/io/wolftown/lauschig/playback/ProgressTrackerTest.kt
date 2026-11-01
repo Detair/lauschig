@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.ProgressEntity
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -157,5 +158,56 @@ class ProgressTrackerTest {
         assertEquals(1000.0, p.currentTimeSec, 0.0)
         advanceTimeBy(60_000); runCurrent()
         assertEquals(p, db.progressDao().get(s, "it"))
+    }
+
+    @Test fun halt_whenAlreadyPaused_doesNotOverwriteNewerMergedProgress() = runTest {
+        val t = tracker()
+        pos = 3600.0
+        t.play(duration = 10_000.0); advanceTimeBy(1_000); t.onPaused()
+        // Another device continued to 1:30:00; the sync merges it while we are paused.
+        advanceTimeBy(60_000)
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "it", 5400.0, 10_000.0, false, currentTime)))
+        advanceTimeBy(1_000)
+        // The paused service is destroyed: shutdown hands in the stale player position.
+        t.onPaused(finalPositionSec = 3600.0)
+        t.onPaused()
+        val p = db.progressDao().get(s, "it")!!
+        assertEquals(5400.0, p.currentTimeSec, 0.0)
+        assertFalse(p.dirty)
+    }
+
+    @Test fun onEnded_afterPause_stillSavesFinished() = runTest {
+        val t = tracker()
+        pos = 990.0
+        t.play(duration = 1000.0); advanceTimeBy(1_000); t.onPaused()
+        t.onEnded()
+        val p = db.progressDao().get(s, "it")!!
+        assertTrue(p.isFinished)
+        assertEquals(1000.0, p.currentTimeSec, 0.0)
+    }
+
+    @Test fun switchingTitle_whenOldPositionLambdaThrows_oldTitleKeepsItsLastPosition() = runTest {
+        val t = tracker()
+        var queue = "a"
+        var posA = 100.0
+        t.onPlaying(s, "a", 1000.0) { check(queue == "a") { "queue switched" }; posA }
+        posA = 110.0
+        advanceTimeBy(10_000); runCurrent() // tick saves 110
+        queue = "b" // the player already holds b's timeline; a's mapper would read b's offset
+        t.onPlaying(s, "b", 2000.0) { check(queue == "b"); 1990.0 }
+        val a = db.progressDao().get(s, "a")!!
+        assertEquals(110.0, a.currentTimeSec, 0.0)
+        assertFalse(a.isFinished)
+    }
+
+    @Test fun onPausedFor_otherItem_isIgnored() = runTest {
+        val t = tracker()
+        pos = 50.0
+        t.play("b"); advanceTimeBy(1_000)
+        t.onPausedFor(s, "a", 999.0)
+        assertEquals(null, db.progressDao().get(s, "a"))
+        pos = 60.0
+        advanceTimeBy(9_000); runCurrent() // b keeps ticking
+        assertEquals(60.0, db.progressDao().get(s, "b")!!.currentTimeSec, 0.0)
     }
 }

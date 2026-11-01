@@ -22,11 +22,12 @@ class TimelineMapper(files: List<AudioFileEntity>) {
         return i to offsetMs
     }
 
+    /** The offset is clamped to the file's duration, so a foreign or overlong offset never runs into later files. */
     fun toGlobal(fileIndex: Int, offsetMs: Long): Double {
         if (durations.isEmpty()) return 0.0
         if (fileIndex > durations.lastIndex) return totalSec
         val i = fileIndex.coerceAtLeast(0)
-        return starts[i] + offsetMs.coerceAtLeast(0L) / 1000.0
+        return starts[i] + offsetMs.coerceIn(0L, (durations[i] * 1000.0).toLong()) / 1000.0
     }
 
     /**
