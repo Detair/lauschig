@@ -42,11 +42,6 @@ android {
                 keyPassword = signingValue("LAUSCHIG_KEY_PASSWORD")
             }
         }
-    } else {
-        logger.warn(
-            "WARNING: LAUSCHIG_KEYSTORE / LAUSCHIG_KEYSTORE_PASSWORD / LAUSCHIG_KEY_ALIAS / " +
-                "LAUSCHIG_KEY_PASSWORD not set: the release build will be UNSIGNED.",
-        )
     }
 
     buildTypes {
@@ -78,6 +73,14 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+if (System.getenv("LAUSCHIG_KEYSTORE").isNullOrBlank() && providers.gradleProperty("LAUSCHIG_KEYSTORE").orNull.isNullOrBlank()) {
+    gradle.taskGraph.whenReady {
+        if (allTasks.any { it.project == project && it.name.contains("Release") && (it.name.startsWith("bundle") || it.name.startsWith("assemble") || it.name.startsWith("package")) }) {
+            logger.warn("WARNING: LAUSCHIG_KEYSTORE* signing variables not set: the release build will be UNSIGNED.")
+        }
+    }
 }
 
 room {

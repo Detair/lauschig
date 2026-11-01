@@ -14,14 +14,16 @@ Deine Bibliothek und heruntergeladene Bücher öffnen sofort. Lauschig wartet be
 
 Funktionen
 - Offline zuerst: Bibliothek, Cover und Fortschritt liegen auf deinem Gerät
-- Ganze Bücher herunterladen und ohne Verbindung hören
+- Ganze Bücher herunterladen (fortsetzbar) und ohne Verbindung hören
+- Kapitel
 - Fortschritt mit dem Server abgleichen: Die neueste Position gewinnt, offline gehörte Zeit wird später hochgeladen
 - „Zurück zu hh:mm:ss“, wenn ein anderes Gerät deine Position weit verschoben hat
 - Lokale und öffentliche Serveradresse: Lauschig wechselt bei Bedarf automatisch zur öffentlichen Adresse, sonst bleibt es still offline
-- Kapitel, Schlummerfunktion und Wiedergabegeschwindigkeit
-- Reiter Start, Bibliothek, Entdecken und Suche
+- Serien-Marker und Filter in der Bibliothek
 - Zugangs-Token verschlüsselt auf dem Gerät gespeichert
 - Keine Werbung, keine Analyse, kein Tracking, kein Konto beim Entwickler
+
+Weitere Funktionen sind in Entwicklung.
 
 Lauschig verbindet sich nur mit dem Server, den du einträgst. Du brauchst einen eigenen Audiobookshelf-Server (Version 2.x).
 
