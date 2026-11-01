@@ -222,6 +222,12 @@ class LibrarySyncTest {
         assertTrue(db.itemDao().get(s, "pod")!!.detailsLoaded)
     }
 
+    @Test fun loadDetailsForPlayable_episodeKey_loadsThePodcastsEpisodes() = runTest {
+        api.detail = podcast(ep("e1"), ep("e2"))
+        sync().loadDetailsForPlayable(s, PlayableKey.episode("pod", "e1"))
+        assertEquals(setOf("e1", "e2"), db.episodeDao().observeForItem(s, "pod").first().map { it.id }.toSet())
+    }
+
     @Test fun replaceForItem_keepsDownloadedEpisodes() = runTest {
         api.detail = podcast(ep("e1"), ep("e2"))
         sync().loadDetails(s, "pod")

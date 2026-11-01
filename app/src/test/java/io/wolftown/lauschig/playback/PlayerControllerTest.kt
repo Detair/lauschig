@@ -62,14 +62,17 @@ class PlayerControllerTest {
         listOf(chapter(0, 0.0, 500.0), chapter(1, 500.0, 1000.0), chapter(2, 1000.0, 1800.0)), files, progress, null,
     )
 
+    private var dbBuilt = false
     private val db by lazy {
+        dbBuilt = true
         Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
             .allowMainThreadQueries().setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build() // synchronous: the controller runs on the test scheduler
     }
     private val dlRoot = File(System.getProperty("java.io.tmpdir"), "pc-test-${System.nanoTime()}")
 
     @After fun cleanUp() {
-        db.close(); dlRoot.deleteRecursively()
+        if (dbBuilt) db.close()
+        dlRoot.deleteRecursively()
     }
 
     private val epKey = PlayableKey.episode("pod", "ep1")

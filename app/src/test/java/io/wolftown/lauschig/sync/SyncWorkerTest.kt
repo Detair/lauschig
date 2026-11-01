@@ -20,6 +20,9 @@ import io.wolftown.lauschig.absapi.me.ProgressUpdate
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.download.DownloadManager
+import io.wolftown.lauschig.download.DownloadProgress
+import io.wolftown.lauschig.settings.AutoDownloadMode
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +66,12 @@ class SyncWorkerTest {
         override suspend fun syncLocalSessions(body: LocalSessionsBody) = LocalSessionsResult(emptyList())
     }
 
+    private val noDownloads = object : DownloadManager {
+        override suspend fun enqueue(serverId: String, itemId: String) {}
+        override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {}
+        override fun observe(serverId: String, itemId: String): kotlinx.coroutines.flow.Flow<DownloadProgress?> = flowOf(null)
+    }
+
     private suspend fun runWorker(gate: OnlineGate): ListenableWorker.Result {
         val store = FakeAccountStore()
         store.acc.value = Account("aaaaaaaaaaaaaaaa", "u", "n", false, ServerAddresses(null, null), emptySet())
@@ -72,6 +81,7 @@ class SyncWorkerTest {
                 LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() }),
                 ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
                 PositionJumpBus(), gate,
+                EpisodeAutoDownloader(flowOf(AutoDownloadMode.OFF), db.episodeDao(), db.progressDao(), db.downloadDao(), noDownloads, { emptySet() }, {}),
             )
         }
         return TestListenableWorkerBuilder<SyncWorker>(ctx).setWorkerFactory(factory).build().doWork()

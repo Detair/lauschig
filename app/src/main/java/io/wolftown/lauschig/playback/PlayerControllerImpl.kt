@@ -67,7 +67,7 @@ class PlayerControllerImpl(
         },
         coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
         // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
-        loadDetails = { serverId, itemId -> librarySync.loadDetails(serverId, PlayableKey.parse(itemId).libraryItemId) },
+        loadDetails = librarySync::loadDetailsForPlayable,
     )
 
     private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?, val streaming: Boolean)

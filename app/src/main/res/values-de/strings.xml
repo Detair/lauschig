@@ -233,4 +233,23 @@
     <string name="rmab_msg_unreachable">ReadMeABook ist nicht erreichbar.</string>
     <string name="rmab_msg_failed">Anfrage fehlgeschlagen: %s</string>
     <string name="rmab_error_token_creation">Angemeldet, aber ReadMeABook hat keinen API-Token angelegt. Lege in ReadMeABook einen an und trage ihn stattdessen ein.</string>
+
+    <string name="filter_podcasts">Podcasts</string>
+    <string name="start_new_episodes">Neue Episoden</string>
+    <plurals name="podcast_episode_count">
+        <item quantity="one">%1$d Episode</item>
+        <item quantity="other">%1$d Episoden</item>
+    </plurals>
+    <string name="podcast_filter_all">Alle</string>
+    <string name="podcast_filter_unplayed">Ungehört</string>
+    <string name="podcast_filter_downloaded">Heruntergeladen</string>
+    <string name="podcast_more_when_online">Weitere Episoden, sobald online</string>
+    <string name="podcast_no_episodes">Keine Episoden vorhanden.</string>
+    <string name="podcast_not_found">Dieser Podcast ist nicht verfügbar.</string>
+    <string name="podcast_episode_heard">Gehört</string>
+    <string name="podcast_episode_left">noch %1$s</string>
+    <string name="settings_auto_download">Neue Episoden automatisch laden</string>
+    <string name="settings_auto_download_hint">Nach einem Abgleich, je Podcast. Die WLAN-Einstellung gilt.</string>
+    <string name="settings_auto_download_off">Aus</string>
+    <string name="settings_auto_download_newest">Neueste %1$d</string>
 </resources>

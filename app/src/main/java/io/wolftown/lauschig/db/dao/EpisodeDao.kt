@@ -76,4 +76,20 @@ abstract class EpisodeDao {
            WHERE e.serverId = :serverId AND e.recent = 1 ORDER BY e.publishedAt DESC, e.id LIMIT :limit""",
     )
     abstract fun observeRecent(serverId: String, limit: Int): Flow<List<EpisodeEntity>>
+
+    /** Episodes with unfinished, not hidden progress under their key, most recently heard first (the "continue" part of new episodes). */
+    @Query(
+        """SELECT e.* FROM episodes e JOIN progress p ON p.serverId = e.serverId AND p.itemId = e.itemId || '~' || e.id
+           JOIN items i ON i.serverId = e.serverId AND i.id = e.itemId
+           WHERE e.serverId = :serverId AND p.isFinished = 0 AND p.currentTimeSec > 0 AND p.hideFromContinue = 0
+           ORDER BY p.lastUpdate DESC LIMIT :limit""",
+    )
+    abstract fun observeStarted(serverId: String, limit: Int): Flow<List<EpisodeEntity>>
+
+    /** All `recent` episodes (newest first), for the auto-download after a sync. */
+    @Query(
+        """SELECT e.* FROM episodes e JOIN items i ON i.serverId = e.serverId AND i.id = e.itemId
+           WHERE e.serverId = :serverId AND e.recent = 1 ORDER BY e.publishedAt DESC, e.id""",
+    )
+    abstract suspend fun recent(serverId: String): List<EpisodeEntity>
 }

@@ -120,6 +120,9 @@ class LibrarySync(
     /** Same as [loadDetails]; reads better where only the episodes of a podcast are wanted. */
     suspend fun loadEpisodes(serverId: String, itemId: String) = loadDetails(serverId, itemId)
 
+    /** Details for whatever a playable key points at: an episode key loads its podcast (and with it all of its episodes). */
+    suspend fun loadDetailsForPlayable(serverId: String, key: String) = loadDetails(serverId, PlayableKey.parse(key).libraryItemId)
+
     /** Fetches the expanded item and stores details, chapters and audio files. */
     suspend fun loadDetails(serverId: String, itemId: String) {
         val api = api.first() ?: return

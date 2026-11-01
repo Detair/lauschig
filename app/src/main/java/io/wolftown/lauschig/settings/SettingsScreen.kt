@@ -56,6 +56,7 @@ data class SettingsUiState(
     val cleanupReminder: Boolean = true,
     val missingVolumes: Boolean = true,
     val audibleRegion: String = AudibleRegions.DEFAULT,
+    val autoDownload: AutoDownloadMode = AutoDownloadMode.OFF,
 )
 
 @HiltViewModel
@@ -63,7 +64,12 @@ class SettingsViewModel @Inject constructor(
     private val app: AppSettings,
     private val download: DownloadSettings,
 ) : ViewModel() {
-    val state: StateFlow<SettingsUiState> = combine(app.nextVolumeMode, download.wifiOnly, app.cleanupReminder, app.missingVolumesEnabled, app.audibleRegion, ::SettingsUiState)
+    val state: StateFlow<SettingsUiState> = combine(
+        combine(app.nextVolumeMode, download.wifiOnly, app.cleanupReminder, app.missingVolumesEnabled, app.audibleRegion) { next, wifi, reminder, missing, region ->
+            SettingsUiState(next, wifi, reminder, missing, region)
+        },
+        app.autoDownload,
+    ) { base, auto -> base.copy(autoDownload = auto) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -71,13 +77,14 @@ class SettingsViewModel @Inject constructor(
     fun setCleanupReminder(on: Boolean) { viewModelScope.launch { app.setCleanupReminder(on) } }
     fun setMissingVolumes(on: Boolean) { viewModelScope.launch { app.setMissingVolumesEnabled(on) } }
     fun setAudibleRegion(code: String) { viewModelScope.launch { app.setAudibleRegion(code) } }
+    fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
 }
 
 @Composable
 fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
-        viewModel::setMissingVolumes, viewModel::setAudibleRegion,
+        viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
     )
 }
@@ -92,6 +99,7 @@ fun SettingsScreen(
     onCleanupReminder: (Boolean) -> Unit,
     onMissingVolumes: (Boolean) -> Unit = {},
     onAudibleRegion: (String) -> Unit = {},
+    onAutoDownload: (AutoDownloadMode) -> Unit = {},
     modifier: Modifier = Modifier,
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
@@ -111,6 +119,7 @@ fun SettingsScreen(
 
         Section(R.string.settings_section_downloads)
         SwitchRow(R.string.settings_wifi_only, R.string.settings_wifi_only_hint, state.wifiOnly, onWifiOnly)
+        AutoDownloadRow(state.autoDownload, onAutoDownload)
         SwitchRow(R.string.settings_cleanup_reminder, R.string.settings_cleanup_reminder_hint, state.cleanupReminder, onCleanupReminder)
         ListItem(
             headlineContent = { Text(stringResource(R.string.cleanup_title)) },
@@ -167,6 +176,29 @@ private fun RegionRow(current: String, enabled: Boolean, onSelect: (String) -> U
         DropdownMenu(open, onDismissRequest = { open = false }) {
             AudibleRegions.all.sorted().forEach { code ->
                 DropdownMenuItem(text = { Text(regionName(code)) }, onClick = { open = false; onSelect(code) }, modifier = Modifier.testTag("region:$code"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun autoDownloadLabel(mode: AutoDownloadMode): String =
+    if (mode == AutoDownloadMode.OFF) stringResource(R.string.settings_auto_download_off)
+    else stringResource(R.string.settings_auto_download_newest, mode.count)
+
+@Composable
+private fun AutoDownloadRow(current: AutoDownloadMode, onSelect: (AutoDownloadMode) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_auto_download)) },
+            supportingContent = { Text(stringResource(R.string.settings_auto_download_hint)) },
+            trailingContent = { Text(autoDownloadLabel(current)) },
+            modifier = Modifier.fillMaxWidth().clickable { open = true }.testTag("autoDownload"),
+        )
+        DropdownMenu(open, onDismissRequest = { open = false }) {
+            AutoDownloadMode.entries.forEach { mode ->
+                DropdownMenuItem(text = { Text(autoDownloadLabel(mode)) }, onClick = { open = false; onSelect(mode) }, modifier = Modifier.testTag("autoDownload:$mode"))
             }
         }
     }

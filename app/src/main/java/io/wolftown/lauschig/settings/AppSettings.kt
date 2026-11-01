@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,6 +21,11 @@ enum class NextVolumeMode {
     SUGGEST,
     /** Additionally download the next volume once about 80 % of the current one is heard. */
     PREFETCH,
+}
+
+/** How many of the newest unheard episodes per podcast are downloaded after a sync. */
+enum class AutoDownloadMode(val count: Int) {
+    OFF(0), NEWEST_1(1), NEWEST_3(3), NEWEST_5(5),
 }
 
 /** App preferences that are not download-specific (those live in DownloadSettings). Device-local only. */
@@ -42,6 +48,22 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     /** Audible catalog region (`de`, `us`, ...). Default `de`. */
     val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: "de" }
+
+    /** Auto-download of new podcast episodes. Default off. */
+    val autoDownload: Flow<AutoDownloadMode> = store.data.map { prefs ->
+        prefs[AUTO_DOWNLOAD]?.let { runCatching { AutoDownloadMode.valueOf(it) }.getOrNull() } ?: AutoDownloadMode.OFF
+    }
+
+    /** Episode keys the auto-download already queued once, so a download the user removed does not come back. */
+    suspend fun autoDownloaded(): Set<String> = store.data.first()[AUTO_DOWNLOADED] ?: emptySet()
+
+    suspend fun setAutoDownload(mode: AutoDownloadMode) {
+        store.edit { it[AUTO_DOWNLOAD] = mode.name }
+    }
+
+    suspend fun setAutoDownloaded(keys: Set<String>) {
+        store.edit { it[AUTO_DOWNLOADED] = keys }
+    }
 
     suspend fun setMissingVolumesEnabled(enabled: Boolean) {
         store.edit { it[MISSING_VOLUMES] = enabled }
@@ -69,6 +91,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     }
 
     private companion object {
+        val AUTO_DOWNLOAD = stringPreferencesKey("auto_download_episodes")
+        val AUTO_DOWNLOADED = stringSetPreferencesKey("auto_downloaded_episodes")
         val NEXT_VOLUME = stringPreferencesKey("next_volume_mode")
         val CLEANUP_REMINDER = booleanPreferencesKey("cleanup_reminder")
         val MISSING_VOLUMES = booleanPreferencesKey("missing_volumes_enabled")
