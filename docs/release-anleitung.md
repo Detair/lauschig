@@ -164,6 +164,15 @@ adb uninstall io.wolftown.lauschig
 ### 6.5 Später: öffentliche Veröffentlichung
 Neue private Entwicklerkonten müssen vor der Produktion einen **geschlossenen Test** mit mindestens 12 Testern über 14 Tage durchführen (Stand meines Wissens – in der Console unter „Produktion“ steht die aktuelle Anforderung). Für die Familie ist das nicht nötig; der interne Test hat keine solche Hürde.
 
+## SSO aktivieren (Audiobookshelf mit OpenID)
+
+Nutzt dein Audiobookshelf OpenID (z. B. Authentik), zeigt Lauschig unter dem Passwort-Login den Knopf „Mit SSO anmelden“.
+Damit der Server Lauschig zulässt, muss ein Admin die Rückkehr-Adresse freigeben:
+
+1. In Audiobookshelf: Einstellungen → Authentifizierung → OpenID Connect.
+2. Bei „Allowed Mobile Redirect URIs“ den Eintrag `lauschig://oauth` hinzufügen (der Standard enthält nur `audiobookshelf://oauth`).
+3. Speichern. Ohne diesen Eintrag zeigt Lauschig: „Dein Server erlaubt Lauschig noch nicht für SSO.“
+
 ## 7. Markenprüfung „Lauschig“
 
 Kostenlos, ca. 15 Minuten:

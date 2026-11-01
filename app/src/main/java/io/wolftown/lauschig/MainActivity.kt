@@ -11,11 +11,15 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.ui.AppRoot
+import io.wolftown.lauschig.ui.setup.OidcCallback
+import io.wolftown.lauschig.ui.setup.OidcCallbackBus
 import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    @Inject lateinit var oidcCallbacks: OidcCallbackBus
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Held only until the local account read finishes; this is the sole thing the start waits for.
@@ -41,6 +45,11 @@ class MainActivity : ComponentActivity() {
     private fun handleOpen(intent: Intent?) {
         intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
         intent?.removeExtra(EXTRA_OPEN)
+        // SSO: lauschig://oauth?code=..&state=.. comes back from the Custom Tab.
+        intent?.data?.takeIf(OidcCallback::isCallback)?.let {
+            oidcCallbacks.post(OidcCallback.from(it))
+            intent?.data = null // a recreation must not replay it
+        }
     }
 
     companion object {

@@ -42,6 +42,9 @@
     <string name="setup_error_wrong_login">Username or password is wrong.</string>
     <string name="setup_error_server_too_old">This Audiobookshelf server is too old. Please update to 2.26 or newer.</string>
     <string name="setup_error_save_failed">The account could not be saved.</string>
+    <string name="setup_error_sso_redirect">Your server does not allow Lauschig for SSO yet. An admin has to add lauschig://oauth under Settings → Authentication → “Allowed Mobile Redirect URIs” in Audiobookshelf.</string>
+    <string name="setup_error_sso_failed">SSO sign-in failed. Please try again.</string>
+    <string name="setup_sso_default">Sign in with SSO</string>
     <string name="library_tab_in_progress">In progress</string>
     <string name="library_tab_finished">Finished</string>
     <string name="library_tab_downloaded">Downloaded</string>
