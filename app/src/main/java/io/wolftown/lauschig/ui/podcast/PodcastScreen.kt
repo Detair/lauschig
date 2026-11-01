@@ -80,9 +80,10 @@ fun PodcastRoute(
     val askNotifications = rememberNotificationPermissionOnce()
     var menuFor by remember { mutableStateOf<EpisodeUi?>(null) }
     PodcastScreen(state, onBack, viewModel::setFilter, modifier) { episode ->
-        val download by remember(episode.key) { actions.downloadState(episode.key) }.collectAsStateWithLifecycle(QuickDownload.None)
+        // Complete comes from the state (no flicker, one source); the per-row flow only adds queued/running/paused/failed.
+        val live by remember(episode.key) { actions.downloadState(episode.key) }.collectAsStateWithLifecycle(QuickDownload.None)
         EpisodeRow(
-            episode, download,
+            episode, if (episode.downloaded) QuickDownload.Complete else live,
             onPlay = { viewModel.play(episode.key) },
             onDownload = { actions.download(episode.key); askNotifications() },
             onDeleteDownload = { actions.deleteDownload(episode.key) },

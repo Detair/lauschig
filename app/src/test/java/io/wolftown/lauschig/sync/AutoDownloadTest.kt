@@ -90,4 +90,38 @@ class AutoDownloadTest {
         downloader(AutoDownloadMode.NEWEST_1).run(s)
         assertTrue(enqueued.isEmpty())
     }
+
+    @Test fun manualDownload_thenDeleted_isNotRequeued() = runTest {
+        seed()
+        db.downloadDao().upsert(DownloadEntity(s, PlayableKey.episode("p1", "a"), DownloadState.COMPLETE, 1)) // manual
+        downloader(AutoDownloadMode.NEWEST_1).run(s)
+        assertEquals(setOf("p2~x"), enqueued.toSet())
+        db.downloadDao().delete(s, PlayableKey.episode("p1", "a"))
+        enqueued.clear()
+        downloader(AutoDownloadMode.NEWEST_1).run(s)
+        assertTrue(enqueued.isEmpty())
+    }
+
+    @Test fun off_leavesMemoryUntouched() = runTest {
+        seed()
+        saved = setOf("p1~gone")
+        downloader(AutoDownloadMode.OFF).run(s)
+        assertTrue(enqueued.isEmpty())
+        assertEquals(setOf("p1~gone"), saved)
+    }
+
+    @Test fun finishedNewest_shiftsTheWindow() = runTest {
+        seed()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, PlayableKey.episode("p1", "a"), 600.0, 600.0, true, 1)))
+        downloader(AutoDownloadMode.NEWEST_1).run(s)
+        assertEquals(setOf("p1~b", "p2~x"), enqueued.toSet())
+    }
+
+    @Test fun memory_isPrunedToLiveRecentSet() = runTest {
+        seed()
+        saved = setOf("p1~gone", "p1~a")
+        downloader(AutoDownloadMode.NEWEST_1).run(s)
+        assertEquals(setOf("p1~a", "p2~x"), saved)
+        assertEquals(setOf("p2~x"), enqueued.toSet())
+    }
 }

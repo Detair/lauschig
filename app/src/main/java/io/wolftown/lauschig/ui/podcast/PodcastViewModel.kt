@@ -52,6 +52,8 @@ data class EpisodeUi(
     /** 0f..1f, only for a started, unfinished episode. */
     val progress: Float,
     val finished: Boolean,
+    /** Download complete; the single source for the offline-safe state of the row. */
+    val downloaded: Boolean = false,
 )
 
 @Immutable
@@ -180,6 +182,7 @@ class PodcastViewModel(
                 remainingSec = if (started && duration > 0) (duration - p!!.currentTimeSec).coerceAtLeast(0.0) else null,
                 progress = if (started && duration > 0) (p!!.currentTimeSec / duration).toFloat().coerceIn(0f, 1f) else 0f,
                 finished = p?.isFinished == true,
+                downloaded = key in d.complete,
             )
         }
         val shown = when (filter) {
