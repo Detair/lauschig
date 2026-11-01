@@ -15,6 +15,8 @@ data class MediaProgressDto(
     val progress: Double,
     val isFinished: Boolean,
     val lastUpdate: Long,
+    /** Removed from "continue listening" by the user; the server resets it when the position changes. */
+    val hideFromContinueListening: Boolean = false,
 )
 
 /** Body of `PATCH /api/me/progress/:libraryItemId`. */
@@ -24,6 +26,7 @@ data class ProgressUpdate(
     val duration: Double,
     val progress: Double,
     val isFinished: Boolean,
+    val hideFromContinueListening: Boolean? = null,
 )
 
 /**

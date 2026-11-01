@@ -2,6 +2,15 @@ package io.wolftown.lauschig.ui.start
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -19,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,10 +44,24 @@ data class StartUiState(
 )
 
 @Composable
-fun StartRoute(onOpenItem: (itemId: String) -> Unit, modifier: Modifier = Modifier, viewModel: StartViewModel = hiltViewModel()) {
+fun StartRoute(
+    onOpenItem: (itemId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
+    viewModel: StartViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
-    StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, modifier = modifier)
+    Column(modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp).weight(1f))
+            IconButton(onClick = onOpenSettings, modifier = Modifier.testTag("openSettings")) {
+                Icon(Icons.Rounded.Settings, stringResource(R.string.settings_title))
+            }
+        }
+        StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary, modifier = Modifier.weight(1f))
+    }
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem) }
 }
 
@@ -49,10 +73,18 @@ fun StartScreen(
     onPlay: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
     onMenu: (ItemSummary) -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
 ) {
     if (state.continueItem == null && state.downloaded.isEmpty()) {
-        Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.start_empty), style = MaterialTheme.typography.bodyLarge)
+        Column(
+            modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(stringResource(R.string.start_empty), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+            Button(onClick = onOpenLibrary, modifier = Modifier.padding(top = 16.dp).testTag("openLibrary")) {
+                Text(stringResource(R.string.start_open_library))
+            }
         }
         return
     }

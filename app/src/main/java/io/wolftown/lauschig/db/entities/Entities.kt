@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -36,6 +37,8 @@ data class ProgressEntity(
     val isFinished: Boolean,
     val lastUpdate: Long,
     val dirty: Boolean = false,
+    /** Hidden from "continue listening" (ABS `hideFromContinueListening`); listening again clears it. */
+    @ColumnInfo(defaultValue = "0") val hideFromContinue: Boolean = false,
 )
 
 @Entity(tableName = "local_sessions", indices = [Index("serverId", "synced")], primaryKeys = ["id"])

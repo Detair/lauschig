@@ -53,7 +53,7 @@ class StartViewModel @Inject constructor(
                     covers.sync(downloadedIds)
                     val activeIds = active.toHashSet()
                     fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
-                    StartUiState(inProgress.firstOrNull()?.summary(), downloaded.map { it.summary() })
+                    StartUiState(inProgress.firstOrNull { byId[it.id]?.hideFromContinue != true }?.summary(), downloaded.map { it.summary() })
                 }.flowOn(Dispatchers.Default).distinctUntilChanged()
             }
         }

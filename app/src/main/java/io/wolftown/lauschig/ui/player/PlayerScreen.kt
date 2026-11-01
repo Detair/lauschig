@@ -63,6 +63,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.DownloadIconButton
+import io.wolftown.lauschig.ui.common.FinishedCard
+import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.Initials
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.QuickDownload
@@ -91,6 +93,8 @@ fun PlayerRoute(
         download = download,
         onDownload = { itemId?.let { actions.download(it); askNotifications() } },
         onDeleteDownload = { itemId?.let(actions::deleteDownload) },
+        topActions = { itemId?.let { ProgressMenuButton(it, viewModel = actions) } },
+        finished = { itemId?.let { FinishedCard(it, onOpenDetails, Modifier.padding(vertical = 8.dp), viewModel = actions) } },
         onToggle = viewModel::togglePlayPause,
         onSeekBy = viewModel::seekBy,
         onSeekInChapter = viewModel::seekInChapter,
@@ -128,6 +132,8 @@ fun PlayerScreen(
     download: QuickDownload = QuickDownload.None,
     onDownload: () -> Unit = {},
     onDeleteDownload: () -> Unit = {},
+    topActions: @Composable () -> Unit = {},
+    finished: @Composable () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -149,6 +155,7 @@ fun PlayerScreen(
             if (state.itemId != null) {
                 DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
                 IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
+                topActions()
             }
         }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -223,6 +230,7 @@ fun PlayerScreen(
             }
         }
 
+        finished()
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             val speedDescription = stringResource(R.string.player_speed_button, formatSpeed(state.speed))
             OutlinedButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("speedButton").semantics { contentDescription = speedDescription }) {

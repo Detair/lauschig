@@ -91,6 +91,14 @@ class ProgressSyncTest {
         assertTrue(me.patches.isEmpty())
     }
 
+    @Test fun hideFromContinue_isPushed_andPulled() = runTest {
+        db.progressDao().saveUserAction(io.wolftown.lauschig.db.entities.ProgressEntity(s, "a", 50.0, 100.0, false, 9_000, hideFromContinue = true))
+        me.server = listOf(srv("a", 50.0, 5_000), MediaProgressDto("b", null, 30.0, 100.0, 0.3, false, 6_000, hideFromContinueListening = true))
+        sync().sync(s)
+        assertEquals(true, me.patches.single { it.first == "a" }.second.hideFromContinueListening)
+        assertTrue(db.progressDao().get(s, "b")!!.hideFromContinue)
+    }
+
     @Test fun newerLocalProgress_isPushed_andNotOverwritten() = runTest {
         db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
         db.progressDao().saveLocal(s, "b", 20.0, 100.0, false, 1_000) // server newer: not pushed

@@ -27,8 +27,11 @@ class StartScreenTest {
 
     @Test
     fun empty_showsHint() {
-        rule.setContent { LauschigTheme { StartScreen(StartUiState(), onOpen = {}, onPlay = {}) } }
-        rule.onNodeWithText("Nothing here yet – download a book to listen offline").assertIsDisplayed()
+        var library = 0
+        rule.setContent { LauschigTheme { StartScreen(StartUiState(), onOpen = {}, onPlay = {}, onOpenLibrary = { library++ }) } }
+        rule.onNodeWithText("Nothing listened to yet – have a look in the library").assertIsDisplayed()
+        rule.onNodeWithText("Go to library").performClick()
+        assertEquals(1, library)
     }
 
     @Test

@@ -54,7 +54,7 @@ class ProgressSync(
         for (local in progress.dirty(serverId)) push(api, serverId, local, server[local.itemId]?.lastUpdate)
 
         val rows = server.values.map {
-            ProgressEntity(serverId, it.libraryItemId!!, it.currentTime, it.duration, it.isFinished, it.lastUpdate)
+            ProgressEntity(serverId, it.libraryItemId!!, it.currentTime, it.duration, it.isFinished, it.lastUpdate, hideFromContinue = it.hideFromContinueListening)
         }
         return progress.mergeFromServer(rows)
             .filter { abs(it.newCurrentTimeSec - it.oldCurrentTimeSec) > JUMP_THRESHOLD_SEC }
@@ -89,6 +89,7 @@ class ProgressSync(
                     duration = dur,
                     progress = if (dur > 0) (local.currentTimeSec / dur).coerceIn(0.0, 1.0) else 0.0,
                     isFinished = local.isFinished,
+                    hideFromContinueListening = local.hideFromContinue,
                 ),
             )
         } catch (e: HttpException) {
