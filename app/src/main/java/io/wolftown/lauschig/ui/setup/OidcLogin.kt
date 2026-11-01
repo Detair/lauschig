@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import okhttp3.Cookie
@@ -64,15 +65,31 @@ data class OidcCallback(val code: String?, val state: String?, val error: String
     }
 }
 
-/** A finished SSO login: the server's answer and the address that was used for it. */
-data class OidcResult(val baseUrl: HttpUrl, val response: LoginResponse)
+/**
+ * What the setup form held when SSO started. Saved with the pending attempt so the account is stored exactly as a
+ * password login would store it, even if the process restarted while the Custom Tab was open.
+ */
+@Serializable
+data class OidcFlowContext(
+    val local: String? = null,
+    val public: String? = null,
+    val ssidBinding: Boolean = false,
+    val currentSsid: String? = null,
+    val keptSsids: Set<String> = emptySet(),
+)
+
+/** A finished SSO login: the server's answer, the address that was used and the form values from the start. */
+data class OidcResult(val baseUrl: HttpUrl, val response: LoginResponse, val flow: OidcFlowContext = OidcFlowContext())
 
 class OidcException(val reason: Reason, cause: Throwable? = null) : IOException(reason.name, cause) {
     enum class Reason { NO_PENDING, STATE_MISMATCH, REJECTED, UNREACHABLE }
 }
 
 interface OidcSignIn {
-    suspend fun start(baseUrl: HttpUrl): OidcStart
+    suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext = OidcFlowContext()): OidcStart
+
+    /** Cheap check: is [callback] the answer to the attempt we have pending? Foreign links are silent no-ops. */
+    suspend fun matchesPending(callback: OidcCallback): Boolean
     suspend fun finish(callback: OidcCallback): OidcResult
 }
 
@@ -105,7 +122,7 @@ class OidcLogin(
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    override suspend fun start(baseUrl: HttpUrl): OidcStart {
+    override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart {
         val verifier = randomVerifier()
         val state = randomUrlSafe(24)
         val url = endpoint(baseUrl, "auth/openid").newBuilder()
@@ -121,11 +138,12 @@ class OidcLogin(
                 when {
                     r.code == 400 -> OidcStart.RedirectNotAllowed
                     r.isRedirect -> {
-                        val location = r.header("Location")
-                        if (location.isNullOrBlank()) OidcStart.Unreachable
+                        // Only an http(s) page may be opened in the browser.
+                        val target = r.header("Location")?.let { baseUrl.resolve(it) }
+                        if (target == null || (target.scheme != "https" && target.scheme != "http")) OidcStart.Unreachable
                         else {
-                            savePending(baseUrl, verifier, state, r.headers("Set-Cookie"))
-                            OidcStart.Launch(location)
+                            savePending(baseUrl, verifier, state, r.headers("Set-Cookie"), flow)
+                            OidcStart.Launch(target.toString())
                         }
                     }
                     else -> OidcStart.Unreachable
@@ -141,8 +159,10 @@ class OidcLogin(
     override suspend fun finish(callback: OidcCallback): OidcResult {
         val p = loadPending() ?: throw OidcException(OidcException.Reason.NO_PENDING)
         // A link that does not belong to the attempt we started is dropped; the pending attempt stays for the real one.
-        if (callback.state.isNullOrEmpty() || callback.state != p.state) throw OidcException(OidcException.Reason.STATE_MISMATCH)
-        val code = callback.code?.takeIf { it.isNotEmpty() && callback.error == null } ?: throw OidcException(OidcException.Reason.REJECTED)
+        if (!stateMatches(callback.state, p.state)) throw OidcException(OidcException.Reason.STATE_MISMATCH)
+        // From here on the callback is ours: a refusal by the identity provider or the server ends the attempt.
+        val code = callback.code?.takeIf { it.isNotEmpty() && callback.error == null }
+            ?: run { clearPending(); throw OidcException(OidcException.Reason.REJECTED) }
         val url = endpoint(p.baseUrl, "auth/openid/callback").newBuilder()
             .addQueryParameter("state", p.state)
             .addQueryParameter("code", code)
@@ -150,7 +170,10 @@ class OidcLogin(
             .build()
         val response = try {
             call(p.baseUrl, url, p.cookies).use { r ->
-                if (!r.isSuccessful) throw OidcException(OidcException.Reason.REJECTED)
+                if (!r.isSuccessful) {
+                    clearPending()
+                    throw OidcException(OidcException.Reason.REJECTED)
+                }
                 AbsJson.decodeFromString(LoginResponse.serializer(), r.body.string())
             }
         } catch (e: CancellationException) {
@@ -162,18 +185,27 @@ class OidcLogin(
         } catch (e: Exception) {
             throw OidcException(OidcException.Reason.REJECTED, e)
         }
-        store.edit { it.clear() } // only after the server accepted the code
-        return OidcResult(p.baseUrl, response)
+        clearPending() // only after the server accepted the code
+        return OidcResult(p.baseUrl, response, p.flow)
     }
 
-    private class Pending(val baseUrl: HttpUrl, val verifier: String, val state: String, val cookies: List<String>)
+    override suspend fun matchesPending(callback: OidcCallback): Boolean =
+        loadPending()?.let { stateMatches(callback.state, it.state) } == true
 
-    private suspend fun savePending(baseUrl: HttpUrl, verifier: String, state: String, setCookies: List<String>) {
+    private suspend fun clearPending() { store.edit { it.clear() } }
+
+    private fun stateMatches(received: String?, expected: String): Boolean =
+        !received.isNullOrEmpty() && MessageDigest.isEqual(received.toByteArray(), expected.toByteArray())
+
+    private class Pending(val baseUrl: HttpUrl, val verifier: String, val state: String, val cookies: List<String>, val flow: OidcFlowContext)
+
+    private suspend fun savePending(baseUrl: HttpUrl, verifier: String, state: String, setCookies: List<String>, flow: OidcFlowContext) {
         store.edit {
             it[BASE_URL] = baseUrl.toString()
             it[VERIFIER] = cipher.encrypt(verifier)
             it[STATE] = state
             it[COOKIES] = cipher.encrypt(AbsJson.encodeToString(ListSerializer(String.serializer()), setCookies))
+            it[FLOW] = AbsJson.encodeToString(OidcFlowContext.serializer(), flow) // addresses and SSIDs, nothing secret
             it[STARTED_AT] = nowMs()
         }
     }
@@ -185,7 +217,8 @@ class OidcLogin(
         val base = p[BASE_URL]?.toHttpUrlOrNull() ?: return null
         val verifier = p[VERIFIER]?.let(cipher::decrypt) ?: return null
         val cookies = p[COOKIES]?.let(cipher::decrypt)?.let { AbsJson.decodeFromString(ListSerializer(String.serializer()), it) } ?: return null
-        return Pending(base, verifier, p[STATE] ?: return null, cookies)
+        val flow = p[FLOW]?.let { runCatching { AbsJson.decodeFromString(OidcFlowContext.serializer(), it) }.getOrNull() } ?: OidcFlowContext()
+        return Pending(base, verifier, p[STATE] ?: return null, cookies, flow)
     }
 
     /** One GET. Plain HTTP only to the very address the user confirmed; stored Set-Cookie lines act as the cookie jar. */
@@ -216,6 +249,7 @@ class OidcLogin(
         private val VERIFIER = stringPreferencesKey("verifier")
         private val STATE = stringPreferencesKey("state")
         private val COOKIES = stringPreferencesKey("cookies")
+        private val FLOW = stringPreferencesKey("flow")
         private val STARTED_AT = longPreferencesKey("started_at")
         private const val UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
         private val random = SecureRandom()

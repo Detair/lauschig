@@ -48,7 +48,10 @@ private class FakeOidc : OidcSignIn {
     var finishResult: () -> OidcResult = { throw OidcException(OidcException.Reason.NO_PENDING) }
     val started = mutableListOf<HttpUrl>()
     val finished = mutableListOf<OidcCallback>()
-    override suspend fun start(baseUrl: HttpUrl): OidcStart { started += baseUrl; return start }
+    var lastFlow = OidcFlowContext()
+    var matches = true
+    override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart { started += baseUrl; lastFlow = flow; return start }
+    override suspend fun matchesPending(callback: OidcCallback) = matches
     override suspend fun finish(callback: OidcCallback): OidcResult { finished += callback; return finishResult() }
 }
 
@@ -302,5 +305,55 @@ class SetupViewModelTest {
         val v = vm()
         assertTrue(oidc.finished.isEmpty())
         assertFalse(v.state.value.loading)
+    }
+
+    @Test fun oidc_afterRestart_savesSameAccountAsPasswordLogin() {
+        // Password login with both addresses and SSID binding.
+        val v1 = vm()
+        v1.fill(local = "https://nas.lan", public = "https://abs.example.org")
+        net.ssid = "HomeNet"
+        v1.enableSsidBinding()
+        v1.login()
+        val expected = store.acc.value!!
+
+        // SSO: start, then "restart" (new VM, empty form), then the callback.
+        store.acc.value = null
+        val first = vm()
+        first.fill(local = "https://nas.lan", public = "https://abs.example.org")
+        first.enableSsidBinding()
+        first.loginWithSso()
+        oidc.finishResult = { OidcResult("https://abs.example.org/".toHttpUrl(), ok(), oidc.lastFlow) }
+        val freshBus = OidcCallbackBus() // the first VM is gone with its process
+        val second = SetupViewModel(store, login, net, sync, oidc, freshBus)
+        freshBus.post(OidcCallback("c", "s", null))
+        assertTrue(second.state.value.done)
+        assertFalse(first.state.value.done)
+        val a = store.acc.value!!
+        assertEquals(expected.addresses, a.addresses)
+        assertEquals(expected.serverId, a.serverId)
+        assertEquals(setOf("HomeNet"), a.addresses.homeSsids)
+    }
+
+    @Test fun oidc_foreignCallback_duringPasswordLogin_changesNothing() {
+        oidc.matches = false
+        val v = vm()
+        v.onPublicChanged("https://abs.example.org")
+        v.loginWithSso() // loading = true, as in a running login
+        val before = v.state.value
+        bus.post(OidcCallback("c", "forged", null))
+        assertEquals(before, v.state.value)
+        assertTrue(oidc.finished.isEmpty())
+    }
+
+    @Test fun oidc_foreignCallback_keepsExistingError() {
+        oidc.matches = false
+        login.behaviour = { throw IOException("down") }
+        val v = vm()
+        v.fill(public = "https://abs.example.org")
+        v.login()
+        assertEquals(SetupError.UNREACHABLE, v.state.value.error)
+        val before = v.state.value
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(before, v.state.value)
     }
 }

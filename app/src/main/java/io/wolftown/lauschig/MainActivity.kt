@@ -26,7 +26,8 @@ class MainActivity : ComponentActivity() {
         installSplashScreen().setKeepOnScreenCondition { viewModel.startDestination.value == null }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleOpen(intent)
+        // A recreation (rotation, process restart) hands us the old intent again; its SSO link was already used.
+        handleOpen(intent, replay = savedInstanceState != null)
         setContent {
             val start by viewModel.startDestination.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
@@ -42,11 +43,11 @@ class MainActivity : ComponentActivity() {
     /** A notification asked for a screen (e.g. "Clean up"); AppRoot navigates once and clears it. */
     private val openRequest = MutableStateFlow<String?>(null)
 
-    private fun handleOpen(intent: Intent?) {
+    private fun handleOpen(intent: Intent?, replay: Boolean = false) {
         intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
         intent?.removeExtra(EXTRA_OPEN)
         // SSO: lauschig://oauth?code=..&state=.. comes back from the Custom Tab.
-        intent?.data?.takeIf(OidcCallback::isCallback)?.let {
+        if (!replay) intent?.data?.takeIf(OidcCallback::isCallback)?.let {
             oidcCallbacks.post(OidcCallback.from(it))
             intent?.data = null // a recreation must not replay it
         }

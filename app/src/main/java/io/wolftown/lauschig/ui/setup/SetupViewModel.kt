@@ -72,6 +72,7 @@ class SetupViewModel @Inject constructor(
     private var afterCleartext: (() -> Unit)? = null
     private var statusJob: Job? = null
     private var resumeJob: Job? = null
+    private var ssoFinishing = false
 
     /** The Custom Tab is open and no callback has arrived yet. */
     private var awaitingCallback = false
@@ -205,10 +206,14 @@ class SetupViewModel @Inject constructor(
         }
         if (needsCleartextConfirmation(listOfNotNull(local, public), ::loginWithSso)) return
         _state.update { it.copy(loading = true, error = null) }
+        val flow = OidcFlowContext(
+            local = local?.toString(), public = public?.toString(),
+            ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
+        )
         viewModelScope.launch {
             var failure = SetupError.UNREACHABLE
             for (url in listOfNotNull(public, local)) {
-                when (val r = oidc.start(url)) {
+                when (val r = oidc.start(url, flow)) {
                     is OidcStart.Launch -> {
                         _state.update { it.copy(ssoLaunchUrl = r.url) }
                         return@launch
@@ -250,29 +255,36 @@ class SetupViewModel @Inject constructor(
     }
 
     private fun onSsoCallback(cb: OidcCallback) {
-        if (_state.value.done) return // replayed after a recreation
-        awaitingCallback = false
-        resumeJob?.cancel()
-        _state.update { it.copy(loading = true, error = null) }
+        if (_state.value.done || ssoFinishing) return // replayed after a recreation, or a second link while one is running
+        ssoFinishing = true
         viewModelScope.launch {
-            val result = try {
-                oidc.finish(cb)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: OidcException) {
-                return@launch fail(if (e.reason == OidcException.Reason.UNREACHABLE) SetupError.UNREACHABLE else SetupError.SSO_FAILED)
-            } catch (_: Exception) {
-                return@launch fail(SetupError.SSO_FAILED)
+            try {
+                // Foreign or stale links change nothing, not even the spinner of a running password login.
+                if (!oidc.matchesPending(cb)) return@launch
+                awaitingCallback = false
+                resumeJob?.cancel()
+                _state.update { it.copy(loading = true, error = null) }
+                val result = try {
+                    oidc.finish(cb)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: OidcException) {
+                    return@launch fail(if (e.reason == OidcException.Reason.UNREACHABLE) SetupError.UNREACHABLE else SetupError.SSO_FAILED)
+                } catch (_: Exception) {
+                    return@launch fail(SetupError.SSO_FAILED)
+                }
+                // Addresses and SSID binding are the ones the flow started with (survives a process restart).
+                val f = result.flow
+                val local = f.local?.toHttpUrlOrNull()
+                val public = f.public?.toHttpUrlOrNull()
+                val (l, p) =
+                    if (local == null && public == null) (if (result.baseUrl.isHttps) null to result.baseUrl else result.baseUrl to null)
+                    else local to public
+                val s = _state.value.copy(ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids)
+                complete(s, l, p, result.response)
+            } finally {
+                ssoFinishing = false
             }
-            // After a process restart the fields are empty: the address that worked is all we know.
-            val s = _state.value
-            val used = result.baseUrl
-            val typedLocal = parse(s.local, "http")
-            val typedPublic = parse(s.public, "https")
-            val (local, public) =
-                if (typedLocal == null && typedPublic == null) (if (used.isHttps) null to used else used to null)
-                else typedLocal to typedPublic
-            complete(s, local, public, result.response)
         }
     }
 

@@ -138,7 +138,7 @@ class OidcLoginTest {
         assertTrue("pending cleared after success", store.data.first().asMap().isEmpty())
     }
 
-    @Test fun finish_serverRejects_keepsPending_andThrows() = runBlocking {
+    @Test fun finish_serverRejects_clearsPending_andThrows() = runBlocking {
         val o = oidc()
         val state = startAndState(o)
         server.enqueue(MockResponse().setResponseCode(400).setBody("No session"))
@@ -148,7 +148,42 @@ class OidcLoginTest {
         } catch (e: OidcException) {
             assertEquals(OidcException.Reason.REJECTED, e.reason)
         }
-        assertFalse(store.data.first().asMap().isEmpty())
+        assertTrue(store.data.first().asMap().isEmpty())
+    }
+
+    @Test fun finish_idpError_clearsPending() = runBlocking {
+        val o = oidc()
+        val state = startAndState(o)
+        try { o.finish(OidcCallback(null, state, "access_denied")); fail() } catch (e: OidcException) {
+            assertEquals(OidcException.Reason.REJECTED, e.reason)
+        }
+        assertTrue(store.data.first().asMap().isEmpty())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun matchesPending_onlyForOurState() = runBlocking {
+        val o = oidc()
+        assertFalse(o.matchesPending(OidcCallback("c", "x", null)))
+        val state = startAndState(o)
+        assertTrue(o.matchesPending(OidcCallback("c", state, null)))
+        assertFalse(o.matchesPending(OidcCallback("c", "forged", null)))
+        assertFalse(o.matchesPending(OidcCallback("c", null, null)))
+    }
+
+    @Test fun start_locationNotHttp_isUnreachable_andRelativeIsResolved() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "javascript:alert(1)"))
+        assertEquals(OidcStart.Unreachable, oidc().start(base))
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/realms/x/auth"))
+        assertEquals(OidcStart.Launch(base.resolve("/realms/x/auth").toString()), oidc().start(base))
+    }
+
+    @Test fun flowContext_survivesInPending() = runBlocking {
+        enqueueStart()
+        val flow = OidcFlowContext("http://nas.lan:13378/", "https://abs.example.org/", true, "HomeNet", setOf("Old"))
+        oidc().start(base, flow)
+        val state = server.takeRequest().requestUrl!!.queryParameter("state")!!
+        server.enqueue(MockResponse().setBody(loginJson))
+        assertEquals(flow, oidc().finish(OidcCallback("c", state, null)).flow)
     }
 
     @Test fun finish_withoutPendingOrAfterTtl_isRejected() = runBlocking {
