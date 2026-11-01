@@ -73,4 +73,30 @@ class RmabUiTest {
         rule.onNodeWithText("Connected as fabi").assertIsDisplayed()
         rule.onNodeWithText("Not connected anymore — reconnect").assertIsDisplayed()
     }
+
+    private fun outcomeState(m: RmabMessage, error: Boolean) =
+        RmabUiState(true, outcomes = mapOf("B1" to RmabOutcome(m, error)))
+
+    @Test fun request_failure_showsMessageInSheet() {
+        show(outcomeState(RmabMessage(io.wolftown.lauschig.R.string.rmab_msg_failed, "HTTP 500"), true))
+        rule.onNodeWithText("Request failed: HTTP 500").assertIsDisplayed()
+        rule.onNodeWithTag("rmabOutcomeError").assertIsDisplayed()
+        rule.onNodeWithTag("rmabRequest").assertIsDisplayed()
+    }
+
+    @Test fun request_noAuthor_showsMessageInSheet() {
+        show(outcomeState(RmabMessage(io.wolftown.lauschig.R.string.rmab_msg_no_author), true))
+        rule.onNodeWithText("Cannot request: Audible lists no author for this volume.").assertIsDisplayed()
+    }
+
+    @Test fun request_notConnected_andUnreachable_showMessage() {
+        show(outcomeState(RmabMessage(io.wolftown.lauschig.R.string.rmab_msg_unreachable), true))
+        rule.onNodeWithText("Could not reach ReadMeABook.").assertIsDisplayed()
+    }
+
+    @Test fun request_success_messageNextToStatus() {
+        show(RmabUiState(true, mapOf("B1" to RmabStatus.WAITING), mapOf("B1" to RmabOutcome(RmabMessage(io.wolftown.lauschig.R.string.rmab_msg_created, "Band Drei"), false))))
+        rule.onNodeWithText("Requested “Band Drei”").assertIsDisplayed()
+        rule.onNodeWithTag("rmabOutcome").assertIsDisplayed()
+    }
 }

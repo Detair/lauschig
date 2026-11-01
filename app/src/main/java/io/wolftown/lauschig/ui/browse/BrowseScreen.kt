@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -64,7 +62,6 @@ import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
-import io.wolftown.lauschig.ui.common.LocalSnackbarHost
 import io.wolftown.lauschig.ui.detail.Description
 import io.wolftown.lauschig.ui.nav.BrowseKind
 
@@ -81,13 +78,6 @@ fun BrowseRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     val rmabState by rmab.state.collectAsStateWithLifecycle()
-    val snackbar = LocalSnackbarHost.current
-    val context = LocalContext.current
-    LaunchedEffect(rmab, snackbar) {
-        rmab.messages.collect { m ->
-            snackbar?.showSnackbar(if (m.arg != null) context.getString(m.res, m.arg) else context.getString(m.res))
-        }
-    }
     BrowseScreen(
         state, onBack, viewModel::setKinds, onOpenItem, onOpenBrowse, modifier,
         onPlay = actions::play, onMenu = { menuFor = it },

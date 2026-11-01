@@ -229,4 +229,5 @@
     <string name="rmab_msg_not_connected">Not connected to ReadMeABook anymore — reconnect in the settings.</string>
     <string name="rmab_msg_unreachable">Could not reach ReadMeABook.</string>
     <string name="rmab_msg_failed">Request failed: %s</string>
+    <string name="rmab_error_token_creation">Signed in, but ReadMeABook would not create an API token. Create one in ReadMeABook and enter it instead.</string>
 </resources>

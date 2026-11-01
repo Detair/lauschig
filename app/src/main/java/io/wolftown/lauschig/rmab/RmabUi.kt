@@ -63,10 +63,12 @@ fun RmabMissingActions(volume: AudibleVolume, state: RmabUiState, onRequest: (Au
     val label = status?.label()
     if (label != null) {
         OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().testTag("rmabStatus")) { Text(stringResource(label)) }
+        Outcome(state.outcomes[volume.asin])
         return
     }
     var confirm by remember(volume.asin) { mutableStateOf(false) }
     Button(onClick = { confirm = true }, modifier = Modifier.fillMaxWidth().testTag("rmabRequest")) { Text(stringResource(R.string.rmab_request)) }
+    Outcome(state.outcomes[volume.asin])
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
@@ -78,6 +80,19 @@ fun RmabMissingActions(volume: AudibleVolume, state: RmabUiState, onRequest: (Au
             dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.setup_cancel)) } },
         )
     }
+}
+
+/** Result of the last request, under the button; errors in the error colour. */
+@Composable
+private fun Outcome(outcome: RmabOutcome?) {
+    outcome ?: return
+    val m = outcome.message
+    Text(
+        if (m.arg != null) stringResource(m.res, m.arg) else stringResource(m.res),
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (outcome.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 8.dp).testTag(if (outcome.isError) "rmabOutcomeError" else "rmabOutcome"),
+    )
 }
 
 /** Settings section "ReadMeABook" (a slot in the settings screen). */

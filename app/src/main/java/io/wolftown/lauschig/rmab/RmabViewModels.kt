@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.external.AudibleVolume
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -23,22 +21,29 @@ import javax.inject.Inject
 
 /** [connected]: a usable token exists (a rejected one counts as not connected). */
 @Immutable
-data class RmabUiState(val connected: Boolean = false, val statuses: Map<String, RmabStatus> = emptyMap())
+data class RmabUiState(
+    val connected: Boolean = false,
+    val statuses: Map<String, RmabStatus> = emptyMap(),
+    /** Last request result per ASIN, shown inside the sheet (a snackbar would hide behind it). */
+    val outcomes: Map<String, RmabOutcome> = emptyMap(),
+)
 
-/** A snackbar text: [res] with an optional single format argument. */
+/** A text: [res] with an optional single format argument. */
 data class RmabMessage(@StringRes val res: Int, val arg: String? = null)
+
+data class RmabOutcome(val message: RmabMessage, val isError: Boolean)
 
 /** Status and requests for the missing-volume sheet. */
 @HiltViewModel
 class RmabViewModel @Inject constructor(private val repo: RmabRepository) : ViewModel() {
     private val statuses = MutableStateFlow<Map<String, RmabStatus>>(emptyMap())
+    private val outcomes = MutableStateFlow<Map<String, RmabOutcome>>(emptyMap())
+    /** Optimistic entries (asin -> since) the server list may not know yet; dropped once reported or after [OPTIMISTIC_MS]. */
+    private val optimistic = HashMap<String, Long>()
     private val connected: Flow<Boolean> = repo.config.map { it != null && !it.needsReconnect }.distinctUntilChanged()
 
-    val state: StateFlow<RmabUiState> = combine(connected, statuses, ::RmabUiState)
+    val state: StateFlow<RmabUiState> = combine(connected, statuses, outcomes, ::RmabUiState)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RmabUiState())
-
-    private val _messages = Channel<RmabMessage>(Channel.BUFFERED)
-    val messages: Flow<RmabMessage> = _messages.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -48,36 +53,45 @@ class RmabViewModel @Inject constructor(private val repo: RmabRepository) : View
 
     private suspend fun refresh() {
         // An empty answer is also what a failed lookup returns; keep what we know instead of blanking the tiles.
-        repo.statusByAsin().takeIf { it.isNotEmpty() }?.let { statuses.value = it }
+        val fresh = repo.statusByAsin().takeIf { it.isNotEmpty() } ?: return
+        val now = System.currentTimeMillis()
+        optimistic.entries.removeAll { (asin, since) -> asin in fresh || now - since > OPTIMISTIC_MS }
+        statuses.update { old -> fresh + old.filterKeys { it in optimistic } }
     }
 
     fun request(volume: AudibleVolume) {
         viewModelScope.launch {
+            outcomes.update { it - volume.asin }
             val r = repo.request(volume)
-            _messages.send(
-                when (r) {
-                    RmabRequestResult.Created -> RmabMessage(R.string.rmab_msg_created, volume.title)
-                    RmabRequestResult.AlreadyAvailable -> RmabMessage(R.string.rmab_msg_already_available)
-                    RmabRequestResult.AlreadyRequested -> RmabMessage(R.string.rmab_msg_already_requested)
-                    RmabRequestResult.BeingProcessed -> RmabMessage(R.string.rmab_msg_being_processed)
-                    RmabRequestResult.NoAuthor -> RmabMessage(R.string.rmab_msg_no_author)
-                    RmabRequestResult.NotConnected -> RmabMessage(R.string.rmab_msg_not_connected)
-                    RmabRequestResult.Unreachable -> RmabMessage(R.string.rmab_msg_unreachable)
-                    is RmabRequestResult.Failed -> RmabMessage(R.string.rmab_msg_failed, r.message)
-                },
-            )
+            val (message, error) = when (r) {
+                RmabRequestResult.Created -> RmabMessage(R.string.rmab_msg_created, volume.title) to false
+                RmabRequestResult.AlreadyAvailable -> RmabMessage(R.string.rmab_msg_already_available) to false
+                RmabRequestResult.AlreadyRequested -> RmabMessage(R.string.rmab_msg_already_requested) to false
+                RmabRequestResult.BeingProcessed -> RmabMessage(R.string.rmab_msg_being_processed) to false
+                RmabRequestResult.NoAuthor -> RmabMessage(R.string.rmab_msg_no_author) to true
+                RmabRequestResult.NotConnected -> RmabMessage(R.string.rmab_msg_not_connected) to true
+                RmabRequestResult.Unreachable -> RmabMessage(R.string.rmab_msg_unreachable) to true
+                is RmabRequestResult.Failed -> RmabMessage(R.string.rmab_msg_failed, r.message) to true
+            }
+            outcomes.update { it + (volume.asin to RmabOutcome(message, error)) }
             when (r) {
                 RmabRequestResult.Created, RmabRequestResult.AlreadyRequested, RmabRequestResult.BeingProcessed -> {
-                    // Show it right away; the refresh below replaces it with the server's word.
+                    // Show it right away; refresh() keeps it until the server's list reports the ASIN.
+                    optimistic[volume.asin] = System.currentTimeMillis()
                     statuses.update { it + (volume.asin to (it[volume.asin]?.takeIf { s -> s != RmabStatus.FAILED } ?: RmabStatus.WAITING)) }
                     refresh()
                 }
                 RmabRequestResult.AlreadyAvailable -> {
+                    optimistic[volume.asin] = System.currentTimeMillis()
                     statuses.update { it + (volume.asin to RmabStatus.DONE) }
                 }
                 else -> Unit
             }
         }
+    }
+
+    private companion object {
+        const val OPTIMISTIC_MS = 60_000L
     }
 }
 
@@ -87,6 +101,7 @@ enum class RmabConnectError(@StringRes val message: Int) {
     LOCAL_DISABLED(R.string.rmab_error_local_disabled),
     UNREACHABLE(R.string.rmab_error_unreachable),
     INVALID_URL(R.string.rmab_error_invalid_url),
+    TOKEN_CREATION(R.string.rmab_error_token_creation),
 }
 
 @Immutable
@@ -146,6 +161,7 @@ class RmabSettingsViewModel @Inject constructor(private val repo: RmabRepository
                     RmabConnectResult.PendingApproval -> it.copy(loading = false, error = RmabConnectError.PENDING)
                     RmabConnectResult.LocalLoginDisabled -> it.copy(loading = false, error = RmabConnectError.LOCAL_DISABLED)
                     RmabConnectResult.Unreachable -> it.copy(loading = false, error = RmabConnectError.UNREACHABLE)
+                    RmabConnectResult.TokenCreationFailed -> it.copy(loading = false, error = RmabConnectError.TOKEN_CREATION)
                     RmabConnectResult.InvalidUrl -> it.copy(loading = false, error = RmabConnectError.INVALID_URL)
                 }
             }

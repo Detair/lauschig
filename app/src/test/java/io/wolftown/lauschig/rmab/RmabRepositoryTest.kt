@@ -7,6 +7,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
@@ -30,6 +38,7 @@ class RmabRepositoryTest {
     private lateinit var server: MockWebServer
     private lateinit var scope: CoroutineScope
     private lateinit var repo: RmabRepository
+    private lateinit var store: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>
     private lateinit var storeFile: File
     private val seen = CopyOnWriteArrayList<RecordedRequest>()
     private val bodies = CopyOnWriteArrayList<String>()
@@ -57,9 +66,10 @@ class RmabRepositoryTest {
         repo = newRepo()
     }
 
-    private fun newRepo() = RmabRepository(
-        PreferenceDataStoreFactory.create(scope = scope) { storeFile }, cipher, { "Pixel 9" }, nowMs = { now },
-    )
+    private fun newRepo(): RmabRepository {
+        store = PreferenceDataStoreFactory.create(scope = scope) { storeFile }
+        return RmabRepository(store, cipher, { "Pixel 9" }, nowMs = { now })
+    }
 
     @After fun tearDown() {
         server.shutdown()
@@ -230,5 +240,74 @@ class RmabRepositoryTest {
         repo.disconnect()
         assertNull(repo.config.first())
         assertEquals(RmabRequestResult.NotConnected, repo.request(volume))
+    }
+
+    @Test fun connect_tokenCreationRefused_isNotUnreachable() = runBlocking {
+        handler = { if (it.path == "/api/auth/local/login") loginOk(it.path!!) else json(403, """{"error":"Forbidden"}""") }
+        assertEquals(RmabConnectResult.TokenCreationFailed, repo.connect(url, "fabi", "pw", allowCleartext = true))
+        assertNull(repo.config.first())
+    }
+
+    /** A stored http:// config whose host was never confirmed (or was edited) must not be spoken to. */
+    private suspend fun storeUnconfirmedHttpConfig() {
+        store.edit {
+            it[stringPreferencesKey("url")] = server.url("/").toString()
+            it[stringPreferencesKey("username")] = "fabi"
+            it[stringPreferencesKey("token")] = "enc:rmab_abc"
+        }
+    }
+
+    @Test fun storedHttpConfig_withoutConfirmedCleartext_refusesRequestAndStatus() = runBlocking {
+        storeUnconfirmedHttpConfig()
+        handler = { json(201, """{"success":true}""") }
+        assertEquals(RmabRequestResult.Unreachable, repo.request(volume))
+        assertEquals(emptyMap<String, RmabStatus>(), repo.statusByAsin())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun storedHttpConfig_confirmedForOtherHost_refuses() = runBlocking {
+        storeUnconfirmedHttpConfig()
+        store.edit { it[stringPreferencesKey("allow_cleartext")] = "http://other.example:80" }
+        assertEquals(RmabRequestResult.Unreachable, repo.request(volume))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun redirectToOtherHost_isNotFollowed_andGetsNoBearer() = runBlocking {
+        connected()
+        val other = MockWebServer().also { it.start() }
+        try {
+            handler = { MockResponse().setResponseCode(302).setHeader("Location", other.url("/api/requests").toString()) }
+            assertEquals(RmabRequestResult.Unreachable, repo.request(volume))
+            // The cleartext guard stops the hop; either way the foreign host never sees the token.
+            assertEquals(0, other.requestCount)
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    private var vmRef: RmabViewModel? = null
+
+    @Test fun viewModel_keepsOptimisticWaiting_untilServerReportsAsin() = runBlocking {
+        connected()
+        kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.Dispatchers.Unconfined)
+        try {
+            handler = { r ->
+                if (r.method == "POST") json(201, """{"success":true}""") else json(200, """{"requests":[{"id":"9","status":"downloading","audiobook":{"audibleAsin":"OTHER"}}]}""")
+            }
+            val vm = RmabViewModel(repo)
+            vmRef = vm
+            val job = scope.launch { vm.state.collect { } }
+            withTimeout(5_000) { while (!vm.state.value.connected) delay(20) }
+            vm.request(volume)
+            withTimeout(5_000) { while (vm.state.value.outcomes[volume.asin] == null) delay(20) }
+            delay(300)
+            assertEquals(RmabStatus.WAITING, vm.state.value.statuses[volume.asin])
+            assertEquals(RmabStatus.ACTIVE, vm.state.value.statuses["OTHER"])
+            assertEquals(false, vm.state.value.outcomes[volume.asin]!!.isError)
+            job.cancel()
+        } finally {
+            vmRef?.viewModelScope?.cancel()
+            kotlinx.coroutines.Dispatchers.resetMain()
+        }
     }
 }

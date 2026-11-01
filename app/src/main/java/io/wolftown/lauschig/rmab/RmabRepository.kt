@@ -50,6 +50,9 @@ sealed interface RmabConnectResult {
     data object Unreachable : RmabConnectResult
     data object InvalidUrl : RmabConnectResult
 
+    /** Login worked but RMAB refused to create the permanent API token (limit reached, API tokens off, ...). */
+    data object TokenCreationFailed : RmabConnectResult
+
     /** The address is `http://` and the user has not confirmed it yet; call again with `allowCleartext = true`. */
     data class NeedsCleartextConfirmation(val host: String) : RmabConnectResult
 }
@@ -124,7 +127,7 @@ class RmabRepository(
             }
             val created = api(base, jwt, !base.isHttps).createApiToken(tokenBody)
             val full = created.body()?.fullToken?.takeIf { created.isSuccessful && it.isNotBlank() }
-                ?: return@guarded RmabConnectResult.Unreachable
+                ?: return@guarded RmabConnectResult.TokenCreationFailed
             save(base, username.trim(), full, !base.isHttps)
             RmabConnectResult.Ok
         }
