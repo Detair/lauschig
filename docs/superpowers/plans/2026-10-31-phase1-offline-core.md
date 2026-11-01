@@ -16,7 +16,7 @@
 |---|---|
 | **1 (dieser Plan)** | Fundament, Login (Passwort), lokale/öffentliche Adresse, Room, Sync von Fortschritt und Offline-Sessions, Downloads, Wiedergabe mit Kapiteln, Bibliothek, Detail, Mini-Player und Player, Filter-Chips, Offline-Hinweis, Release-Bundle (2.1, 2.2 teilweise, 2.2a Filter, 2.4 ohne Verlinkung, 2.5 Basis, 5, 6, 6a) |
 | 2 | Start-Bildschirm vollständig, Entdecken (Store), Suche, Autor-/Sprecher-/Serien-/Genre-/Tag-Seiten, Serien mit fehlenden Bänden + RMAB-Anfrage, Podcasts, OIDC-Login (2.2, 2.2a, 2.3, 2.4, 6a) |
-| 3 | Player-Komfort: Sleep-Timer (Fade, Schütteln), Lesezeichen, Hörverlauf, Warteschlange, Sammlungen/Playlists, Geschwindigkeit pro Buch, Stille überspringen, Lautstärke-Boost, Zurückspringen nach Pause, Auto-Resume bei Bluetooth/Auto, Download-Verwaltung (2.5, 2.7a) |
+| 3 | Player-Komfort: Sleep-Timer (Fade, Schütteln), Lesezeichen, Hörverlauf, Warteschlange, Sammlungen/Playlists, Geschwindigkeit pro Buch, Stille überspringen, Lautstärke-Boost, Zurückspringen nach Pause, Auto-Resume bei Bluetooth/Auto, Download-Verwaltung, lokale Ordner (Dateien, die nur auf dem Gerät liegen, ohne Server abspielen; Wunsch aus dem ersten Gerätetest 2026-11-01) (2.5, 2.7a) |
 | 4 | Android-Integration: Android Auto, Homescreen-Widget, Sprachsteuerung (Play from search), App Links, Verbindungsstatus, Admin-Menü, Optik-/Navigations-Einstellungen, „Was ist neu“, Tablet-/Foldable-Layouts (2.7, 2.7a) |
 | 5 | Stats, Achievements, Jahresrückblick (2.6) |
 | 6 | AppFunctions für Gemini, sobald stabil, und TV-Modus (2.7, 2.8) |

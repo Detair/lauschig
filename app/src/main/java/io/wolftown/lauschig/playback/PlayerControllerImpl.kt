@@ -1,12 +1,15 @@
 package io.wolftown.lauschig.playback
 
+import android.util.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.ProgressSync
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +41,8 @@ class PlayerControllerImpl(
     /** Waits briefly for an online base URL; only called when the item is not fully local. */
     private val onlineBaseUrl: suspend () -> HttpUrl?,
     private val coverFile: (serverId: String, itemId: String) -> File?,
+    /** Fetches chapters and audio files from the server; used when a title is played before its details were loaded. */
+    private val loadDetails: suspend (serverId: String, itemId: String) -> Unit = { _, _ -> },
     private val pollMs: Long = 1_000,
     /** File-system checks (local files, cover) run here, never on the main thread. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -49,6 +54,7 @@ class PlayerControllerImpl(
         itemDao: ItemDao,
         api: ApiProvider,
         files: DownloadFiles,
+        librarySync: LibrarySync,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -58,9 +64,10 @@ class PlayerControllerImpl(
             withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
         },
         coverFile = { serverId, itemId -> try { files.coverFile(serverId, itemId) } catch (e: Exception) { null } },
+        loadDetails = librarySync::loadDetails,
     )
 
-    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?)
+    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?, val streaming: Boolean)
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -89,9 +96,28 @@ class PlayerControllerImpl(
             if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null && facade.hasMedia()) {
                 resumeLoaded(cur); return@launch
             }
-            val item = loadItem(serverId, itemId) ?: return@launch
+            var item = loadItem(serverId, itemId) ?: return@launch
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
             val base = if (allLocal) null else onlineBaseUrl()
+            if (item.audioFiles.isEmpty()) {
+                // The library list carries no audio files; they arrive with the details, which may not be loaded yet.
+                if (base == null) {
+                    _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                    return@launch
+                }
+                item = try {
+                    loadDetails(serverId, itemId)
+                    loadItem(serverId, itemId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "loading details for playback failed", e)
+                    null
+                }?.takeIf { it.audioFiles.isNotEmpty() } ?: run {
+                    _state.update { it.copy(error = R.string.error_item_not_playable) }
+                    return@launch
+                }
+            }
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {
@@ -102,9 +128,9 @@ class PlayerControllerImpl(
             val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
-            current = Current(item, mapper, coverPath)
+            current = Current(item, mapper, coverPath, streaming = !allLocal)
             last = serverId to itemId
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title)
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
@@ -193,6 +219,7 @@ class PlayerControllerImpl(
                 chapterStartSec = chapter?.startSec ?: 0.0,
                 chapterEndSec = chapter?.endSec ?: duration,
                 speed = snap.speed,
+                isStreaming = c.streaming,
                 error = if (snap.isPlaying) null else it.error,
             )
         }
@@ -202,5 +229,9 @@ class PlayerControllerImpl(
     private fun startPolling() {
         if (pollJob?.isActive == true) return
         pollJob = scope.launch { while (true) { delay(pollMs); refresh() } }
+    }
+
+    private companion object {
+        const val TAG = "PlayerController"
     }
 }

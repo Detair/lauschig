@@ -18,6 +18,8 @@ data class ItemSummary(
     val progress: Float,
     val isDownloaded: Boolean,
     val isFinished: Boolean,
+    /** Download queued or running. */
+    val isDownloading: Boolean = false,
     /** Server `coverUpdatedAt`; appended to the cover URL so a changed cover bypasses the image cache. */
     val coverVersion: Long = 0,
 ) {

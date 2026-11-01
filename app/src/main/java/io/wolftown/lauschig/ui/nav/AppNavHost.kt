@@ -25,13 +25,18 @@ import io.wolftown.lauschig.ui.start.StartRoute
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
-        composable<Start> { StartRoute() }
-        // Library, detail, player and setup screens arrive in later tasks.
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> { ComingSoonScreen() }
         composable<Search> { ComingSoonScreen() }
         composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }) }
-        composable<Player> { PlayerRoute(onClose = { navController.popBackStack() }) }
+        composable<Player> {
+            PlayerRoute(
+                onClose = { navController.popBackStack() },
+                // The details replace the player, so "back" from them returns to where the player was opened from.
+                onOpenDetails = { id -> navController.navigate(ItemDetail(id)) { popUpTo<Player> { inclusive = true } } },
+            )
+        }
         composable<Setup> {
             SetupRoute(onDone = {
                 // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.

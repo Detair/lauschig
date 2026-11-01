@@ -13,6 +13,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -21,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemSummary
 
 @androidx.compose.runtime.Immutable
@@ -30,13 +34,22 @@ data class StartUiState(
 )
 
 @Composable
-fun StartRoute(modifier: Modifier = Modifier, viewModel: StartViewModel = hiltViewModel()) {
+fun StartRoute(onOpenItem: (itemId: String) -> Unit, modifier: Modifier = Modifier, viewModel: StartViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    StartScreen(state, onPlay = viewModel::play, modifier = modifier)
+    var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
+    StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, modifier = modifier)
+    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem) }
 }
 
+/** Tap opens the details, the play button plays, long-press opens the actions menu. */
 @Composable
-fun StartScreen(state: StartUiState, onPlay: (itemId: String) -> Unit, modifier: Modifier = Modifier) {
+fun StartScreen(
+    state: StartUiState,
+    onOpen: (itemId: String) -> Unit,
+    onPlay: (itemId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    onMenu: (ItemSummary) -> Unit = {},
+) {
     if (state.continueItem == null && state.downloaded.isEmpty()) {
         Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Text(stringResource(R.string.start_empty), style = MaterialTheme.typography.bodyLarge)
@@ -46,11 +59,11 @@ fun StartScreen(state: StartUiState, onPlay: (itemId: String) -> Unit, modifier:
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         state.continueItem?.let { item ->
             item(key = "h-continue") { SectionHeader(R.string.start_continue) }
-            item(key = "continue") { TileRow(listOf(item), onPlay) }
+            item(key = "continue") { TileRow(listOf(item), onOpen, onPlay, onMenu) }
         }
         if (state.downloaded.isNotEmpty()) {
             item(key = "h-downloaded") { SectionHeader(R.string.start_downloaded) }
-            item(key = "downloaded") { TileRow(state.downloaded, onPlay) }
+            item(key = "downloaded") { TileRow(state.downloaded, onOpen, onPlay, onMenu) }
         }
     }
 }
@@ -66,13 +79,16 @@ private fun SectionHeader(textRes: Int) {
 }
 
 @Composable
-private fun TileRow(items: List<ItemSummary>, onPlay: (String) -> Unit) {
+private fun TileRow(items: List<ItemSummary>, onOpen: (String) -> Unit, onPlay: (String) -> Unit, onMenu: (ItemSummary) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(items, key = ItemSummary::key, contentType = { "tile" }) { item ->
-            CoverTile(item, Modifier.width(140.dp), onClick = { onPlay(item.id) })
+            CoverTile(
+                item, Modifier.width(140.dp),
+                onClick = { onOpen(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) },
+            )
         }
     }
 }

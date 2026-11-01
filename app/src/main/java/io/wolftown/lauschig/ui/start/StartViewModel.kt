@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
@@ -30,6 +31,7 @@ class StartViewModel @Inject constructor(
     private val accountStore: AccountStore,
     itemDao: ItemDao,
     progressDao: ProgressDao,
+    downloadDao: DownloadDao,
     private val player: PlayerController,
 ) : ViewModel() {
     private var serverId: String? = null
@@ -44,11 +46,13 @@ class StartViewModel @Inject constructor(
                     itemDao.observeInProgress(account.serverId),
                     itemDao.observeDownloaded(account.serverId),
                     progressDao.observeAll(account.serverId),
-                ) { inProgress, downloaded, progress ->
+                    downloadDao.observeActiveIds(account.serverId),
+                ) { inProgress, downloaded, progress, active ->
                     val byId = progress.associateBy { it.itemId }
                     val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
                     covers.sync(downloadedIds)
-                    fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds)
+                    val activeIds = active.toHashSet()
+                    fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
                     StartUiState(inProgress.firstOrNull()?.summary(), downloaded.map { it.summary() })
                 }.flowOn(Dispatchers.Default).distinctUntilChanged()
             }

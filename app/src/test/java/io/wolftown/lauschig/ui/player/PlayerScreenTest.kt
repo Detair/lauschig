@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.ui.LauschigTheme
+import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onRoot
@@ -70,5 +71,36 @@ class PlayerScreenTest {
             assertTrue("$d clipped", b.left >= 0.dp && b.right <= root.right)
         }
         rule.onNodeWithContentDescription("Playback speed 1.25×").assertExists()
+    }
+
+    @Test fun detailsButtonCoverAndTitle_openDetails() {
+        var opened = 0
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onOpenDetails = { opened++ }) } }
+        rule.onNodeWithTag("playerDetails").performClick()
+        rule.onNodeWithTag("playerCover").performClick()
+        rule.onNodeWithText("The Book").performClick()
+        assertEquals(3, opened)
+    }
+
+    @Test fun downloadButton_startsDownload_andSourceShowsStreaming() {
+        var downloads = 0
+        rule.setContent {
+            LauschigTheme { PlayerScreen(state.copy(isStreaming = true), {}, download = QuickDownload.None, onDownload = { downloads++ }) }
+        }
+        rule.onNodeWithContentDescription("Download").performClick()
+        assertEquals(1, downloads)
+        rule.onNodeWithTag("sourceStreaming").assertExists()
+    }
+
+    @Test fun completeDownload_deleteAsksFirst_andSourceShowsLocal() {
+        var deletes = 0
+        rule.setContent {
+            LauschigTheme { PlayerScreen(state, {}, download = QuickDownload.Complete, onDeleteDownload = { deletes++ }) }
+        }
+        rule.onNodeWithTag("sourceLocal").assertExists()
+        rule.onNodeWithTag("downloadButton").performClick()
+        assertEquals(0, deletes)
+        rule.onNodeWithText("Delete").performClick()
+        assertEquals(1, deletes)
     }
 }

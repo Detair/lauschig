@@ -42,6 +42,7 @@ data class PlayerScreenState(
     val bookElapsedText: String = "00:00",
     val bookTotalText: String = "00:00",
     val speed: Float = 1f,
+    val isStreaming: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
     val error: Int? = null,
 )
@@ -86,6 +87,7 @@ class PlayerViewModel(
             bookElapsedText = formatClock(p.positionSec),
             bookTotalText = formatClock(p.durationSec),
             speed = p.speed,
+            isStreaming = p.isStreaming,
             chapters = chs.mapIndexed { i, c ->
                 val len = (c.endSec - c.startSec).coerceAtLeast(0.0)
                 val cur = i == p.chapterIndex

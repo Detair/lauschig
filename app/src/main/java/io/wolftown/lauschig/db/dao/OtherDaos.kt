@@ -190,6 +190,10 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     fun observe(serverId: String, itemId: String): Flow<DownloadEntity?>
 
+    /** Items whose download is queued or running (for the "downloading" cover badge). */
+    @Query("SELECT itemId FROM downloads WHERE serverId = :serverId AND state IN ('QUEUED', 'RUNNING')")
+    fun observeActiveIds(serverId: String): Flow<List<String>>
+
     @Query("UPDATE downloads SET state = :state, error = :error WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun setState(serverId: String, itemId: String, state: DownloadState, error: String?)
 

@@ -67,6 +67,7 @@ class PlayerControllerTest {
         factory: MediaItemFactory = MediaItemFactory({ true }) { _, _ -> null },
         io: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
         coverFile: (String, String) -> File? = { _, _ -> null },
+        loadDetails: suspend (String, String) -> Unit = { _, _ -> },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -74,6 +75,7 @@ class PlayerControllerTest {
         loadItem = { _, _ -> load() },
         onlineBaseUrl = { base?.toHttpUrl() },
         coverFile = coverFile,
+        loadDetails = loadDetails,
         io = io,
     )
 
@@ -177,6 +179,52 @@ class PlayerControllerTest {
         assertEquals(3, f.items.size)
         assertEquals(0 to 100_000L, f.started)
         assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun play_onlineWithoutKnownFiles_loadsDetailsThenStreams() = runTest {
+        val f = FakeFacade()
+        var loaded: ItemWithDetails = item(emptyList())
+        val calls = mutableListOf<String>()
+        val c = controller(f, { loaded }, base = "https://abs.example/", loadDetails = { _, id ->
+            calls += id; loaded = item(listOf(file(0, 600.0, path = null), file(1, 300.0, path = null)))
+        })
+        c.play(s, "it")
+        assertEquals(listOf("it"), calls)
+        assertEquals(2, f.items.size)
+        assertEquals("https", f.items[0].localConfiguration!!.uri.scheme)
+        assertTrue(c.state.value.isPlaying)
+        assertTrue(c.state.value.isStreaming)
+    }
+
+    @Test fun play_onlineDetailsStillEmpty_setsErrorInsteadOfEmptyQueue() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(emptyList()) }, base = "https://abs.example/", loadDetails = { _, _ -> })
+        c.play(s, "it")
+        assertEquals(R.string.error_item_not_playable, c.state.value.error)
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun play_onlineDetailsLoadFails_setsError() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(emptyList()) }, base = "https://abs.example/", loadDetails = { _, _ -> throw java.io.IOException("boom") })
+        c.play(s, "it")
+        assertEquals(R.string.error_item_not_playable, c.state.value.error)
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun play_offlineWithoutKnownFiles_setsOfflineError() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(emptyList()) }, base = null, loadDetails = { _, _ -> error("must not load offline") })
+        c.play(s, "it")
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun play_fullyLocal_isNotStreaming() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        assertTrue(!c.state.value.isStreaming)
     }
 
     @Test fun playerError_surfacesInUiState() = runTest {

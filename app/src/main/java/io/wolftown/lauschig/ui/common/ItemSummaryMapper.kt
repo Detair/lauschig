@@ -39,7 +39,7 @@ class CoverPathCache(
 }
 
 /** Builds the tile model; [covers] may hit the file system once per item, so call it off the main thread. */
-fun ItemEntity.toSummary(covers: CoverPathCache, progress: ProgressEntity?, downloaded: Boolean): ItemSummary {
+fun ItemEntity.toSummary(covers: CoverPathCache, progress: ProgressEntity?, downloaded: Boolean, downloading: Boolean = false): ItemSummary {
     val duration = progress?.durationSec?.takeIf { it > 0 } ?: durationSec
     val fraction = when {
         progress == null -> 0f
@@ -53,6 +53,7 @@ fun ItemEntity.toSummary(covers: CoverPathCache, progress: ProgressEntity?, down
         progress = fraction,
         isDownloaded = downloaded,
         isFinished = progress?.isFinished == true,
+        isDownloading = downloading && !downloaded,
         coverVersion = coverUpdatedAt,
     )
 }

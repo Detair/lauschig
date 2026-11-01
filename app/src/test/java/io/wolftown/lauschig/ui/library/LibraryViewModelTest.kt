@@ -60,7 +60,7 @@ class LibraryViewModelTest {
     private fun vm(prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") })): LibraryViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
-        return LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs)
+        return LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao())
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null) =

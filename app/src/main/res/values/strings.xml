@@ -4,6 +4,7 @@
     <string name="download_channel_name">Downloads</string>
     <string name="download_notification_text">Downloading audiobook</string>
     <string name="error_not_downloaded_offline">Not downloaded – available when online</string>
+    <string name="error_item_not_playable">This title could not be loaded from the server.</string>
     <string name="error_playback_failed">Playback failed</string>
     <string name="nav_start">Home</string>
     <string name="nav_library">Library</string>
@@ -95,4 +96,12 @@
     <string name="player_chapter_slider">Position in chapter</string>
     <string name="player_book_time">%1$s / %2$s</string>
     <string name="player_mini_open">Open player</string>
+    <string name="actions_details">Details</string>
+    <string name="actions_download_resume">Resume download</string>
+    <string name="cover_play">Play %1$s</string>
+    <string name="cover_downloading">Downloading</string>
+    <string name="player_open_details">Show details</string>
+    <string name="source_streaming">Streaming</string>
+    <string name="source_local">Downloaded</string>
+    <string name="cover_actions">Open menu</string>
 </resources>
