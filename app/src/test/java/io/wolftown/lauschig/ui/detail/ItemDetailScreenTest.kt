@@ -7,7 +7,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.assertIsEnabled
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -31,8 +34,12 @@ class ItemDetailScreenTest {
         seriesName = "Saga", seriesSequence = "3", genres = listOf("Fantasy"), detailsLoaded = true, online = true, chapters = chapters,
     )
 
-    private fun show(state: ItemDetailUiState, onDelete: () -> Unit = {}, onChapter: (Int) -> Unit = {}, onPrimary: () -> Unit = {}) =
-        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, onPrimary, {}, {}, onDelete, onChapter) } }
+    private fun show(state: ItemDetailUiState, onDelete: () -> Unit = {}, onChapter: (Int) -> Unit = {}, onPrimary: () -> Unit = {}, settledOffline: Boolean = false) =
+        rule.setContent {
+            CompositionLocalProvider(LocalOfflineDimming provides settledOffline) {
+                LauschigTheme { ItemDetailScreen(state, {}, onPrimary, {}, {}, onDelete, onChapter) }
+            }
+        }
 
     @Test fun chips_showAllAndAreNotClickable() {
         show(base)
@@ -56,8 +63,7 @@ class ItemDetailScreenTest {
     }
 
     @Test fun offlineNoDetails_showsHint_andDisabledPlayWithReason() {
-        show(base.copy(online = false, detailsLoaded = false, chapters = emptyList(), playEnabled = false,
-            playDisabledReason = R.string.error_not_downloaded_offline, downloadEnabled = false))
+        show(base.copy(online = false, detailsLoaded = false, chapters = emptyList()), settledOffline = true)
         rule.onNodeWithText("Chapters available once online").assertIsDisplayed()
         rule.onNodeWithText("Play").assertIsNotEnabled()
         rule.onNodeWithText("Not downloaded – available when online").assertIsDisplayed()
@@ -75,6 +81,37 @@ class ItemDetailScreenTest {
         assertEquals(1, deleted)
     }
 
+    @Test fun notSettledOffline_noDisabledReason_noHint() {
+        show(base.copy(online = false, detailsLoaded = false, chapters = emptyList()), settledOffline = false)
+        rule.onNodeWithText("Play").assertIsEnabled()
+        rule.onNodeWithText("Download").assertIsEnabled()
+        rule.onNodeWithText("Not downloaded – available when online").assertDoesNotExist()
+        rule.onNodeWithText("Chapters available once online").assertDoesNotExist()
+    }
+
+    @Test fun offline_pausedAndFailed_startDisabled_removeEnabled() {
+        show(base.copy(download = DownloadUi.Paused(false)), settledOffline = true)
+        rule.onNodeWithText("Resume").assertIsNotEnabled()
+        rule.onNodeWithText("Available when online").assertIsDisplayed()
+        rule.onNodeWithText("Cancel download").assertIsEnabled()
+    }
+
+    @Test fun offline_failed_retryDisabled_removeEnabled() {
+        show(base.copy(download = DownloadUi.Failed(R.string.download_error_generic)), settledOffline = true)
+        rule.onNodeWithText("Retry").assertIsNotEnabled()
+        rule.onNodeWithText("Remove").assertIsEnabled()
+        rule.onNodeWithText("Available when online").assertIsDisplayed()
+    }
+
+    @Test fun cancelWithPartialData_asksForConfirmation() {
+        var deleted = 0
+        show(base.copy(download = DownloadUi.Paused(true)), onDelete = { deleted++ })
+        rule.onNodeWithText("Cancel download").performClick()
+        assertEquals(0, deleted)
+        rule.onNodeWithText("Delete").performClick()
+        assertEquals(1, deleted)
+    }
+
     @Test fun failedDownload_showsMappedError() {
         show(base.copy(download = DownloadUi.Failed(R.string.download_error_not_found)))
         rule.onNodeWithText("Not found on server").assertIsDisplayed()
@@ -85,7 +122,8 @@ class ItemDetailScreenTest {
         show(base.copy(description = (1..80).joinToString("\n") { "Line $it" }))
         rule.onNodeWithText("More").assertIsDisplayed().performClick()
         rule.onNodeWithText("Less").assertIsDisplayed()
-        assertTrue(true)
+        rule.onNodeWithText("Line 80").assertDoesNotExist()
+        rule.onNodeWithText("Line 1", substring = true).assertExists()
     }
 
     @Test fun formatClock_hoursOnlyWhenNeeded() {

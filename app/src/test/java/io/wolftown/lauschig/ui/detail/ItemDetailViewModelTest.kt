@@ -164,13 +164,12 @@ class ItemDetailViewModelTest {
         assertFalse(s.detailsLoaded)
     }
 
-    @Test fun offline_notDownloaded_playDisabled_withReason() = runTest {
+    @Test fun offline_notDownloaded_notPlayableOffline() = runTest {
         seed()
         connection.value = ConnectionState.Offline
         val s = vm().await { it.found }
-        assertFalse(s.playEnabled)
-        assertEquals(R.string.error_not_downloaded_offline, s.playDisabledReason)
-        assertFalse(s.downloadEnabled)
+        assertFalse(s.playableOffline)
+        assertFalse(s.online)
     }
 
     @Test fun chapterTap_seeksToChapterStart() = runTest {

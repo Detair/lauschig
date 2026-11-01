@@ -64,6 +64,7 @@
     <string name="detail_download_pause">Pause</string>
     <string name="detail_download_resume">Resume</string>
     <string name="detail_download_cancel">Cancel download</string>
+    <string name="detail_download_remove">Remove</string>
     <string name="detail_download_retry">Retry</string>
     <string name="detail_download_offline">Available when online</string>
     <string name="detail_delete_title">Delete download?</string>

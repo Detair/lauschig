@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.coverModel
 
@@ -67,6 +68,7 @@ fun ItemDetailScreen(
     onChapter: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val settledOffline = LocalOfflineDimming.current
     LazyColumn(modifier.fillMaxSize()) {
         item("back") {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
@@ -85,7 +87,7 @@ fun ItemDetailScreen(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
             )
         }
-        if (state.chapters.isEmpty() && !state.detailsLoaded && !state.online) {
+        if (state.chapters.isEmpty() && !state.detailsLoaded && settledOffline) {
             item("chapters-offline") {
                 Text(
                     stringResource(R.string.detail_chapters_offline_hint),
@@ -165,21 +167,24 @@ private fun PrimaryButton(state: ItemDetailUiState, onPrimary: () -> Unit) {
             if (p.chapterNumber != null) stringResource(R.string.detail_continue_chapter, p.chapterNumber) else stringResource(R.string.detail_continue)
         PrimaryAction.ListenAgain -> stringResource(R.string.detail_listen_again)
     }
-    Button(onClick = onPrimary, enabled = state.playEnabled, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text(label) }
-    state.playDisabledReason?.let {
-        Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+    val settledOffline = LocalOfflineDimming.current
+    val playEnabled = state.playableOffline || !settledOffline
+    Button(onClick = onPrimary, enabled = playEnabled, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text(label) }
+    if (!playEnabled) {
+        Text(stringResource(R.string.error_not_downloaded_offline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
     }
 }
 
 @Composable
 private fun DownloadControls(state: ItemDetailUiState, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit) {
-    var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    val canStart = state.downloadEnabled
+    // What the confirm dialog is for; null = hidden. Both removal flavours reuse the same dialog.
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    // Starting, resuming and retrying need the server; removing never does.
+    val canStart = !LocalOfflineDimming.current
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (val d = state.download) {
             DownloadUi.None -> {
                 OutlinedButton(onClick = onDownload, enabled = canStart, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.detail_download)) }
-                if (!canStart) Hint(stringResource(R.string.detail_download_offline))
             }
             DownloadUi.Queued -> {
                 Text(stringResource(R.string.detail_download_queued), style = MaterialTheme.typography.bodyMedium)
@@ -191,44 +196,45 @@ private fun DownloadControls(state: ItemDetailUiState, onDownload: () -> Unit, o
                 LinearProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onPause) { Text(stringResource(R.string.detail_download_pause)) }
-                    TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_cancel)) }
+                    TextButton(onClick = { if (d.hasPartialData) confirm = true else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
                 }
             }
-            DownloadUi.Paused -> {
+            is DownloadUi.Paused -> {
                 Text(stringResource(R.string.detail_download_paused), style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDownload, enabled = canStart) { Text(stringResource(R.string.detail_download_resume)) }
-                    TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_cancel)) }
+                    TextButton(onClick = { if (d.hasPartialData) confirm = true else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
                 }
-                if (!canStart) Hint(stringResource(R.string.detail_download_offline))
             }
             is DownloadUi.Complete -> {
                 Text(
                     stringResource(R.string.detail_downloaded, Formatter.formatShortFileSize(LocalContext.current, d.bytes)),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.detail_download_delete)) }
+                TextButton(onClick = { confirm = true }) { Text(stringResource(R.string.detail_download_delete)) }
             }
             is DownloadUi.Failed -> {
                 Text(stringResource(d.message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDownload, enabled = canStart) { Text(stringResource(R.string.detail_download_retry)) }
-                    TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_cancel)) }
+                    TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_remove)) }
                 }
-                if (!canStart) Hint(stringResource(R.string.detail_download_offline))
             }
         }
+        if (!canStart && state.download.needsServer()) Hint(stringResource(R.string.detail_download_offline))
     }
-    if (confirmDelete) {
+    if (confirm) {
         AlertDialog(
-            onDismissRequest = { confirmDelete = false },
+            onDismissRequest = { confirm = false },
             title = { Text(stringResource(R.string.detail_delete_title)) },
             text = { Text(stringResource(R.string.detail_delete_message)) },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text(stringResource(R.string.detail_delete_confirm)) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
+            confirmButton = { TextButton(onClick = { confirm = false; onDelete() }) { Text(stringResource(R.string.detail_delete_confirm)) } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
         )
     }
 }
+
+private fun DownloadUi.needsServer() = this is DownloadUi.None || this is DownloadUi.Paused || this is DownloadUi.Failed
 
 @Composable
 private fun Hint(text: String) =

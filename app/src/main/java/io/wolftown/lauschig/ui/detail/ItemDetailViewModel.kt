@@ -50,8 +50,8 @@ sealed interface PrimaryAction {
 sealed interface DownloadUi {
     data object None : DownloadUi
     data object Queued : DownloadUi
-    data class Running(val percent: Int) : DownloadUi
-    data object Paused : DownloadUi
+    data class Running(val percent: Int, val hasPartialData: Boolean) : DownloadUi
+    data class Paused(val hasPartialData: Boolean) : DownloadUi
     data class Complete(val bytes: Long) : DownloadUi
     /** [message] maps the machine code stored with the download. */
     data class Failed(@StringRes val message: Int) : DownloadUi
@@ -84,10 +84,9 @@ data class ItemDetailUiState(
     val coverVersion: Long = 0,
     val durationSec: Double = 0.0,
     val primary: PrimaryAction = PrimaryAction.Play,
-    val playEnabled: Boolean = true,
-    @StringRes val playDisabledReason: Int? = null,
+    /** Playable without a connection (downloaded, or already loaded in the player). The UI combines this with the settled offline signal. */
+    val playableOffline: Boolean = false,
     val download: DownloadUi = DownloadUi.None,
-    val downloadEnabled: Boolean = true,
     val detailsLoaded: Boolean = false,
     val online: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
@@ -179,7 +178,7 @@ class ItemDetailViewModel(
             progress.currentTimeSec <= 0.0 -> PrimaryAction.Play
             else -> PrimaryAction.Continue(if (savedChapter >= 0) savedChapter + 1 else null)
         }
-        val playable = downloaded || online || p.isThis
+        val playableOffline = downloaded || p.isThis
         val currentIndex: Int
         val currentPos: Double
         if (p.isThis) {
@@ -207,26 +206,37 @@ class ItemDetailViewModel(
             seriesName = item.seriesName?.takeIf { it.isNotBlank() },
             seriesSequence = item.seriesSequence?.takeIf { it.isNotBlank() },
             genres = item.genres,
-            description = item.description?.let { HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim() }?.takeIf { it.isNotEmpty() },
+            description = plainDescription(item.description),
             coverPath = if (downloaded) covers.pathFor(item.serverId, item.id) else null,
             coverVersion = item.coverUpdatedAt,
             durationSec = item.durationSec,
             primary = primary,
-            playEnabled = playable,
-            playDisabledReason = if (playable) null else R.string.error_not_downloaded_offline,
+            playableOffline = playableOffline,
             download = dl.toUi(d),
-            downloadEnabled = online || dl != null,
             detailsLoaded = item.detailsLoaded,
             online = online,
             chapters = rows,
         )
     }
 
+    private var descSource: String? = null
+    private var descPlain: String? = null
+
+    /** HTML stripped to plain text; cached by source string so progress ticks do not re-parse. */
+    private fun plainDescription(html: String?): String? {
+        if (html == null) return null
+        if (html != descSource) {
+            descPlain = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().replace("\uFFFC", "").trim().takeIf { it.isNotEmpty() }
+            descSource = html
+        }
+        return descPlain
+    }
+
     private fun DownloadProgress?.toUi(d: ItemWithDetails): DownloadUi = when (this?.state) {
         null -> DownloadUi.None
         DownloadState.QUEUED -> DownloadUi.Queued
-        DownloadState.RUNNING -> DownloadUi.Running(if (bytesTotal > 0) (bytesDone * 100 / bytesTotal).toInt().coerceIn(0, 100) else 0)
-        DownloadState.PAUSED -> DownloadUi.Paused
+        DownloadState.RUNNING -> DownloadUi.Running(if (bytesTotal > 0) (bytesDone * 100 / bytesTotal).toInt().coerceIn(0, 100) else 0, bytesDone > 0)
+        DownloadState.PAUSED -> DownloadUi.Paused(bytesDone > 0)
         DownloadState.COMPLETE -> DownloadUi.Complete(bytesTotal)
         DownloadState.FAILED -> DownloadUi.Failed(errorMessage(d.download?.error))
     }

@@ -1,7 +1,8 @@
 package io.wolftown.lauschig.ui.detail
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,8 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,8 +42,7 @@ private fun ChapterRowItem(chapter: ChapterRow, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .background(container)
-            .clickable(onClick = onClick)
-            .semantics { selected = chapter.isCurrent }
+            .selectable(selected = chapter.isCurrent, role = Role.Button, onClick = onClick)
             .then(if (chapter.isCurrent) Modifier.testTag("currentChapter") else Modifier)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
