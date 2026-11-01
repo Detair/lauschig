@@ -90,12 +90,16 @@ class DownloadWorker @AssistedInject constructor(
                 list = audioFiles.forItem(serverId, itemId)
                 if (list.isEmpty()) throw IOException("No audio files known for item")
             }
-            val total = list.sumOf { it.sizeBytes }
-            var before = 0L
-            notify(0, total, force = true)
-            for (f in list) {
-                downloadFile(client, online.baseUrl, f) { done -> tick(f.index, done, before + done, total) }
-                before += f.sizeBytes
+            try {
+                downloadAll(client, online.baseUrl, list)
+            } catch (e: FatalDownloadException) {
+                // 404: the server may have rescanned the item (new file ids). Reload the details once and retry.
+                if (e.code != "http_404") throw e
+                items.invalidateDetails(serverId, listOf(itemId))
+                librarySync.loadDetails(serverId, itemId)
+                val fresh = audioFiles.forItem(serverId, itemId)
+                if (fresh.isEmpty()) throw e
+                downloadAll(client, online.baseUrl, fresh)
             }
             // Best effort: a missing cover must not fail the book; the next download run retries it.
             try {
@@ -116,6 +120,16 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: Exception) {
             val msg = if (isNoSpace(e)) return fail("storage_full") else e.message ?: e.javaClass.simpleName
             return if (runAttemptCount + 1 >= MAX_ATTEMPTS) fail(msg) else back(msg)
+        }
+    }
+
+    private suspend fun downloadAll(client: OkHttpClient, base: HttpUrl, list: List<AudioFileEntity>) {
+        val total = list.sumOf { it.sizeBytes }
+        var before = 0L
+        notify(0, total, force = true)
+        for (f in list) {
+            downloadFile(client, base, f) { done -> tick(f.index, done, before + done, total) }
+            before += f.sizeBytes
         }
     }
 

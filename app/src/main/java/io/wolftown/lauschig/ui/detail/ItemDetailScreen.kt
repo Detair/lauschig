@@ -51,8 +51,9 @@ import io.wolftown.lauschig.ui.common.coverModel
 @Composable
 fun ItemDetailRoute(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: ItemDetailViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val askNotifications = rememberNotificationPermissionOnce()
     ItemDetailScreen(
-        state, onBack, viewModel::onPrimary, viewModel::download, viewModel::pauseDownload,
+        state, onBack, viewModel::onPrimary, { viewModel.download(); askNotifications() }, viewModel::pauseDownload,
         viewModel::deleteDownload, viewModel::onChapter, modifier,
     )
 }

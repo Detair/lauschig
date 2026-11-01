@@ -51,6 +51,7 @@ import io.wolftown.lauschig.playback.PlayerSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -91,8 +92,11 @@ class RecordingFacade : PlayerFacade {
     override fun setOnChange(onChange: () -> Unit) { this.onChange = onChange }
 }
 
-/** A probe that never reaches any server: the "server is down / no network" situation. */
-private val DEAD_PROBE = ReachabilityProbe { false }
+/**
+ * A probe that never answers (a black-holed server): it suspends until cancelled, so anything on the start path
+ * that awaited the network would hang here instead of passing quickly on an instant "unreachable".
+ */
+private val DEAD_PROBE = ReachabilityProbe { awaitCancellation() }
 
 @Module
 @InstallIn(SingletonComponent::class)

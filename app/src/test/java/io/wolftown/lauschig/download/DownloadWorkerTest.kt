@@ -9,6 +9,14 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
+import io.wolftown.lauschig.absapi.library.AudioFileDto
+import io.wolftown.lauschig.absapi.library.BookMediaDto
+import io.wolftown.lauschig.absapi.library.BookMetadataDto
+import io.wolftown.lauschig.absapi.library.FileMetadataDto
+import io.wolftown.lauschig.absapi.library.LibrariesResponse
+import io.wolftown.lauschig.absapi.library.LibraryApi
+import io.wolftown.lauschig.absapi.library.LibraryItemDto
+import io.wolftown.lauschig.absapi.library.LibraryItemsPage
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.AudioFileEntity
@@ -107,10 +115,13 @@ class DownloadWorkerTest {
             .setBody(Buffer().write(data, from, data.size - from))
     }
 
-    private suspend fun run(attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false): ListenableWorker.Result {
+    private suspend fun run(
+        attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false,
+        library: LibraryApi? = null,
+    ): ListenableWorker.Result {
         val base = server.url("/")
         val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
-        val sync = LibrarySync(flowOf(null), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() })
+        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() })
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
                 c, p, env, gate, sync, db.itemDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
@@ -278,6 +289,51 @@ class DownloadWorkerTest {
         val d = db.downloadDao().get(s, item)!!
         assertEquals(DownloadState.FAILED, d.state)
         assertEquals("http_404", d.error)
+    }
+
+    /** Serves fresh item details whose files have the current inos (ino0/ino1). */
+    private inner class DetailsApi : LibraryApi {
+        var calls = 0
+        override suspend fun libraries() = LibrariesResponse(emptyList())
+        override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = throw UnsupportedOperationException()
+        override suspend fun item(id: String, expanded: Int): LibraryItemDto {
+            calls++
+            return LibraryItemDto(
+                id, "l1", "book", 2,
+                BookMediaDto(
+                    BookMetadataDto(title = "A Book"), duration = 20.0,
+                    audioFiles = listOf(
+                        AudioFileDto(0, "ino0", 10.0, FileMetadataDto("a.mp3", ".mp3", a0.size.toLong())),
+                        AudioFileDto(1, "ino1", 10.0, FileMetadataDto("b.m4b", ".m4b", a1.size.toLong())),
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test fun http404_withStaleFileIds_reloadsDetailsOnce_andCompletes() = runBlocking {
+        // The library was rescanned on the server: our stored ino for file 0 no longer exists (404).
+        db.audioFileDao().replaceFromServer(
+            s, item,
+            listOf(
+                AudioFileEntity(s, item, 0, "stale0", 10.0, a0.size.toLong(), "mp3"),
+                AudioFileEntity(s, item, 1, "ino1", 10.0, a1.size.toLong(), "m4b"),
+            ),
+        )
+        dispatch()
+        val details = DetailsApi()
+        assertEquals(ListenableWorker.Result.success(), run(library = details))
+        assertEquals(1, details.calls)
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(s, item)!!.state)
+        assertTrue(db.audioFileDao().forItem(s, item).all { it.localPath != null })
+    }
+
+    @Test fun http404_afterDetailsReload_failsWithoutLooping() = runBlocking {
+        dispatch { _, _ -> MockResponse().setResponseCode(404) }
+        val details = DetailsApi()
+        assertEquals(ListenableWorker.Result.failure(), run(library = details))
+        assertEquals(1, details.calls)
+        assertEquals("http_404", db.downloadDao().get(s, item)!!.error)
     }
 
     @Test fun http503_retries() = runBlocking {
