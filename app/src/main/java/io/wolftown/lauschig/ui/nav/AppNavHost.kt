@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.placeholder.ComingSoonScreen
 import io.wolftown.lauschig.ui.setup.SetupRoute
@@ -27,7 +28,7 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> { ComingSoonScreen() }
         composable<Search> { ComingSoonScreen() }
-        composable<ItemDetail> { ComingSoonScreen() }
+        composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }) }
         composable<Player> { ComingSoonScreen() }
         composable<Setup> {
             SetupRoute(onDone = {

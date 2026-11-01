@@ -47,13 +47,7 @@ fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> U
     val base = LocalServerBaseUrl.current
     val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
-    val model: Any? = when {
-        item.coverPath != null -> File(item.coverPath)
-        base != null -> coverUrl(base, item.id).newBuilder()
-            .apply { if (item.coverVersion > 0) addQueryParameter("ts", item.coverVersion.toString()) }
-            .build().toString()
-        else -> null
-    }
+    val model = coverModel(base, item.id, item.coverPath, item.coverVersion)
     Column(
         modifier
             .clip(RoundedCornerShape(8.dp))
@@ -125,11 +119,20 @@ fun CoverTile(item: ItemSummary, modifier: Modifier = Modifier, onClick: () -> U
 }
 
 @Composable
-private fun Initials(title: String) {
+internal fun Initials(title: String) {
     val initials = remember(title) {
         title.split(' ', '-', ':').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
         Text(initials, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
     }
+}
+
+/** Local file first, else the server URL (only while [base] is non-null, i.e. online), else null. */
+fun coverModel(base: okhttp3.HttpUrl?, itemId: String, coverPath: String?, coverVersion: Long): Any? = when {
+    coverPath != null -> File(coverPath)
+    base != null -> coverUrl(base, itemId).newBuilder()
+        .apply { if (coverVersion > 0) addQueryParameter("ts", coverVersion.toString()) }
+        .build().toString()
+    else -> null
 }
