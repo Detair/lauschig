@@ -76,16 +76,22 @@ class PlayerControllerImpl(
     /** The last loaded title; survives a service stop so play/pause can start it again. */
     private var last: Pair<String, String>? = null
     private var playJob: Job? = null
+    /** From [play] until the player reports playing (or the start failed). */
+    private var starting = false
     private var pollJob: Job? = null
 
     init {
         facade.setOnChange { refresh() }
-        facade.setOnError { _state.update { it.copy(isPlaying = false, error = R.string.error_playback_failed) } }
+        facade.setOnError {
+            starting = false
+            _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
+        }
         facade.setOnDisconnected {
             // The service is gone; forget the loaded item so the next play() rebuilds the queue.
             playJob?.cancel(); pollJob?.cancel(); pollJob = null
             current = null
-            _state.update { it.copy(isPlaying = false) }
+            starting = false
+            _state.update { it.copy(isPlaying = false, isLoading = false) }
         }
     }
 
@@ -97,12 +103,29 @@ class PlayerControllerImpl(
                 resumeLoaded(cur); return@launch
             }
             var item = loadItem(serverId, itemId) ?: return@launch
+            // Feedback right away: details, connection and buffering can take a few seconds when streaming.
+            val previous = current
+            if (previous != null) {
+                current = null
+                pollJob?.cancel(); pollJob = null
+                if (facade.snapshot().isPlaying) facade.pause()
+            }
+            starting = true
+            last = serverId to itemId
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isLoading = true)
+            /** Start failed: the previous title (if any) stays loaded, the error is shown. */
+            fun fail(error: Int) {
+                starting = false
+                current = previous
+                if (previous == null) _state.update { it.copy(isLoading = false, error = error) }
+                else { refresh(); _state.update { it.copy(error = error) } }
+            }
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
             val base = if (allLocal) null else onlineBaseUrl()
             if (item.audioFiles.isEmpty()) {
                 // The library list carries no audio files; they arrive with the details, which may not be loaded yet.
                 if (base == null) {
-                    _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                    fail(R.string.error_not_downloaded_offline)
                     return@launch
                 }
                 item = try {
@@ -114,14 +137,14 @@ class PlayerControllerImpl(
                     Log.w(TAG, "loading details for playback failed", e)
                     null
                 }?.takeIf { it.audioFiles.isNotEmpty() } ?: run {
-                    _state.update { it.copy(error = R.string.error_item_not_playable) }
+                    fail(R.string.error_item_not_playable)
                     return@launch
                 }
             }
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {
-                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                fail(R.string.error_not_downloaded_offline)
                 return@launch
             }
             val mapper = TimelineMapper(item.audioFiles)
@@ -129,8 +152,7 @@ class PlayerControllerImpl(
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
             current = Current(item, mapper, coverPath, streaming = !allLocal)
-            last = serverId to itemId
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal)
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
@@ -157,12 +179,20 @@ class PlayerControllerImpl(
 
     override fun togglePlayPause() {
         val c = current
+        if (c == null && starting) {
+            // Tapped while the title is still being prepared: cancel the start.
+            playJob?.cancel()
+            starting = false
+            _state.update { it.copy(isLoading = false) }
+            return
+        }
         if (c == null) {
             // The service was stopped (e.g. app swiped away while paused): start the last title again.
             last?.let { (serverId, itemId) -> play(serverId, itemId) }
             return
         }
-        if (facade.snapshot().isPlaying) {
+        if (facade.snapshot().isPlaying || starting) {
+            starting = false
             facade.pause(); refresh()
         } else {
             playJob?.cancel()
@@ -201,6 +231,7 @@ class PlayerControllerImpl(
     private fun refresh() {
         val c = current ?: return
         val snap = facade.snapshot()
+        if (snap.isPlaying) starting = false
         val pos = c.mapper.toGlobal(snap.mediaIndex, snap.positionMs)
         val duration = c.mapper.totalSec.takeIf { it > 0 } ?: c.item.item.durationSec
         val chapters = c.item.chapters
@@ -220,10 +251,11 @@ class PlayerControllerImpl(
                 chapterEndSec = chapter?.endSec ?: duration,
                 speed = snap.speed,
                 isStreaming = c.streaming,
+                isLoading = (starting && !snap.isPlaying) || snap.isBuffering,
                 error = if (snap.isPlaying) null else it.error,
             )
         }
-        if (snap.isPlaying) startPolling() else { pollJob?.cancel(); pollJob = null }
+        if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
     }
 
     private fun startPolling() {

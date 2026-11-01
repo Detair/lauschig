@@ -19,6 +19,8 @@ data class PlayerUiState(
     val speed: Float = 1f,
     /** True while at least one file of the loaded title comes from the server instead of the device. */
     val isStreaming: Boolean = false,
+    /** A title is being prepared (details, connection) or the player is buffering; shown instead of play/pause. */
+    val isLoading: Boolean = false,
     @StringRes val error: Int? = null,
 )
 

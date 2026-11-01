@@ -78,11 +78,15 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
                     }
                 }
                 IconButton(onClick = onToggle, modifier = Modifier.size(MiniToggleSize)) {
-                    Icon(
-                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
-                        modifier = Modifier.size(36.dp),
-                    )
+                    if (state.isLoading) {
+                        LoadingIndicator(Modifier.size(28.dp))
+                    } else {
+                        Icon(
+                            if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
                 }
             }
             LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().testTag("miniProgress"), gapSize = 0.dp, drawStopIndicator = {})

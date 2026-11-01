@@ -196,6 +196,43 @@ class PlayerControllerTest {
         assertTrue(c.state.value.isStreaming)
     }
 
+    @Test fun play_showsLoadingRightAway_untilPlaybackStarts() = runTest {
+        val f = FakeFacade()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var loaded: ItemWithDetails = item(emptyList())
+        val c = controller(f, { loaded }, base = "https://abs.example/", loadDetails = { _, _ ->
+            gate.await(); loaded = item(listOf(file(0, 600.0, path = null)))
+        })
+        c.play(s, "it")
+        // Before the details arrive the mini player already shows the title with a loading state.
+        assertTrue(c.state.value.isLoading)
+        assertEquals("it", c.state.value.itemId)
+        assertEquals("Title", c.state.value.title)
+        gate.complete(Unit)
+        assertTrue(c.state.value.isPlaying)
+        assertTrue(!c.state.value.isLoading)
+    }
+
+    @Test fun play_error_endsLoading() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(emptyList()) }, base = "https://abs.example/", loadDetails = { _, _ -> })
+        c.play(s, "it")
+        assertTrue(!c.state.value.isLoading)
+        assertEquals(R.string.error_item_not_playable, c.state.value.error)
+    }
+
+    @Test fun player_bufferingWhilePlaying_showsLoading() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false, isBuffering = true)
+        c.seekBy(30)
+        assertTrue(c.state.value.isLoading)
+        f.snap = f.snap.copy(isPlaying = true, isBuffering = false)
+        c.seekBy(0)
+        assertTrue(!c.state.value.isLoading)
+    }
+
     @Test fun play_onlineDetailsStillEmpty_setsErrorInsteadOfEmptyQueue() = runTest {
         val f = FakeFacade()
         val c = controller(f, { item(emptyList()) }, base = "https://abs.example/", loadDetails = { _, _ -> })

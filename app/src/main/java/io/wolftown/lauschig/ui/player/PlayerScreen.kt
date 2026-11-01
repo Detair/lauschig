@@ -205,11 +205,15 @@ fun PlayerScreen(
                 Icon(Icons.Rounded.Replay30, stringResource(R.string.player_back_30), Modifier.size(36.dp))
             }
             FilledIconButton(onClick = onToggle, modifier = Modifier.size(80.dp)) {
-                Icon(
-                    if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
-                    Modifier.size(56.dp),
-                )
+                if (state.isLoading) {
+                    LoadingIndicator(Modifier.size(40.dp), color = MaterialTheme.colorScheme.onPrimary)
+                } else {
+                    Icon(
+                        if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+                        Modifier.size(56.dp),
+                    )
+                }
             }
             IconButton(onClick = { onSeekBy(30) }, modifier = Modifier.size(56.dp)) {
                 Icon(Icons.Rounded.Forward30, stringResource(R.string.player_forward_30), Modifier.size(36.dp))
