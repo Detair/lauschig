@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.detail.ItemDetailRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
+import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.placeholder.ComingSoonScreen
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
@@ -29,7 +30,7 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         composable<Discover> { ComingSoonScreen() }
         composable<Search> { ComingSoonScreen() }
         composable<ItemDetail> { ItemDetailRoute(onBack = { navController.popBackStack() }) }
-        composable<Player> { ComingSoonScreen() }
+        composable<Player> { PlayerRoute(onClose = { navController.popBackStack() }) }
         composable<Setup> {
             SetupRoute(onDone = {
                 navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
@@ -41,6 +42,10 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
 @Composable
 fun NavHostController.isOnSetup(): Boolean =
     currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
+
+@Composable
+fun NavHostController.isOnPlayer(): Boolean =
+    currentBackStackEntryAsState().value?.destination?.hasRoute<Player>() == true
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {

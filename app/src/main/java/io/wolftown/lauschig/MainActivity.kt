@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val start by viewModel.startDestination.collectAsStateWithLifecycle()
-            start?.let { AppRoot(startDestination = it, miniPlayer = {}) }
+            start?.let { AppRoot(startDestination = it) }
         }
     }
 }

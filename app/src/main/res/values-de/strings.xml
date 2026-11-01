@@ -80,4 +80,17 @@
     <string name="detail_chapters_offline_hint">Kapitel verfügbar, sobald online</string>
     <string name="detail_not_found">Dieses Buch ist nicht verfügbar.</string>
     <string name="detail_current_chapter_position">%1$s / %2$s</string>
+    <string name="player_play">Abspielen</string>
+    <string name="player_pause">Pausieren</string>
+    <string name="player_back_30">30 Sekunden zurück</string>
+    <string name="player_forward_30">30 Sekunden vor</string>
+    <string name="player_previous_chapter">Vorheriges Kapitel</string>
+    <string name="player_next_chapter">Nächstes Kapitel</string>
+    <string name="player_speed_button">Wiedergabegeschwindigkeit %1$s</string>
+    <string name="player_speed_title">Wiedergabegeschwindigkeit</string>
+    <string name="player_chapters">Kapitel</string>
+    <string name="player_close">Player schließen</string>
+    <string name="player_chapter_slider">Position im Kapitel</string>
+    <string name="player_book_time">%1$s / %2$s</string>
+    <string name="player_mini_open">Player öffnen</string>
 </resources>
