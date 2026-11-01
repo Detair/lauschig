@@ -144,6 +144,8 @@ class LibrarySync(
             genres = m.genres,
             tags = media.tags,
             updatedAt = updatedAt,
+            addedAt = addedAt,
+            publishedYear = m.publishedYear?.takeIf { it.isNotBlank() },
         )
     }
 

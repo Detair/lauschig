@@ -66,6 +66,10 @@ class LibraryApiTest {
         assertEquals("Saga #1", page.results[1].media.metadata.seriesName)
         assertEquals(5400.25, page.results[1].media.duration!!, 0.0)
         assertEquals(1761700000000L, page.results[0].updatedAt)
+        assertEquals(1700000000000L, page.results[0].addedAt)
+        assertEquals(1700000000100L, page.results[1].addedAt)
+        assertEquals("2020", page.results[0].media.metadata.publishedYear)
+        assertEquals(null, page.results[1].media.metadata.publishedYear)
     }
 
     @Test

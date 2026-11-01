@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import io.wolftown.lauschig.db.dao.AudioFileDao
+import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.ChapterDao
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -24,14 +25,15 @@ import io.wolftown.lauschig.db.entities.ProgressEntity
         LibraryEntity::class, ItemEntity::class, ChapterEntity::class, AudioFileEntity::class,
         ProgressEntity::class, LocalSessionEntity::class, DownloadEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 @TypeConverters(Converters::class)
 abstract class LauschigDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun itemDao(): ItemDao
+    abstract fun catalogDao(): CatalogDao
     abstract fun chapterDao(): ChapterDao
     abstract fun audioFileDao(): AudioFileDao
     abstract fun progressDao(): ProgressDao

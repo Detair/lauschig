@@ -45,4 +45,36 @@ class MigrationTest {
             room.close()
         }
     }
+
+    @Test fun v2ToV3_keepsData() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v3.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/2.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO items (serverId, id, libraryId, title, durationSec, coverUpdatedAt, genres, tags, updatedAt, detailsLoaded, orphaned) VALUES ('s', 'a', 'l', 'T', 1.0, 0, '', '', 5, 0, 0)")
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty) VALUES ('s', 'a', 12.5, 100.0, 0, 7, 1)")
+            db.version = 2
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            val p = room.progressDao().get("s", "a")!!
+            assertEquals(12.5, p.currentTimeSec, 0.0)
+            assertFalse(p.hideFromContinue)
+            val item = room.itemDao().get("s", "a")!!
+            assertEquals("T", item.title)
+            assertEquals(0L, item.addedAt)
+            assertEquals(null, item.publishedYear)
+        } finally {
+            room.close()
+        }
+    }
 }

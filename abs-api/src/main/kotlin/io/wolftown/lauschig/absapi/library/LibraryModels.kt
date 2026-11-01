@@ -37,6 +37,8 @@ data class LibraryItemDto(
     val mediaType: String,
     val updatedAt: Long,
     val media: BookMediaDto,
+    /** Epoch ms the item was added to the library; 0 when the server omits it. */
+    val addedAt: Long = 0,
 )
 
 @Serializable
@@ -59,6 +61,8 @@ data class BookMetadataDto(
     val series: List<SeriesRefDto> = emptyList(),
     val genres: List<String> = emptyList(),
     val description: String? = null,
+    /** Free text on the server, usually a four-digit year. */
+    val publishedYear: String? = null,
 )
 
 @Serializable
