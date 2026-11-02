@@ -15,7 +15,16 @@ import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
 import io.wolftown.lauschig.db.dao.TitleAudioDao
+import io.wolftown.lauschig.db.dao.BookmarkDao
+import io.wolftown.lauschig.db.dao.CollectionDao
+import io.wolftown.lauschig.db.dao.HistoryDao
+import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.AudioFileEntity
+import io.wolftown.lauschig.db.entities.BookmarkEntity
+import io.wolftown.lauschig.db.entities.CollectionEntity
+import io.wolftown.lauschig.db.entities.CollectionEntryEntity
+import io.wolftown.lauschig.db.entities.HistorySessionEntity
+import io.wolftown.lauschig.db.entities.QueueEntity
 import io.wolftown.lauschig.db.entities.ChapterEntity
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.EpisodeEntity
@@ -31,10 +40,11 @@ import io.wolftown.lauschig.db.entities.TitleAudioEntity
         LibraryEntity::class, ItemEntity::class, ChapterEntity::class, AudioFileEntity::class,
         ProgressEntity::class, LocalSessionEntity::class, DownloadEntity::class, EpisodeEntity::class,
         ExternalSeriesEntity::class, TitleAudioEntity::class,
+        BookmarkEntity::class, QueueEntity::class, HistorySessionEntity::class, CollectionEntity::class, CollectionEntryEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7)],
 )
 @TypeConverters(Converters::class)
 abstract class LauschigDatabase : RoomDatabase() {
@@ -49,4 +59,8 @@ abstract class LauschigDatabase : RoomDatabase() {
     abstract fun episodeDao(): EpisodeDao
     abstract fun externalSeriesDao(): ExternalSeriesDao
     abstract fun titleAudioDao(): TitleAudioDao
+    abstract fun bookmarkDao(): BookmarkDao
+    abstract fun queueDao(): QueueDao
+    abstract fun historyDao(): HistoryDao
+    abstract fun collectionDao(): CollectionDao
 }

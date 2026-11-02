@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.StubLibraryApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.room.withTransaction
@@ -36,7 +38,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
 
-private class FakeLibrary : LibraryApi {
+private class FakeLibrary : StubLibraryApi() {
     override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
     var items: List<LibraryItemDto> = emptyList()
     var failOnPage: Int? = null

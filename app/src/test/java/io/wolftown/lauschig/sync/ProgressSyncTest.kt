@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.StubMeApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -32,7 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
 
-private class FakeMe : MeApi {
+private class FakeMe : StubMeApi() {
     var server: List<MediaProgressDto> = emptyList()
     val patches = mutableListOf<Pair<String, ProgressUpdate>>()
     val uploads = mutableListOf<LocalSessionsBody>()

@@ -28,4 +28,8 @@ object DatabaseModule {
     @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
     @Provides fun externalSeriesDao(db: LauschigDatabase) = db.externalSeriesDao()
     @Provides fun titleAudioDao(db: LauschigDatabase) = db.titleAudioDao()
+    @Provides fun bookmarkDao(db: LauschigDatabase) = db.bookmarkDao()
+    @Provides fun queueDao(db: LauschigDatabase) = db.queueDao()
+    @Provides fun historyDao(db: LauschigDatabase) = db.historyDao()
+    @Provides fun collectionDao(db: LauschigDatabase) = db.collectionDao()
 }

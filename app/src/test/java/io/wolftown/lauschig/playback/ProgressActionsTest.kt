@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.StubMeApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -42,7 +44,7 @@ private class RecordingPlayer : PlayerController {
     override fun setSpeed(speed: Float) {}
 }
 
-private class ServerMe(var rows: List<MediaProgressDto>) : MeApi {
+private class ServerMe(var rows: List<MediaProgressDto>) : StubMeApi() {
     override suspend fun me() = AbsUser("u", "n", "user", mediaProgress = rows)
     override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
     override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {}

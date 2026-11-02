@@ -119,7 +119,7 @@ class BrowseViewModelTest {
     @Test fun authorPage_bioAppearsOnceCached() = runTest {
         libs()
         db.itemDao().upsertFromList(listOf(item("a", author = "Ann")))
-        val api = object : LibraryApi {
+        val api = object : io.wolftown.lauschig.StubLibraryApi() {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String) = AuthorsResponse(listOf(AuthorDto("a1", "ANN", "Bio", "/x.jpg")))
@@ -131,7 +131,7 @@ class BrowseViewModelTest {
     }
 
     @Test fun authorInfo_failureLeavesCacheEmpty_neverThrows() = runTest {
-        val api = object : LibraryApi {
+        val api = object : io.wolftown.lauschig.StubLibraryApi() {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String): AuthorsResponse = throw java.io.IOException("down")
