@@ -130,3 +130,23 @@ Item, audio file and chapter rows of a local title are ordinary `items` / `audio
 - `DownloadDaoEntriesTest`: titles for books and episodes, bytes on disk incl. partial, played/finished columns.
 - `MigrationTest`: v7 → v8 keeps data and the new tables work.
 - UI: downloads page lists states and actions, bulk delete asks first; library device tab; settings folder section.
+
+## Notes from the implementation
+
+- "Delete finished" deletes the complete downloads of titles marked as heard (not every complete download); the
+  button shows count and size and asks first. SIZE sorts by bytes on disk (what deleting frees).
+- Grouping details: disc folders are only `CD n` / `Disc n` / `Disk n` and `Seite|Side A/B/1/2`; `Teil`, `Part` and
+  `Band` folders stay titles of their own (they are often separate books). Loose non-m4b files directly in the picked
+  folder form one title named after that folder; every `.m4b` is a title of its own anywhere.
+- A title's id comes from the folder's tree URI and the document id of its directory or m4b file. Renaming or moving it
+  inside the folder makes it a new title; the old one's progress stays in Room under `"device"` but is not shown.
+- Embedded m4b chapters are not parsed (`MediaMetadataRetriever` has no chapter API); a single file has no chapters,
+  several files are one chapter each.
+- Search: device titles appear in the titles section only (their people and genres would lead to entity pages that list
+  the server catalog), and only while the kind filter is "Alle". Their detail page shows the chips without links.
+- The queue stays in the account's namespace with mixed keys (`queue.serverId` = account); when a device title ends,
+  the service advances the account's queue.
+- `LocalFolders.scanning` touches WorkManager lazily: the singleton is injected into the Application, before the Hilt
+  worker factory that WorkManager's on-demand initialisation needs.
+- Not verified on a device (no adb in this package): picking a folder, persisted permission across reboots, playback
+  of `content://` documents through ExoPlayer, MediaMetadataRetriever on real files.
