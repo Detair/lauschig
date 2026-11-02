@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.playback.LastTitleStarter
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.Start
 import kotlinx.coroutines.CancellationException
@@ -19,7 +21,14 @@ import javax.inject.Inject
  * cannot delay or redirect the start.
  */
 @HiltViewModel
-class MainViewModel @Inject constructor(accounts: AccountStore) : ViewModel() {
+class MainViewModel(
+    accounts: AccountStore,
+    /** "Continue on app start": runs once per activity after the local account read, never blocking the start. */
+    private val onStartWithAccount: suspend () -> Unit = {},
+) : ViewModel() {
+    @Inject constructor(accounts: AccountStore, settings: PlaybackSettings, starter: LastTitleStarter) :
+        this(accounts, { if (settings.continueOnStart.first()) starter.resumeLast() })
+
     private val _startDestination = MutableStateFlow<Any?>(null)
     val startDestination: StateFlow<Any?> = _startDestination
 
@@ -34,6 +43,15 @@ class MainViewModel @Inject constructor(accounts: AccountStore) : ViewModel() {
                 null
             }
             _startDestination.value = if (account == null) Setup else Start
+            if (account != null) {
+                try {
+                    onStartWithAccount()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("MainViewModel", "continue on start failed", e)
+                }
+            }
         }
     }
 }

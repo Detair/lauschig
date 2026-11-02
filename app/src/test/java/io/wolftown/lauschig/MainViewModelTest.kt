@@ -30,5 +30,19 @@ class MainViewModelTest {
         assertEquals(Setup, viewModels.own(MainViewModel(store)).startDestination.value)
     }
 
+    @Test fun continueOnStart_runsOnceWithAnAccount_neverWithout() {
+        var runs = 0
+        val signedIn = FakeAccountStore().apply { acc.value = Account("s1", "u", "n", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()) }
+        assertEquals(Start, viewModels.own(MainViewModel(signedIn) { runs++ }).startDestination.value)
+        assertEquals(1, runs)
+        viewModels.own(MainViewModel(FakeAccountStore()) { runs++ })
+        assertEquals(1, runs)
+    }
+
+    @Test fun continueOnStart_failure_doesNotBreakTheStart() {
+        val signedIn = FakeAccountStore().apply { acc.value = Account("s1", "u", "n", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()) }
+        assertEquals(Start, viewModels.own(MainViewModel(signedIn) { error("db gone") }).startDestination.value)
+    }
+
     @Test fun noAccount_setup() = assertEquals(Setup, viewModels.own(MainViewModel(FakeAccountStore())).startDestination.value)
 }
