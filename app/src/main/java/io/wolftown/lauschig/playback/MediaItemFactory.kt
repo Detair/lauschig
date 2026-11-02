@@ -44,12 +44,15 @@ class MediaItemFactory(
      */
     fun build(item: ItemWithDetails, baseUrl: HttpUrl?): List<MediaItem> {
         val files = item.audioFiles.sortedBy { it.index }
-        val allLocal = isFullyLocal(item)
+        // Resolved once: a file that vanishes while this runs must not make the two decisions disagree.
+        val local = resolveLocal(files)
+        val allLocal = files.isNotEmpty() && local.all { it != null }
         val deviceTitle = DeviceLibrary.isLocal(item.item.serverId, item.item.id)
         if (!allLocal && (baseUrl == null || deviceTitle)) throw PlaybackUnavailableException(item.item.id)
         val cover: Uri? = coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
-        return files.map { f ->
-            val uri: Uri = localUri(f) ?: audioFileUrl(baseUrl!!, PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
+        return files.mapIndexed { i, f ->
+            val uri: Uri = local[i]
+                ?: audioFileUrl(baseUrl ?: throw PlaybackUnavailableException(item.item.id), PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
             val extras = Bundle().apply {
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)
@@ -72,14 +75,28 @@ class MediaItemFactory(
         }
     }
 
-    private fun localUri(f: AudioFileEntity): Uri? {
-        val path = f.localPath ?: return null
-        if (path.startsWith(CONTENT_PREFIX)) return path.toUri().takeIf(contentExists)
-        return File(path).takeIf(fileExists)?.let { Uri.fromFile(it) }
+    /**
+     * The local URI of every file (null = not local), in order. `file://` paths are checked one by one (cheap). Of the
+     * `content://` documents (device library) only the first is asked for at the provider: they come from one picked
+     * folder under one permission, so it stands for all of them (a single deleted file fails at play time instead,
+     * and the next scan drops it). A provider query costs an IPC round trip; a title can have hundreds of files.
+     */
+    private fun resolveLocal(files: List<AudioFileEntity>): List<Uri?> {
+        var contentPresent: Boolean? = null
+        return files.map { f ->
+            val path = f.localPath ?: return@map null
+            if (path.startsWith(CONTENT_PREFIX)) {
+                val uri = path.toUri()
+                val present = contentPresent ?: contentExists(uri).also { contentPresent = it }
+                if (present) uri else null
+            } else {
+                File(path).takeIf(fileExists)?.let { Uri.fromFile(it) }
+            }
+        }
     }
 
     /** True if every audio file is completely downloaded (or a device document) and still present. */
-    fun isFullyLocal(item: ItemWithDetails): Boolean = item.audioFiles.isNotEmpty() && item.audioFiles.all { localUri(it) != null }
+    fun isFullyLocal(item: ItemWithDetails): Boolean = item.audioFiles.isNotEmpty() && resolveLocal(item.audioFiles).all { it != null }
 
     companion object {
         private const val CONTENT_PREFIX = "content://"

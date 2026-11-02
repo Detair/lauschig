@@ -183,4 +183,48 @@ class LocalPlaybackTest {
         assertTrue(coverModel(base, "li_1", null, 0).toString().startsWith("https://abs.example/"))
         db.close()
     }
+    @Test fun factory_resolvesEachFileOnce_soAFlipBetweenChecksCannotCrash() {
+        // The provider answers "present" only for the first query: a second pass over the files would see them gone.
+        var calls = 0
+        val flaky = MediaItemFactory(fileExists = { false }, contentExists = { calls++ == 0 }, coverFile = { _, _ -> null })
+        val items = flaky.build(item(listOf(file(1, 60.0), file(2, 30.0))), null)
+        assertEquals(listOf("content", "content"), items.map { it.localConfiguration!!.uri.scheme })
+        // A server title whose downloaded file vanishes between the checks: never a NullPointerException.
+        val s = "aaaaaaaaaaaaaaaa"
+        var fileCalls = 0
+        val server = ItemWithDetails(ItemEntity(s, "li", "lib", "T"), emptyList(), listOf(AudioFileEntity(s, "li", 1, "ino", 10.0, 1, "mp3", "/d/1.mp3")), null, null)
+        val vanishing = MediaItemFactory(fileExists = { fileCalls++ == 0 }, contentExists = { true }, coverFile = { _, _ -> null })
+        assertEquals("file", vanishing.build(server, null).single().localConfiguration!!.uri.scheme)
+    }
+
+    @Test fun factory_asksTheProviderOncePerCall_notOncePerFile() {
+        var calls = 0
+        val f = MediaItemFactory(fileExists = { false }, contentExists = { calls++; true }, coverFile = { _, _ -> null })
+        val many = item((1..20).map { file(it, 10.0) })
+        assertTrue(f.isFullyLocal(many))
+        assertEquals(1, calls)
+        f.build(many, null)
+        assertEquals(2, calls)
+    }
+    @Test fun controller_localDocumentsVanishWhileLoaded_pausesWithTheLocalError() = runTest {
+        var present = true
+        val count = kotlinx.coroutines.flow.MutableStateFlow(2)
+        val facade = Facade()
+        val c = PlayerControllerImpl(
+            scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
+            facade = facade,
+            factory = MediaItemFactory(fileExists = { false }, contentExists = { present }, coverFile = { _, _ -> null }),
+            loadItem = { _, _ -> item(listOf(file(1, 60.0), file(2, 60.0))) },
+            onlineBaseUrl = { base },
+            coverFile = { _, _ -> null },
+            io = UnconfinedTestDispatcher(testScheduler),
+            localCount = { _, _ -> count },
+        )
+        c.play(dev, id)
+        assertTrue(facade.snapshot().isPlaying)
+        present = false
+        count.value = 1 // a rescan changed the files
+        assertFalse(facade.snapshot().isPlaying)
+        assertEquals(R.string.error_local_unavailable, c.state.value.error)
+    }
 }

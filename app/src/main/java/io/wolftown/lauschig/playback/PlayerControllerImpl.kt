@@ -207,7 +207,8 @@ class PlayerControllerImpl(
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {
-                fail(R.string.error_not_downloaded_offline)
+                // A device title can only get here if its documents vanished since the check above.
+                fail(if (deviceTitle) R.string.error_local_unavailable else R.string.error_not_downloaded_offline)
                 return@launch
             }
             val mapper = TimelineMapper(item.audioFiles)
@@ -254,7 +255,8 @@ class PlayerControllerImpl(
         } catch (e: PlaybackUnavailableException) {
             if (current === c && facade.hasMedia()) {
                 facade.pause(); refresh()
-                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                val error = if (DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) R.string.error_local_unavailable else R.string.error_not_downloaded_offline
+                _state.update { it.copy(error = error) }
             }
             return
         }
