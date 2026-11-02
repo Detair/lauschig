@@ -368,11 +368,11 @@
     <string name="downloads_sort_played">Recently played</string>
     <string name="downloads_empty">No downloads yet.</string>
     <string name="downloads_no_match">No download matches the search.</string>
-    <string name="downloads_delete_finished">Delete finished (%1$d · %2$s)</string>
-    <string name="downloads_delete_finished_title">Delete finished downloads?</string>
+    <string name="downloads_delete_finished">Delete heard (%1$d · %2$s)</string>
+    <string name="downloads_delete_finished_title">Delete heard downloads?</string>
     <plurals name="downloads_delete_finished_message">
-        <item quantity="one">%1$d title marked as finished is removed from this device (%2$s). Your progress is kept.</item>
-        <item quantity="other">%1$d titles marked as finished are removed from this device (%2$s). Your progress is kept.</item>
+        <item quantity="one">%1$d title marked as heard is removed from this device (%2$s). Your progress is kept.</item>
+        <item quantity="other">%1$d titles marked as heard are removed from this device (%2$s). Your progress is kept.</item>
     </plurals>
     <string name="downloads_status_waiting_network">Waiting for a connection</string>
     <string name="downloads_status_retrying">Waiting – will try again</string>
@@ -380,7 +380,7 @@
     <string name="downloads_status_paused_stream">Paused so the stream keeps playing</string>
     <string name="downloads_status_partial">%1$s of %2$s</string>
     <string name="downloads_status_complete">Downloaded · %1$s</string>
-    <string name="downloads_finished_badge">Finished</string>
+    <string name="downloads_finished_badge">Heard</string>
     <string name="bookmarks_device_only">Bookmarks of titles on this device stay on this device.</string>
     <string name="detail_local_source">On this device – plays without a server</string>
     <!-- On this device (phase 3C) -->

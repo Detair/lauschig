@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.downloads
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -102,5 +103,10 @@ class DownloadsScreenTest {
         assertEquals(EntryStatus.Failed(R.string.download_error_not_found), entryStatus(row(DownloadState.FAILED, "http_404")))
         assertEquals(EntryStatus.Failed(R.string.download_error_generic), entryStatus(row(DownloadState.FAILED, "invalid_path")))
         assertEquals(EntryStatus.Complete, entryStatus(row(DownloadState.COMPLETE)))
+    }
+    @Test fun finishedTitles_areCalledHeard_likeTheGermanGehoert() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithText("Delete heard", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("Downloaded", substring = true).assertTextContains("Heard", substring = true)
     }
 }
