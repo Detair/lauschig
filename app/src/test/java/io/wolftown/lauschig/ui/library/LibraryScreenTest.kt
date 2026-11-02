@@ -45,4 +45,13 @@ class LibraryScreenTest {
         rule.onNodeWithText("Nothing here yet").assertIsDisplayed()
         rule.onNodeWithText("Audiobooks").assertDoesNotExist()
     }
+
+    @Test fun collectionsTab_showsTheListSlot_insteadOfChips() {
+        val shown = mutableListOf<io.wolftown.lauschig.db.entities.CollectionKind>()
+        val state = LibraryUiState(tab = LibraryTab.Playlists, availableKinds = both, loaded = true)
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}, collections = { shown += it }) } }
+        rule.onNodeWithText("Audiobooks").assertDoesNotExist()
+        rule.onNodeWithText("Nothing here yet").assertDoesNotExist()
+        assertEquals(listOf(io.wolftown.lauschig.db.entities.CollectionKind.PLAYLIST), shown.distinct())
+    }
 }
