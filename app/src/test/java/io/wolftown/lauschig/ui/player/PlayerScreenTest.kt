@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.playback.StreamLoad
 import android.app.Application
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -102,5 +103,21 @@ class PlayerScreenTest {
         assertEquals(0, deletes)
         rule.onNodeWithText("Delete").performClick()
         assertEquals(1, deletes)
+    }
+
+    @Test fun streamLoad_showsBytesRateAndTimeLeft_andThrottleHint() {
+        rule.setContent {
+            LauschigTheme { PlayerScreen(state.copy(isLoading = true, streamLoad = StreamLoad(250_000, 1_000_000, 100_000, 75), downloadThrottled = true), {}) }
+        }
+        rule.onNodeWithTag("streamLoad").assertExists()
+        rule.onNodeWithText("Loading", substring = true).assertExists()
+        rule.onNodeWithText("2 min left", substring = true).assertExists()
+        rule.onNodeWithTag("downloadThrottled").assertExists()
+    }
+
+    @Test fun noStreamLoad_noLoadText() {
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}) } }
+        rule.onNodeWithTag("streamLoad").assertDoesNotExist()
+        rule.onNodeWithTag("downloadThrottled").assertDoesNotExist()
     }
 }

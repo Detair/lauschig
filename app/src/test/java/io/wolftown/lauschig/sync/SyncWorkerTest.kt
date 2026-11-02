@@ -67,7 +67,7 @@ class SyncWorkerTest {
     }
 
     private val noDownloads = object : DownloadManager {
-        override suspend fun enqueue(serverId: String, itemId: String) {}
+        override suspend fun enqueue(serverId: String, itemId: String, network: androidx.work.NetworkType?) {}
         override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {}
         override fun observe(serverId: String, itemId: String): kotlinx.coroutines.flow.Flow<DownloadProgress?> = flowOf(null)
     }

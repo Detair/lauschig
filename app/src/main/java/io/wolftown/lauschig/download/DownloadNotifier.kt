@@ -12,7 +12,8 @@ import javax.inject.Inject
 
 /** Builds the foreground-service notification (`dataSync`) with download progress. */
 class DownloadNotifier @Inject constructor(@ApplicationContext private val context: Context) {
-    fun info(itemId: String, title: String, done: Long, total: Long): ForegroundInfo {
+    /** [throttled]: the download yields to a playing stream (see [StreamPriority]). */
+    fun info(itemId: String, title: String, done: Long, total: Long, throttled: Boolean = false): ForegroundInfo {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, context.getString(R.string.download_channel_name), NotificationManager.IMPORTANCE_LOW),
@@ -20,7 +21,7 @@ class DownloadNotifier @Inject constructor(@ApplicationContext private val conte
         val n: Notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
-            .setContentText(context.getString(R.string.download_notification_text))
+            .setContentText(context.getString(if (throttled) R.string.download_notification_throttled else R.string.download_notification_text))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .apply {

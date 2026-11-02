@@ -9,6 +9,7 @@ import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.ProgressSync
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,6 +56,11 @@ class PlayerControllerImpl(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Number of downloaded files of a title; every change re-picks the source of each file (see [syncSources]). */
     private val localCount: (serverId: String, itemId: String) -> Flow<Int> = { _, _ -> emptyFlow() },
+    /** Called once a title started that streams at least one file (not on resume); see [PlayDownloadStarter]. */
+    private val onStreamStarted: (serverId: String, itemId: String) -> Unit = { _, _ -> },
+    /** The service's stream; shown as [PlayerUiState.streamLoad] while a streamed title loads. */
+    private val streamStats: Flow<StreamStats> = emptyFlow(),
+    private val downloadThrottled: Flow<Boolean> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -65,6 +72,8 @@ class PlayerControllerImpl(
         api: ApiProvider,
         files: DownloadFiles,
         librarySync: LibrarySync,
+        starter: PlayDownloadStarter,
+        monitor: StreamMonitor,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -77,6 +86,9 @@ class PlayerControllerImpl(
         // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
         loadDetails = librarySync::loadDetailsForPlayable,
         localCount = audioFileDao::observeLocalCount,
+        onStreamStarted = starter::start,
+        streamStats = monitor.state,
+        downloadThrottled = monitor.downloadThrottled,
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -101,6 +113,8 @@ class PlayerControllerImpl(
     private var pollJob: Job? = null
     /** Watches the downloads of the loaded title; see [syncSources]. */
     private var localJob: Job? = null
+    private var load: StreamLoad? = null
+    private var throttled = false
 
     init {
         facade.setOnChange { refresh() }
@@ -114,8 +128,11 @@ class PlayerControllerImpl(
             localJob?.cancel(); localJob = null
             current = null
             starting = false
-            _state.update { it.copy(isPlaying = false, isLoading = false) }
+            _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
         }
+        // Only what the UI shows: a playing stream's stats change constantly but map to null.
+        scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
+        scope.launch { downloadThrottled.collect { t -> throttled = t; _state.update { it.copy(downloadThrottled = t) } } }
     }
 
     override fun play(serverId: String, itemId: String, startSec: Double?) {
@@ -136,7 +153,7 @@ class PlayerControllerImpl(
             }
             starting = true
             last = serverId to itemId
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isLoading = true)
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isLoading = true, downloadThrottled = throttled)
             /** Start failed: the previous title (if any) stays loaded, the error is shown. */
             fun fail(error: Int) {
                 starting = false
@@ -177,11 +194,12 @@ class PlayerControllerImpl(
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
             val started = Current(item, mapper, coverPath, streaming = !allLocal, base, items)
             current = started
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true)
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true, downloadThrottled = throttled)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
             watchDownloads(started)
+            if (!allLocal) onStreamStarted(serverId, itemId)
         }
     }
 
@@ -270,6 +288,19 @@ class PlayerControllerImpl(
         }
     }
 
+    override fun pause() {
+        if (current == null && starting) {
+            playJob?.cancel()
+            starting = false
+            _state.update { it.copy(isLoading = false) }
+            return
+        }
+        playJob?.cancel()
+        starting = false
+        facade.pause()
+        refresh()
+    }
+
     override fun seekBy(deltaSec: Int) {
         val c = current ?: return
         val snap = facade.snapshot()
@@ -307,6 +338,7 @@ class PlayerControllerImpl(
         val chapters = c.item.chapters
         val ci = c.mapper.chapterAt(pos, chapters)
         val chapter = chapters.getOrNull(ci)
+        val loading = (starting && !snap.isPlaying) || snap.isBuffering
         _state.update {
             it.copy(
                 itemId = c.item.item.id,
@@ -321,11 +353,19 @@ class PlayerControllerImpl(
                 chapterEndSec = chapter?.endSec ?: duration,
                 speed = snap.speed,
                 isStreaming = c.streaming,
-                isLoading = (starting && !snap.isPlaying) || snap.isBuffering,
+                isLoading = loading,
+                streamLoad = if (loading && c.streaming) load else null,
                 error = if (snap.isPlaying) null else it.error,
             )
         }
         if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
+    }
+
+    /** Null unless the stream is actually loading (a local file of a partly downloaded title can buffer too). */
+    private fun StreamStats.toLoad(): StreamLoad? {
+        if (!active || (phase != StreamPhase.STARTING && phase != StreamPhase.STALLED)) return null
+        val eta = expectedBytes?.takeIf { bytesPerSec > 0 }?.let { ((it - bytes).coerceAtLeast(0) + bytesPerSec - 1) / bytesPerSec }
+        return StreamLoad(bytes, expectedBytes, bytesPerSec, eta)
     }
 
     private fun startPolling() {

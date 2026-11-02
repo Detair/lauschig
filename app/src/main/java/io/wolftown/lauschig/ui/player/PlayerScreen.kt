@@ -31,6 +31,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -184,6 +185,28 @@ fun PlayerScreen(
         }
         state.error?.let {
             Text(stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+        state.streamLoad?.let { load ->
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("streamLoad"), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    streamLoadText(load),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                load.fraction()?.let { f ->
+                    LinearProgressIndicator(progress = { f }, modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth().padding(top = 4.dp))
+                }
+            }
+        }
+        if (state.downloadThrottled) {
+            Text(
+                stringResource(R.string.player_download_throttled),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("downloadThrottled"),
+            )
         }
 
         val sliderLabel = stringResource(R.string.player_chapter_slider)

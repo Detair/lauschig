@@ -39,6 +39,7 @@ private class FakePlayer(initial: PlayerUiState = PlayerUiState()) : PlayerContr
     val plays = mutableListOf<Triple<String, String, Double?>>()
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += Triple(serverId, itemId, startSec) }
     override fun togglePlayPause() {}
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) { seeks += deltaSec }
     val absSeeks = mutableListOf<Double>()
     override fun seekTo(globalSec: Double) { absSeeks += globalSec }

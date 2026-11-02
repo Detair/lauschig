@@ -3,6 +3,7 @@ package io.wolftown.lauschig.download
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.NetworkType
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -17,12 +18,15 @@ import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.PlayableKey
+import io.wolftown.lauschig.playback.RateWindow
+import io.wolftown.lauschig.playback.StreamMonitor
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.OnlineGate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -49,6 +53,10 @@ class DownloadEnvironment(val connection: Flow<ConnectionState>, val client: (Ht
  * renamed (atomically) and recorded as `localPath` once its size is verified, so an interrupted download
  * never counts as downloaded. The `.part` length on disk is the resume offset (HTTP `Range`); a server that
  * answers 200 instead of 206 makes the file restart from the beginning.
+ *
+ * A playing stream has priority ([StreamPriority], asked before every chunk): throttled, the worker waits
+ * [StreamPriority.THROTTLE_DELAY_MS] per 64 KB; told to pause, it keeps the `.part` data, marks the row PAUSED with
+ * [STREAM_PRIORITY], asks the user ([DownloadPrompt.Contention]) and ends successfully.
  */
 @HiltWorker
 class DownloadWorker @AssistedInject constructor(
@@ -63,6 +71,8 @@ class DownloadWorker @AssistedInject constructor(
     private val downloads: DownloadDao,
     private val files: DownloadFiles,
     private val notifier: DownloadNotifier,
+    private val monitor: StreamMonitor,
+    private val prompts: DownloadPrompts,
 ) : CoroutineWorker(context, params) {
 
     private lateinit var serverId: String
@@ -73,6 +83,17 @@ class DownloadWorker @AssistedInject constructor(
     private var title = ""
     private var lastNotify = 0L
     private var lastPersist = 0L
+    private var notifiedDone = 0L
+    private var notifiedTotal = 0L
+    private var bytesDone = 0L
+    private var bytesTotal = 0L
+
+    private val priority by lazy { StreamPriority(monitor::now) }
+    /** Unthrottled own rate: measured on a clock that skips the throttle pauses. */
+    private val ownRate = RateWindow(10_000)
+    private var sleptMs = 0L
+    private var throttleDebt = 0L
+    private var throttledHint = false
 
     override suspend fun doWork(): Result {
         serverId = inputData.getString(KEY_SERVER) ?: return Result.failure()
@@ -89,6 +110,7 @@ class DownloadWorker @AssistedInject constructor(
         val client = env.client(online.baseUrl)
 
         downloads.setState(serverId, itemId, DownloadState.RUNNING, null)
+        val network = inputData.getString(KEY_NETWORK)?.let { n -> NetworkType.entries.firstOrNull { it.name == n } }
         title = (parsed.episodeId?.let { episodes.get(serverId, libraryItemId, it)?.title } ?: items.get(serverId, itemId)?.title).orEmpty()
         try {
             files.itemDir(serverId, itemId) // validates the server-controlled ids before anything touches the disk
@@ -119,6 +141,8 @@ class DownloadWorker @AssistedInject constructor(
             files.cleanupOrphans(serverId, itemId)
             downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.COMPLETE, null)
             return Result.success()
+        } catch (e: StreamPriorityPause) {
+            return pauseForStream(network)
         } catch (e: CancellationException) {
             // Stopped by WorkManager (constraints/system) -> back to QUEUED; a user pause/removal already changed the row.
             withContext(NonCancellable) { downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.QUEUED, null) }
@@ -128,6 +152,45 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: Exception) {
             val msg = if (isNoSpace(e)) return fail("storage_full") else e.message ?: e.javaClass.simpleName
             return if (runAttemptCount + 1 >= MAX_ATTEMPTS) fail(msg) else back(msg)
+        } finally {
+            monitor.setDownloadThrottled(itemId, false)
+        }
+    }
+
+    /** Paused for the stream: ask whether to keep streaming or download, with the time the rest would take now. */
+    private suspend fun pauseForStream(network: NetworkType?): Result {
+        downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.PAUSED, STREAM_PRIORITY)
+        val row = downloads.get(serverId, itemId)
+        if (row?.state != DownloadState.PAUSED || row.error != STREAM_PRIORITY) return Result.success() // removed or paused meanwhile
+        val rate = monitor.state.value.recentBytesPerSec + ownRate.bytesPerSec(activeNow())
+        val eta = if (rate > 0 && bytesTotal > 0) (bytesTotal - bytesDone).coerceAtLeast(0) / rate else null
+        prompts.show(DownloadPrompt.Contention(serverId, itemId, title, eta, network))
+        return Result.success()
+    }
+
+    private fun activeNow() = monitor.now() - sleptMs
+
+    /** Asked after every chunk of [bytes]: waits while the stream needs the connection; see [StreamPriority]. */
+    private suspend fun yieldToStream(bytes: Int) {
+        ownRate.add(activeNow(), bytes.toLong())
+        val decision = priority.decide(monitor.state.value)
+        val hint = priority.showThrottled
+        if (hint != throttledHint) {
+            throttledHint = hint
+            monitor.setDownloadThrottled(itemId, hint)
+            notify(notifiedDone, notifiedTotal, force = true)
+        }
+        when (decision) {
+            StreamPriority.Decision.FULL -> throttleDebt = 0
+            StreamPriority.Decision.THROTTLE -> {
+                throttleDebt += bytes
+                while (throttleDebt >= BUFFER) {
+                    delay(StreamPriority.THROTTLE_DELAY_MS)
+                    sleptMs += StreamPriority.THROTTLE_DELAY_MS
+                    throttleDebt -= BUFFER
+                }
+            }
+            StreamPriority.Decision.PAUSE -> throw StreamPriorityPause()
         }
     }
 
@@ -151,6 +214,8 @@ class DownloadWorker @AssistedInject constructor(
 
     /** Throttled (~1 s): persists the byte count of the file in flight and updates the notification. */
     private suspend fun tick(index: Int, fileDone: Long, done: Long, total: Long) {
+        bytesDone = done
+        bytesTotal = total
         val now = System.currentTimeMillis()
         if (now - lastPersist < NOTIFY_INTERVAL_MS) return
         lastPersist = now
@@ -168,8 +233,10 @@ class DownloadWorker @AssistedInject constructor(
         val now = System.currentTimeMillis()
         if (!force && now - lastNotify < NOTIFY_INTERVAL_MS) return
         lastNotify = now
+        notifiedDone = done
+        notifiedTotal = total
         try {
-            setForeground(notifier.info(itemId, title, done, total))
+            setForeground(notifier.info(itemId, title, done, total, throttledHint))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -247,6 +314,7 @@ class DownloadWorker @AssistedInject constructor(
                     out.write(buf, 0, n)
                     written += n
                     onProgress(written)
+                    yieldToStream(n)
                 }
             }
             out.flush()
@@ -275,9 +343,16 @@ class DownloadWorker @AssistedInject constructor(
     companion object {
         const val KEY_SERVER = "serverId"
         const val KEY_ITEM = "itemId"
+        /** The [NetworkType] name the work was enqueued with; a download paused for the stream resumes with it. */
+        const val KEY_NETWORK = "network"
+        /** `DownloadEntity.error` of a download paused because the stream needed the connection. */
+        const val STREAM_PRIORITY = "stream_priority"
         const val MAX_ATTEMPTS = 5
         private const val BUFFER = 64 * 1024
         private const val NOTIFY_INTERVAL_MS = 1_000L
         private val RANGE_START = Regex("""bytes\s+(\d+)-""")
     }
 }
+
+/** The stream stalled although the download yielded: stop this run and ask the user. */
+private class StreamPriorityPause : Exception()

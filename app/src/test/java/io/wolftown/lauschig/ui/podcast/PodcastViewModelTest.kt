@@ -49,6 +49,7 @@ private class PlayRecorder : PlayerController {
     val plays = mutableListOf<String>()
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += itemId }
     override fun togglePlayPause() {}
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) {}
     override fun seekTo(globalSec: Double) {}
     override fun seekToChapter(index: Int) {}

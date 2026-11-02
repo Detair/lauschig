@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.playback.PlayerController
+import io.wolftown.lauschig.playback.StreamLoad
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import io.wolftown.lauschig.ui.detail.formatClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,6 +45,8 @@ data class PlayerScreenState(
     val speed: Float = 1f,
     val isStreaming: Boolean = false,
     val isLoading: Boolean = false,
+    val streamLoad: StreamLoad? = null,
+    val downloadThrottled: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
     val error: Int? = null,
 )
@@ -90,6 +93,8 @@ class PlayerViewModel(
             speed = p.speed,
             isStreaming = p.isStreaming,
             isLoading = p.isLoading,
+            streamLoad = p.streamLoad,
+            downloadThrottled = p.downloadThrottled,
             chapters = chs.mapIndexed { i, c ->
                 val len = (c.endSec - c.startSec).coerceAtLeast(0.0)
                 val cur = i == p.chapterIndex

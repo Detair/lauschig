@@ -34,7 +34,7 @@ class AutoDownloadTest {
     private var saved: Set<String> = emptySet()
 
     private val manager = object : DownloadManager {
-        override suspend fun enqueue(serverId: String, itemId: String) { enqueued += itemId }
+        override suspend fun enqueue(serverId: String, itemId: String, network: androidx.work.NetworkType?) { enqueued += itemId }
         override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {}
         override fun observe(serverId: String, itemId: String): Flow<DownloadProgress?> = flowOf(null)
     }
