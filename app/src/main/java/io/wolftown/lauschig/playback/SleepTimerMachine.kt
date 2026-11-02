@@ -23,7 +23,7 @@ data class SleepEffect(val volume: Float, val pause: Boolean)
 /**
  * Pure sleep timer state. The glue ([SleepTimer]) feeds it the player state every few hundred ms.
  *
- * - [SleepMode.Minutes] counts listening time: a manual pause holds the timer.
+ * - [SleepMode.Minutes] counts listening time: a manual pause holds the timer; [MAX_PAUSE_MS] of pause turn it off.
  * - [SleepMode.EndOfChapter] ends after the chapter that was current at the start; jumping past it by hand moves
  *   the end to the new chapter, playing across it ends the timer.
  * - The last [fadeMs] fade out with `(remaining / fade)²`; a shake within the last [shakeWindowMs] extends by the
@@ -40,6 +40,7 @@ class SleepTimerMachine(
     private var remaining = 0L
     private var endIndex = -1
     private var lastPos = 0.0
+    private var pausedMs = 0L
 
     val isActive get() = mode != null
 
@@ -47,9 +48,20 @@ class SleepTimerMachine(
         this.mode = mode
         when (mode) {
             is SleepMode.Minutes -> remaining = mode.minutes * 60_000L
-            SleepMode.EndOfChapter -> endIndex = if (input.chapterEndsSec.isEmpty()) -1 else input.chapterIndex.coerceIn(0, input.chapterEndsSec.lastIndex)
+            SleepMode.EndOfChapter -> anchor(input)
         }
         lastPos = input.positionSec
+        pausedMs = 0
+    }
+
+    /** Another title was loaded: chapter mode now ends after its current chapter; minutes mode just goes on. */
+    fun rearm(input: SleepInput) {
+        if (mode == SleepMode.EndOfChapter) anchor(input)
+        lastPos = input.positionSec
+    }
+
+    private fun anchor(input: SleepInput) {
+        endIndex = if (input.chapterEndsSec.isEmpty()) -1 else input.chapterIndex.coerceIn(0, input.chapterEndsSec.lastIndex)
     }
 
     fun cancel() {
@@ -69,7 +81,17 @@ class SleepTimerMachine(
         val m = mode ?: return SleepEffect(1f, pause = false)
         var crossed = false
         when (m) {
-            is SleepMode.Minutes -> if (input.isPlaying) remaining = (remaining - deltaMs).coerceAtLeast(0)
+            is SleepMode.Minutes -> if (input.isPlaying) {
+                remaining = (remaining - deltaMs).coerceAtLeast(0)
+                pausedMs = 0
+            } else {
+                // Paused for good (went to bed without the timer firing, or stopped listening): forget it.
+                pausedMs += deltaMs
+                if (pausedMs >= MAX_PAUSE_MS) {
+                    mode = null
+                    return SleepEffect(1f, pause = false)
+                }
+            }
             SleepMode.EndOfChapter -> if (endIndex >= 0 && input.chapterIndex > endIndex) {
                 val end = input.chapterEndsSec[endIndex.coerceAtMost(input.chapterEndsSec.lastIndex)]
                 // Close to the end at the last tick: playback ran across it. Otherwise the user jumped there.
@@ -116,6 +138,8 @@ class SleepTimerMachine(
     companion object {
         const val FADE_MS = 10_000L
         const val SHAKE_WINDOW_MS = 60_000L
+        /** Minutes mode turns itself off after this much continuous pause. */
+        const val MAX_PAUSE_MS = 10 * 60_000L
         private const val CROSS_SLACK_SEC = 1.5
         val DURATIONS_MIN = listOf(5, 10, 15, 30, 45, 60, 90)
     }

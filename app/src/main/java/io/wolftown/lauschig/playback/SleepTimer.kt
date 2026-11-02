@@ -77,8 +77,11 @@ class SleepTimer(
     private var job: Job? = null
     private var volume = 1f
     private var listening = false
+    /** The title the timer last ticked for; another one re-arms chapter mode. */
+    private var itemId: String? = null
 
     fun start(mode: SleepMode) {
+        itemId = player.state.value.itemId
         machine.start(mode, input())
         job?.cancel()
         job = scope.launch {
@@ -101,11 +104,22 @@ class SleepTimer(
 
     /** One timer step; public for tests that drive the clock themselves. */
     internal fun step(deltaMs: Long) {
+        val s = player.state.value
+        // While a title loads, the state is reset (no duration, no chapters): no tick may read it as "at the end".
+        if (s.itemId == null || s.isLoading || s.durationSec <= 0) return
+        if (s.itemId != itemId) {
+            itemId = s.itemId
+            machine.rearm(input())
+        }
         // Near the end the poll of the controller is too coarse: read the player now.
         if ((machine.remainingMs(input()) ?: Long.MAX_VALUE) <= machine.fadeMs + 2 * tickMs) player.refreshNow()
         val effect = machine.tick(input(), deltaMs)
         if (effect.pause) {
             player.pause()
+            finish()
+            return
+        }
+        if (!machine.isActive) { // turned itself off after a long pause
             finish()
             return
         }

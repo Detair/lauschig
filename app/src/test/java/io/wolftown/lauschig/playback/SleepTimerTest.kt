@@ -81,4 +81,37 @@ class SleepTimerTest {
         assertEquals(1, shakes.starts)
         assertTrue(timer.state.value!!.shakeToExtend)
     }
+
+    @Test fun titleSwitch_doesNotFireTheTimer_andChapterModeFollowsTheNewTitle() {
+        player.state.value = PlayerUiState(itemId = "b1", isPlaying = true, positionSec = 10.0, durationSec = 300.0, chapterIndex = 0, chapterEndsSec = listOf(100.0, 300.0))
+        timer.start(SleepMode.EndOfChapter)
+        // play() of another title: the state is reset while it loads (no duration, no chapters).
+        player.state.value = PlayerUiState(itemId = "b2", isLoading = true)
+        timer.step(250)
+        assertEquals(0, player.pauses)
+        assertEquals(90_000L, timer.state.value!!.remainingMs) // last valid value kept
+        player.state.value = PlayerUiState(itemId = "b2", isPlaying = true, positionSec = 500.0, durationSec = 3600.0, chapterIndex = 1, chapterEndsSec = listOf(400.0, 700.0, 3600.0))
+        timer.step(250)
+        assertEquals(0, player.pauses)
+        assertEquals(200_000L, timer.state.value!!.remainingMs)
+    }
+
+    @Test fun minutesMode_continuesAcrossATitleSwitch() {
+        timer.start(SleepMode.Minutes(5))
+        timer.step(60_000)
+        player.state.value = PlayerUiState(itemId = "b2", isLoading = true)
+        timer.step(250)
+        player.state.value = PlayerUiState(itemId = "b2", isPlaying = true, durationSec = 100.0)
+        timer.step(1_000)
+        assertEquals(0, player.pauses)
+        assertEquals(239_000L, timer.state.value!!.remainingMs)
+    }
+
+    @Test fun longPause_cancelsMinutesTimer() {
+        timer.start(SleepMode.Minutes(30))
+        player.state.value = player.state.value.copy(isPlaying = false)
+        timer.step(10 * 60_000L)
+        assertNull(timer.state.value)
+        assertEquals(0, player.pauses)
+    }
 }

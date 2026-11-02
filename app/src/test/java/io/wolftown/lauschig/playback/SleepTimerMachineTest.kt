@@ -129,4 +129,24 @@ class SleepTimerMachineTest {
         assertEquals(100_000L, m.remainingMs(playing(pos = 3500.0, duration = 3600.0)))
         assertTrue(m.tick(playing(pos = 3599.9, duration = 3600.0), 250).pause)
     }
+
+    @Test fun minutes_cancelAfterTenMinutesOfContinuousPause() {
+        m.start(SleepMode.Minutes(30), playing())
+        val paused = playing().copy(isPlaying = false)
+        m.tick(paused, 9 * 60_000L)
+        m.tick(playing(), 1_000) // playing again resets the pause clock
+        m.tick(paused, 9 * 60_000L)
+        assertTrue(m.isActive)
+        val e = m.tick(paused, 60_000L)
+        assertFalse(m.isActive)
+        assertEquals(SleepEffect(1f, pause = false), e)
+    }
+
+    @Test fun chapter_rearm_anchorsToTheCurrentChapterOfTheNewTitle() {
+        m.start(SleepMode.EndOfChapter, playing(pos = 250.0, chapter = 2, ends = ends))
+        val other = playing(pos = 10.0, chapter = 0, ends = listOf(50.0, 500.0))
+        m.rearm(other)
+        assertEquals(40_000L, m.remainingMs(other))
+        assertFalse(m.tick(other, 250).pause)
+    }
 }
