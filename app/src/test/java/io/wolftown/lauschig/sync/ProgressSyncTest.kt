@@ -181,7 +181,8 @@ class ProgressSyncTest {
         assertEquals(device, body.sessions.first().deviceInfo)
         assertEquals("Titel", body.sessions.first().displayTitle)
         assertTrue(db.sessionDao().unsynced(s).isEmpty())
-        assertEquals("sessions", me.events.first()) // before me()
+        // Dirty progress first (so an uploaded session cannot overwrite it), then the sessions, then the newest server state.
+        assertEquals(listOf("me", "sessions", "me"), me.events.take(3))
     }
 
     @Test fun session_failedOnServer_staysUnsynced() = runTest {
@@ -208,7 +209,8 @@ class ProgressSyncTest {
 
         assertTrue(db.progressDao().get(s, "a")!!.dirty)
         assertEquals(50.0, db.progressDao().get(s, "a")!!.currentTimeSec, 0.0)
-        assertTrue(db.sessionDao().unsynced(s).isEmpty()) // session upload had succeeded before
+        // The sessions go after the progress push: they wait for the next run, nothing is lost.
+        assertEquals(listOf("s1"), db.sessionDao().unsynced(s).map { it.id })
     }
 
     @Test fun offline_isNoOp() = runTest {
