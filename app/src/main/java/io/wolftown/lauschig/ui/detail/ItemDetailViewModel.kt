@@ -171,7 +171,8 @@ class ItemDetailViewModel(
         val mapper = TimelineMapper(emptyList())
         chapterStarts = d.chapters.map { it.startSec }
 
-        val savedChapter = progress?.let { mapper.chapterAt(it.currentTimeSec, d.chapters) } ?: -1
+        // A finished title may keep its position (mark finished keeps it); it still shows no current chapter.
+        val savedChapter = progress?.takeUnless { it.isFinished }?.let { mapper.chapterAt(it.currentTimeSec, d.chapters) } ?: -1
         val primary = when {
             progress == null -> PrimaryAction.Play
             progress.isFinished -> PrimaryAction.ListenAgain
@@ -184,7 +185,7 @@ class ItemDetailViewModel(
         if (p.isThis) {
             currentIndex = p.chapterIndex
             currentPos = p.positionSec
-        } else if (progress != null) {
+        } else if (progress != null && !progress.isFinished) {
             currentIndex = savedChapter
             currentPos = progress.currentTimeSec
         } else {
