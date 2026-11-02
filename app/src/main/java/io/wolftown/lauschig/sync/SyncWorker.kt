@@ -19,6 +19,7 @@ class SyncWorker @AssistedInject constructor(
     private val progressSync: ProgressSync,
     private val bus: PositionJumpBus,
     private val gate: OnlineGate,
+    private val autoDownloader: EpisodeAutoDownloader,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val serverId = accounts.account.first()?.serverId ?: return Result.success()
@@ -37,6 +38,15 @@ class SyncWorker @AssistedInject constructor(
             throw e
         } catch (e: Exception) {
             ok = false
+        }
+        if (ok) {
+            try {
+                autoDownloader.run(serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Best effort: the next successful sync tries again.
+            }
         }
         return if (ok) Result.success() else Result.retry()
     }

@@ -30,14 +30,14 @@ abstract class ItemDao {
            narrator = :narrator, seriesName = :seriesName, seriesSequence = :seriesSequence,
            seriesSortKey = :seriesSortKey, durationSec = :durationSec, coverUpdatedAt = :coverUpdatedAt,
            genres = :genres, tags = :tags, updatedAt = :updatedAt, addedAt = :addedAt, publishedYear = :publishedYear,
-           orphaned = 0
+           asin = :asin, language = :language, numEpisodes = :numEpisodes, orphaned = 0
            WHERE serverId = :serverId AND id = :id""",
     )
     protected abstract suspend fun updateListColumns(
         serverId: String, id: String, libraryId: String, title: String, subtitle: String?, author: String?,
         narrator: String?, seriesName: String?, seriesSequence: String?, seriesSortKey: Double?,
         durationSec: Double, coverUpdatedAt: Long, genres: List<String>, tags: List<String>, updatedAt: Long,
-        addedAt: Long, publishedYear: String?,
+        addedAt: Long, publishedYear: String?, asin: String?, language: String?, numEpisodes: Int,
     )
 
     /**
@@ -51,7 +51,7 @@ abstract class ItemDao {
             updateListColumns(
                 i.serverId, i.id, i.libraryId, i.title, i.subtitle, i.author, i.narrator, i.seriesName,
                 i.seriesSequence, i.seriesSortKey, i.durationSec, i.coverUpdatedAt, i.genres, i.tags, i.updatedAt,
-                i.addedAt, i.publishedYear,
+                i.addedAt, i.publishedYear, i.asin, i.language, i.numEpisodes,
             )
         }
     }
@@ -119,9 +119,11 @@ abstract class ItemDao {
     open suspend fun setOrphaned(serverId: String, ids: List<String>, orphaned: Boolean) =
         ids.chunked(CHUNK).forEach { setOrphanedChunk(serverId, it, orphaned) }
 
+    /** Continue-listening: podcast items are excluded (their episodes are listed by the podcast screens). */
     @Query(
         """SELECT i.* FROM items i JOIN progress p ON p.serverId = i.serverId AND p.itemId = i.id
            WHERE i.serverId = :serverId AND p.isFinished = 0 AND p.currentTimeSec > 0
+             AND NOT EXISTS (SELECT 1 FROM libraries l WHERE l.serverId = i.serverId AND l.id = i.libraryId AND l.mediaType = 'podcast')
            ORDER BY p.lastUpdate DESC""",
     )
     abstract fun observeInProgress(serverId: String): Flow<List<ItemEntity>>
@@ -137,6 +139,7 @@ abstract class ItemDao {
     @Query(
         """SELECT i.* FROM items i JOIN downloads d ON d.serverId = i.serverId AND d.itemId = i.id
            WHERE i.serverId = :serverId AND d.state = 'COMPLETE'
+             AND NOT EXISTS (SELECT 1 FROM libraries l WHERE l.serverId = i.serverId AND l.id = i.libraryId AND l.mediaType = 'podcast')
              AND EXISTS (SELECT 1 FROM audio_files a WHERE a.serverId = i.serverId AND a.itemId = i.id)
              AND NOT EXISTS (SELECT 1 FROM audio_files a WHERE a.serverId = i.serverId AND a.itemId = i.id
                              AND a.localPath IS NULL)

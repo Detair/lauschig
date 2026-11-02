@@ -13,7 +13,9 @@ import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.absapi.me.ProgressUpdate
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.EpisodeEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -40,6 +42,10 @@ private class FakeMe : MeApi {
     var events = mutableListOf<String>()
 
     override suspend fun me() = AbsUser("u", "n", "user", mediaProgress = server).also { events += "me" }
+    val episodePatches = mutableListOf<Triple<String, String, ProgressUpdate>>()
+    override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) {
+        episodePatches += Triple(itemId, episodeId, u)
+    }
     override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {
         if (failOnPatch) throw IOException("boom")
         patches += itemId to u
@@ -67,7 +73,7 @@ class ProgressSyncTest {
 
     @After fun tearDown() = db.close()
 
-    private fun sync() = ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), { device })
+    private fun sync() = ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device })
 
     private fun srv(id: String, t: Double, last: Long, fin: Boolean = false, ep: String? = null) =
         MediaProgressDto(id, ep, t, 100.0, t / 100.0, fin, last)
@@ -87,8 +93,41 @@ class ProgressSyncTest {
         assertEquals(80.0, db.progressDao().get(s, "a")!!.currentTimeSec, 0.0)
         assertEquals(40.0, db.progressDao().get(s, "b")!!.currentTimeSec, 0.0)
         assertEquals(7.0, db.progressDao().get(s, "c")!!.currentTimeSec, 0.0)
-        assertEquals(null, db.progressDao().get(s, "e")) // episode rows skipped
+        assertEquals(null, db.progressDao().get(s, "e")) // not stored under the plain item id
         assertTrue(me.patches.isEmpty())
+    }
+
+    @Test fun episodeProgress_pulledUnderEpisodeKey() = runTest {
+        me.server = listOf(srv("pod", 33.0, 5_000, ep = "ep1"), srv("pod", 70.0, 5_000))
+        sync().sync(s)
+        assertEquals(33.0, db.progressDao().get(s, PlayableKey.episode("pod", "ep1"))!!.currentTimeSec, 0.0)
+        assertEquals(70.0, db.progressDao().get(s, "pod")!!.currentTimeSec, 0.0)
+    }
+
+    @Test fun episodeProgress_pushedWithEpisodeId() = runTest {
+        val key = PlayableKey.episode("pod", "ep1")
+        db.progressDao().saveLocal(s, key, 50.0, 100.0, false, 9_000)
+        me.server = listOf(srv("pod", 10.0, 5_000, ep = "ep1"))
+        sync().sync(s)
+        val (item, ep, u) = me.episodePatches.single()
+        assertEquals("pod", item)
+        assertEquals("ep1", ep)
+        assertEquals(50.0, u.currentTime, 0.0)
+        assertTrue(me.patches.isEmpty())
+        assertFalse(db.progressDao().get(s, key)!!.dirty)
+    }
+
+    @Test fun episodeSession_uploadedWithEpisodeId() = runTest {
+        db.itemDao().upsertFromList(listOf(ItemEntity(s, "pod", "l", "Podcast", author = "Host", durationSec = 0.0)))
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1", durationSec = 1234.0)))
+        db.sessionDao().upsert(LocalSessionEntity("s1", s, PlayableKey.episode("pod", "ep1"), 0.0, 10.0, 10.0, 1_000, 2_000))
+        sync().sync(s)
+        val d = me.uploads.single().sessions.single()
+        assertEquals("pod", d.libraryItemId)
+        assertEquals("ep1", d.episodeId)
+        assertEquals("podcast", d.mediaType)
+        assertEquals("Folge 1", d.displayTitle)
+        assertEquals(1234.0, d.duration, 0.0)
     }
 
     @Test fun hideFromContinue_isPushed_andPulled() = runTest {
@@ -162,7 +201,7 @@ class ProgressSyncTest {
 
     @Test fun offline_isNoOp() = runTest {
         db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
-        val r = ProgressSync(flowOf(null), db.progressDao(), db.sessionDao(), db.itemDao(), { device }).sync(s)
+        val r = ProgressSync(flowOf(null), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device }).sync(s)
         assertTrue(r.isEmpty())
         assertTrue(db.progressDao().get(s, "a")!!.dirty)
     }

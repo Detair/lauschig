@@ -11,7 +11,6 @@ import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.catalog.Facet
 import io.wolftown.lauschig.catalog.PersonRole
-import io.wolftown.lauschig.catalog.SeriesEntry
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -19,6 +18,7 @@ import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.external.MissingVolume
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.kindFilterState
@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -44,7 +46,8 @@ import javax.inject.Inject
 /** One cell of an entity page: a title we have, or (series only) a gap in the volume numbers. */
 sealed interface BrowseEntry {
     @Immutable data class Tile(val item: ItemSummary) : BrowseEntry
-    @Immutable data class Missing(val sequence: String) : BrowseEntry
+    /** [volume]: the Audible volume behind the gap, once looked up (online, setting on). */
+    @Immutable data class Missing(val sequence: String, val volume: MissingVolume? = null) : BrowseEntry
 }
 
 @Immutable
@@ -80,6 +83,7 @@ class BrowseViewModel(
     private val prefs: FilterPreferences,
     private val catalog: Catalog,
     private val authorInfo: AuthorInfoCache,
+    private val missingVolumes: MissingVolumesSource,
 ) : ViewModel() {
 
     @Inject constructor(
@@ -94,9 +98,10 @@ class BrowseViewModel(
         prefs: FilterPreferences,
         catalog: Catalog,
         authorInfo: AuthorInfoCache,
+        missingVolumes: MissingVolumesSource,
     ) : this(
         savedState.toRoute<Browse>().kind, savedState.toRoute<Browse>().name,
-        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, catalog, authorInfo,
+        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, catalog, authorInfo, missingVolumes,
     )
 
     private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
@@ -120,9 +125,20 @@ class BrowseViewModel(
 
         val author = authorInfo.authors.map { it[AuthorInfoCache.key(sid, name)] }.distinctUntilChanged()
 
+        // One Room observer for both the lookup and the page.
+        val catalogRows = catalogDao.observeAll(sid).shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+        // Audible lookups run apart from Room so the plain page shows first; null = no data (offline, off, failed).
+        val missing: Flow<List<MissingVolume>?> =
+            if (kind != BrowseKind.SERIES) flowOf(null)
+            else combine(catalogRows, filter) { all, f -> ownedByLibrary(all.filter { it.libraryId in f.libraryIds }) }
+                .distinctUntilChanged()
+                .flatMapLatest { missingVolumes.forSeries(sid, it) }
+                .onStart { emit(null) }
+
         return combine(
-            catalogDao.observeAll(sid), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
-        ) { all, f, progress, downloaded, active ->
+            combine(catalogRows, missing, ::Pair), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
+        ) { (all, audible), f, progress, downloaded, active ->
             val byId = progress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
             covers.sync(downloadedIds)
@@ -131,12 +147,7 @@ class BrowseViewModel(
 
             val visible = all.filter { it.libraryId in f.libraryIds }
             val entries: List<BrowseEntry> = when (kind) {
-                BrowseKind.SERIES -> catalog.bySeries(visible, name).map {
-                    when (it) {
-                        is SeriesEntry.Volume -> BrowseEntry.Tile(it.item.summary())
-                        is SeriesEntry.Missing -> BrowseEntry.Missing(it.sequence)
-                    }
-                }
+                BrowseKind.SERIES -> mergeMissing(catalog.bySeries(visible, name), audible) { it.summary() }
                 else -> pageItems(visible).map { BrowseEntry.Tile(it.summary()) }
             }
             val series = if (kind == BrowseKind.AUTHOR) catalog.facets(pageItems(visible)).series else emptyList()
@@ -145,6 +156,12 @@ class BrowseViewModel(
                 count = entries.count { it is BrowseEntry.Tile }, series = series, loaded = true,
             )
         }.flowOn(Dispatchers.Default).combine(author) { s, a -> s.copy(author = a) }.distinctUntilChanged()
+    }
+
+    /** This page's titles per library; Audible series are looked up per (library, series name). */
+    private fun ownedByLibrary(visible: List<ItemEntity>): Map<String, List<ItemEntity>> {
+        val key = name.trim().lowercase()
+        return visible.filter { it.seriesName?.trim()?.lowercase() == key }.groupBy { it.libraryId }
     }
 
     private fun pageItems(items: List<ItemEntity>): List<ItemEntity> = when (kind) {

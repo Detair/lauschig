@@ -22,6 +22,14 @@ interface LibraryApi {
     @GET("api/libraries/{id}/authors")
     suspend fun authors(@Path("id") id: String): AuthorsResponse
 
+    /** Newest unheard episodes of a podcast library (404 for book libraries); always pass a [limit]. */
+    @GET("api/libraries/{id}/recent-episodes")
+    suspend fun recentEpisodes(
+        @Path("id") id: String,
+        @Query("limit") limit: Int,
+        @Query("page") page: Int = 0,
+    ): RecentEpisodesResponse
+
     @GET("api/items/{id}")
     suspend fun item(
         @Path("id") id: String,

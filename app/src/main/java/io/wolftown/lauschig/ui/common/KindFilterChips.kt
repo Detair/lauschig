@@ -16,14 +16,14 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
 
 @StringRes
-private fun LibraryKind.label(): Int? = when (this) {
+private fun LibraryKind.label(): Int = when (this) {
     LibraryKind.AUDIOBOOK -> R.string.filter_audiobooks
     LibraryKind.HOERSPIEL -> R.string.filter_radio_plays
-    LibraryKind.PODCAST -> null // hidden in Phase 1
+    LibraryKind.PODCAST -> R.string.filter_podcasts
 }
 
 /**
- * "All" plus one chip per kind in [available] (podcasts are not offered yet). An empty [selected] set (or one
+ * "All" plus one chip per kind in [available]. An empty [selected] set (or one
  * containing every available kind) means "All". Rendered only when there is something to choose between.
  */
 @Composable
@@ -33,7 +33,7 @@ fun KindFilterChips(
     onChange: (Set<LibraryKind>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val kinds = LibraryKind.entries.filter { it in available && it.label() != null }
+    val kinds = LibraryKind.entries.filter { it in available }
     if (kinds.size < 2) return
     val all = selected.none { it in kinds } || kinds.all { it in selected }
     Row(
@@ -48,7 +48,7 @@ fun KindFilterChips(
                     val next = if (all) setOf(kind) else if (kind in selected) selected - kind else selected + kind
                     onChange(if (next.none { it in kinds } || kinds.all { it in next }) emptySet() else next)
                 },
-                label = { Text(stringResource(kind.label()!!)) },
+                label = { Text(stringResource(kind.label())) },
             )
         }
     }

@@ -1,6 +1,13 @@
 package io.wolftown.lauschig.playback
 
+import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.EpisodeEntity
+import io.wolftown.lauschig.download.DownloadFiles
+import org.junit.After
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
@@ -12,6 +19,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import org.junit.Assert.assertFalse
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
@@ -28,8 +39,12 @@ private class FakeFacade : PlayerFacade {
     var started: Pair<Int, Long>? = null
     private var cb: () -> Unit = {}
     override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
+        setCalls++
         this.items = items; started = startIndex to startPositionMs; snap = snap.copy(mediaIndex = startIndex, positionMs = startPositionMs)
     }
+    var setCalls = 0
+    val replaced = mutableListOf<Int>()
+    override fun replaceMediaItem(index: Int, item: MediaItem) { items = items.toMutableList().also { it[index] = item }; replaced += index }
     override fun play() { snap = snap.copy(isPlaying = true) }
     override fun pause() { snap = snap.copy(isPlaying = false) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
@@ -55,6 +70,96 @@ class PlayerControllerTest {
         listOf(chapter(0, 0.0, 500.0), chapter(1, 500.0, 1000.0), chapter(2, 1000.0, 1800.0)), files, progress, null,
     )
 
+    private var dbBuilt = false
+    private val db by lazy {
+        dbBuilt = true
+        Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
+            .allowMainThreadQueries().setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build() // synchronous: the controller runs on the test scheduler
+    }
+    private val dlRoot = File(System.getProperty("java.io.tmpdir"), "pc-test-${System.nanoTime()}")
+
+    @After fun cleanUp() {
+        if (dbBuilt) db.close()
+        dlRoot.deleteRecursively()
+    }
+
+    private val epKey = PlayableKey.episode("pod", "ep1")
+
+    private suspend fun seedEpisode(withFile: Boolean, localPath: String? = null) {
+        db.itemDao().upsertDetails(ItemEntity(s, "pod", "lib", "The Podcast"))
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1", durationSec = 900.0)))
+        if (withFile) db.audioFileDao().replaceFromServer(s, epKey, listOf(AudioFileEntity(s, epKey, 1, "epino", 900.0, 1, "mp3")))
+        if (localPath != null) db.audioFileDao().setLocal(s, epKey, 1, localPath, 1)
+    }
+
+    private fun TestScope.episodeController(facade: FakeFacade, base: String?, files: DownloadFiles, loadDetails: suspend (String, String) -> Unit = { _, _ -> }) =
+        controller(
+            facade, { null }, base,
+            factory = MediaItemFactory({ true }) { sid, id -> files.playableCover(sid, id) },
+            coverFile = { sid, id -> files.playableCover(sid, id) },
+            loadDetails = loadDetails,
+            loadById = { sid, id -> loadPlayable(db.itemDao(), db.episodeDao(), sid, id) },
+        )
+
+    @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
+        seedEpisode(withFile = true)
+        val files = DownloadFiles(dlRoot, db.audioFileDao())
+        files.coverFile(s, "pod").apply { parentFile!!.mkdirs(); writeText("jpg") }
+        val f = FakeFacade()
+        val c = episodeController(f, "https://abs.example/", files)
+        c.play(s, epKey)
+        assertEquals(epKey, c.state.value.itemId)
+        assertEquals("Folge 1", c.state.value.title)
+        assertEquals(900.0, c.state.value.durationSec, 0.0)
+        assertEquals(files.coverFile(s, "pod").path, c.state.value.coverPath)
+        val m = f.items.single()
+        assertEquals("https://abs.example/api/items/pod/file/epino/download", m.localConfiguration!!.uri.toString())
+        assertEquals("The Podcast", m.mediaMetadata.artist)
+        assertEquals("Folge 1", m.mediaMetadata.title)
+        assertEquals(files.coverFile(s, "pod").toURI().path, m.mediaMetadata.artworkUri!!.path)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun downloadedEpisode_playsOffline() = runTest {
+        val audio = File(dlRoot, "ep.mp3").apply { parentFile!!.mkdirs(); writeText("x") }
+        seedEpisode(withFile = true, localPath = audio.path)
+        val f = FakeFacade()
+        val c = episodeController(f, null, DownloadFiles(dlRoot, db.audioFileDao()))
+        c.play(s, epKey)
+        assertNull(c.state.value.error)
+        assertEquals("file", f.items.single().localConfiguration!!.uri.scheme)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun episode_withoutFiles_online_loadsEpisodes() = runTest {
+        seedEpisode(withFile = false)
+        val loaded = mutableListOf<Pair<String, String>>()
+        val f = FakeFacade()
+        val c = episodeController(f, "https://abs.example/", DownloadFiles(dlRoot, db.audioFileDao())) { sid, id ->
+            loaded += sid to id
+            db.audioFileDao().replaceFromServer(sid, id, listOf(AudioFileEntity(sid, id, 1, "epino", 900.0, 1, "mp3")))
+        }
+        c.play(s, epKey)
+        assertEquals(listOf(s to epKey), loaded)
+        assertEquals(1, f.items.size)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun episode_withoutFiles_offline_failsNotDownloaded() = runTest {
+        seedEpisode(withFile = false)
+        val f = FakeFacade()
+        val c = episodeController(f, null, DownloadFiles(dlRoot, db.audioFileDao()))
+        c.play(s, epKey)
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+    }
+
+    @Test fun episode_withoutPodcastRow_doesNotStart() = runTest {
+        db.episodeDao().upsert(listOf(EpisodeEntity(s, "pod", "ep1", "Folge 1")))
+        val f = FakeFacade()
+        episodeController(f, "https://abs.example/", DownloadFiles(dlRoot, db.audioFileDao())).play(s, epKey)
+        assertTrue(f.items.isEmpty())
+    }
+
     private val threeFiles get() = listOf(file(0, 600.0), file(1, 300.0), file(2, 900.0))
 
     private fun TestScope.controller(facade: FakeFacade, item: ItemWithDetails?, base: String? = null) =
@@ -68,15 +173,18 @@ class PlayerControllerTest {
         io: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
         coverFile: (String, String) -> File? = { _, _ -> null },
         loadDetails: suspend (String, String) -> Unit = { _, _ -> },
+        loadById: suspend (String, String) -> ItemWithDetails? = { _, _ -> load() },
+        localCount: (String, String) -> Flow<Int> = { _, _ -> emptyFlow() },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
         factory = factory,
-        loadItem = { _, _ -> load() },
+        loadItem = loadById,
         onlineBaseUrl = { base?.toHttpUrl() },
         coverFile = coverFile,
         loadDetails = loadDetails,
         io = io,
+        localCount = localCount,
     )
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
@@ -122,6 +230,93 @@ class PlayerControllerTest {
         controller(f, item(listOf(file(0, 600.0), file(1, 300.0, path = null))), base = "https://abs.example/").play(s, "it")
         assertEquals("file", f.items[0].localConfiguration!!.uri.scheme)
         assertEquals("https", f.items[1].localConfiguration!!.uri.scheme)
+    }
+
+    @Test fun streaming_downloadOfPlayingFileFinishes_switchesToLocalAtSamePosition() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null)))
+        val local = MutableStateFlow(0)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 120.0)
+        assertTrue(c.state.value.isStreaming)
+        f.snap = f.snap.copy(positionMs = 130_000L)
+
+        current = item(listOf(file(0, 600.0)))
+        local.value = 1
+
+        assertEquals(2, f.setCalls)
+        assertEquals("file", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals(0 to 130_000L, f.started)
+        assertTrue(f.snap.isPlaying)
+        assertFalse(c.state.value.isStreaming)
+    }
+
+    @Test fun streaming_otherFileFinishes_replacedInPlaceWithoutInterruption() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null), file(1, 300.0, path = null)))
+        val local = MutableStateFlow(0)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 10.0)
+
+        current = item(listOf(file(0, 600.0, path = null), file(1, 300.0)))
+        local.value = 1
+
+        assertEquals(1, f.setCalls)
+        assertEquals(listOf(1), f.replaced)
+        assertEquals("https", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals("file", f.items[1].localConfiguration!!.uri.scheme)
+        assertTrue(c.state.value.isStreaming)
+    }
+
+    @Test fun local_downloadDeletedWhileLoaded_switchesToStreamAtSamePosition() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0)))
+        val local = MutableStateFlow(1)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 60.0)
+        assertFalse(c.state.value.isStreaming)
+        f.snap = f.snap.copy(positionMs = 70_000L)
+
+        current = item(listOf(file(0, 600.0, path = null)))
+        local.value = 0
+
+        assertEquals(2, f.setCalls)
+        assertEquals("https", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals(0 to 70_000L, f.started)
+        assertTrue(c.state.value.isStreaming)
+    }
+
+    @Test fun local_downloadDeletedWhileOffline_pausesWithError() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0)))
+        val local = MutableStateFlow(1)
+        val c = controller(f, { current }, base = null, localCount = { _, _ -> local })
+        c.play(s, "it")
+
+        current = item(listOf(file(0, 600.0, path = null)))
+        local.value = 0
+
+        assertEquals(1, f.setCalls)
+        assertFalse(f.snap.isPlaying)
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+    }
+
+    @Test fun streaming_downloadFinishesAfterSwitchingTitle_leavesNewTitleAlone() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null)))
+        val local = MutableStateFlow(0)
+        val other = ItemWithDetails(ItemEntity(s, "other", "lib", "Other"), emptyList(), listOf(AudioFileEntity(s, "other", 0, "o", 100.0, 1, "mp3", "/d/o.mp3")), null, null)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local },
+            loadById = { _, id -> if (id == "other") other else current })
+        c.play(s, "it")
+        c.play(s, "other")
+        val calls = f.setCalls
+
+        current = item(listOf(file(0, 600.0)))
+        local.value = 1
+
+        assertEquals(calls, f.setCalls)
+        assertEquals("other", c.state.value.itemId)
     }
 
     @Test fun seekBy_crossesFileBoundary_andClamps() = runTest {

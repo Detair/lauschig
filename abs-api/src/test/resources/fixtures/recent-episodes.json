@@ -1,0 +1,17 @@
+{
+  "episodes": [
+    {
+      "libraryItemId": "li_pod1",
+      "libraryId": "lib_pod",
+      "id": "ep_2",
+      "index": 2,
+      "title": "Folge 2",
+      "publishedAt": 1761537600000,
+      "duration": 1800.0,
+      "size": 2500000,
+      "audioFile": {"index": 1, "ino": "9002", "metadata": {"filename": "f2.mp3", "ext": ".mp3", "size": 2500000}, "duration": 1800.0},
+      "podcast": {"metadata": {"title": "Lage der Nation"}}
+    },
+    {"title": "no id"}
+  ]
+}

@@ -62,4 +62,17 @@ class MediaItemFactoryTest {
         val items = MediaItemFactory { _, _ -> null }.build(item(f(0, real.path)), null)
         assertEquals("file", items[0].localConfiguration!!.uri.scheme)
     }
+
+    @Test fun episode_streamsFromParentItemUrl_withEpisodeMetadata() {
+        val key = PlayableKey.episode("it", "ep1")
+        val ep = ItemWithDetails(
+            ItemEntity(s, key, "lib", "Episode 1", author = "The Podcast"), emptyList(),
+            listOf(AudioFileEntity(s, key, 1, "epino", 10.0, 1, "mp3")), null, null,
+        )
+        val m = MediaItemFactory({ true }) { _, _ -> null }.build(ep, "https://abs.example/".toHttpUrl())[0]
+        assertTrue(m.localConfiguration!!.uri.toString(), m.localConfiguration!!.uri.toString().startsWith("https://abs.example/api/items/it/file/epino"))
+        assertEquals("Episode 1", m.mediaMetadata.title)
+        assertEquals("The Podcast", m.mediaMetadata.artist)
+        assertEquals(key, m.mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_ITEM_ID))
+    }
 }

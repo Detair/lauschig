@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemSummary
@@ -45,6 +46,8 @@ data class StartUiState(
     val nextInSeries: List<ItemSummary> = emptyList(),
     val recentlyAdded: List<ItemSummary> = emptyList(),
     val downloaded: List<ItemSummary> = emptyList(),
+    /** Episode tiles: podcast cover, episode title, id = episode key. Empty without a podcast library. */
+    val newEpisodes: List<ItemSummary> = emptyList(),
 )
 
 @Composable
@@ -58,6 +61,8 @@ fun StartRoute(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
+    // An episode tile opens its podcast.
+    val onOpen: (String) -> Unit = { onOpenItem(PlayableKey.parse(it).libraryItemId) }
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp).weight(1f))
@@ -65,9 +70,9 @@ fun StartRoute(
                 Icon(Icons.Rounded.Settings, stringResource(R.string.settings_title))
             }
         }
-        StartScreen(state, onOpen = onOpenItem, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary, onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f))
+        StartScreen(state, onOpen = onOpen, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary, onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f))
     }
-    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem) }
+    menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpen) }
 }
 
 /** Tap opens the details, the play button plays, long-press opens the actions menu. */
@@ -81,7 +86,7 @@ fun StartScreen(
     onOpenLibrary: () -> Unit = {},
     onOpenDiscover: () -> Unit = {},
 ) {
-    if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty()) {
+    if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty() && state.newEpisodes.isEmpty()) {
         Column(
             modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
@@ -96,6 +101,7 @@ fun StartScreen(
     }
     LazyColumn(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         section("continue", R.string.start_continue, state.continueItems, onOpenLibrary, onOpen, onPlay, onMenu)
+        section("episodes", R.string.start_new_episodes, state.newEpisodes, null, onOpen, onPlay, onMenu)
         section("next", R.string.start_next_in_series, state.nextInSeries, null, onOpen, onPlay, onMenu)
         section("recent", R.string.start_recently_added, state.recentlyAdded, onOpenDiscover, onOpen, onPlay, onMenu)
         section("downloaded", R.string.start_downloaded, state.downloaded, null, onOpen, onPlay, onMenu)

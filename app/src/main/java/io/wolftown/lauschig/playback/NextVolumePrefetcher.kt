@@ -39,6 +39,7 @@ class NextVolumePrefetcher @Inject constructor(
     }
 
     private suspend fun prefetchAfter(itemId: String) {
+        if (PlayableKey.parse(itemId).episodeId != null) return // episodes have no next volume
         val serverId = accounts.account.first()?.serverId ?: return
         if (!handled.add("$serverId:$itemId")) return
         val next = nextVolume(items, serverId, itemId) ?: return

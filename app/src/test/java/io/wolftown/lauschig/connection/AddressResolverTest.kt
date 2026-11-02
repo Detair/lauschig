@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import io.wolftown.lauschig.connection.ConnectionState.Online
 import io.wolftown.lauschig.connection.ConnectionState.Via
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl
@@ -87,7 +88,7 @@ class AddressResolverTest {
     }
 
     @Test
-    fun states_reResolvesOnNetworkChange_andEveryMinuteWhileOffline() = runTest {
+    fun states_reResolvesOnNetworkChange_andWithBackoffWhileOffline() = runTest {
         val probe = FakeProbe()
         val net = FakeNet(connected = false)
         val r = AddressResolver(probe, net)
@@ -95,16 +96,21 @@ class AddressResolverTest {
             assertEquals(ConnectionState.Offline, awaitItem())
             assertTrue(probe.probed.isEmpty())
 
-            // Network appears but nothing is reachable: still offline, retried after 60 s.
+            // Network appears but nothing is reachable: still offline, retried after 5 s, then 10 s.
             net.flow.value = true
             testScheduler.runCurrent()
-            val afterFirst = probe.probed.size
-            assertEquals(2, afterFirst)
-            testScheduler.advanceTimeBy(59_000)
+            assertEquals(2, probe.probed.size)
+            testScheduler.advanceTimeBy(4_999)
             testScheduler.runCurrent()
-            assertEquals(afterFirst, probe.probed.size)
+            assertEquals(2, probe.probed.size)
+            testScheduler.advanceTimeBy(2)
+            testScheduler.runCurrent()
+            assertEquals(4, probe.probed.size)
+            testScheduler.advanceTimeBy(9_990)
+            testScheduler.runCurrent()
+            assertEquals(4, probe.probed.size)
             probe.reachable += public
-            testScheduler.advanceTimeBy(1_001)
+            testScheduler.advanceTimeBy(11)
             testScheduler.runCurrent()
             assertEquals(Online(public, Via.PUBLIC), awaitItem())
 
@@ -114,12 +120,58 @@ class AddressResolverTest {
             testScheduler.runCurrent()
             assertEquals(n, probe.probed.size)
 
-            // Network drops, then returns: re-resolved.
+            // Network drops (no confirmation needed without a network), then returns: re-resolved.
             net.flow.value = false
             assertEquals(ConnectionState.Offline, awaitItem())
             probe.reachable += local
             net.flow.value = true
             assertEquals(Online(local, Via.LOCAL), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** Emits every network event, also a repeated `true` (a switch between two networks). */
+    private class EventNet : NetworkInfo {
+        val events = MutableSharedFlow<Boolean>(replay = 1).apply { tryEmit(true) }
+        override val isConnected = events
+        override suspend fun currentSsid(): String? = null
+    }
+
+    @Test
+    fun states_singleFailedProbeWhileOnline_doesNotGoOffline() = runTest {
+        val probe = FakeProbe(mutableSetOf(public))
+        val net = EventNet()
+        AddressResolver(probe, net).states(ServerAddresses(null, public)).test {
+            assertEquals(Online(public, Via.PUBLIC), awaitItem())
+            // A network event while the link is saturated: the probe fails once, the confirmation succeeds.
+            probe.reachable.clear()
+            net.events.emit(true)
+            testScheduler.runCurrent()
+            assertEquals(2, probe.probed.size)
+            probe.reachable += public
+            testScheduler.advanceTimeBy(2_001)
+            testScheduler.runCurrent()
+            assertEquals(3, probe.probed.size)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun states_serverGoneWithNetworkUp_offlineAfterTwoConfirmations() = runTest {
+        val probe = FakeProbe(mutableSetOf(public))
+        val net = EventNet()
+        AddressResolver(probe, net).states(ServerAddresses(null, public)).test {
+            assertEquals(Online(public, Via.PUBLIC), awaitItem())
+            probe.reachable.clear()
+            net.events.emit(true)
+            testScheduler.advanceTimeBy(3_999)
+            testScheduler.runCurrent()
+            expectNoEvents()
+            testScheduler.advanceTimeBy(2)
+            testScheduler.runCurrent()
+            assertEquals(ConnectionState.Offline, awaitItem())
+            assertEquals(4, probe.probed.size)
             cancelAndIgnoreRemainingEvents()
         }
     }

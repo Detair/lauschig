@@ -80,7 +80,7 @@ class LibraryViewModel @Inject constructor(
 
     private fun stateFor(sid: String): Flow<LibraryUiState> {
         val filter = combine(libraryDao.observeAll(sid), prefs.kinds(SCREEN)) { libs, stored ->
-            val available = libs.map { it.effectiveKind }.filter { it != LibraryKind.PODCAST }.toSet()
+            val available = libs.map { it.effectiveKind }.toSet()
             val selected = stored.intersect(available)
             val effective = selected.ifEmpty { available }
             Filter(

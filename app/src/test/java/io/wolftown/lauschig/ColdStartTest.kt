@@ -52,6 +52,7 @@ import io.wolftown.lauschig.playback.PlayerSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -82,6 +83,7 @@ class RecordingFacade : PlayerFacade {
     override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
         queue = items; snap = snap.copy(mediaIndex = startIndex, positionMs = startPositionMs)
     }
+    override fun replaceMediaItem(index: Int, item: MediaItem) { queue = queue.toMutableList().also { it[index] = item } }
     override fun play() { snap = snap.copy(isPlaying = true); onChange() }
     override fun pause() { snap = snap.copy(isPlaying = false); onChange() }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
@@ -131,14 +133,18 @@ object ColdStartTestModule {
     @Provides fun progressDao(db: LauschigDatabase) = db.progressDao()
     @Provides fun sessionDao(db: LauschigDatabase) = db.sessionDao()
     @Provides fun downloadDao(db: LauschigDatabase) = db.downloadDao()
+    @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
     @Provides fun catalogDao(db: LauschigDatabase) = db.catalogDao()
+    @Provides fun externalSeriesDao(db: LauschigDatabase) = db.externalSeriesDao()
 
     @Provides @Singleton fun facade(): RecordingFacade = RecordingFacade()
 
+    @Provides @Singleton fun playerScope(): ColdStartPlayerScope = ColdStartPlayerScope(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+
     @Provides @Singleton
-    fun player(facade: RecordingFacade, factory: MediaItemFactory, items: ItemDao, files: DownloadFiles): PlayerController {
+    fun player(scope: ColdStartPlayerScope, facade: RecordingFacade, factory: MediaItemFactory, items: ItemDao, files: DownloadFiles): PlayerController {
         val impl = PlayerControllerImpl(
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            scope = scope.scope,
             facade = facade,
             factory = factory,
             loadItem = { serverId, itemId -> items.observeItem(serverId, itemId).first() },
@@ -148,6 +154,9 @@ object ColdStartTestModule {
         return impl
     }
 }
+
+/** The player's own scope, so the test can cancel it: it must not outlive the test and keep resuming onto Main. */
+class ColdStartPlayerScope(val scope: CoroutineScope)
 
 /**
  * Review focus 1: cold start with the server down and an expired token still shows the local library and
@@ -172,6 +181,7 @@ class ColdStartTest {
     @Inject lateinit var db: LauschigDatabase
     @Inject lateinit var player: PlayerController
     @Inject lateinit var facade: RecordingFacade
+    @Inject lateinit var playerScope: ColdStartPlayerScope
 
     private lateinit var audio: File
 
@@ -200,7 +210,13 @@ class ColdStartTest {
         assertTrue("condition not met within $timeoutMs ms", condition())
     }
 
-    @After fun close() { db.close() }
+    @After fun close() {
+        // Cancel the player's coroutines and let them finish on the main looper before the database closes.
+        val job = playerScope.scope.coroutineContext.job
+        job.cancel()
+        awaitMainThread(5_000) { job.isCompleted }
+        db.close()
+    }
 
     @Test
     fun coldStart_serverUnreachable_showsLibraryAndPlays() {

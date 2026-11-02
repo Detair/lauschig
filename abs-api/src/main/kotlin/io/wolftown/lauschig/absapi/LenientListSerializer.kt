@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.absapi
 
+import io.wolftown.lauschig.absapi.library.EpisodeDto
 import io.wolftown.lauschig.absapi.library.LibraryItemDto
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
 import kotlinx.serialization.KSerializer
@@ -43,3 +44,6 @@ object LenientMediaProgressListSerializer :
 
 object LenientLibraryItemListSerializer :
     LenientListSerializer<LibraryItemDto>(LibraryItemDto.serializer())
+
+object LenientEpisodeListSerializer :
+    LenientListSerializer<EpisodeDto>(EpisodeDto.serializer())

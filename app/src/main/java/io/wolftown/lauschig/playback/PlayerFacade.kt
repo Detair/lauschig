@@ -9,6 +9,8 @@ data class PlayerSnapshot(val isPlaying: Boolean, val mediaIndex: Int, val posit
 interface PlayerFacade {
     /** Replaces the queue, prepares and seeks; completes once the (possibly remote) player accepted it. */
     suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long)
+    /** Swaps the queue entry at [index] (not the playing one) without interrupting playback. */
+    fun replaceMediaItem(index: Int, item: MediaItem)
     fun play()
     fun pause()
     fun seekTo(mediaIndex: Int, positionMs: Long)

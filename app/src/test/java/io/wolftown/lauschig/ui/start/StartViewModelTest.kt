@@ -1,8 +1,7 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
@@ -11,7 +10,9 @@ import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.EpisodeEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.db.entities.LibraryEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.download.DownloadFiles
@@ -57,7 +58,7 @@ class StartViewModelTest {
     @get:Rule val tmp = TemporaryFolder()
     private lateinit var db: LauschigDatabase
     private val sid = "aaaaaaaaaaaaaaaa"
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -67,7 +68,7 @@ class StartViewModelTest {
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -78,12 +79,12 @@ class StartViewModelTest {
         val factory = viewModelFactory {
             initializer {
                 StartViewModel(
-                    covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), NoopPlayer(), Catalog(),
+                    covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), NoopPlayer(), Catalog(),
                     UnconfinedTestDispatcher(),
                 )
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", StartViewModel::class]
+        return viewModels.get(factory, StartViewModel::class)
     }
 
     private fun item(id: String, series: String? = null, key: Double? = null, added: Long = 0, lib: String = "lib1") =
@@ -167,5 +168,54 @@ class StartViewModelTest {
         progress("x1", fin = true, last = 1)
         val s = vm().await { it.nextInSeries.isNotEmpty() }
         assertEquals(listOf("x2"), s.next())
+    }
+
+    private suspend fun podcastSetup() {
+        db.libraryDao().upsertFromServer(
+            listOf(LibraryEntity(sid, "lib1", "Bücher", "book", 0), LibraryEntity(sid, "pod", "Podcasts", "podcast", 1)),
+        )
+        db.itemDao().upsertFromList(listOf(item("p1", lib = "pod").copy(title = "Cast One"), item("p2", lib = "pod").copy(title = "Cast Two")))
+    }
+
+    private fun ep(item: String, id: String, at: Long, recent: Boolean = true) =
+        EpisodeEntity(sid, item, id, "Folge $id", publishedAt = at, durationSec = 600.0, recent = recent)
+
+    @Test fun newEpisodes_row_inProgressFirst() = runTest {
+        podcastSetup()
+        db.episodeDao().upsert(
+            listOf(
+                ep("p1", "new1", 300), ep("p1", "new2", 200), ep("p2", "heard", 250), ep("p2", "done", 260),
+                ep("p2", "old", 10, recent = false), ep("p2", "hidden", 270),
+            ),
+        )
+        progress(PlayableKey.episode("p2", "old"), t = 120.0, last = 5)       // started, no longer recent: still first
+        progress(PlayableKey.episode("p2", "heard"), t = 30.0, last = 9)      // started, newer: ahead of "old"
+        progress(PlayableKey.episode("p2", "done"), fin = true, last = 8)     // finished: never
+        progress(PlayableKey.episode("p2", "hidden"), t = 30.0, last = 7, hidden = true) // hidden from continue and started: not shown
+        val s = vm().await { it.newEpisodes.isNotEmpty() }
+        assertEquals(
+            listOf("p2~heard", "p2~old", "p1~new1", "p1~new2").map { it },
+            s.newEpisodes.map { it.id },
+        )
+        val first = s.newEpisodes.first()
+        assertEquals("Folge heard", first.title)
+        assertEquals("Cast Two", first.author)
+        assertEquals(0.3f, first.progress, 0.001f)
+    }
+
+    @Test fun noPodcastLibrary_noRow() = runTest {
+        db.itemDao().upsertFromList(listOf(item("b1", added = 5)))
+        db.episodeDao().upsert(listOf(ep("b1", "e1", 100)))   // stray episode rows of a non-podcast library
+        val s = vm().await { it.recentlyAdded.isNotEmpty() }
+        assertEquals(emptyList<String>(), s.newEpisodes.map { it.id })
+    }
+
+    @Test fun continueRow_excludesPodcasts() = runTest {
+        podcastSetup()
+        db.itemDao().upsertFromList(listOf(item("b1")))
+        progress("b1", last = 2)
+        progress("p1", last = 9)   // progress under the podcast's own id must not make the podcast a "continue" tile
+        val s = vm().await { it.continueItems.isNotEmpty() }
+        assertEquals(listOf("b1"), s.continueItems.map { it.id })
     }
 }

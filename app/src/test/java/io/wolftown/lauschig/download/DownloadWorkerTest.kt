@@ -121,10 +121,10 @@ class DownloadWorkerTest {
     ): ListenableWorker.Result {
         val base = server.url("/")
         val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
-        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() })
+        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() })
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
-                c, p, env, gate, sync, db.itemDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
+                c, p, env, gate, sync, db.itemDao(), db.episodeDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
             )
         }
         return TestListenableWorkerBuilder<DownloadWorker>(ctx, workDataOf(DownloadWorker.KEY_SERVER to s, DownloadWorker.KEY_ITEM to itemId))
@@ -132,6 +132,36 @@ class DownloadWorkerTest {
     }
 
     private fun itemDir() = File(root, "$s/$item")
+
+    @Test fun episode_downloadUsesParentItemIdInUrl() = runBlocking {
+        val key = "$item~ep1"
+        val ep = ByteArray(5_000) { (it % 7).toByte() }
+        db.episodeDao().upsert(listOf(io.wolftown.lauschig.db.entities.EpisodeEntity(s, item, "ep1", "Pilot")))
+        db.audioFileDao().replaceFromServer(s, key, listOf(AudioFileEntity(s, key, 1, "epino", 10.0, ep.size.toLong(), "mp3")))
+        db.downloadDao().upsert(DownloadEntity(s, key, DownloadState.QUEUED, 1))
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requests += request
+                val p = request.path.orEmpty()
+                return when {
+                    p.endsWith("/cover") -> MockResponse().setBody(Buffer().write(cover))
+                    p.contains("/file/epino/") -> ranged(ep, request)
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        assertEquals(ListenableWorker.Result.success(), run(itemId = key))
+        val paths = requests.map { it.path.orEmpty() }
+        assertTrue(paths.toString(), paths.any { it.startsWith("/api/items/$item/file/epino/") })
+        assertTrue(paths.toString(), paths.any { it.startsWith("/api/items/$item/cover") })
+        assertTrue(paths.none { it.contains("~") })
+        // Stored under the episode key; the row and the file belong to the episode, not to the podcast.
+        val row = db.audioFileDao().forItem(s, key).single()
+        assertEquals(ep.size.toLong(), row.completedBytes)
+        assertTrue(File(row.localPath!!).path.contains("$s/$key/"))
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(s, key)!!.state)
+        assertTrue(files.coverFile(s, key).isFile)
+    }
 
     @Test fun download_writesAllFilesAndCover_marksComplete() = runBlocking {
         dispatch()
@@ -297,6 +327,7 @@ class DownloadWorkerTest {
         override suspend fun libraries() = LibrariesResponse(emptyList())
         override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
         override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = throw UnsupportedOperationException()
+        override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
         override suspend fun item(id: String, expanded: Int): LibraryItemDto {
             calls++
             return LibraryItemDto(

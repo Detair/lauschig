@@ -1,9 +1,8 @@
 package io.wolftown.lauschig.ui.browse
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.room.Room
@@ -26,7 +25,9 @@ import io.wolftown.lauschig.ui.nav.BrowseKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import java.util.Collections
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -34,6 +35,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import io.wolftown.lauschig.external.AudibleVolume
+import io.wolftown.lauschig.external.MissingVolume
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -54,7 +57,7 @@ class BrowseViewModelTest {
     private lateinit var db: LauschigDatabase
     private val sid = "aaaaaaaaaaaaaaaa"
     private val scope = CoroutineScope(Dispatchers.Unconfined)
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -64,7 +67,7 @@ class BrowseViewModelTest {
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -74,16 +77,17 @@ class BrowseViewModelTest {
         kind: BrowseKind, name: String,
         prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
         info: AuthorInfoCache = authors,
+        missing: MissingVolumesSource = MissingVolumesSource(flowOf(false), flowOf(true)) { _, _, _, _ -> null },
     ): BrowseViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
         val factory = viewModelFactory {
             initializer {
-                BrowseViewModel(kind, name, store, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers, prefs, Catalog(), info)
+                BrowseViewModel(kind, name, store, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers, prefs, Catalog(), info, missing)
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", BrowseViewModel::class]
+        return viewModels.get(factory, BrowseViewModel::class)
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, author: String? = null, series: String? = null, key: Double? = null) =
@@ -119,6 +123,7 @@ class BrowseViewModelTest {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String) = AuthorsResponse(listOf(AuthorDto("a1", "ANN", "Bio", "/x.jpg")))
+            override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
         val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache(flowOf(api)) { listOf("lib1") }).await { it.author != null }
@@ -130,6 +135,7 @@ class BrowseViewModelTest {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String): AuthorsResponse = throw java.io.IOException("down")
+            override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
         val cache = AuthorInfoCache(flowOf(api)) { listOf("lib1") }
@@ -172,5 +178,92 @@ class BrowseViewModelTest {
         val s = vm.await { it.count == 1 }
         assertEquals(listOf("play"), s.entries.map { (it as BrowseEntry.Tile).item.id })
         assertEquals(setOf(LibraryKind.HOERSPIEL), prefs.kinds("browse").first { it.isNotEmpty() })
+    }
+
+    private fun mv(seq: String, title: String = "Audible $seq") =
+        MissingVolume(seq, seq.toDouble(), AudibleVolume("B$seq", title, sequence = seq), upcoming = false)
+
+    private fun BrowseEntry.label() = when (this) {
+        is BrowseEntry.Tile -> item.title
+        is BrowseEntry.Missing -> "missing:$sequence" + (volume?.let { "=" + it.volume.title } ?: "")
+    }
+
+    private suspend fun ownSaga() {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("v1", title = "A", series = "Saga", key = 1.0),
+                item("v2", title = "B", series = "Saga", key = 2.0),
+                item("v4", title = "D", series = "Saga", key = 4.0),
+            ),
+        )
+    }
+
+    @Test fun series_online_mergesAudibleVolumesInOrder() = runTest {
+        ownSaga()
+        val calls = mutableListOf<Triple<String, String, List<String>>>()
+        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, series, owned ->
+            calls += Triple(lib, series, owned.map { it.id })
+            listOf(mv("3"), mv("5"), mv("12"))
+        }
+        val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(
+            listOf("A", "B", "missing:3=Audible 3", "D", "missing:5=Audible 5", "missing:12=Audible 12"),
+            s.entries.map { it.label() },
+        )
+        assertEquals(3, s.count)
+        assertEquals(listOf(Triple("lib1", "Saga", listOf("v1", "v2", "v4"))), calls.map { Triple(it.first, it.second, it.third.sorted()) })
+    }
+
+    @Test fun series_online_ignoresVolumesOwnedInAnotherLibrary() = runTest {
+        ownSaga()
+        db.itemDao().upsertFromList(listOf(item("h3", lib = "lib2", title = "C", series = "Saga", key = 3.0)))
+        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, _, _ -> if (lib == "lib1") listOf(mv("3"), mv("5")) else listOf(mv("5")) }
+        val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { s -> s.entries.any { it is BrowseEntry.Missing } }
+        assertEquals(listOf("A", "B", "C", "D", "missing:5=Audible 5"), s.entries.map { it.label() })
+    }
+
+    /** Starts with [gate] closed: the plain page is checked, then the gate opens and the lookup result is the positive control. */
+    private suspend fun gatedRun(online: MutableStateFlow<Boolean>, enabled: MutableStateFlow<Boolean>, open: () -> Unit) {
+        ownSaga()
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val source = MissingVolumesSource(online, enabled) { _, lib, _, _ -> calls += lib; listOf(mv("3")) }
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = source)
+        val plain = vm.await { it.loaded }
+        assertEquals(listOf("A", "B", "missing:3", "D"), plain.entries.map { it.label() })
+        open()
+        val merged = vm.await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf("A", "B", "missing:3=Audible 3", "D"), merged.entries.map { it.label() })
+        // Exactly the one lookup after opening: nothing was asked while the gate was closed.
+        assertEquals(listOf("lib1"), calls.toList())
+    }
+
+    @Test fun series_offline_keepsPlainGaps() = runTest {
+        val online = MutableStateFlow(false)
+        gatedRun(online, MutableStateFlow(true)) { online.value = true }
+    }
+
+    @Test fun series_disabled_noLookup() = runTest {
+        val enabled = MutableStateFlow(false)
+        gatedRun(MutableStateFlow(true), enabled) { enabled.value = true }
+    }
+
+    @Test fun series_lookupReturnsNull_keepsPlainGaps() = runTest {
+        ownSaga()
+        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, _, _, _ -> null }
+        val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { it.loaded }
+        assertEquals(listOf("A", "B", "missing:3", "D"), s.entries.map { it.label() })
+    }
+
+    @Test fun authorPage_neverLooksUpVolumes() = runTest {
+        ownSaga()
+        db.itemDao().upsertFromList(listOf(item("w1", title = "W", author = "Ann")))
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, series, _ -> calls += "$lib/$series"; listOf(mv("3")) }
+        val author = vm(BrowseKind.AUTHOR, "Ann", missing = source).await { it.loaded && it.count == 1 }
+        assertEquals(listOf("W"), author.entries.map { it.label() })
+        // Positive control: a series page on the same source does look up, so the pipeline was live.
+        vm(BrowseKind.SERIES, "Saga", missing = source).await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf("lib1/Saga"), calls.toList())
     }
 }

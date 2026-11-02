@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /** The kind filter of one screen resolved against the libraries: what can be chosen, what is chosen, which libraries pass. */
 data class KindFilterState(val available: Set<LibraryKind>, val selected: Set<LibraryKind>, val libraryIds: Set<String>)
 
-/** Libraries' effective kinds (podcasts hidden for now) combined with the filter stored for [screen]; an empty selection means all. */
+/** Libraries' effective kinds combined with the filter stored for [screen]; an empty selection means all. */
 fun kindFilterState(libraryDao: LibraryDao, prefs: FilterPreferences, serverId: String, screen: String): Flow<KindFilterState> =
     combine(libraryDao.observeAll(serverId), prefs.kinds(screen)) { libs, stored ->
-        val available = libs.map { it.effectiveKind }.filter { it != LibraryKind.PODCAST }.toSet()
+        val available = libs.map { it.effectiveKind }.toSet()
         val selected = stored.intersect(available)
         val effective = selected.ifEmpty { available }
         KindFilterState(available, selected, libs.filter { it.effectiveKind in effective }.map { it.id }.toSet())

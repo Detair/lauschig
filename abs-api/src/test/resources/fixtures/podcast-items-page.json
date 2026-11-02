@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "id": "li_pod1",
+      "libraryId": "lib_pod",
+      "mediaType": "podcast",
+      "updatedAt": 1761700000000,
+      "addedAt": 1700000000000,
+      "media": {
+        "metadata": {
+          "title": "Lage der Nation",
+          "author": "Philip Banse",
+          "description": "Politik-Podcast",
+          "feedUrl": "https://example.org/feed.xml",
+          "language": "de",
+          "genres": ["News"]
+        },
+        "tags": [],
+        "numEpisodes": 42,
+        "size": 123456789
+      }
+    }
+  ],
+  "total": 1,
+  "limit": 200,
+  "page": 0
+}

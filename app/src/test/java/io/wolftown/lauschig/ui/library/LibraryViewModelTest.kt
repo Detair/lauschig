@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.library
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
@@ -12,7 +13,9 @@ import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -44,7 +47,7 @@ class LibraryViewModelTest {
     private val sid = "aaaaaaaaaaaaaaaa"
     private val statChecks = java.util.concurrent.atomic.AtomicInteger()
     private val dlRoot by lazy { tmp.newFolder("dl") }
-    private val scope = CoroutineScope(Dispatchers.Unconfined)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -52,15 +55,20 @@ class LibraryViewModelTest {
             .allowMainThreadQueries().build()
     }
 
+    /** Owns every VM of a test so their Room observers are finished before the database closes. */
+    private val viewModels = TestViewModels()
+
     @After fun tearDown() {
-        db.close()
+        viewModels.clear()
+        scope.cancel()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
     private fun vm(prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") })): LibraryViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
-        return LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao())
+        return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao()))
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null) =

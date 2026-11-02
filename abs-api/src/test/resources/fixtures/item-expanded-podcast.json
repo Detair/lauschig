@@ -1,0 +1,46 @@
+{
+  "id": "li_pod1",
+  "libraryId": "lib_pod",
+  "mediaType": "podcast",
+  "updatedAt": 1761700000000,
+  "media": {
+    "metadata": {"title": "Lage der Nation", "author": "Philip Banse", "feedUrl": "https://example.org/feed.xml"},
+    "tags": [],
+    "numEpisodes": 2,
+    "episodes": [
+      {
+        "libraryItemId": "li_pod1",
+        "id": "ep_1",
+        "index": 1,
+        "season": "",
+        "episode": "",
+        "episodeType": "full",
+        "title": "Folge 1",
+        "subtitle": "Der Anfang",
+        "description": "<p>Erste Folge</p>",
+        "pubDate": "Mon, 20 Oct 2025 04:00:00 +0000",
+        "publishedAt": 1760932800000,
+        "addedAt": 1761000000000,
+        "chapters": [{"id": 0, "start": 0, "end": 60.5, "title": "Intro"}],
+        "audioFile": {
+          "index": 1,
+          "ino": "9001",
+          "metadata": {"filename": "f1.mp3", "ext": ".mp3", "size": 5000000},
+          "duration": 3600.5
+        },
+        "duration": 3600.5,
+        "size": 5000000
+      },
+      {
+        "id": "ep_2",
+        "index": 2,
+        "season": "2",
+        "episode": "7",
+        "title": "Folge 2",
+        "publishedAt": 1761537600000,
+        "duration": 1800.0,
+        "size": 2500000
+      }
+    ]
+  }
+}

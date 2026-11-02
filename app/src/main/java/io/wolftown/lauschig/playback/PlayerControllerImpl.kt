@@ -3,6 +3,9 @@ package io.wolftown.lauschig.playback
 import android.util.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
+import androidx.media3.common.MediaItem
+import io.wolftown.lauschig.db.dao.AudioFileDao
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
@@ -16,7 +19,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -46,12 +52,16 @@ class PlayerControllerImpl(
     private val pollMs: Long = 1_000,
     /** File-system checks (local files, cover) run here, never on the main thread. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Number of downloaded files of a title; every change re-picks the source of each file (see [syncSources]). */
+    private val localCount: (serverId: String, itemId: String) -> Flow<Int> = { _, _ -> emptyFlow() },
 ) : PlayerController {
 
     @Inject constructor(
         facade: MediaControllerFacade,
         factory: MediaItemFactory,
         itemDao: ItemDao,
+        episodeDao: EpisodeDao,
+        audioFileDao: AudioFileDao,
         api: ApiProvider,
         files: DownloadFiles,
         librarySync: LibrarySync,
@@ -59,15 +69,25 @@ class PlayerControllerImpl(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
         factory = factory,
-        loadItem = { serverId, itemId -> itemDao.observeItem(serverId, itemId).first() },
+        loadItem = { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) },
         onlineBaseUrl = {
             withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
         },
-        coverFile = { serverId, itemId -> try { files.coverFile(serverId, itemId) } catch (e: Exception) { null } },
-        loadDetails = librarySync::loadDetails,
+        coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
+        // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
+        loadDetails = librarySync::loadDetailsForPlayable,
+        localCount = audioFileDao::observeLocalCount,
     )
 
-    private class Current(val item: ItemWithDetails, val mapper: TimelineMapper, val coverPath: String?, val streaming: Boolean)
+    /** [base] is the server the streamed files of [items] point at (null when all are local). */
+    private class Current(
+        val item: ItemWithDetails,
+        val mapper: TimelineMapper,
+        val coverPath: String?,
+        val streaming: Boolean,
+        val base: HttpUrl?,
+        val items: List<MediaItem>,
+    )
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -79,6 +99,8 @@ class PlayerControllerImpl(
     /** From [play] until the player reports playing (or the start failed). */
     private var starting = false
     private var pollJob: Job? = null
+    /** Watches the downloads of the loaded title; see [syncSources]. */
+    private var localJob: Job? = null
 
     init {
         facade.setOnChange { refresh() }
@@ -89,6 +111,7 @@ class PlayerControllerImpl(
         facade.setOnDisconnected {
             // The service is gone; forget the loaded item so the next play() rebuilds the queue.
             playJob?.cancel(); pollJob?.cancel(); pollJob = null
+            localJob?.cancel(); localJob = null
             current = null
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false) }
@@ -107,6 +130,7 @@ class PlayerControllerImpl(
             val previous = current
             if (previous != null) {
                 current = null
+                localJob?.cancel(); localJob = null
                 pollJob?.cancel(); pollJob = null
                 if (facade.snapshot().isPlaying) facade.pause()
             }
@@ -118,7 +142,7 @@ class PlayerControllerImpl(
                 starting = false
                 current = previous
                 if (previous == null) _state.update { it.copy(isLoading = false, error = error) }
-                else { refresh(); _state.update { it.copy(error = error) } }
+                else { refresh(); watchDownloads(previous); _state.update { it.copy(error = error) } }
             }
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
             val base = if (allLocal) null else onlineBaseUrl()
@@ -151,12 +175,58 @@ class PlayerControllerImpl(
             val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
-            current = Current(item, mapper, coverPath, streaming = !allLocal)
+            val started = Current(item, mapper, coverPath, streaming = !allLocal, base, items)
+            current = started
             _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
+            watchDownloads(started)
         }
+    }
+
+    /** While [c] is loaded, a finished or deleted download of one of its files changes that file's source. */
+    private fun watchDownloads(c: Current) {
+        localJob?.cancel(); localJob = null
+        val key = c.item.item
+        localJob = scope.launch {
+            localCount(key.serverId, key.id).distinctUntilChanged().collect { syncSources() }
+        }
+    }
+
+    /**
+     * Rebuilds the queue of the current title from the database and swaps every file whose source changed (download
+     * finished: stream -> local; download deleted: local -> stream): queued files in place (no gap), the playing file
+     * by reloading the queue at the current position (a short re-buffer). A changed file layout (server rescan) is
+     * left alone until the next start. A deleted download while offline pauses with the not-downloaded error.
+     */
+    private suspend fun syncSources() {
+        val c = current ?: return
+        val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return
+        if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return
+        val allLocal = withContext(io) { factory.isFullyLocal(fresh) }
+        val base = if (allLocal) null else c.base ?: onlineBaseUrl()
+        val items = try {
+            withContext(io) { factory.build(fresh, base) }
+        } catch (e: PlaybackUnavailableException) {
+            if (current === c && facade.hasMedia()) {
+                facade.pause(); refresh()
+                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+            }
+            return
+        }
+        if (current !== c || !facade.hasMedia()) return
+        val changed = items.indices.filter { items[it].localConfiguration?.uri != c.items.getOrNull(it)?.localConfiguration?.uri }
+        if (changed.isEmpty()) return
+        current = Current(fresh, c.mapper, c.coverPath, streaming = !allLocal, base, items)
+        val snap = facade.snapshot()
+        if (snap.mediaIndex in changed) {
+            Log.i(TAG, "switching the playing file to ${items[snap.mediaIndex].localConfiguration?.uri?.scheme}")
+            facade.setMediaItems(items, snap.mediaIndex, snap.positionMs)
+        } else {
+            changed.forEach { facade.replaceMediaItem(it, items[it]) }
+        }
+        refresh()
     }
 
     /**

@@ -62,6 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.common.DownloadIconButton
 import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
@@ -89,12 +90,13 @@ fun PlayerRoute(
     val askNotifications = rememberNotificationPermissionOnce()
     PlayerScreen(
         state, onClose, modifier,
-        onOpenDetails = { itemId?.let(onOpenDetails) },
+        // The player's id is the playable key; details open on the library item (the podcast for an episode).
+        onOpenDetails = { itemId?.let { onOpenDetails(PlayableKey.parse(it).libraryItemId) } },
         download = download,
         onDownload = { itemId?.let { actions.download(it); askNotifications() } },
         onDeleteDownload = { itemId?.let(actions::deleteDownload) },
         topActions = { itemId?.let { ProgressMenuButton(it, viewModel = actions) } },
-        finished = { itemId?.let { FinishedCard(it, onOpenDetails, Modifier.padding(vertical = 8.dp), viewModel = actions) } },
+        finished = { itemId?.let { FinishedCard(it, { id -> onOpenDetails(PlayableKey.parse(id).libraryItemId) }, Modifier.padding(vertical = 8.dp), viewModel = actions) } },
         onToggle = viewModel::togglePlayPause,
         onSeekBy = viewModel::seekBy,
         onSeekInChapter = viewModel::seekInChapter,

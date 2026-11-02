@@ -13,7 +13,8 @@ import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.browse.BrowseRoute
-import io.wolftown.lauschig.ui.detail.ItemDetailRoute
+import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
@@ -46,7 +47,7 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             )
         }
         composable<ItemDetail> {
-            ItemDetailRoute(
+            ItemDetailEntry(
                 onBack = { navController.popBackStack() },
                 onOpenItem = { navController.navigate(ItemDetail(it)) },
                 onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
@@ -63,7 +64,7 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             PlayerRoute(
                 onClose = { navController.popBackStack() },
                 // The details replace the player, so "back" from them returns to where the player was opened from.
-                onOpenDetails = { id -> navController.navigate(ItemDetail(id)) { popUpTo<Player> { inclusive = true } } },
+                onOpenDetails = { id -> navController.navigate(ItemDetail(PlayableKey.parse(id).libraryItemId)) { popUpTo<Player> { inclusive = true } } },
             )
         }
         composable<Setup> {

@@ -20,6 +20,9 @@ import io.wolftown.lauschig.absapi.me.ProgressUpdate
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.download.DownloadManager
+import io.wolftown.lauschig.download.DownloadProgress
+import io.wolftown.lauschig.settings.AutoDownloadMode
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,13 +55,21 @@ class SyncWorkerTest {
     private val lib = object : LibraryApi {
         override suspend fun libraries(): LibrariesResponse { calls.incrementAndGet(); return LibrariesResponse(emptyList()) }
         override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = LibraryItemsPage(emptyList(), 0, limit, page)
+        override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
         override suspend fun item(id: String, expanded: Int): LibraryItemDto = error("unused")
         override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
     }
     private val me = object : MeApi {
         override suspend fun me() = AbsUser("u", "n", "user")
+        override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
         override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {}
         override suspend fun syncLocalSessions(body: LocalSessionsBody) = LocalSessionsResult(emptyList())
+    }
+
+    private val noDownloads = object : DownloadManager {
+        override suspend fun enqueue(serverId: String, itemId: String) {}
+        override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {}
+        override fun observe(serverId: String, itemId: String): kotlinx.coroutines.flow.Flow<DownloadProgress?> = flowOf(null)
     }
 
     private suspend fun runWorker(gate: OnlineGate): ListenableWorker.Result {
@@ -67,9 +78,10 @@ class SyncWorkerTest {
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = SyncWorker(
                 c, p, store,
-                LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), { it() }),
-                ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), { DeviceInfoDto() }),
+                LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() }),
+                ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
                 PositionJumpBus(), gate,
+                EpisodeAutoDownloader(flowOf(AutoDownloadMode.OFF), db.episodeDao(), db.progressDao(), db.downloadDao(), noDownloads, { emptySet() }, {}),
             )
         }
         return TestListenableWorkerBuilder<SyncWorker>(ctx).setWorkerFactory(factory).build().doWork()

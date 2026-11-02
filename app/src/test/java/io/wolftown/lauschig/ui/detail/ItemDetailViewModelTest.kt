@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.detail
 
+import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -29,8 +30,6 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import org.junit.After
@@ -85,11 +84,11 @@ class ItemDetailViewModelTest {
     }
 
     /** Owns every VM of a test so their Room observers are cancelled before the database closes. */
-    private val viewModels = ViewModelStore()
+    private val viewModels = TestViewModels()
 
     @After fun tearDown() {
         viewModels.clear()
-        db.close()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
     }
 
@@ -105,7 +104,7 @@ class ItemDetailViewModelTest {
                 }, covers)
             }
         }
-        return ViewModelProvider.create(viewModels, factory)["vm${System.nanoTime()}", ItemDetailViewModel::class]
+        return viewModels.get(factory, ItemDetailViewModel::class)
     }
 
     private suspend fun seed(loaded: Boolean = true, progress: ProgressEntity? = null, download: DownloadEntity? = null) {
@@ -228,7 +227,7 @@ class ItemDetailViewModelTest {
             override fun observe(serverId: String, itemId: String) = MutableStateFlow<DownloadProgress?>(DownloadProgress(DownloadState.FAILED, 0, 10))
         }
         val store = FakeAccountStore().also { it.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet()) }
-        val v = ItemDetailViewModel("b1", store, db.itemDao(), d, player, connection, { _, _ -> }, CoverPathCache(DownloadFiles(tmp.newFolder("x"), db.audioFileDao())) { false })
+        val v = viewModels.own(ItemDetailViewModel("b1", store, db.itemDao(), d, player, connection, { _, _ -> }, CoverPathCache(DownloadFiles(tmp.newFolder("x"), db.audioFileDao())) { false }))
         assertEquals(DownloadUi.Failed(R.string.download_error_storage_full), v.await { it.found }.download)
         assertNotNull(v)
     }

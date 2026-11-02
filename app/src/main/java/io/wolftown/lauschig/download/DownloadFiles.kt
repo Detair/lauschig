@@ -3,6 +3,7 @@ package io.wolftown.lauschig.download
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.db.dao.AudioFileDao
+import io.wolftown.lauschig.playback.PlayableKey
 import java.io.File
 import javax.inject.Inject
 
@@ -27,6 +28,13 @@ class DownloadFiles(
         guard(File(itemDir(serverId, itemId), if (EXT.matches(ext)) "$index.$ext" else "$index"))
 
     fun coverFile(serverId: String, itemId: String) = guard(File(itemDir(serverId, itemId), COVER))
+
+    /** Cover shown for a playable key: its own downloaded cover, else (episodes) the podcast's. */
+    fun playableCover(serverId: String, key: String): File {
+        val own = coverFile(serverId, key)
+        if (own.isFile) return own
+        return coverFile(serverId, PlayableKey.parse(key).libraryItemId)
+    }
 
     fun usableSpace(serverId: String, itemId: String): Long = usableSpace(itemDir(serverId, itemId))
 
@@ -60,7 +68,7 @@ class DownloadFiles(
     companion object {
         const val COVER = "cover.jpg"
         private val SERVER_ID = Regex("[0-9a-f]{16}")
-        private val ITEM_ID = Regex("[A-Za-z0-9_-]{1,128}")
+        private val ITEM_ID = Regex("[A-Za-z0-9_-]{1,128}(~[A-Za-z0-9_-]{1,128})?") // book id or episode key
         private val EXT = Regex("[A-Za-z0-9]{1,8}")
     }
 }

@@ -200,4 +200,55 @@ class LibraryApiTest {
         server.enqueue(jsonBody("""{"results":null,"total":0,"limit":1,"page":0}"""))
         assertTrue(api.items("lib_1", 1, 0).results.isEmpty())
     }
+
+    @Test
+    fun podcastList_parsesAuthorLanguageNumEpisodes_withoutEpisodes() = runBlocking {
+        server.enqueue(json("podcast-items-page.json"))
+
+        val item = api.items("lib_pod", 200, 0).results.single()
+
+        assertEquals("podcast", item.mediaType)
+        assertEquals("Philip Banse", item.media.metadata.author)
+        assertEquals("de", item.media.metadata.language)
+        assertEquals(null, item.media.metadata.asin)
+        assertEquals(42, item.media.numEpisodes)
+        assertTrue(item.media.episodes.isEmpty())
+    }
+
+    @Test
+    fun podcastExpanded_parsesEpisodes() = runBlocking {
+        server.enqueue(json("item-expanded-podcast.json"))
+
+        val media = api.item("li_pod1").media
+
+        assertEquals(2, media.episodes.size)
+        val e1 = media.episodes[0]
+        assertEquals("ep_1", e1.id)
+        assertEquals("Der Anfang", e1.subtitle)
+        assertEquals(1760932800000L, e1.publishedAt)
+        assertEquals(3600.5, e1.duration!!, 0.0)
+        assertEquals(5000000L, e1.size)
+        assertEquals("9001", e1.audioFile!!.ino)
+        assertEquals(1, e1.chapters.size)
+        val e2 = media.episodes[1]
+        assertEquals("2", e2.season)
+        assertEquals("7", e2.episode)
+        assertEquals(null, e2.audioFile)
+        assertTrue(e2.chapters.isEmpty())
+    }
+
+    @Test
+    fun recentEpisodes_sendsLimitAndPage_dropsUndecodableRows() = runBlocking {
+        server.enqueue(json("recent-episodes.json"))
+
+        val res = api.recentEpisodes("lib_pod", limit = 30)
+
+        val url = server.takeRequest().requestUrl!!
+        assertEquals("/api/libraries/lib_pod/recent-episodes", url.encodedPath)
+        assertEquals("30", url.queryParameter("limit"))
+        assertEquals("0", url.queryParameter("page"))
+        assertEquals(1, res.episodes.size)
+        assertEquals("li_pod1", res.episodes[0].libraryItemId)
+        assertEquals("ep_2", res.episodes[0].id)
+    }
 }

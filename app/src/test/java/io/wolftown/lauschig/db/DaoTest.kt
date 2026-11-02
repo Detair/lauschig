@@ -219,4 +219,61 @@ class DaoTest {
         db.itemDao().deleteByIds(s, items.map { it.id })
         assertEquals(0, db.itemDao().idsInLibrary(s, "lib1").size)
     }
+
+    private fun episode(id: String, published: Long, item: String = "pod", server: String = s, recent: Boolean = false) =
+        EpisodeEntity(server, item, id, "T$id", null, null, null, null, published, 60.0, 10, recent)
+
+    @Test fun episodes_observeForItem_newestFirst_perItemAndServer() = runTest {
+        db.episodeDao().upsert(listOf(episode("e1", 10), episode("e2", 30), episode("e3", 20), episode("x", 99, item = "other"), episode("y", 99, server = other)))
+        assertEquals(listOf("e2", "e3", "e1"), db.episodeDao().observeForItem(s, "pod").first().map { it.id })
+        assertEquals("Te3", db.episodeDao().get(s, "pod", "e3")!!.title)
+        assertNull(db.episodeDao().get(s, "pod", "nope"))
+    }
+
+    @Test fun episodes_replaceForItem_keepsDownloadedAndProgressRows_only() = runTest {
+        db.episodeDao().upsert(listOf(episode("old", 1), episode("dl", 2), episode("prog", 3), episode("x", 4, item = "other")))
+        db.downloadDao().upsert(DownloadEntity(s, "pod~dl", DownloadState.COMPLETE, 1))
+        db.progressDao().mergeFromServer(listOf(progress("pod~prog", 5.0)))
+
+        db.episodeDao().replaceForItem(s, "pod", listOf(episode("new", 9)))
+
+        assertEquals(listOf("new", "prog", "dl"), db.episodeDao().observeForItem(s, "pod").first().map { it.id })
+        assertEquals(listOf("x"), db.episodeDao().observeForItem(s, "other").first().map { it.id })
+    }
+
+    @Test fun episodes_replaceForItem_updatesExistingRow() = runTest {
+        db.episodeDao().upsert(listOf(episode("e1", 1)))
+        db.episodeDao().replaceForItem(s, "pod", listOf(episode("e1", 1).copy(title = "renamed")))
+        assertEquals("renamed", db.episodeDao().get(s, "pod", "e1")!!.title)
+    }
+
+    @Test fun episodes_replaceForItem_keepsRecentFlag() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
+        db.episodeDao().upsert(listOf(episode("e1", 1, recent = true), episode("e2", 2)))
+        db.episodeDao().replaceForItem(s, "pod", listOf(episode("e1", 1), episode("e2", 2), episode("e3", 3)))
+        assertEquals(listOf("e1"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
+    }
+
+    @Test fun inProgress_andDownloaded_excludePodcastLibraries() = runTest {
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(s, "pl", "Pods", "podcast", 0), LibraryEntity(s, "bl", "Books", "book", 1)))
+        db.itemDao().upsertFromList(listOf(item("pod", lib = "pl"), item("book", lib = "bl")))
+        seedProgress(progress("pod", 10.0), progress("book", 10.0))
+        seedFiles("pod", "/p"); seedFiles("book", "/b")
+        db.downloadDao().upsert(DownloadEntity(s, "pod", DownloadState.COMPLETE, 1))
+        db.downloadDao().upsert(DownloadEntity(s, "book", DownloadState.COMPLETE, 1))
+        assertEquals(listOf("book"), db.itemDao().observeInProgress(s).first().map { it.id })
+        assertEquals(listOf("book"), db.itemDao().observeDownloaded(s).first().map { it.id })
+    }
+
+    @Test fun episodes_observeRecent_hidesRowsWithoutPodcast() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
+        db.episodeDao().upsert(listOf(episode("a", 10, recent = true), episode("gone", 20, item = "removed", recent = true)))
+        assertEquals(listOf("a"), db.episodeDao().observeRecent(s, 10).first().map { it.id })
+    }
+
+    @Test fun episodes_observeRecent_onlyRecentFlag_limited() = runTest {
+        db.itemDao().upsertFromList(listOf(item("pod")))
+        db.episodeDao().upsert(listOf(episode("a", 10, recent = true), episode("b", 30, recent = true), episode("c", 20, recent = true), episode("d", 99)))
+        assertEquals(listOf("b", "c"), db.episodeDao().observeRecent(s, 2).first().map { it.id })
+    }
 }

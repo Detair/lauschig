@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.common
 
 import androidx.compose.foundation.background
+import io.wolftown.lauschig.playback.PlayableKey
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -166,7 +167,7 @@ internal fun Initials(title: String) {
 /** Local file first, else the server URL (only while [base] is non-null, i.e. online), else null. */
 fun coverModel(base: okhttp3.HttpUrl?, itemId: String, coverPath: String?, coverVersion: Long): Any? = when {
     coverPath != null -> File(coverPath)
-    base != null -> coverUrl(base, itemId).newBuilder()
+    base != null -> coverUrl(base, PlayableKey.parse(itemId).libraryItemId).newBuilder()
         .apply { if (coverVersion > 0) addQueryParameter("ts", coverVersion.toString()) }
         .build().toString()
     else -> null

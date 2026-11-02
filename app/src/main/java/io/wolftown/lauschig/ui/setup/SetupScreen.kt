@@ -1,7 +1,10 @@
 package io.wolftown.lauschig.ui.setup
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -20,15 +23,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,6 +55,22 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: Set
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.enableSsidBinding() else viewModel.ssidPermissionDenied()
     }
+    // Open the identity provider in a Custom Tab; the server sends the user back via lauschig://oauth (MainActivity).
+    LaunchedEffect(state.ssoLaunchUrl) {
+        val url = state.ssoLaunchUrl ?: return@LaunchedEffect
+        try {
+            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+            viewModel.onSsoLaunched()
+        } catch (_: ActivityNotFoundException) {
+            viewModel.onSsoLaunchFailed()
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     SetupScreen(
         state = state,
         onLocal = viewModel::onLocalChanged,
@@ -62,6 +86,7 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: Set
             }
         },
         onLogin = viewModel::login,
+        onSso = viewModel::loginWithSso,
         onConfirmCleartext = viewModel::confirmCleartext,
         onDismissCleartext = viewModel::dismissCleartext,
         modifier = modifier,
@@ -77,6 +102,7 @@ fun SetupScreen(
     onPassword: (String) -> Unit,
     onSsidBinding: (Boolean) -> Unit,
     onLogin: () -> Unit,
+    onSso: () -> Unit,
     onConfirmCleartext: () -> Unit,
     onDismissCleartext: () -> Unit,
     modifier: Modifier = Modifier,
@@ -141,6 +167,15 @@ fun SetupScreen(
             if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else Text(stringResource(R.string.setup_login))
         }
+        if (state.ssoAvailable) {
+            OutlinedButton(
+                onClick = onSso,
+                enabled = !state.loading && (state.local.isNotBlank() || state.public.isNotBlank()),
+                modifier = Modifier.fillMaxWidth().testTag("ssoButton"),
+            ) {
+                Text(state.ssoButtonText ?: stringResource(R.string.setup_sso_default))
+            }
+        }
     }
 
     state.cleartextPrompt?.let { hosts ->
@@ -160,4 +195,6 @@ private fun SetupError.message(): Int = when (this) {
     SetupError.WRONG_LOGIN -> R.string.setup_error_wrong_login
     SetupError.SERVER_TOO_OLD -> R.string.setup_error_server_too_old
     SetupError.SAVE_FAILED -> R.string.setup_error_save_failed
+    SetupError.SSO_REDIRECT_NOT_ALLOWED -> R.string.setup_error_sso_redirect
+    SetupError.SSO_FAILED -> R.string.setup_error_sso_failed
 }

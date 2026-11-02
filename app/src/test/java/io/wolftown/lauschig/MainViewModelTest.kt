@@ -20,14 +20,15 @@ import java.io.IOException
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @After fun tearDown() { Dispatchers.resetMain() }
+    private val viewModels = TestViewModels()
+    @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
     @Test fun unreadableAccountStore_fallsBackToSetup_withoutCrash() {
         val store = object : io.wolftown.lauschig.account.AccountStore by FakeAccountStore() {
             override val account: Flow<Account?> = flow { throw IOException("corrupt") }
         }
-        assertEquals(Setup, MainViewModel(store).startDestination.value)
+        assertEquals(Setup, viewModels.own(MainViewModel(store)).startDestination.value)
     }
 
-    @Test fun noAccount_setup() = assertEquals(Setup, MainViewModel(FakeAccountStore()).startDestination.value)
+    @Test fun noAccount_setup() = assertEquals(Setup, viewModels.own(MainViewModel(FakeAccountStore())).startDestination.value)
 }

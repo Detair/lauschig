@@ -9,11 +9,14 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** `GET ping` with a 3 s overall timeout; any failure counts as unreachable. */
+/**
+ * `GET ping`: 3 s to connect (an unreachable address fails fast), 8 s overall, so a link saturated by a running
+ * download still counts as reachable. Any failure counts as unreachable.
+ */
 @Singleton
 class OkHttpReachabilityProbe @Inject constructor() : ReachabilityProbe {
     private val client = OkHttpClient.Builder()
-        .callTimeout(3, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
         .connectTimeout(3, TimeUnit.SECONDS)
         .build()
 
