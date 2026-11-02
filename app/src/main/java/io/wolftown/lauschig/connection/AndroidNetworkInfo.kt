@@ -11,6 +11,8 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.channels.awaitClose
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,27 +23,33 @@ class AndroidNetworkInfo @Inject constructor(
 ) : NetworkInfo {
     private val cm = context.getSystemService(ConnectivityManager::class.java)
 
+    /**
+     * Emits once per real change: another default network or the internet capability toggling. Capability updates
+     * that only carry a new bandwidth estimate or signal strength (frequent on mobile data) are dropped, so they do
+     * not trigger a re-probe of the server each time.
+     */
     override val isConnected: Flow<Boolean> = callbackFlow {
         fun connected(caps: NetworkCapabilities?) =
             caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                trySend(connected(cm.getNetworkCapabilities(network)))
+                trySend(network to connected(cm.getNetworkCapabilities(network)))
             }
 
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                trySend(connected(caps))
+                trySend(network to connected(caps))
             }
 
             override fun onLost(network: Network) {
-                trySend(false)
+                trySend(null to false)
             }
         }
-        trySend(connected(cm.getNetworkCapabilities(cm.activeNetwork)))
+        val active = cm.activeNetwork
+        trySend(active to connected(cm.getNetworkCapabilities(active)))
         cm.registerDefaultNetworkCallback(callback)
         awaitClose { cm.unregisterNetworkCallback(callback) }
-    }
+    }.distinctUntilChanged().map { it.second }
 
     /** Only called when SSID binding is active. Returns null without permission or when not on Wi-Fi. */
     @Suppress("DEPRECATION")

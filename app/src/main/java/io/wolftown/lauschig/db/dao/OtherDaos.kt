@@ -94,6 +94,10 @@ abstract class AudioFileDao {
     @Query("SELECT * FROM audio_files WHERE serverId = :serverId AND itemId = :itemId ORDER BY `index`")
     abstract suspend fun forItem(serverId: String, itemId: String): List<AudioFileEntity>
 
+    /** Number of completely downloaded files; changes when a download finishes or is deleted. */
+    @Query("SELECT COUNT(*) FROM audio_files WHERE serverId = :serverId AND itemId = :itemId AND localPath IS NOT NULL")
+    abstract fun observeLocalCount(serverId: String, itemId: String): Flow<Int>
+
     @Query(
         "UPDATE audio_files SET localPath = :localPath, completedBytes = :completedBytes " +
             "WHERE serverId = :serverId AND itemId = :itemId AND `index` = :index",

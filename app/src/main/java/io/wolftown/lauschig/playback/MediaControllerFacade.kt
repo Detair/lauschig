@@ -56,6 +56,7 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
         c.prepare()
     }
 
+    override fun replaceMediaItem(index: Int, item: MediaItem) { controller?.replaceMediaItem(index, item) }
     override fun play() { controller?.play() }
     override fun pause() { controller?.pause() }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { controller?.seekTo(mediaIndex, positionMs) }

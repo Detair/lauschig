@@ -83,6 +83,7 @@ class RecordingFacade : PlayerFacade {
     override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
         queue = items; snap = snap.copy(mediaIndex = startIndex, positionMs = startPositionMs)
     }
+    override fun replaceMediaItem(index: Int, item: MediaItem) { queue = queue.toMutableList().also { it[index] = item } }
     override fun play() { snap = snap.copy(isPlaying = true); onChange() }
     override fun pause() { snap = snap.copy(isPlaying = false); onChange() }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }

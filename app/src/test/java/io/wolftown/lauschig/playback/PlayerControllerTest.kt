@@ -19,6 +19,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import org.junit.Assert.assertFalse
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
@@ -35,8 +39,12 @@ private class FakeFacade : PlayerFacade {
     var started: Pair<Int, Long>? = null
     private var cb: () -> Unit = {}
     override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
+        setCalls++
         this.items = items; started = startIndex to startPositionMs; snap = snap.copy(mediaIndex = startIndex, positionMs = startPositionMs)
     }
+    var setCalls = 0
+    val replaced = mutableListOf<Int>()
+    override fun replaceMediaItem(index: Int, item: MediaItem) { items = items.toMutableList().also { it[index] = item }; replaced += index }
     override fun play() { snap = snap.copy(isPlaying = true) }
     override fun pause() { snap = snap.copy(isPlaying = false) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
@@ -166,6 +174,7 @@ class PlayerControllerTest {
         coverFile: (String, String) -> File? = { _, _ -> null },
         loadDetails: suspend (String, String) -> Unit = { _, _ -> },
         loadById: suspend (String, String) -> ItemWithDetails? = { _, _ -> load() },
+        localCount: (String, String) -> Flow<Int> = { _, _ -> emptyFlow() },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -175,6 +184,7 @@ class PlayerControllerTest {
         coverFile = coverFile,
         loadDetails = loadDetails,
         io = io,
+        localCount = localCount,
     )
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
@@ -220,6 +230,60 @@ class PlayerControllerTest {
         controller(f, item(listOf(file(0, 600.0), file(1, 300.0, path = null))), base = "https://abs.example/").play(s, "it")
         assertEquals("file", f.items[0].localConfiguration!!.uri.scheme)
         assertEquals("https", f.items[1].localConfiguration!!.uri.scheme)
+    }
+
+    @Test fun streaming_downloadOfPlayingFileFinishes_switchesToLocalAtSamePosition() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null)))
+        val local = MutableStateFlow(0)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 120.0)
+        assertTrue(c.state.value.isStreaming)
+        f.snap = f.snap.copy(positionMs = 130_000L)
+
+        current = item(listOf(file(0, 600.0)))
+        local.value = 1
+
+        assertEquals(2, f.setCalls)
+        assertEquals("file", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals(0 to 130_000L, f.started)
+        assertTrue(f.snap.isPlaying)
+        assertFalse(c.state.value.isStreaming)
+    }
+
+    @Test fun streaming_otherFileFinishes_replacedInPlaceWithoutInterruption() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null), file(1, 300.0, path = null)))
+        val local = MutableStateFlow(0)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 10.0)
+
+        current = item(listOf(file(0, 600.0, path = null), file(1, 300.0)))
+        local.value = 1
+
+        assertEquals(1, f.setCalls)
+        assertEquals(listOf(1), f.replaced)
+        assertEquals("https", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals("file", f.items[1].localConfiguration!!.uri.scheme)
+        assertTrue(c.state.value.isStreaming)
+    }
+
+    @Test fun streaming_downloadFinishesAfterSwitchingTitle_leavesNewTitleAlone() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0, path = null)))
+        val local = MutableStateFlow(0)
+        val other = ItemWithDetails(ItemEntity(s, "other", "lib", "Other"), emptyList(), listOf(AudioFileEntity(s, "other", 0, "o", 100.0, 1, "mp3", "/d/o.mp3")), null, null)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local },
+            loadById = { _, id -> if (id == "other") other else current })
+        c.play(s, "it")
+        c.play(s, "other")
+        val calls = f.setCalls
+
+        current = item(listOf(file(0, 600.0)))
+        local.value = 1
+
+        assertEquals(calls, f.setCalls)
+        assertEquals("other", c.state.value.itemId)
     }
 
     @Test fun seekBy_crossesFileBoundary_andClamps() = runTest {
