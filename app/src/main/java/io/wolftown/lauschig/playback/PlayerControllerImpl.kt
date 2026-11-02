@@ -11,6 +11,7 @@ import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.ProgressSync
 import kotlinx.coroutines.CancellationException
@@ -61,6 +62,12 @@ class PlayerControllerImpl(
     /** The service's stream; shown as [PlayerUiState.streamLoad] while a streamed title loads. */
     private val streamStats: Flow<StreamStats> = emptyFlow(),
     private val downloadThrottled: Flow<Boolean> = emptyFlow(),
+    /**
+     * Ms to jump back when a title is loaded at its saved position after a pause of the given length (the service
+     * may have been stopped meanwhile, so its own resume rewind cannot see that pause); see [rewindMs].
+     */
+    private val rewindAfterPause: suspend (pauseMs: Long) -> Long = { 0 },
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : PlayerController {
 
     @Inject constructor(
@@ -74,6 +81,7 @@ class PlayerControllerImpl(
         librarySync: LibrarySync,
         starter: PlayDownloadStarter,
         monitor: StreamMonitor,
+        playbackSettings: PlaybackSettings,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -89,6 +97,7 @@ class PlayerControllerImpl(
         onStreamStarted = starter::start,
         streamStats = monitor.state,
         downloadThrottled = monitor.downloadThrottled,
+        rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -99,7 +108,9 @@ class PlayerControllerImpl(
         val streaming: Boolean,
         val base: HttpUrl?,
         val items: List<MediaItem>,
-    )
+    ) {
+        val chapterEnds: List<Double> = item.chapters.map { it.endSec }
+    }
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -189,7 +200,10 @@ class PlayerControllerImpl(
                 return@launch
             }
             val mapper = TimelineMapper(item.audioFiles)
-            val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
+            val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.let { p ->
+                if (p.currentTimeSec <= 0) 0.0
+                else (p.currentTimeSec - rewindAfterPause(clock() - p.lastUpdate) / 1000.0).coerceAtLeast(0.0)
+            } ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
             val started = Current(item, mapper, coverPath, streaming = !allLocal, base, items)
@@ -323,6 +337,10 @@ class PlayerControllerImpl(
         refresh()
     }
 
+    override fun setVolume(volume: Float) = facade.setVolume(volume)
+
+    override fun refreshNow() = refresh()
+
     private fun seekGlobal(c: Current, globalSec: Double) {
         val (i, ms) = c.mapper.toFile(globalSec)
         facade.seekTo(i, ms)
@@ -351,6 +369,7 @@ class PlayerControllerImpl(
                 chapterTitle = chapter?.title,
                 chapterStartSec = chapter?.startSec ?: 0.0,
                 chapterEndSec = chapter?.endSec ?: duration,
+                chapterEndsSec = c.chapterEnds,
                 speed = snap.speed,
                 isStreaming = c.streaming,
                 isLoading = loading,

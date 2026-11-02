@@ -61,6 +61,7 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
     override fun pause() { controller?.pause() }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { controller?.seekTo(mediaIndex, positionMs) }
     override fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }
+    override fun setVolume(volume: Float) { controller?.volume = volume.coerceIn(0f, 1f) }
 
     override fun snapshot(): PlayerSnapshot {
         val c = controller ?: return PlayerSnapshot(false, 0, 0, 1f)

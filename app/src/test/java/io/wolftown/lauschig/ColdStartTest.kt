@@ -136,6 +136,7 @@ object ColdStartTestModule {
     @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
     @Provides fun catalogDao(db: LauschigDatabase) = db.catalogDao()
     @Provides fun externalSeriesDao(db: LauschigDatabase) = db.externalSeriesDao()
+    @Provides fun titleAudioDao(db: LauschigDatabase) = db.titleAudioDao()
 
     @Provides @Singleton fun facade(): RecordingFacade = RecordingFacade()
 

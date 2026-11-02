@@ -157,4 +157,35 @@ class MigrationTest {
             room.close()
         }
     }
+
+    @Test fun v5ToV6_keepsProgress_andAddsEmptyTitleAudio() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v6.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/5.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty, hideFromContinue) VALUES ('s', 'a', 12.5, 100.0, 0, 7, 1, 0)")
+            db.version = 5
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            assertEquals(12.5, room.progressDao().get("s", "a")!!.currentTimeSec, 0.0)
+            assertEquals(null, room.titleAudioDao().get("s", "a"))
+            room.titleAudioDao().setSpeed("s", "a", 1.5f)
+            room.titleAudioDao().setBoost("s", "a", 6)
+            val row = room.titleAudioDao().get("s", "a")!!
+            assertEquals(1.5f, row.speed!!, 0f)
+            assertEquals(6, row.boostDb)
+        } finally {
+            room.close()
+        }
+    }
 }

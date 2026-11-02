@@ -178,6 +178,8 @@ class PlayerControllerTest {
         onStreamStarted: (String, String) -> Unit = { _, _ -> },
         streamStats: Flow<StreamStats> = emptyFlow(),
         downloadThrottled: Flow<Boolean> = emptyFlow(),
+        rewindAfterPause: suspend (Long) -> Long = { 0 },
+        clock: () -> Long = { 0 },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -191,7 +193,26 @@ class PlayerControllerTest {
         onStreamStarted = onStreamStarted,
         streamStats = streamStats,
         downloadThrottled = downloadThrottled,
+        rewindAfterPause = rewindAfterPause,
+        clock = clock,
     )
+
+    @Test fun play_savedProgress_rewindsByThePauseSinceTheLastSave() = runTest {
+        val pauses = mutableListOf<Long>()
+        val f = FakeFacade()
+        val c = controller(f, { item(threeFiles, ProgressEntity(s, "it", 950.0, 1800.0, false, 1_000)) }, rewindAfterPause = { pauses += it; 10_000 }, clock = { 61_000 })
+        c.play(s, "it")
+        assertEquals(listOf(60_000L), pauses)
+        assertEquals(2 to 40_000L, f.started)
+        // An explicit start (chapter, bookmark, "back to") is never moved.
+        val f2 = FakeFacade()
+        controller(f2, { item(threeFiles) }, rewindAfterPause = { 10_000 }, clock = { 61_000 }).play(s, "it", 950.0)
+        assertEquals(2 to 50_000L, f2.started)
+        // Never before the start of the title.
+        val f3 = FakeFacade()
+        controller(f3, { item(threeFiles, ProgressEntity(s, "it", 4.0, 1800.0, false, 1_000)) }, rewindAfterPause = { 10_000 }, clock = { 61_000 }).play(s, "it")
+        assertEquals(0 to 0L, f3.started)
+    }
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
         val f = FakeFacade()

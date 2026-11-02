@@ -24,6 +24,8 @@ import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
+import io.wolftown.lauschig.db.dao.TitleAudioDao
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.net.sameOrigin
@@ -54,6 +56,8 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var progressDao: ProgressDao
     @Inject lateinit var sessionDao: SessionDao
     @Inject lateinit var streamMonitor: StreamMonitor
+    @Inject lateinit var titleAudioDao: TitleAudioDao
+    @Inject lateinit var playbackSettings: PlaybackSettings
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -62,6 +66,7 @@ class PlaybackService : MediaLibraryService() {
     private var bridge: PlaybackProgressBridge? = null
     private var connectionJob: Job? = null
     private var monitorJob: Job? = null
+    private var comfort: PlaybackComfort? = null
 
     /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
     @Volatile private var lastOnline: ConnectionState.Online? = null
@@ -121,6 +126,7 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         player = exo
+        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
         bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
@@ -132,6 +138,12 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, exo, object : MediaLibrarySession.Callback {})
             .setSessionActivity(activity)
             .build()
+        // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
+        setListener(object : Listener {
+            override fun onForegroundServiceStartNotAllowedException() {
+                Log.w(TAG, "foreground start from the background was refused")
+            }
+        })
     }
 
     /** Polls the player for [StreamMonitor] while it wants to play; reports the stream inactive once, then stops. */
@@ -180,6 +192,8 @@ class PlaybackService : MediaLibraryService() {
         // Capture the position and detach the listener before release; the final save outlives the service scope.
         val final = bridge?.currentGlobalSec()
         bridge?.let { player?.removeListener(it) }
+        comfort?.release()
+        comfort = null
         player?.pause()
         bridge?.shutdown(final, appScope)
         session?.release()

@@ -15,6 +15,7 @@ interface PlayerFacade {
     fun pause()
     fun seekTo(mediaIndex: Int, positionMs: Long)
     fun setSpeed(speed: Float)
+    fun setVolume(volume: Float) {}
     fun snapshot(): PlayerSnapshot
 
     /** True while the (remote) player is connected and has a queue loaded. */

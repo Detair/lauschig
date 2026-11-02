@@ -13,6 +13,7 @@ import io.wolftown.lauschig.db.entities.LibraryEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
+import io.wolftown.lauschig.db.entities.TitleAudioEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -185,6 +186,32 @@ abstract class ProgressDao {
 
     @Query("SELECT * FROM progress WHERE serverId = :serverId")
     abstract fun observeAll(serverId: String): kotlinx.coroutines.flow.Flow<List<ProgressEntity>>
+
+    /** The most recently heard (or synced) title that is not finished: "the last title" for auto-resume and start. */
+    @Query("SELECT * FROM progress WHERE serverId = :serverId AND isFinished = 0 ORDER BY lastUpdate DESC LIMIT 1")
+    abstract suspend fun newestUnfinished(serverId: String): ProgressEntity?
+}
+
+@Dao
+abstract class TitleAudioDao {
+    @Query("SELECT * FROM title_audio WHERE serverId = :serverId AND itemId = :itemId")
+    abstract suspend fun get(serverId: String, itemId: String): TitleAudioEntity?
+
+    @Query("SELECT * FROM title_audio WHERE serverId = :serverId AND itemId = :itemId")
+    abstract fun observe(serverId: String, itemId: String): Flow<TitleAudioEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun put(row: TitleAudioEntity)
+
+    @Transaction
+    open suspend fun setSpeed(serverId: String, itemId: String, speed: Float) {
+        put((get(serverId, itemId) ?: TitleAudioEntity(serverId, itemId)).copy(speed = speed))
+    }
+
+    @Transaction
+    open suspend fun setBoost(serverId: String, itemId: String, boostDb: Int?) {
+        put((get(serverId, itemId) ?: TitleAudioEntity(serverId, itemId)).copy(boostDb = boostDb))
+    }
 }
 
 @Dao
