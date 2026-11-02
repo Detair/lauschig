@@ -11,6 +11,9 @@ interface SyncTrigger {
 
     /** Pushes and pulls only the bookmarks (after a local bookmark change). */
     fun syncBookmarks() = syncNow()
+
+    /** Progress and sessions only, a few seconds from now (after a pause or the end of a title); repeated calls debounce. */
+    fun syncProgress() {}
 }
 
 @Module

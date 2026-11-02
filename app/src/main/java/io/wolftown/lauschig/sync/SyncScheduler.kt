@@ -68,7 +68,23 @@ class SyncScheduler @Inject constructor(
         )
     }
 
+    override fun syncProgress() = enqueueProgressSync(WorkManager.getInstance(context))
+
     companion object {
+        const val PROGRESS = "sync-progress"
+        /** A pause right after another one (skip, resume, pause) only moves the run, so a burst syncs once. */
+        const val PROGRESS_DEBOUNCE_MS = 10_000L
+
+        fun enqueueProgressSync(wm: WorkManager) {
+            wm.enqueueUniqueWork(
+                PROGRESS, ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<ProgressSyncWorker>()
+                    .setInitialDelay(PROGRESS_DEBOUNCE_MS, TimeUnit.MILLISECONDS)
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .build(),
+            )
+        }
+
         const val BOOKMARKS = "sync-bookmarks"
         const val NOW = "sync-now"
         const val PERIODIC = "sync-periodic"

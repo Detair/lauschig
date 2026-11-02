@@ -28,6 +28,7 @@ import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.queue.QueueAdvancer
 import io.wolftown.lauschig.queue.queueEntryState
 import io.wolftown.lauschig.sync.LibrarySync
+import io.wolftown.lauschig.sync.SyncTrigger
 import kotlinx.coroutines.CancellationException
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
@@ -73,6 +74,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var mediaItemFactory: MediaItemFactory
     @Inject lateinit var librarySync: LibrarySync
     @Inject lateinit var playDownloadStarter: PlayDownloadStarter
+    @Inject lateinit var syncTrigger: SyncTrigger
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -151,6 +153,8 @@ class PlaybackService : MediaLibraryService() {
             .also { exo.addListener(it) }
         // After the bridge, so the ended title is saved as finished before the next one replaces the queue.
         exo.addListener(queueAdvanceListener(exo))
+        // The position reaches the server soon after a pause or the end of a title, not only with the periodic sync.
+        exo.addListener(ProgressSyncOnPause({ currentKey(exo) }, syncTrigger::syncProgress))
 
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -213,6 +217,11 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         }
+    }
+
+    private fun currentKey(exo: ExoPlayer): Pair<String, String>? {
+        val extras = exo.currentMediaItem?.mediaMetadata?.extras ?: return null
+        return (extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return null) to (extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return null)
     }
 
     /** Polls the player for [StreamMonitor] while it wants to play; reports the stream inactive once, then stops. */
