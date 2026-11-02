@@ -52,7 +52,7 @@ class PlayerControllerImpl(
     private val pollMs: Long = 1_000,
     /** File-system checks (local files, cover) run here, never on the main thread. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    /** Number of downloaded files of a title; a rise while streaming switches those files to local playback. */
+    /** Number of downloaded files of a title; every change re-picks the source of each file (see [syncSources]). */
     private val localCount: (serverId: String, itemId: String) -> Flow<Int> = { _, _ -> emptyFlow() },
 ) : PlayerController {
 
@@ -99,7 +99,7 @@ class PlayerControllerImpl(
     /** From [play] until the player reports playing (or the start failed). */
     private var starting = false
     private var pollJob: Job? = null
-    /** Watches the downloads of the streaming title; see [switchToLocal]. */
+    /** Watches the downloads of the loaded title; see [syncSources]. */
     private var localJob: Job? = null
 
     init {
@@ -185,44 +185,48 @@ class PlayerControllerImpl(
         }
     }
 
-    /** While [c] streams, every finished download of one of its files moves that file to local playback. */
+    /** While [c] is loaded, a finished or deleted download of one of its files changes that file's source. */
     private fun watchDownloads(c: Current) {
         localJob?.cancel(); localJob = null
-        if (!c.streaming) return
         val key = c.item.item
         localJob = scope.launch {
-            localCount(key.serverId, key.id).distinctUntilChanged().collect { switchToLocal() }
+            localCount(key.serverId, key.id).distinctUntilChanged().collect { syncSources() }
         }
     }
 
     /**
-     * Rebuilds the queue of the current title from the database and swaps every file whose source changed:
-     * queued files in place (no gap), the playing file by reloading the queue at the current position (a short
-     * re-buffer of the local file). A changed file layout (server rescan) is left alone until the next start.
+     * Rebuilds the queue of the current title from the database and swaps every file whose source changed (download
+     * finished: stream -> local; download deleted: local -> stream): queued files in place (no gap), the playing file
+     * by reloading the queue at the current position (a short re-buffer). A changed file layout (server rescan) is
+     * left alone until the next start. A deleted download while offline pauses with the not-downloaded error.
      */
-    private suspend fun switchToLocal() {
+    private suspend fun syncSources() {
         val c = current ?: return
         val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return
         if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return
         val allLocal = withContext(io) { factory.isFullyLocal(fresh) }
+        val base = if (allLocal) null else c.base ?: onlineBaseUrl()
         val items = try {
-            withContext(io) { factory.build(fresh, if (allLocal) null else c.base) }
+            withContext(io) { factory.build(fresh, base) }
         } catch (e: PlaybackUnavailableException) {
+            if (current === c && facade.hasMedia()) {
+                facade.pause(); refresh()
+                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+            }
             return
         }
         if (current !== c || !facade.hasMedia()) return
         val changed = items.indices.filter { items[it].localConfiguration?.uri != c.items.getOrNull(it)?.localConfiguration?.uri }
         if (changed.isEmpty()) return
-        current = Current(fresh, c.mapper, c.coverPath, streaming = !allLocal, c.base, items)
+        current = Current(fresh, c.mapper, c.coverPath, streaming = !allLocal, base, items)
         val snap = facade.snapshot()
         if (snap.mediaIndex in changed) {
-            Log.i(TAG, "switching the playing file to its download")
+            Log.i(TAG, "switching the playing file to ${items[snap.mediaIndex].localConfiguration?.uri?.scheme}")
             facade.setMediaItems(items, snap.mediaIndex, snap.positionMs)
         } else {
             changed.forEach { facade.replaceMediaItem(it, items[it]) }
         }
         refresh()
-        if (allLocal) { localJob?.cancel(); localJob = null }
     }
 
     /**

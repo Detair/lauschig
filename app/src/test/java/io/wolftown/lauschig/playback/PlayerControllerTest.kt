@@ -268,6 +268,39 @@ class PlayerControllerTest {
         assertTrue(c.state.value.isStreaming)
     }
 
+    @Test fun local_downloadDeletedWhileLoaded_switchesToStreamAtSamePosition() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0)))
+        val local = MutableStateFlow(1)
+        val c = controller(f, { current }, base = "https://abs.example/", localCount = { _, _ -> local })
+        c.play(s, "it", 60.0)
+        assertFalse(c.state.value.isStreaming)
+        f.snap = f.snap.copy(positionMs = 70_000L)
+
+        current = item(listOf(file(0, 600.0, path = null)))
+        local.value = 0
+
+        assertEquals(2, f.setCalls)
+        assertEquals("https", f.items[0].localConfiguration!!.uri.scheme)
+        assertEquals(0 to 70_000L, f.started)
+        assertTrue(c.state.value.isStreaming)
+    }
+
+    @Test fun local_downloadDeletedWhileOffline_pausesWithError() = runTest {
+        val f = FakeFacade()
+        var current = item(listOf(file(0, 600.0)))
+        val local = MutableStateFlow(1)
+        val c = controller(f, { current }, base = null, localCount = { _, _ -> local })
+        c.play(s, "it")
+
+        current = item(listOf(file(0, 600.0, path = null)))
+        local.value = 0
+
+        assertEquals(1, f.setCalls)
+        assertFalse(f.snap.isPlaying)
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+    }
+
     @Test fun streaming_downloadFinishesAfterSwitchingTitle_leavesNewTitleAlone() = runTest {
         val f = FakeFacade()
         var current = item(listOf(file(0, 600.0, path = null)))
