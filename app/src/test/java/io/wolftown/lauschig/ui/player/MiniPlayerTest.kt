@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.playback.StreamLoad
 import android.app.Application
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -54,5 +55,21 @@ class MiniPlayerTest {
         rule.onNodeWithContentDescription("Play").assertDoesNotExist()
         rule.onNodeWithContentDescription("Loading…").performClick()
         assertEquals(1, toggles)
+    }
+
+    @Test fun miniPlayer_streamLoading_showsCompactProgressInsteadOfChapter() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(isLoading = true, isStreaming = true, streamLoad = StreamLoad(250_000, 1_000_000, 100_000, 8)), {}, {}) } }
+        rule.onNodeWithText("25 % · 8 s left").assertExists()
+        rule.onNodeWithText("Chapter 2").assertDoesNotExist()
+    }
+
+    @Test fun miniPlayer_streamLoadingWithoutExpectation_showsRate() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(isLoading = true, isStreaming = true, streamLoad = StreamLoad(250_000, null, 100_000, null)), {}, {}) } }
+        rule.onNodeWithText("Loading ·", substring = true).assertExists()
+    }
+
+    @Test fun miniPlayer_throttledDownload_showsHint() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(isStreaming = true, downloadThrottled = true), {}, {}) } }
+        rule.onNodeWithText("Download slowed – stream has priority").assertExists()
     }
 }
