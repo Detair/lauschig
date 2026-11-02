@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -33,9 +34,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
 
-/** "⋮" menu with the progress actions of [itemId] (detail screen, player). */
+/** "⋮" menu with the progress actions of [itemId] (detail screen, player); [onEnqueue] adds "Play next" on top. */
 @Composable
-fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel: ItemActionsViewModel = hiltViewModel()) {
+fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel: ItemActionsViewModel = hiltViewModel(), onEnqueue: (() -> Unit)? = null) {
     val download by remember(itemId) { viewModel.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val progress by remember(itemId) { viewModel.progressState(itemId) }.collectAsStateWithLifecycle(null)
     val host = rememberProgressActionHost(itemId, viewModel, download)
@@ -46,6 +47,14 @@ fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel:
             Icon(Icons.Rounded.MoreVert, stringResource(R.string.progress_menu))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            onEnqueue?.let { enqueue ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.queue_add)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = null) },
+                    onClick = { open = false; enqueue() },
+                    modifier = Modifier.testTag("enqueue"),
+                )
+            }
             progressEntries(progress, offline).forEach { entry ->
                 DropdownMenuItem(
                     text = { Text(stringResource(entry.label(progress))) },

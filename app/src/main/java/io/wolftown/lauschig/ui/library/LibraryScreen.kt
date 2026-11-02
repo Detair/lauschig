@@ -27,7 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.db.entities.CollectionKind
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.ui.collections.CollectionListTab
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
@@ -40,18 +42,24 @@ private fun LibraryTab.label(): Int = when (this) {
     LibraryTab.Finished -> R.string.library_tab_finished
     LibraryTab.Downloaded -> R.string.library_tab_downloaded
     LibraryTab.Series -> R.string.library_tab_series
+    LibraryTab.Collections -> R.string.library_tab_collections
+    LibraryTab.Playlists -> R.string.library_tab_playlists
 }
 
 @Composable
 fun LibraryRoute(
     onOpenItem: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenCollection: (id: String) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
-    LibraryScreen(state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it })
+    LibraryScreen(
+        state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it },
+        collections = { kind -> CollectionListTab(kind, onOpenCollection) },
+    )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
 
@@ -64,6 +72,8 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onPlay: (itemId: String) -> Unit = {},
     onMenu: (ItemSummary) -> Unit = {},
+    /** Content of the collections / playlists tabs. */
+    collections: @Composable (CollectionKind) -> Unit = {},
 ) {
     val tile: @Composable (ItemSummary) -> Unit = { item ->
         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
@@ -73,6 +83,15 @@ fun LibraryScreen(
             LibraryTab.entries.forEach { t ->
                 Tab(selected = t == state.tab, onClick = { onTab(t) }, text = { Text(stringResource(t.label())) })
             }
+        }
+        val listKind = when (state.tab) {
+            LibraryTab.Collections -> CollectionKind.COLLECTION
+            LibraryTab.Playlists -> CollectionKind.PLAYLIST
+            else -> null
+        }
+        if (listKind != null) {
+            collections(listKind)
+            return@Column
         }
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(top = 8.dp))
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()

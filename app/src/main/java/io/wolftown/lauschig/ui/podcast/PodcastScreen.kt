@@ -57,7 +57,11 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.DownloadIconButton
 import io.wolftown.lauschig.ui.common.Initials
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
+import io.wolftown.lauschig.ui.common.ActionRow
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.common.coverModel
@@ -260,6 +264,12 @@ private fun EpisodeActionsSheet(episode: EpisodeUi, actions: ItemActionsViewMode
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
+            val context = LocalContext.current
+            ActionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.queue_add)) {
+                actions.enqueue(episode.key)
+                Toast.makeText(context, R.string.queue_added, Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }
             progressEntries(progress, offline).forEach { entry ->
                 ListItem(
                     headlineContent = { Text(stringResource(entry.label(progress))) },

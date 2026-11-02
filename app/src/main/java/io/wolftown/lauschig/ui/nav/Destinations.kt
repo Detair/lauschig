@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
 enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 
 @Serializable data class Browse(val kind: BrowseKind, val name: String)
+/** A cached ABS collection or playlist (by id). */
+@Serializable data class Collection(val id: String)
 @Serializable data object Player
 @Serializable data object Setup
 @Serializable data object Settings

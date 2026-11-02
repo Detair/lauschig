@@ -1,6 +1,14 @@
 package io.wolftown.lauschig.ui.detail
 
 import android.text.format.Formatter
+import android.widget.Toast
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.runtime.LaunchedEffect
+import io.wolftown.lauschig.db.entities.BookmarkEntity
+import io.wolftown.lauschig.history.History
+import io.wolftown.lauschig.ui.extras.BookmarkNoteDialog
+import io.wolftown.lauschig.ui.extras.TitleExtrasViewModel
+import io.wolftown.lauschig.ui.extras.titleExtrasSections
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,16 +68,44 @@ fun ItemDetailRoute(
     onOpenItem: (itemId: String) -> Unit = {},
     onOpenBrowse: (BrowseKind, String) -> Unit = { _, _ -> },
     viewModel: ItemDetailViewModel = hiltViewModel(),
+    extrasViewModel: TitleExtrasViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val askNotifications = rememberNotificationPermissionOnce()
+    val key = state.itemId
+    LaunchedEffect(key) { if (key.isNotEmpty()) extrasViewModel.refreshHistory(key) }
+    val bookmarks by remember(key) { extrasViewModel.bookmarks(key) }.collectAsStateWithLifecycle(emptyList())
+    val history by remember(key) { extrasViewModel.history(key) }.collectAsStateWithLifecycle(History(emptyList(), 0.0))
+    val online by extrasViewModel.online.collectAsStateWithLifecycle(true)
+    var allHistory by rememberSaveable { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<BookmarkEntity?>(null) }
+    val context = LocalContext.current
     ItemDetailScreen(
         state, onBack, viewModel::onPrimary, { viewModel.download(); askNotifications() }, viewModel::pauseDownload,
         viewModel::deleteDownload, viewModel::onChapter, modifier,
-        topActions = { if (state.found) ProgressMenuButton(state.itemId) },
+        topActions = {
+            if (state.found) {
+                ProgressMenuButton(state.itemId, onEnqueue = {
+                    extrasViewModel.enqueue(key)
+                    Toast.makeText(context, R.string.queue_added, Toast.LENGTH_SHORT).show()
+                })
+            }
+        },
         finished = { if (state.found) FinishedCard(state.itemId, onOpenItem, Modifier.padding(top = 16.dp)) },
         onOpenBrowse = onOpenBrowse,
+        extras = {
+            titleExtrasSections(
+                key, bookmarks, history, allHistory, online,
+                onShowAllHistory = { allHistory = true },
+                onJump = { extrasViewModel.jumpTo(key, it) },
+                onEditBookmark = { editing = it },
+                onDeleteBookmark = extrasViewModel::deleteBookmark,
+            )
+        },
     )
+    editing?.let { row ->
+        BookmarkNoteDialog(stringResource(R.string.bookmark_edit_title), row.note, onSave = { extrasViewModel.editBookmark(row, it); editing = null }, onDismiss = { editing = null })
+    }
 }
 
 @Composable
@@ -85,6 +121,8 @@ fun ItemDetailScreen(
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
     onOpenBrowse: (BrowseKind, String) -> Unit = { _, _ -> },
+    /** Bookmarks and listening history sections (see `titleExtrasSections`). */
+    extras: LazyListScope.() -> Unit = {},
 ) {
     val settledOffline = LocalOfflineDimming.current
     LazyColumn(modifier.fillMaxSize()) {
@@ -103,6 +141,7 @@ fun ItemDetailScreen(
         }
         item("header") { Header(state, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
         item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
+        extras()
         item("chapters-title") {
             Text(
                 stringResource(R.string.detail_chapters),

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DoneAll
@@ -57,6 +58,7 @@ import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadProgress
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.playback.PlayerController
@@ -107,6 +109,7 @@ class ItemActionsViewModel @Inject constructor(
     private val player: PlayerController,
     private val progressActions: ProgressActions,
     private val items: ItemDao,
+    private val queue: QueueDao,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -116,6 +119,8 @@ class ItemActionsViewModel @Inject constructor(
         else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else downloads.observe(sid, itemId) }.map { it.toQuick() }
 
     fun play(itemId: String) = withServer { player.play(it, itemId) }
+    /** "Play next": appends the playable key to the device's queue (no duplicates). */
+    fun enqueue(itemId: String) = withServer { queue.add(it, itemId, System.currentTimeMillis()) }
     fun download(itemId: String) = withServer { downloads.enqueue(it, itemId) }
     /** Cancels a running download or deletes a finished one, including files; progress is kept. */
     fun deleteDownload(itemId: String) = withServer { downloads.cancel(it, itemId, deleteFiles = true) }
@@ -172,6 +177,12 @@ fun ItemActionsSheet(
             ActionRow(Icons.Rounded.Info, stringResource(R.string.actions_details)) { onDismiss(); onOpenDetails(item.id) }
             if (item.isDownloaded || !offline) {
                 ActionRow(Icons.Rounded.PlayArrow, stringResource(R.string.player_play)) { onDismiss(); viewModel.play(item.id) }
+            }
+            val context = LocalContext.current
+            ActionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.queue_add)) {
+                viewModel.enqueue(item.id)
+                Toast.makeText(context, R.string.queue_added, Toast.LENGTH_SHORT).show()
+                onDismiss()
             }
             when (val d = download) {
                 QuickDownload.None, QuickDownload.Paused, QuickDownload.Failed -> if (!offline) {
@@ -288,7 +299,7 @@ fun rememberProgressActionHost(itemId: String, viewModel: ItemActionsViewModel, 
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(label) },
         leadingContent = { Icon(icon, contentDescription = null) },

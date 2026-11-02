@@ -18,6 +18,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.foundation.layout.FlowRow
+import io.wolftown.lauschig.ui.extras.BookmarksSheet
+import io.wolftown.lauschig.ui.extras.HistorySheet
+import io.wolftown.lauschig.ui.extras.QueueSheet
 import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -91,6 +98,7 @@ fun PlayerRoute(
     val itemId = state.itemId
     val download by remember(itemId) { actions.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val askNotifications = rememberNotificationPermissionOnce()
+    var sheet by rememberSaveable { mutableStateOf<PlayerSheet?>(null) }
     PlayerScreen(
         state, onClose, modifier,
         // The player's id is the playable key; details open on the library item (the podcast for an episode).
@@ -107,6 +115,9 @@ fun PlayerRoute(
         onNext = viewModel::nextChapter,
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
+        extras = {
+            PlayerExtrasRow(onBookmarks = { sheet = PlayerSheet.Bookmarks }, onQueue = { sheet = PlayerSheet.Queue }, onHistory = { sheet = PlayerSheet.History })
+        },
         comfort = {
             ComfortRow(
                 comfort,
@@ -118,6 +129,34 @@ fun PlayerRoute(
             )
         },
     )
+    val close = { sheet = null }
+    when (sheet) {
+        PlayerSheet.Bookmarks -> itemId?.let { BookmarksSheet(it, state.chapterStartSec + state.chapterPositionSec, close) }
+        PlayerSheet.History -> itemId?.let { HistorySheet(it, close) }
+        PlayerSheet.Queue -> QueueSheet(close)
+        null -> Unit
+    }
+}
+
+enum class PlayerSheet { Bookmarks, Queue, History }
+
+/** Bookmarks, queue and listening history of the player. */
+@Composable
+fun PlayerExtrasRow(onBookmarks: () -> Unit, onQueue: () -> Unit, onHistory: () -> Unit, modifier: Modifier = Modifier) {
+    FlowRow(modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+        OutlinedButton(onClick = onBookmarks, modifier = Modifier.testTag("bookmarksButton")) {
+            Icon(Icons.Rounded.Bookmarks, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_bookmarks), Modifier.padding(start = 8.dp))
+        }
+        OutlinedButton(onClick = onQueue, modifier = Modifier.testTag("queueButton")) {
+            Icon(Icons.AutoMirrored.Rounded.QueueMusic, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_queue), Modifier.padding(start = 8.dp))
+        }
+        OutlinedButton(onClick = onHistory, modifier = Modifier.testTag("historyButton")) {
+            Icon(Icons.Rounded.History, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_history), Modifier.padding(start = 8.dp))
+        }
+    }
 }
 
 /** "1,25×" in the user's locale. */
@@ -151,6 +190,8 @@ fun PlayerScreen(
     finished: @Composable () -> Unit = {},
     /** Sleep timer and audio options ([ComfortRow]); shown only while a title is loaded. */
     comfort: @Composable () -> Unit = {},
+    /** Bookmarks, queue, history ([PlayerExtrasRow]); shown only while a title is loaded. */
+    extras: @Composable () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -281,6 +322,7 @@ fun PlayerScreen(
             }
         }
         if (state.itemId != null) comfort()
+        if (state.itemId != null) extras()
     }
 
     if (showSpeed) {
