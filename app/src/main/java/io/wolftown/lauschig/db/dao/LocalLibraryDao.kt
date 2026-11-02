@@ -50,6 +50,9 @@ abstract class LocalLibraryDao {
     @Query("SELECT * FROM local_titles WHERE id = :id")
     abstract suspend fun title(id: String): LocalTitleEntity?
 
+    @Query("SELECT addedAt FROM items WHERE serverId = :serverId AND id = :id")
+    abstract suspend fun itemAddedAt(serverId: String, id: String): Long?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     protected abstract suspend fun putTitle(title: LocalTitleEntity)
 
