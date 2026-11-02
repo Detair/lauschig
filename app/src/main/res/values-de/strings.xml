@@ -405,4 +405,5 @@
     <string name="local_remove_dismiss">Abbrechen</string>
     <string name="local_empty">Noch keine Ordner. Füge einen Ordner mit Hörbüchern von diesem Gerät hinzu – sie spielen ohne Server.</string>
     <string name="local_empty_titles">In den Ordnern wurden keine Hörbücher gefunden.</string>
+    <string name="local_folder_scan_failed">Nicht alles konnte gelesen werden – die bisher gefundenen Titel bleiben</string>
 </resources>

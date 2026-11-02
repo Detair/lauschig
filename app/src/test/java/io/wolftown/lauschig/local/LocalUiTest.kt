@@ -118,7 +118,7 @@ class LocalUiTest {
         val played = mutableListOf<String>()
         var rescans = 0
         val state = MutableStateFlow(
-            LocalLibraryUiState(listOf(tile(local, "Momo")), listOf(folder("Hörbücher"), folder("SD-Karte", 0, LocalFolderEntity.ERROR_NO_ACCESS)), scanning = false, loaded = true),
+            LocalLibraryUiState(listOf(tile(local, "Momo")), listOf(folder("Hörbücher"), folder("SD-Karte", 0, LocalFolderEntity.ERROR_NO_ACCESS), folder("Groß", 4, LocalFolderEntity.ERROR_SCAN)), scanning = false, loaded = true),
         )
         rule.setContent {
             LauschigTheme { DeviceTabContent(state.collectAsStateValue(), { opened += it }, { played += it }, {}, onAddFolder = {}, onRescan = { rescans++ }) }
@@ -126,6 +126,7 @@ class LocalUiTest {
         rule.onNodeWithText("Momo").performClick()
         rule.onNodeWithText("SD-Karte", substring = true).assertIsDisplayed()
         rule.onNodeWithText("No access any more", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("Not everything could be read", substring = true).assertIsDisplayed()
         rule.onNodeWithTag("deviceRescan").performClick()
         assertEquals(listOf(local), opened)
         assertEquals(1, rescans)

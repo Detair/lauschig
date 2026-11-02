@@ -21,7 +21,8 @@ import kotlin.coroutines.coroutineContext
 /**
  * Reads the picked folders into the device library (rules in the phase-3C plan and [LocalGrouping] / [LocalMeta]). Only
  * titles whose files changed are read again ([LocalTitleEntity.signature]). A folder that cannot be read keeps its
- * titles and records why; a title that vanished from a readable folder loses its catalog rows (not its progress).
+ * titles and records why. Only a complete listing removes a title (its catalog rows, not its progress); a listed title
+ * that cannot be read right now keeps its previous rows, and one that throws does not stop the others.
  * One scan at a time per process. Never touches the network.
  */
 class LocalLibraryScanner(
@@ -30,6 +31,10 @@ class LocalLibraryScanner(
     private val dao: LocalLibraryDao,
     private val covers: LocalCovers,
     private val clock: () -> Long,
+    /** Directory levels below the picked folder that are listed. */
+    private val maxDepth: Int = MAX_DEPTH,
+    /** Entries listed per folder at most, so a huge or looping provider cannot hang the scan. */
+    private val maxEntries: Int = MAX_ENTRIES,
 ) {
     @Inject constructor(tree: SafDocumentTree, probe: RetrieverAudioProbe, dao: LocalLibraryDao, covers: LocalCovers) :
         this(tree, probe, dao, covers, System::currentTimeMillis)
@@ -47,7 +52,7 @@ class LocalLibraryScanner(
                 } catch (e: Exception) {
                     // One broken folder (a provider that throws) must not stop the others; its titles stay.
                     Log.w(TAG, "scan of a folder failed", e)
-                    dao.setScanResult(f.uri, clock(), LocalFolderEntity.ERROR_MISSING)
+                    dao.setScanResult(f.uri, clock(), LocalFolderEntity.ERROR_SCAN)
                     0
                 }
             }
@@ -73,24 +78,43 @@ class LocalLibraryScanner(
             dao.setScanResult(folder.uri, now, LocalFolderEntity.ERROR_MISSING)
             return 0
         }
-        val budget = intArrayOf(MAX_ENTRIES)
-        val root = node(folder.uri, rootEntry, "", rootKids, depth = 0, budget)
+        val walk = Walk(maxEntries)
+        val root = node(folder.uri, rootEntry, "", rootKids, depth = 0, walk)
         val groups = LocalGrouping.group(root, folder.name)
         val existing = dao.titlesIn(folder.uri).associateBy { it.id }
-        val seen = HashSet<String>()
+        // Listed now (kept whatever happens to them below) vs. actually in the library after this scan.
+        val present = HashSet<String>()
+        var stored = 0
+        var failed = false
         for (g in groups) {
             coroutineContext.ensureActive()
             val id = DeviceLibrary.titleId(folder.uri, g.groupKey)
+            present += id
+            val old = existing[id]
             val signature = signature(g)
-            if (existing[id]?.signature == signature) { seen += id; continue }
-            if (store(folder.uri, id, g, signature, now)) seen += id
+            if (old?.signature == signature) { stored++; continue }
+            val ok = try {
+                store(folder.uri, id, g, signature, now)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // One title that cannot be read (a decoder or provider that throws) must not stop the others.
+                Log.w(TAG, "reading a title failed", e)
+                failed = true
+                false
+            }
+            // A listed title that cannot be read right now keeps its previous rows.
+            if (ok || old != null) stored++
         }
-        for (id in existing.keys - seen) {
-            dao.removeTitle(id)
-            covers.delete(id)
+        // Only a complete listing proves that a title is gone; an incomplete one never deletes anything.
+        if (!walk.incomplete) {
+            for (id in existing.keys - present) {
+                dao.removeTitle(id)
+                covers.delete(id)
+            }
         }
-        dao.setScanResult(folder.uri, now, null)
-        return seen.size
+        dao.setScanResult(folder.uri, now, if (walk.incomplete || failed) LocalFolderEntity.ERROR_SCAN else null)
+        return stored
     }
 
     /** Reads the files of one title and writes its rows; false if none of them is playable. */
@@ -128,14 +152,25 @@ class LocalLibraryScanner(
         return true
     }
 
-    /** Lists [entry]'s subtree (depth and entry count are capped, so a huge or looping provider cannot hang the scan). */
-    private fun node(treeUri: String, entry: DocEntry, path: String, kids: List<DocEntry>, depth: Int, budget: IntArray): DirNode {
-        budget[0] -= kids.size
+    /** Remaining entry budget of one folder's listing, and whether anything could not be listed. */
+    private class Walk(var budget: Int, var incomplete: Boolean = false)
+
+    /**
+     * Lists [entry]'s subtree. Depth and entry count are capped, so a huge or looping provider cannot hang the scan; a
+     * capped or failed listing marks the [walk] incomplete (then nothing is deleted).
+     */
+    private fun node(treeUri: String, entry: DocEntry, path: String, kids: List<DocEntry>, depth: Int, walk: Walk): DirNode {
+        walk.budget -= kids.size
         val files = kids.filter { !it.isDirectory }
-        val dirs = if (depth >= MAX_DEPTH) emptyList() else kids.filter { it.isDirectory && !it.name.startsWith(".") }.mapNotNull { d ->
-            if (budget[0] <= 0) return@mapNotNull null
-            val sub = tree.children(treeUri, d) ?: return@mapNotNull null
-            node(treeUri, d, if (path.isEmpty()) d.name else "$path/${d.name}", sub, depth + 1, budget)
+        val subdirs = kids.filter { it.isDirectory && !it.name.startsWith(".") }
+        if (depth >= maxDepth) {
+            if (subdirs.isNotEmpty()) walk.incomplete = true
+            return DirNode(entry, path, files, emptyList())
+        }
+        val dirs = subdirs.mapNotNull { d ->
+            if (walk.budget <= 0) { walk.incomplete = true; return@mapNotNull null }
+            val sub = tree.children(treeUri, d) ?: run { walk.incomplete = true; return@mapNotNull null }
+            node(treeUri, d, if (path.isEmpty()) d.name else "$path/${d.name}", sub, depth + 1, walk)
         }
         return DirNode(entry, path, files, dirs)
     }

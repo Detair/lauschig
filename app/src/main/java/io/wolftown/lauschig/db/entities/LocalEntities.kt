@@ -10,12 +10,14 @@ data class LocalFolderEntity(
     val name: String,
     val addedAt: Long,
     val lastScanAt: Long = 0,
-    /** Null when the last scan could read the folder; else [ERROR_NO_ACCESS] or [ERROR_MISSING]. */
+    /** Null when the last scan could read everything; else [ERROR_NO_ACCESS], [ERROR_MISSING] or [ERROR_SCAN]. */
     val error: String? = null,
 ) {
     companion object {
         const val ERROR_NO_ACCESS = "no_access"
         const val ERROR_MISSING = "missing"
+        /** Readable, but not everything could be listed or read (titles found earlier are kept). */
+        const val ERROR_SCAN = "scan_failed"
     }
 }
 

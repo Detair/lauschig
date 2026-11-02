@@ -405,4 +405,5 @@
     <string name="local_remove_dismiss">Cancel</string>
     <string name="local_empty">No folders yet. Add a folder with audiobooks from this device – they play without a server.</string>
     <string name="local_empty_titles">No audiobooks found in the folders.</string>
+    <string name="local_folder_scan_failed">Not everything could be read – the titles found before are kept</string>
 </resources>

@@ -28,6 +28,9 @@ class FakeTree : DocumentTree {
     val roots = HashMap<String, DocEntry>()
     val access = HashMap<String, TreeAccess>()
     val bytes = HashMap<String, ByteArray>()
+    /** Directories (document ids) whose listing fails. */
+    val broken = HashSet<String>()
+    var rootThrows = false
 
     fun root(tree: String, name: String): DocEntry = DocEntry("$tree/", name, isDirectory = true).also { roots[tree] = it; children[it.documentId] = mutableListOf() }
     fun dir(parent: DocEntry, name: String): DocEntry = DocEntry("${parent.documentId}$name/", name, isDirectory = true).also {
@@ -39,8 +42,8 @@ class FakeTree : DocumentTree {
     fun remove(parent: DocEntry, name: String) { children.getValue(parent.documentId).removeAll { it.name == name } }
 
     override fun access(treeUri: String): TreeAccess = access[treeUri] ?: if (treeUri in roots) TreeAccess.OK else TreeAccess.MISSING
-    override fun root(treeUri: String): DocEntry? = roots[treeUri]
-    override fun children(treeUri: String, dir: DocEntry): List<DocEntry>? = children[dir.documentId]?.toList()
+    override fun root(treeUri: String): DocEntry? = if (rootThrows) throw IllegalStateException("provider crashed") else roots[treeUri]
+    override fun children(treeUri: String, dir: DocEntry): List<DocEntry>? = if (dir.documentId in broken) null else children[dir.documentId]?.toList()
     override fun documentUri(treeUri: String, documentId: String): String = "content://fake/$documentId"
     override fun readBytes(uri: String, maxBytes: Int): ByteArray? = bytes[uri]
 }
@@ -49,7 +52,14 @@ class FakeProbe : AudioProbe {
     val tags = HashMap<String, AudioTags>()
     val pictures = HashMap<String, ByteArray>()
     val reads = mutableListOf<String>()
-    override fun tags(uri: String): AudioTags? { reads += uri; return tags[uri] ?: AudioTags(durationMs = 60_000) }
+    val unreadable = HashSet<String>()
+    val throwing = HashSet<String>()
+    override fun tags(uri: String): AudioTags? {
+        reads += uri
+        if (uri in throwing) throw IllegalStateException("decoder crashed")
+        if (uri in unreadable) return null
+        return tags[uri] ?: AudioTags(durationMs = 60_000)
+    }
     override fun embeddedPicture(uri: String): ByteArray? = pictures[uri]
 }
 
@@ -69,7 +79,7 @@ class LocalLibraryScannerTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java).allowMainThreadQueries().build()
         covers = LocalCovers(tmp.newFolder("covers"))
-        scanner = LocalLibraryScanner(tree, probe, db.localLibraryDao(), covers) { now }
+        scanner = LocalLibraryScanner(tree, probe, db.localLibraryDao(), covers, { now })
     }
 
     @After fun tearDown() = db.close()
@@ -239,5 +249,85 @@ class LocalLibraryScannerTest {
         scanner.scanAll()
         assertEquals(setOf("Momo", "Folge 1"), db.itemDao().getByLibrary(dev, DeviceLibrary.LIBRARY_ID).map { it.title }.toSet())
         assertEquals(1, db.localLibraryDao().titlesIn(other).size)
+    }
+    // --- An incomplete or failing scan never deletes titles -------------------------------------------------------
+
+    private fun twoBooks(): Pair<DocEntry, DocEntry> {
+        val root = tree.root(uri, "Hörbücher")
+        val a = tree.dir(root, "A")
+        tree.file(a, "1.mp3")
+        val b = tree.dir(root, "B")
+        tree.file(b, "1.mp3")
+        return a to b
+    }
+
+    private suspend fun titles() = db.itemDao().getByLibrary(dev, DeviceLibrary.LIBRARY_ID).map { it.title }.toSet()
+
+    @Test fun subfolderThatCannotBeListed_keepsItsTitle_andRecordsAScanError() = runTest {
+        val (_, b) = twoBooks()
+        addFolder()
+        scanner.scanAll()
+        tree.broken += b.documentId
+        val a2 = tree.dir(tree.roots.getValue(uri), "C")
+        tree.file(a2, "1.mp3")
+        scanner.scanAll()
+        assertEquals(setOf("A", "B", "C"), titles())
+        assertEquals(LocalFolderEntity.ERROR_SCAN, db.localLibraryDao().folders().single().error)
+        // Readable again: the error goes, nothing was lost.
+        tree.broken.clear()
+        scanner.scanAll()
+        assertNull(db.localLibraryDao().folders().single().error)
+        assertEquals(setOf("A", "B", "C"), titles())
+    }
+
+    @Test fun listedTitleWhoseFilesCannotBeReadNow_isKept() = runTest {
+        val (a, _) = twoBooks()
+        addFolder()
+        scanner.scanAll()
+        tree.remove(a, "1.mp3")
+        val f = tree.file(a, "1.mp3", mtime = 99) // changed: read again, but unreadable this time
+        probe.unreadable += "content://fake/${f.documentId}"
+        scanner.scanAll()
+        assertEquals(setOf("A", "B"), titles())
+    }
+
+    @Test fun oneTitleThatThrows_doesNotStopTheOthers_andGivesAGenericError() = runTest {
+        val (a, b) = twoBooks()
+        addFolder()
+        scanner.scanAll()
+        tree.remove(a, "1.mp3")
+        val f = tree.file(a, "1.mp3", mtime = 99)
+        probe.throwing += "content://fake/${f.documentId}"
+        val c = tree.dir(tree.roots.getValue(uri), "C")
+        tree.file(c, "1.mp3")
+        tree.children.getValue(tree.roots.getValue(uri).documentId).remove(b) // B vanished: listing is complete, so it goes
+        scanner.scanAll()
+        assertEquals(setOf("A", "C"), titles())
+        assertEquals(LocalFolderEntity.ERROR_SCAN, db.localLibraryDao().folders().single().error)
+    }
+
+    @Test fun depthOrEntryCaps_keepTheTitlesBeyondThem() = runTest {
+        val root = tree.root(uri, "Hörbücher")
+        val deep = tree.dir(tree.dir(root, "Reihe"), "Band 1")
+        tree.file(deep, "1.mp3")
+        tree.file(tree.dir(root, "Flach"), "1.mp3")
+        addFolder()
+        scanner.scanAll()
+        assertEquals(setOf("Band 1", "Flach"), titles())
+        LocalLibraryScanner(tree, probe, db.localLibraryDao(), covers, { now }, maxDepth = 1).scanAll()
+        assertEquals(setOf("Band 1", "Flach"), titles())
+        assertEquals(LocalFolderEntity.ERROR_SCAN, db.localLibraryDao().folders().single().error)
+        LocalLibraryScanner(tree, probe, db.localLibraryDao(), covers, { now }, maxEntries = 1).scanAll()
+        assertEquals(setOf("Band 1", "Flach"), titles())
+    }
+
+    @Test fun aProviderThatThrows_keepsTheTitles_withAGenericErrorNotMissing() = runTest {
+        twoBooks()
+        addFolder()
+        scanner.scanAll()
+        tree.rootThrows = true
+        scanner.scanAll()
+        assertEquals(setOf("A", "B"), titles())
+        assertEquals(LocalFolderEntity.ERROR_SCAN, db.localLibraryDao().folders().single().error)
     }
 }

@@ -200,8 +200,11 @@ fun DeviceTabContent(
     }
 }
 
-private fun folderErrorText(error: String?): Int =
-    if (error == LocalFolderEntity.ERROR_NO_ACCESS) R.string.local_folder_no_access else R.string.local_folder_missing
+private fun folderErrorText(error: String?): Int = when (error) {
+    LocalFolderEntity.ERROR_NO_ACCESS -> R.string.local_folder_no_access
+    LocalFolderEntity.ERROR_MISSING -> R.string.local_folder_missing
+    else -> R.string.local_folder_scan_failed
+}
 
 /** Settings section "Auf dem Gerät": folders with their state, remove, add, scan now. */
 @Composable
