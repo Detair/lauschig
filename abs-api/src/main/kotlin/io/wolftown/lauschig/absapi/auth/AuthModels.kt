@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.absapi.auth
 
 import io.wolftown.lauschig.absapi.LenientMediaProgressListSerializer
+import io.wolftown.lauschig.absapi.me.BookmarkDto
+import io.wolftown.lauschig.absapi.me.LenientBookmarkListSerializer
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
 import kotlinx.serialization.Serializable
 
@@ -28,6 +30,9 @@ data class AbsUser(
     val refreshToken: String? = null,
     @Serializable(with = LenientMediaProgressListSerializer::class)
     val mediaProgress: List<MediaProgressDto> = emptyList(),
+    /** Only in `GET /api/me` / login (`toOldJSONForBrowser`); see [io.wolftown.lauschig.absapi.me.BookmarkDto]. */
+    @Serializable(with = LenientBookmarkListSerializer::class)
+    val bookmarks: List<BookmarkDto> = emptyList(),
 )
 
 /** Subset of `ServerSettings.toJSONForBrowser()`. */

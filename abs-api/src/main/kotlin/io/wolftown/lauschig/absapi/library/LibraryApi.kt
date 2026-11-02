@@ -30,6 +30,14 @@ interface LibraryApi {
         @Query("page") page: Int = 0,
     ): RecentEpisodesResponse
 
+    /** Collections of a (book) library, already filtered by the user's permissions; `limit` 0 = all. */
+    @GET("api/libraries/{id}/collections")
+    suspend fun collections(@Path("id") libraryId: String): CollectionsPage
+
+    /** The user's own playlists in all libraries they can access. */
+    @GET("api/playlists")
+    suspend fun playlists(): PlaylistsResponse
+
     @GET("api/items/{id}")
     suspend fun item(
         @Path("id") id: String,
