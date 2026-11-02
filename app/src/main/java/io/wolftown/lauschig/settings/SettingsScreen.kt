@@ -127,13 +127,15 @@ class SettingsViewModel @Inject constructor(
 }
 
 @Composable
-fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, onOpenDownloads: () -> Unit = {}, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
         playbackActions = viewModel.playbackActions,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
+        onOpenDownloads = onOpenDownloads,
+        localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
     )
 }
 
@@ -154,6 +156,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
+    /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
+    localSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,6 +176,11 @@ fun SettingsScreen(
         rmabSection()
 
         Section(R.string.settings_section_downloads)
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.downloads_manage)) },
+            supportingContent = { Text(stringResource(R.string.downloads_manage_hint)) },
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenDownloads).testTag("openDownloads"),
+        )
         SwitchRow(R.string.settings_wifi_only, R.string.settings_wifi_only_hint, state.wifiOnly, onWifiOnly)
         SwitchRow(R.string.settings_download_on_play, R.string.settings_download_on_play_hint, state.downloadOnPlay, onDownloadOnPlay, Modifier.testTag("downloadOnPlay"))
         MeteredRow(state.meteredOnPlay, state.downloadOnPlay, onMeteredOnPlay)
@@ -181,6 +191,9 @@ fun SettingsScreen(
             supportingContent = { Text(stringResource(R.string.settings_cleanup_open_hint)) },
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCleanup).testTag("openCleanup"),
         )
+
+        Section(R.string.settings_section_local)
+        localSection()
     }
 }
 

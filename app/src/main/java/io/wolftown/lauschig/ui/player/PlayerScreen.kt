@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -211,7 +212,7 @@ fun PlayerScreen(
             IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
             Spacer(Modifier.weight(1f))
             if (state.itemId != null) {
-                DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
+                if (!DeviceLibrary.isLocalKey(state.itemId)) DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
                 IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
                 topActions()
             }

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.common
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,7 @@ fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel:
                     modifier = Modifier.testTag("enqueue"),
                 )
             }
-            progressEntries(progress, offline).forEach { entry ->
+            progressEntries(progress, offline, local = DeviceLibrary.isLocalKey(itemId)).forEach { entry ->
                 DropdownMenuItem(
                     text = { Text(stringResource(entry.label(progress))) },
                     leadingIcon = { Icon(entry.icon, contentDescription = null) },

@@ -30,8 +30,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** [Collections] and [Playlists] show the cached ABS lists instead of titles (see `CollectionListTab`). */
-enum class LibraryTab { InProgress, Finished, Downloaded, Series, Collections, Playlists }
+/**
+ * [Collections] and [Playlists] show the cached ABS lists instead of titles (see `CollectionListTab`); [Device] shows the
+ * device library ("Auf dem Gerät", see `DeviceTab`).
+ */
+enum class LibraryTab { InProgress, Finished, Downloaded, Series, Collections, Playlists, Device }
 
 @Immutable
 data class SeriesGroup(val name: String, val items: List<ItemSummary>)
@@ -98,7 +101,7 @@ class LibraryViewModel @Inject constructor(
                 LibraryTab.Finished -> itemDao.observeFinished(sid)
                 LibraryTab.Downloaded -> itemDao.observeDownloaded(sid)
                 LibraryTab.Series -> itemDao.observeByLibraryKinds(sid, f.effective.toList())
-                LibraryTab.Collections, LibraryTab.Playlists -> flowOf(emptyList())
+                LibraryTab.Collections, LibraryTab.Playlists, LibraryTab.Device -> flowOf(emptyList())
             }
             combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid)) { items, progress, downloaded, active ->
                 val byId = progress.associateBy { it.itemId }

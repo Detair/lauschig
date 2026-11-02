@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -93,14 +94,22 @@ class StartViewModel(
             episodeDao.observeStarted(sid, NEW_EPISODES_LIMIT), episodeDao.observeRecent(sid, NEW_EPISODES_LIMIT * 4), downloadDao.observeCompleteIds(sid),
             ::Triple,
         )
-        return combine(catalogView, itemState, episodeState) { view, (inProgress, downloaded, progress, active), (started, recent, completeKeys) ->
+        // Titles of the device library that are being heard join "continue listening" (always playable, never synced).
+        val dev = DeviceLibrary.SERVER_ID
+        val deviceState = combine(itemDao.observeInProgress(dev), progressDao.observeAll(dev), ::Pair)
+        return combine(catalogView, itemState, episodeState, deviceState) { view, (inProgress, downloaded, progress, active), (started, recent, completeKeys), (deviceItems, deviceProgress) ->
             val byId = progress.associateBy { it.itemId }
+            val deviceById = deviceProgress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
-            covers.sync(downloadedIds + view.podcasts?.keys.orEmpty())
+            covers.sync(downloadedIds + view.podcasts?.keys.orEmpty() + deviceItems.map { "${it.id}@${it.coverUpdatedAt}" })
             val activeIds = active.toHashSet()
             fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
+            val continueServer = inProgress.filter { byId[it.id]?.hideFromContinue != true }.map { Triple(it, byId[it.id]?.lastUpdate ?: 0L, false) }
+            val continueDevice = deviceItems.filter { deviceById[it.id]?.hideFromContinue != true }.map { Triple(it, deviceById[it.id]?.lastUpdate ?: 0L, true) }
             StartUiState(
-                continueItems = inProgress.filter { byId[it.id]?.hideFromContinue != true }.take(ROW_LIMIT).map { it.summary() },
+                continueItems = (continueServer + continueDevice).sortedByDescending { it.second }.take(ROW_LIMIT).map { (item, _, device) ->
+                    if (device) item.toSummary(covers, deviceById[item.id], downloaded = true) else item.summary()
+                },
                 nextInSeries = catalog.nextInSeries(view.seriesGroups, byId, ROW_LIMIT).map { it.summary() },
                 recentlyAdded = view.recent.map { it.summary() },
                 downloaded = downloaded.map { it.summary() },
@@ -138,7 +147,7 @@ class StartViewModel(
     private data class Four<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     fun play(itemId: String) {
-        serverId?.let { player.play(it, itemId) }
+        DeviceLibrary.serverFor(serverId, itemId)?.let { player.play(it, itemId) }
     }
 
     companion object {

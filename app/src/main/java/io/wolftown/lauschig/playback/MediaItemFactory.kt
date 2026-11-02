@@ -74,7 +74,7 @@ class MediaItemFactory(
 
     private fun localUri(f: AudioFileEntity): Uri? {
         val path = f.localPath ?: return null
-        if (path.startsWith(CONTENT_PREFIX)) return Uri.parse(path).takeIf(contentExists)
+        if (path.startsWith(CONTENT_PREFIX)) return path.toUri().takeIf(contentExists)
         return File(path).takeIf(fileExists)?.let { Uri.fromFile(it) }
     }
 

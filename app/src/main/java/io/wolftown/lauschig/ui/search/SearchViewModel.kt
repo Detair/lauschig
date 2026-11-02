@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.search
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -127,26 +128,36 @@ class SearchViewModel(
      */
     private fun resultsFor(sid: String): Flow<Results> {
         val debounced = query.map { it.trim() }.distinctUntilChanged().debounce { if (it.isEmpty()) 0L else DEBOUNCE_MS }
-        val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced) { all, f, q ->
-            Triple(f, q, all.filter { it.libraryId in f.libraryIds })
-        }.mapLatest { (f, q, visible) ->
+        val dev = DeviceLibrary.SERVER_ID
+        // The device library has no kind: its titles are searched while the filter is "all".
+        val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced, catalogDao.observeAll(dev)) { all, f, q, device ->
+            Input(f, q, all.filter { it.libraryId in f.libraryIds }, if (f.selected.isEmpty()) device else emptyList())
+        }.mapLatest { (f, q, visible, device) ->
             // Runs on [dispatcher] via the flowOn below; a newer query/catalog cancels a search still in flight.
-            val found = if (q.isEmpty()) EMPTY else search(visible, q)
+            // Device titles add titles only: their people and genres have no entity page (those list the server's catalog).
+            val found = when {
+                q.isEmpty() -> EMPTY
+                device.isEmpty() -> search(visible, q)
+                else -> search(visible, q).let { r -> r.copy(titles = r.titles + search(device, q).titles) }
+            }
             Hits(f, q, found)
         }
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)
-        return combine(hits, itemState) { (f, q, found), (progress, downloaded, active) ->
-            val byId = progress.associateBy { it.itemId }
+        return combine(hits, itemState, progressDao.observeAll(dev)) { (f, q, found), (progress, downloaded, active), deviceProgress ->
+            // Device ids (`local:…`) never collide with server ids, so one map serves both.
+            val byId = progress.associateBy { it.itemId } + deviceProgress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
-            covers.sync(downloadedIds)
+            covers.sync(downloadedIds + found.titles.filter { DeviceLibrary.isLocal(it.serverId) }.map { "${it.id}@${it.coverUpdatedAt}" })
             val activeIds = active.toHashSet()
             Results(
                 f.available, f.selected, q,
-                found.titles.map { it.toSummary(covers, byId[it.id], it.id in downloadedIds, it.id in activeIds) },
+                found.titles.map { it.toSummary(covers, byId[it.id], it.id in downloadedIds || DeviceLibrary.isLocal(it.serverId), it.id in activeIds) },
                 found.authors, found.narrators, found.series, found.genres, found.tags,
             )
         }.flowOn(dispatcher)
     }
+
+    private data class Input(val filter: KindFilterState, val query: String, val visible: List<ItemEntity>, val device: List<ItemEntity>)
 
     private data class Hits(val filter: KindFilterState, val query: String, val found: SearchResult)
 

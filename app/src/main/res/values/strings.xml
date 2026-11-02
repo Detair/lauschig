@@ -381,4 +381,28 @@
     <string name="downloads_status_partial">%1$s of %2$s</string>
     <string name="downloads_status_complete">Downloaded · %1$s</string>
     <string name="downloads_finished_badge">Finished</string>
+    <string name="bookmarks_device_only">Bookmarks of titles on this device stay on this device.</string>
+    <string name="detail_local_source">On this device – plays without a server</string>
+    <!-- On this device (phase 3C) -->
+    <string name="library_tab_device">On this device</string>
+    <string name="settings_section_local">On this device</string>
+    <string name="local_add_folder">Add folder</string>
+    <string name="local_add_folder_hint">Audiobooks that only live on this phone. They play without a server and stay on this device.</string>
+    <string name="local_add_failed">The folder could not be added.</string>
+    <string name="local_rescan">Scan again now</string>
+    <string name="local_rescan_hint">Picks up added and removed files</string>
+    <string name="local_scanning">Scanning folders …</string>
+    <plurals name="local_folder_titles">
+        <item quantity="one">%d title</item>
+        <item quantity="other">%d titles</item>
+    </plurals>
+    <string name="local_folder_no_access">No access any more – add the folder again or remove it</string>
+    <string name="local_folder_missing">Folder not found – is the storage connected?</string>
+    <string name="local_remove_folder">Remove folder</string>
+    <string name="local_remove_title">Remove folder?</string>
+    <string name="local_remove_message">“%1$s” disappears from Lauschig. The files stay on the device, and your progress is kept.</string>
+    <string name="local_remove_confirm">Remove</string>
+    <string name="local_remove_dismiss">Cancel</string>
+    <string name="local_empty">No folders yet. Add a folder with audiobooks from this device – they play without a server.</string>
+    <string name="local_empty_titles">No audiobooks found in the folders.</string>
 </resources>

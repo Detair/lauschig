@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.podcast
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -45,7 +46,7 @@ class ItemKindViewModel @Inject constructor(
 ) : ViewModel() {
     private val itemId = savedState.toRoute<ItemDetail>().itemId
 
-    val isPodcast: StateFlow<Boolean?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
+    val isPodcast: StateFlow<Boolean?> = accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged()
         .flatMapLatest { sid ->
             if (sid == null) flowOf(false)
             else combine(itemDao.observeItemRow(sid, itemId), libraryDao.observeAll(sid)) { item, libs ->

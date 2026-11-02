@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.extras
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -163,7 +164,8 @@ fun BookmarksSheet(key: String, positionSec: Double, onDismiss: () -> Unit, view
                 Icon(Icons.Rounded.BookmarkAdd, contentDescription = null)
                 Text(stringResource(R.string.bookmark_add_here, formatClock(positionSec)), Modifier.padding(start = 8.dp))
             }
-            if (!BookmarkRules.isSyncable(key)) Hint(stringResource(R.string.bookmarks_local_only))
+            if (DeviceLibrary.isLocalKey(key)) Hint(stringResource(R.string.bookmarks_device_only))
+            else if (!BookmarkRules.isSyncable(key)) Hint(stringResource(R.string.bookmarks_local_only))
             if (rows.isEmpty()) Hint(stringResource(R.string.bookmarks_empty))
             LazyColumn {
                 bookmarkItems(rows, onJump = { viewModel.jumpTo(key, it.timeSec); onDismiss() }, onEdit = { editing = it }, onDelete = viewModel::deleteBookmark)

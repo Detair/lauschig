@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.detail
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import androidx.core.text.HtmlCompat
@@ -90,6 +91,8 @@ data class ItemDetailUiState(
     val detailsLoaded: Boolean = false,
     val online: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
+    /** A title of the device library: plays without a server, has no download. */
+    val isLocal: Boolean = false,
 )
 
 /** Detail screen data from Room; the network is only used for one background [loadDetails] when details are missing. */
@@ -124,7 +127,9 @@ class ItemDetailViewModel(
     private var load = Load.IDLE
 
     private val online: Flow<Boolean> = connection.map { it is ConnectionState.Online }.distinctUntilChanged()
-    private val account = accountStore.account.map { it?.serverId }.distinctUntilChanged()
+    /** A device title lives on the device library's pseudo server and never needs the account. */
+    private val isLocal = DeviceLibrary.isLocalKey(itemId)
+    private val account = if (isLocal) flowOf(DeviceLibrary.SERVER_ID) else accountStore.account.map { it?.serverId }.distinctUntilChanged()
 
     init {
         // One attempt per screen instance; only a failed attempt is retried, and only when the inputs change (e.g. offline -> online).
@@ -135,7 +140,7 @@ class ItemDetailViewModel(
                     Triple(sid, on, loaded == false)
                 }
             }.distinctUntilChanged().collect { (sid, on, missing) ->
-                if (sid != null && on && missing && (load == Load.IDLE || load == Load.FAILED)) {
+                if (sid != null && on && missing && !isLocal && (load == Load.IDLE || load == Load.FAILED)) {
                     load = Load.RUNNING
                     launch {
                         load = try {
@@ -179,7 +184,7 @@ class ItemDetailViewModel(
             progress.currentTimeSec <= 0.0 -> PrimaryAction.Play
             else -> PrimaryAction.Continue(if (savedChapter >= 0) savedChapter + 1 else null)
         }
-        val playableOffline = downloaded || p.isThis
+        val playableOffline = downloaded || p.isThis || isLocal
         val currentIndex: Int
         val currentPos: Double
         if (p.isThis) {
@@ -208,7 +213,7 @@ class ItemDetailViewModel(
             seriesSequence = item.seriesSequence?.takeIf { it.isNotBlank() },
             genres = item.genres,
             description = plainDescription(item.description),
-            coverPath = if (downloaded) covers.pathFor(item.serverId, item.id) else null,
+            coverPath = if (downloaded || isLocal) covers.pathFor(item.serverId, item.id) else null,
             coverVersion = item.coverUpdatedAt,
             durationSec = item.durationSec,
             primary = primary,
@@ -217,6 +222,7 @@ class ItemDetailViewModel(
             detailsLoaded = item.detailsLoaded,
             online = online,
             chapters = rows,
+            isLocal = isLocal,
         )
     }
 

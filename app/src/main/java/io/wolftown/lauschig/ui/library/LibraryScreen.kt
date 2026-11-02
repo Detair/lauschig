@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui.library
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import io.wolftown.lauschig.local.DeviceTab
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +50,7 @@ private fun LibraryTab.label(): Int = when (this) {
     LibraryTab.Series -> R.string.library_tab_series
     LibraryTab.Collections -> R.string.library_tab_collections
     LibraryTab.Playlists -> R.string.library_tab_playlists
+    LibraryTab.Device -> R.string.library_tab_device
 }
 
 @Composable
@@ -51,6 +58,7 @@ fun LibraryRoute(
     onOpenItem: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
     onOpenCollection: (id: String) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
 ) {
@@ -59,6 +67,8 @@ fun LibraryRoute(
     LibraryScreen(
         state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it },
         collections = { kind -> CollectionListTab(kind, onOpenCollection) },
+        device = { DeviceTab(onOpenItem, onPlay = actions::play, onMenu = { menuFor = it }) },
+        onOpenDownloads = onOpenDownloads,
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
@@ -74,6 +84,9 @@ fun LibraryScreen(
     onMenu: (ItemSummary) -> Unit = {},
     /** Content of the collections / playlists tabs. */
     collections: @Composable (CollectionKind) -> Unit = {},
+    /** Content of the "on this device" tab. */
+    device: @Composable () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val tile: @Composable (ItemSummary) -> Unit = { item ->
         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
@@ -93,7 +106,17 @@ fun LibraryScreen(
             collections(listKind)
             return@Column
         }
+        if (state.tab == LibraryTab.Device) {
+            device()
+            return@Column
+        }
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(top = 8.dp))
+        if (state.tab == LibraryTab.Downloaded) {
+            TextButton(onClick = onOpenDownloads, modifier = Modifier.padding(horizontal = 8.dp).testTag("openDownloads")) {
+                Icon(Icons.Rounded.Downloading, contentDescription = null)
+                Text(stringResource(R.string.downloads_manage), Modifier.padding(start = 8.dp))
+            }
+        }
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()
         if (empty && state.loaded) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

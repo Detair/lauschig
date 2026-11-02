@@ -381,4 +381,28 @@
     <string name="downloads_status_partial">%1$s von %2$s</string>
     <string name="downloads_status_complete">Heruntergeladen · %1$s</string>
     <string name="downloads_finished_badge">Gehört</string>
+    <string name="bookmarks_device_only">Lesezeichen von Titeln auf dem Gerät bleiben auf diesem Gerät.</string>
+    <string name="detail_local_source">Auf diesem Gerät – spielt ohne Server</string>
+    <!-- Auf dem Gerät (Phase 3C) -->
+    <string name="library_tab_device">Auf dem Gerät</string>
+    <string name="settings_section_local">Auf dem Gerät</string>
+    <string name="local_add_folder">Ordner hinzufügen</string>
+    <string name="local_add_folder_hint">Hörbücher, die nur auf diesem Handy liegen. Sie spielen ohne Server und bleiben auf diesem Gerät.</string>
+    <string name="local_add_failed">Der Ordner konnte nicht hinzugefügt werden.</string>
+    <string name="local_rescan">Jetzt neu einlesen</string>
+    <string name="local_rescan_hint">Findet neue und entfernte Dateien</string>
+    <string name="local_scanning">Ordner werden eingelesen …</string>
+    <plurals name="local_folder_titles">
+        <item quantity="one">%d Titel</item>
+        <item quantity="other">%d Titel</item>
+    </plurals>
+    <string name="local_folder_no_access">Kein Zugriff mehr – Ordner neu hinzufügen oder entfernen</string>
+    <string name="local_folder_missing">Ordner nicht gefunden – ist der Speicher eingesteckt?</string>
+    <string name="local_remove_folder">Ordner entfernen</string>
+    <string name="local_remove_title">Ordner entfernen?</string>
+    <string name="local_remove_message">„%1$s“ verschwindet aus Lauschig. Die Dateien bleiben auf dem Gerät, der Fortschritt bleibt erhalten.</string>
+    <string name="local_remove_confirm">Entfernen</string>
+    <string name="local_remove_dismiss">Abbrechen</string>
+    <string name="local_empty">Noch keine Ordner. Füge einen Ordner mit Hörbüchern von diesem Gerät hinzu – sie spielen ohne Server.</string>
+    <string name="local_empty_titles">In den Ordnern wurden keine Hörbücher gefunden.</string>
 </resources>

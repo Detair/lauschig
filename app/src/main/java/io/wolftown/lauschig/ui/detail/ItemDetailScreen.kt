@@ -173,7 +173,11 @@ private fun Header(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: 
         }
         Chips(state, onOpenBrowse)
         PrimaryButton(state, onPrimary)
-        DownloadControls(state, onDownload, onPause, onDelete)
+        if (state.isLocal) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("localSource")) { Hint(stringResource(R.string.detail_local_source)) }
+        } else {
+            DownloadControls(state, onDownload, onPause, onDelete)
+        }
         state.description?.let { Description(it) }
     }
 }
@@ -211,14 +215,16 @@ private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        specs.forEach { Chip(it.label) { onOpenBrowse(it.target.first, it.target.second) } }
+        // Entity pages list the server's catalog: a device title's people and genres are shown, but lead nowhere.
+        specs.forEach { Chip(it.label, enabled = !state.isLocal) { onOpenBrowse(it.target.first, it.target.second) } }
     }
 }
 
 @Composable
-private fun Chip(text: String, onClick: () -> Unit) {
+private fun Chip(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,

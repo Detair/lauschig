@@ -172,4 +172,31 @@ class SearchViewModelTest {
         assertEquals(listOf("Nur ein Titel"), s.titles.map { it.title })
         assertTrue(s.authors.isEmpty() && s.narrators.isEmpty() && s.series.isEmpty() && s.genres.isEmpty() && s.tags.isEmpty())
     }
+    @Test fun search_findsDeviceTitles_asTitlesOnly_whileTheFilterIsAll() = runTest {
+        val dev = io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID
+        val local = io.wolftown.lauschig.local.DeviceLibrary.titleId("content://tree/x", "dir:a")
+        seed(item("1", "Momo im Kino"))
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)))
+        db.itemDao().upsertDetails(ItemEntity(dev, local, io.wolftown.lauschig.local.DeviceLibrary.LIBRARY_ID, "Momo", author = "Michael Ende", durationSec = 100.0))
+        val v = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.collect {} }
+        v.setQuery("momo")
+        advanceTimeBy(250)
+        val s = v.await { it.titles.size == 2 }
+        val tile = s.titles.single { it.id == local }
+        assertEquals(dev, tile.serverId)
+        assertTrue(tile.isDownloaded)
+        // The device title's author has no entity page: no facet from it.
+        v.setQuery("ende")
+        advanceTimeBy(250)
+        val byAuthor = v.await { it.resultsFor == "ende" }
+        assertEquals(listOf(local), byAuthor.titles.map { it.id })
+        assertTrue(byAuthor.authors.isEmpty())
+        // A chosen kind narrows to the server's libraries of that kind.
+        v.setKinds(setOf(io.wolftown.lauschig.db.entities.LibraryKind.AUDIOBOOK))
+        v.setQuery("momo")
+        advanceTimeBy(250)
+        val narrowed = v.await { it.resultsFor == "momo" && it.selectedKinds.isNotEmpty() }
+        assertEquals(listOf("1"), narrowed.titles.map { it.id })
+    }
 }

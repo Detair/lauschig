@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,7 +43,9 @@ class ComfortViewModel @Inject constructor(
     private val accounts: AccountStore,
     player: PlayerController,
 ) : ViewModel() {
-    private val key = combine(accounts.account.map { it?.serverId }, player.state.map { it.itemId }) { s, i -> if (s != null && i != null) s to i else null }
+    private val key = combine(accounts.account.map { it?.serverId }, player.state.map { it.itemId }) { s, i ->
+        i?.let { id -> DeviceLibrary.serverFor(s, id)?.let { it to id } }
+    }
         .distinctUntilChanged()
 
     private val titleBoost = key.flatMapLatest { k -> if (k == null) flowOf(null) else titleAudio.observe(k.first, k.second).map { it?.boostDb } }

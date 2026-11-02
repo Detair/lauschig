@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.nav
 
+import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -17,7 +18,6 @@ import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.library.LibraryRoute
-import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
@@ -33,13 +33,19 @@ import io.wolftown.lauschig.ui.start.StartRoute
 fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
-        composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }) }
-        composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
+        composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }, onOpenDownloads = { navController.navigate(Downloads) }) }
         composable<Downloads> {
             // An episode's details are its podcast's page.
             DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })
         }
-        composable<Library> { LibraryRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenCollection = { navController.navigate(Collection(it)) }) }
+        composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
+        composable<Library> {
+            LibraryRoute(
+                onOpenItem = { navController.navigate(ItemDetail(it)) },
+                onOpenCollection = { navController.navigate(Collection(it)) },
+                onOpenDownloads = { navController.navigate(Downloads) { launchSingleTop = true } },
+            )
+        }
         composable<Collection> { CollectionRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> {
             DiscoverRoute(

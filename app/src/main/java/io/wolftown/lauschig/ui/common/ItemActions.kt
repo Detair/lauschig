@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.common
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -114,37 +115,47 @@ class ItemActionsViewModel @Inject constructor(
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
+    private fun serverOf(itemId: String): Flow<String?> = if (DeviceLibrary.isLocalKey(itemId)) flowOf(DeviceLibrary.SERVER_ID) else serverId
+
+    /** A device title has no download (it is on the device already). */
     fun downloadState(itemId: String?): Flow<QuickDownload> =
-        if (itemId == null) flowOf(QuickDownload.None)
+        if (itemId == null || DeviceLibrary.isLocalKey(itemId)) flowOf(QuickDownload.None)
         else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else downloads.observe(sid, itemId) }.map { it.toQuick() }
 
-    fun play(itemId: String) = withServer { player.play(it, itemId) }
-    /** "Play next": appends the playable key to the device's queue (no duplicates). */
+    fun play(itemId: String) = withServer(itemId) { player.play(it, itemId) }
+    /** "Play next": appends the playable key to the device's queue (no duplicates); the queue is the account's, for every key. */
     fun enqueue(itemId: String) = withServer { queue.add(it, itemId, System.currentTimeMillis()) }
-    fun download(itemId: String) = withServer { downloads.enqueue(it, itemId) }
+    fun download(itemId: String) = withServer(itemId) { downloads.enqueue(it, itemId) }
     /** Cancels a running download or deletes a finished one, including files; progress is kept. */
-    fun deleteDownload(itemId: String) = withServer { downloads.cancel(it, itemId, deleteFiles = true) }
+    fun deleteDownload(itemId: String) = withServer(itemId) { downloads.cancel(it, itemId, deleteFiles = true) }
 
     /** Listening state for the progress actions (finished / in progress / hidden). */
     fun progressState(itemId: String?): Flow<ProgressEntity?> =
         if (itemId == null) flowOf(null)
-        else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else items.observeProgress(sid, itemId) }
+        else serverOf(itemId).flatMapLatest { sid -> if (sid == null) flowOf(null) else items.observeProgress(sid, itemId) }
 
     /** The next volume of the title's series, if there is one in the library. */
     fun nextVolume(itemId: String?): Flow<ItemEntity?> =
         if (itemId == null) flowOf(null)
-        else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else flow { emit(nextVolume(items, sid, itemId)) } }
+        else serverOf(itemId).flatMapLatest { sid -> if (sid == null) flowOf(null) else flow { emit(nextVolume(items, sid, itemId)) } }
 
-    fun markFinished(itemId: String) = withServer { progressActions.markFinished(it, itemId) }
-    fun startOver(itemId: String) = withServer { progressActions.startOver(it, itemId) }
-    fun markNotFinishedKeepPosition(itemId: String) = withServer { progressActions.markNotFinishedKeepPosition(it, itemId) }
-    fun hideFromContinue(itemId: String) = withServer { progressActions.hideFromContinue(it, itemId) }
+    fun markFinished(itemId: String) = withServer(itemId) { progressActions.markFinished(it, itemId) }
+    fun startOver(itemId: String) = withServer(itemId) { progressActions.startOver(it, itemId) }
+    fun markNotFinishedKeepPosition(itemId: String) = withServer(itemId) { progressActions.markNotFinishedKeepPosition(it, itemId) }
+    fun hideFromContinue(itemId: String) = withServer(itemId) { progressActions.hideFromContinue(it, itemId) }
 
     /** Result (true = taken from the server) goes to [onResult] on the main thread. */
-    fun pullFromServer(itemId: String, onResult: (Boolean) -> Unit) = withServer { onResult(progressActions.pullFromServer(it, itemId)) }
+    fun pullFromServer(itemId: String, onResult: (Boolean) -> Unit) = withServer(itemId) { onResult(progressActions.pullFromServer(it, itemId)) }
 
+    /** The account's server (queue namespace). */
     private fun withServer(block: suspend (String) -> Unit) {
         viewModelScope.launch { block(serverId.filterNotNull().first()) }
+    }
+
+    /** The server of [itemId] (see [serverOf]). */
+    private fun withServer(itemId: String, block: suspend (String) -> Unit) {
+        viewModelScope.launch { block(serverOf(itemId).filterNotNull().first()) }
     }
 }
 
@@ -175,6 +186,7 @@ fun ItemActionsSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             ActionRow(Icons.Rounded.Info, stringResource(R.string.actions_details)) { onDismiss(); onOpenDetails(item.id) }
+            val local = DeviceLibrary.isLocalKey(item.id)
             if (item.isDownloaded || !offline) {
                 ActionRow(Icons.Rounded.PlayArrow, stringResource(R.string.player_play)) { onDismiss(); viewModel.play(item.id) }
             }
@@ -184,7 +196,7 @@ fun ItemActionsSheet(
                 Toast.makeText(context, R.string.queue_added, Toast.LENGTH_SHORT).show()
                 onDismiss()
             }
-            when (val d = download) {
+            if (!local) when (val d = download) {
                 QuickDownload.None, QuickDownload.Paused, QuickDownload.Failed -> if (!offline) {
                     val label = if (d == QuickDownload.None) R.string.detail_download else R.string.actions_download_resume
                     ActionRow(Icons.Rounded.Download, stringResource(label)) { viewModel.download(item.id); askNotifications(); onDismiss() }
@@ -194,7 +206,7 @@ fun ItemActionsSheet(
                 }
                 QuickDownload.Complete -> ActionRow(Icons.Rounded.Delete, stringResource(R.string.detail_download_delete)) { confirmDelete = true }
             }
-            progressEntries(progress, offline).forEach { entry ->
+            progressEntries(progress, offline, local).forEach { entry ->
                 ActionRow(entry.icon, stringResource(entry.label(progress))) { runProgress(entry); if (!entry.keepsSheetOpen(download)) onDismiss() }
             }
         }
