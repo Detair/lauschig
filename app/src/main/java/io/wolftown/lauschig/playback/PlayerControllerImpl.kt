@@ -22,7 +22,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,6 +116,11 @@ class PlayerControllerImpl(
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+
+    private val ended = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    override val titleEnded: Flow<String> = ended.asSharedFlow()
+    /** The loaded title whose end was already reported; reset once the player leaves the ended state (replay, seek). */
+    private var endedFor: Current? = null
 
     private var current: Current? = null
     /** The last loaded title; survives a service stop so play/pause can start it again. */
@@ -351,6 +358,11 @@ class PlayerControllerImpl(
         val c = current ?: return
         val snap = facade.snapshot()
         if (snap.isPlaying) starting = false
+        if (snap.isEnded) {
+            if (endedFor !== c) { endedFor = c; ended.tryEmit(c.item.item.id) }
+        } else if (endedFor === c) {
+            endedFor = null
+        }
         val pos = c.mapper.toGlobal(snap.mediaIndex, snap.positionMs)
         val duration = c.mapper.totalSec.takeIf { it > 0 } ?: c.item.item.durationSec
         val chapters = c.item.chapters

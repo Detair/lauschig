@@ -2,8 +2,18 @@ package io.wolftown.lauschig.playback
 
 import androidx.media3.common.MediaItem
 
-/** [isBuffering]: the player wants to play but is waiting for data (stream start, seek into an unbuffered range). */
-data class PlayerSnapshot(val isPlaying: Boolean, val mediaIndex: Int, val positionMs: Long, val speed: Float, val isBuffering: Boolean = false)
+/**
+ * [isBuffering]: the player wants to play but is waiting for data (stream start, seek into an unbuffered range).
+ * [isEnded]: the last file played to its end (`STATE_ENDED`).
+ */
+data class PlayerSnapshot(
+    val isPlaying: Boolean,
+    val mediaIndex: Int,
+    val positionMs: Long,
+    val speed: Float,
+    val isBuffering: Boolean = false,
+    val isEnded: Boolean = false,
+)
 
 /** The small slice of the player that [PlayerControllerImpl] needs; implemented over a MediaController, faked in tests. */
 interface PlayerFacade {

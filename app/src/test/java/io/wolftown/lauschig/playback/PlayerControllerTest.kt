@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertFalse
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -56,6 +57,7 @@ private class FakeFacade : PlayerFacade {
     override fun hasMedia() = items.isNotEmpty()
     override fun setOnError(onError: () -> Unit) { errorCb = onError }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
+    fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
 
@@ -100,6 +102,22 @@ class PlayerControllerTest {
             loadDetails = loadDetails,
             loadById = { sid, id -> loadPlayable(db.itemDao(), db.episodeDao(), sid, id) },
         )
+
+    @Test fun titleEnded_emitsOncePerNaturalEnd_andAgainAfterAReplay() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(listOf(file(0, 1800.0))))
+        val ended = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { c.titleEnded.collect { ended += it } }
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false, isEnded = true)
+        f.change(); f.change()
+        assertEquals(listOf("it"), ended)
+        f.snap = f.snap.copy(isPlaying = true, isEnded = false)
+        f.change()
+        f.snap = f.snap.copy(isPlaying = false, isEnded = true)
+        f.change()
+        assertEquals(listOf("it", "it"), ended)
+    }
 
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
         seedEpisode(withFile = true)
