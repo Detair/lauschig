@@ -41,7 +41,7 @@ data class QueueRow(val key: String, val title: String, val subtitle: String?)
 /** Bookmarks, listening history and the queue for the player sheets and the detail page; all from Room. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
-class TitleExtrasViewModel @Inject constructor(
+class TitleExtrasViewModel(
     accountStore: AccountStore,
     private val bookmarks: BookmarkDao,
     private val history: HistoryRepository,
@@ -49,13 +49,25 @@ class TitleExtrasViewModel @Inject constructor(
     private val items: ItemDao,
     private val episodes: EpisodeDao,
     private val player: PlayerController,
-    private val api: ApiProvider,
+    private val connection: Flow<ConnectionState>,
     private val sync: SyncTrigger,
 ) : ViewModel() {
+    @Inject constructor(
+        accountStore: AccountStore,
+        bookmarks: BookmarkDao,
+        history: HistoryRepository,
+        queue: QueueDao,
+        items: ItemDao,
+        episodes: EpisodeDao,
+        player: PlayerController,
+        api: ApiProvider,
+        sync: SyncTrigger,
+    ) : this(accountStore, bookmarks, history, queue, items, episodes, player, api.connection, sync)
+
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val online: Flow<Boolean> = api.connection.map { it is ConnectionState.Online }.distinctUntilChanged()
+    val online: Flow<Boolean> = connection.map { it is ConnectionState.Online }.distinctUntilChanged()
 
     fun bookmarks(key: String?): Flow<List<BookmarkEntity>> =
         if (key == null) flowOf(emptyList())
@@ -70,7 +82,7 @@ class TitleExtrasViewModel @Inject constructor(
      * with a placeholder Offline); a failure keeps the cache, offline shows what is stored.
      */
     fun refreshHistory(key: String) = withServer { sid ->
-        withTimeoutOrNull(ONLINE_WAIT_MS) { api.connection.first { it is ConnectionState.Online } } ?: return@withServer
+        withTimeoutOrNull(ONLINE_WAIT_MS) { connection.first { it is ConnectionState.Online } } ?: return@withServer
         try {
             history.refresh(sid, key)
         } catch (e: CancellationException) {
@@ -80,25 +92,28 @@ class TitleExtrasViewModel @Inject constructor(
         }
     }
 
-    /** New bookmarks sit on whole seconds (like the ABS web client). */
+    /**
+     * New bookmarks sit on whole seconds (like the ABS web client); one on the same second keeps its note (see
+     * `BookmarkRules.add`). Every change pushes the bookmarks only, not the whole library.
+     */
     fun addBookmark(key: String, positionSec: Double, note: String?) = withServer { sid ->
-        bookmarks.save(sid, key, floor(positionSec), note, System.currentTimeMillis())
-        sync.syncNow()
+        bookmarks.add(sid, key, floor(positionSec), note, System.currentTimeMillis())
+        sync.syncBookmarks()
     }
 
     fun editBookmark(row: BookmarkEntity, note: String?) = withServer { sid ->
         bookmarks.save(sid, row.itemKey, row.timeSec, note, System.currentTimeMillis())
-        sync.syncNow()
+        sync.syncBookmarks()
     }
 
     fun deleteBookmark(row: BookmarkEntity) = withServer { sid ->
         bookmarks.delete(sid, row.itemKey, row.timeSec)
-        sync.syncNow()
+        sync.syncBookmarks()
     }
 
-    /** Seeks if [key] is loaded, otherwise plays it from [sec]. */
+    /** Plays [key] from [sec]: seeks and resumes if it is loaded, otherwise starts it there. */
     fun jumpTo(key: String, sec: Double) = withServer { sid ->
-        if (player.state.value.itemId == key) player.seekTo(sec) else player.play(sid, key, sec)
+        if (player.state.value.itemId == key) player.seekToAndPlay(sec) else player.play(sid, key, sec)
     }
 
     val queueRows: StateFlow<List<QueueRow>> = serverId.flatMapLatest { sid ->

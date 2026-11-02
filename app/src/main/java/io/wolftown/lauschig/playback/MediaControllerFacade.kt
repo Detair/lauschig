@@ -68,8 +68,12 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
         return PlayerSnapshot(
             c.isPlaying, c.currentMediaItemIndex, c.currentPosition.coerceAtLeast(0), c.playbackParameters.speed,
             isBuffering = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
-            isEnded = c.playbackState == Player.STATE_ENDED && c.mediaItemCount > 0,
         )
+    }
+
+    override fun currentKey(): Pair<String, String>? {
+        val extras = controller?.currentMediaItem?.mediaMetadata?.extras ?: return null
+        return (extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return null) to (extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return null)
     }
 
     override fun hasMedia() = controller?.let { it.isConnected && it.mediaItemCount > 0 } == true

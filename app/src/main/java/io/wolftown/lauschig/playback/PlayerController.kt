@@ -1,9 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import androidx.annotation.StringRes
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Progress of a loading stream: [bytes] so far, [expectedBytes] and [etaSec] when known (the index of an m4b at the end
@@ -41,9 +39,6 @@ data class PlayerUiState(
 interface PlayerController {
     val state: StateFlow<PlayerUiState>
 
-    /** The key of the loaded title, once each time it played to its natural end (not on stop or title switch). */
-    val titleEnded: Flow<String> get() = emptyFlow()
-
     /** Starts [itemId]; start position is [startSec], else the saved progress (0 if finished/none). */
     fun play(serverId: String, itemId: String, startSec: Double? = null)
     fun togglePlayPause()
@@ -54,6 +49,9 @@ interface PlayerController {
 
     /** Seeks to the absolute book-wide position [globalSec] (clamped to the book). */
     fun seekTo(globalSec: Double)
+
+    /** Seeks the loaded title to [globalSec] and plays from there (history and bookmark taps). */
+    fun seekToAndPlay(globalSec: Double) = seekTo(globalSec)
     fun seekToChapter(index: Int)
     fun setSpeed(speed: Float)
 

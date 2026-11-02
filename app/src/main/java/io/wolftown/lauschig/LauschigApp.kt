@@ -11,7 +11,6 @@ import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.AutoResumer
 import io.wolftown.lauschig.playback.NextVolumePrefetcher
-import io.wolftown.lauschig.queue.QueueAdvancer
 import io.wolftown.lauschig.sync.SyncScheduler
 import io.wolftown.lauschig.ui.common.newCoverImageLoader
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +26,6 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var apiProvider: ApiProvider
     @Inject lateinit var prefetcher: NextVolumePrefetcher
     @Inject lateinit var autoResumer: AutoResumer
-    @Inject lateinit var queueAdvancer: QueueAdvancer
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -44,8 +42,6 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         prefetcher.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         // Registers its audio-device callback only while the setting is on.
         autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
-        // Starts the next queued title when one ends (the controller is main-thread bound).
-        queueAdvancer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
     }
 }

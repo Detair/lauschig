@@ -22,9 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -117,10 +115,9 @@ class PlayerControllerImpl(
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
-    private val ended = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    override val titleEnded: Flow<String> = ended.asSharedFlow()
-    /** The loaded title whose end was already reported; reset once the player leaves the ended state (replay, seek). */
-    private var endedFor: Current? = null
+    /** Adopts a title the service started by itself (next in the queue); see [adopt]. */
+    private var adoptJob: Job? = null
+    private var adopting: String? = null
 
     private var current: Current? = null
     /** The last loaded title; survives a service stop so play/pause can start it again. */
@@ -333,6 +330,14 @@ class PlayerControllerImpl(
         seekGlobal(c, globalSec)
     }
 
+    override fun seekToAndPlay(globalSec: Double) {
+        val c = current ?: return
+        playJob?.cancel()
+        seekGlobal(c, globalSec)
+        facade.play()
+        refresh()
+    }
+
     override fun seekToChapter(index: Int) {
         val c = current ?: return
         val chapter = c.item.chapters.getOrNull(index) ?: return
@@ -358,10 +363,10 @@ class PlayerControllerImpl(
         val c = current ?: return
         val snap = facade.snapshot()
         if (snap.isPlaying) starting = false
-        if (snap.isEnded) {
-            if (endedFor !== c) { endedFor = c; ended.tryEmit(c.item.item.id) }
-        } else if (endedFor === c) {
-            endedFor = null
+        val playing = facade.currentKey()
+        if (playing != null && !starting && playing.second != c.item.item.id) {
+            adopt(playing.first, playing.second)
+            return
         }
         val pos = c.mapper.toGlobal(snap.mediaIndex, snap.positionMs)
         val duration = c.mapper.totalSec.takeIf { it > 0 } ?: c.item.item.durationSec
@@ -390,6 +395,35 @@ class PlayerControllerImpl(
             )
         }
         if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
+    }
+
+    /**
+     * The service switched to another title on its own (the next queued one when a title ended): load that title as
+     * the current one, without touching the player's queue.
+     */
+    private fun adopt(serverId: String, itemId: String) {
+        if (adoptJob?.isActive == true && adopting == itemId) return
+        adopting = itemId
+        adoptJob = scope.launch {
+            val item = loadItem(serverId, itemId) ?: return@launch
+            if (facade.currentKey()?.second != itemId) return@launch
+            localJob?.cancel(); localJob = null
+            val allLocal = withContext(io) { factory.isFullyLocal(item) }
+            val base = if (allLocal) null else onlineBaseUrl()
+            val items = try {
+                withContext(io) { factory.build(item, base) }
+            } catch (e: PlaybackUnavailableException) {
+                emptyList()
+            }
+            val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
+            if (facade.currentKey()?.second != itemId) return@launch
+            last = serverId to itemId
+            val adopted = Current(item, TimelineMapper(item.audioFiles), coverPath, streaming = !allLocal, base, items)
+            current = adopted
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, downloadThrottled = throttled)
+            refresh()
+            if (items.isNotEmpty()) watchDownloads(adopted)
+        }
     }
 
     /** Null unless the stream is actually loading (a local file of a partly downloaded title can buffer too). */

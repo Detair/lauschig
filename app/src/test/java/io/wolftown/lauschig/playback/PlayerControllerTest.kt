@@ -51,6 +51,11 @@ private class FakeFacade : PlayerFacade {
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
+    /** The title of the playing queue entry, as the service's player reports it. */
+    var key: Pair<String, String>? = null
+    override fun currentKey() = key ?: items.getOrNull(snap.mediaIndex)?.mediaMetadata?.extras?.let { e ->
+        e.getString(MediaItemFactory.EXTRA_SERVER_ID)!! to e.getString(MediaItemFactory.EXTRA_ITEM_ID)!!
+    }
     override fun setOnChange(onChange: () -> Unit) { cb = onChange }
     var errorCb: () -> Unit = {}
     var disconnectedCb: () -> Unit = {}
@@ -103,20 +108,31 @@ class PlayerControllerTest {
             loadById = { sid, id -> loadPlayable(db.itemDao(), db.episodeDao(), sid, id) },
         )
 
-    @Test fun titleEnded_emitsOncePerNaturalEnd_andAgainAfterAReplay() = runTest {
+    @Test fun seekToAndPlay_seeksAndResumesAPausedTitle() = runTest {
         val f = FakeFacade()
         val c = controller(f, item(listOf(file(0, 1800.0))))
-        val ended = mutableListOf<String>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { c.titleEnded.collect { ended += it } }
         c.play(s, "it")
-        f.snap = f.snap.copy(isPlaying = false, isEnded = true)
-        f.change(); f.change()
-        assertEquals(listOf("it"), ended)
-        f.snap = f.snap.copy(isPlaying = true, isEnded = false)
+        c.pause()
+        c.seekToAndPlay(1000.0)
+        assertTrue(f.snap.isPlaying)
+        assertEquals(1_000_000L, f.snap.positionMs)
+        assertEquals(1000.0, c.state.value.positionSec, 0.0)
+    }
+
+    @Test fun titleStartedByTheService_isAdopted() = runTest {
+        val f = FakeFacade()
+        val second = ItemWithDetails(ItemEntity(s, "it2", "lib", "Second", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "it2", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val first = item(listOf(file(0, 1800.0)))
+        val c = controller(f, { first }, loadById = { _, id -> if (id == "it2") second else first })
+        c.play(s, "it")
+        // The service ended "it" and loaded the next queued title itself.
+        f.key = s to "it2"
+        f.snap = PlayerSnapshot(true, 0, 30_000, 1f)
         f.change()
-        f.snap = f.snap.copy(isPlaying = false, isEnded = true)
-        f.change()
-        assertEquals(listOf("it", "it"), ended)
+        assertEquals("it2", c.state.value.itemId)
+        assertEquals("Second", c.state.value.title)
+        assertEquals(600.0, c.state.value.durationSec, 0.0)
+        assertEquals(30.0, c.state.value.positionSec, 0.0)
     }
 
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
