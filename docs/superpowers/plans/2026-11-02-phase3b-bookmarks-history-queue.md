@@ -77,3 +77,10 @@ data class HistorySessionEntity(serverId, id, itemKey, startedAt, updatedAt, sta
 - `CollectionSyncTest`: replace per library, playlists with episodes insert missing episode rows, failure keeps cache.
 - `MigrationTest`: v6 → v7 keeps data and the new tables work.
 - UI: player sheets open, detail sections render, library collections tab lists and opens.
+
+## Notes from the implementation
+
+- The note dialog has no Robolectric UI test: a dialog with a text field exhausts Robolectric's native text-layout
+  registry (OOM). Note trimming is covered by `BookmarkRulesTest` (`save` trims, empty = no note).
+- History refresh waits up to 10 s for the connection check (a cold process starts with a placeholder Offline).
+- Episode pages (podcast screen) have no bookmark/history sections; episodes get both in the player sheets.

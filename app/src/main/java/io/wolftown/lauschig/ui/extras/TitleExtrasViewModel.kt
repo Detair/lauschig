@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.math.floor
 
@@ -64,10 +65,12 @@ class TitleExtrasViewModel @Inject constructor(
         if (key == null) flowOf(History(emptyList(), 0.0))
         else serverId.flatMapLatest { sid -> if (sid == null) flowOf(History(emptyList(), 0.0)) else history.observe(sid, key) }
 
-    /** Fetches the server sessions of [key] once online; a failure keeps the cache (offline shows what is stored). */
+    /**
+     * Fetches the server sessions of [key] if the server comes online within a few seconds (a cold process starts
+     * with a placeholder Offline); a failure keeps the cache, offline shows what is stored.
+     */
     fun refreshHistory(key: String) = withServer { sid ->
-        val on = api.connection.first() is ConnectionState.Online
-        if (!on) return@withServer
+        withTimeoutOrNull(ONLINE_WAIT_MS) { api.connection.first { it is ConnectionState.Online } } ?: return@withServer
         try {
             history.refresh(sid, key)
         } catch (e: CancellationException) {
@@ -124,5 +127,9 @@ class TitleExtrasViewModel @Inject constructor(
 
     private fun withServer(block: suspend (String) -> Unit) {
         viewModelScope.launch { block(serverId.filterNotNull().first()) }
+    }
+
+    private companion object {
+        const val ONLINE_WAIT_MS = 10_000L
     }
 }
