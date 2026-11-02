@@ -84,3 +84,20 @@ data class HistorySessionEntity(serverId, id, itemKey, startedAt, updatedAt, sta
   registry (OOM). Note trimming is covered by `BookmarkRulesTest` (`save` trims, empty = no note).
 - History refresh waits up to 10 s for the connection check (a cold process starts with a placeholder Offline).
 - Episode pages (podcast screen) have no bookmark/history sections; episodes get both in the player sheets.
+
+## Fix round 1 (review) – changed decisions
+
+- Collections/playlists: the background sync refreshes them at most once per 6 h after a successful run
+  (`CollectionSync.syncIfDue`, stamp in DataStore `sync_stamps`); opening the Library tab refreshes unthrottled.
+- A bookmark change enqueues a bookmark-only `BookmarkSyncWorker` (unique, APPEND_OR_REPLACE), not the full sync.
+  `BookmarkSync.sync` holds a process-wide mutex; 403 is handled like 400/404 (that op stays pending).
+- Deleting a book bookmark always leaves a tombstone until the server confirmed it (a create may have reached the
+  server with its response lost); only episode bookmarks disappear at once.
+- "Set a bookmark" on a second that already has one never erases its note: an empty or equal note changes nothing,
+  a different one is appended on a new line (edit still replaces the note as typed).
+- History: for a synced session present in both places the copy with more listening time wins.
+- History/bookmark taps play: a loaded title seeks and resumes (`PlayerController.seekToAndPlay`).
+- Auto-advance moved into `PlaybackService` (`QueueAdvancer` + `ServiceTitleStarter` on the service's ExoPlayer at
+  `STATE_ENDED`); the controller adopts a title the service switched to (`PlayerFacade.currentKey`). Queue entries:
+  missing titles (gone, or orphaned without download) and titles that fail to start are dropped and the next one is
+  tried; titles not playable right now (offline, not downloaded) are skipped and stay queued.
