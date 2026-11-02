@@ -84,8 +84,10 @@ fun PlayerRoute(
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
+    comfortViewModel: ComfortViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val comfort by comfortViewModel.state.collectAsStateWithLifecycle()
     val itemId = state.itemId
     val download by remember(itemId) { actions.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val askNotifications = rememberNotificationPermissionOnce()
@@ -105,6 +107,16 @@ fun PlayerRoute(
         onNext = viewModel::nextChapter,
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
+        comfort = {
+            ComfortRow(
+                comfort,
+                onStartSleep = comfortViewModel::startSleep,
+                onCancelSleep = comfortViewModel::cancelSleep,
+                onSkipSilence = comfortViewModel::setSkipSilence,
+                onBoost = comfortViewModel::setBoost,
+                modifier = Modifier.padding(bottom = 16.dp),
+            )
+        },
     )
 }
 
@@ -137,6 +149,8 @@ fun PlayerScreen(
     onDeleteDownload: () -> Unit = {},
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
+    /** Sleep timer and audio options ([ComfortRow]); shown only while a title is loaded. */
+    comfort: @Composable () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -266,6 +280,7 @@ fun PlayerScreen(
                 Text(stringResource(R.string.player_chapters), Modifier.padding(start = 8.dp))
             }
         }
+        if (state.itemId != null) comfort()
     }
 
     if (showSpeed) {
