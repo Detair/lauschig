@@ -35,7 +35,20 @@ object BookmarkRules {
 
     fun noteFromTitle(timeSec: Double, title: String): String? = title.trim().takeIf { it.isNotEmpty() && it != defaultTitle(timeSec) }
 
-    /** Create or edit (also revives a tombstone). Books become pending; episode bookmarks stay local. */
+    /**
+     * "Set a bookmark here" at [timeSec]: a new row, or – when a bookmark already sits on that second – a merge that
+     * never loses its note: an empty or equal new note changes nothing, a different one is appended on a new line.
+     * A tombstone at that second is replaced by a fresh bookmark (its old note was deleted on purpose).
+     */
+    fun add(existing: BookmarkEntity?, serverId: String, itemKey: String, timeSec: Double, note: String?, now: Long): BookmarkEntity {
+        if (existing == null || existing.pending == BookmarkPending.DELETE) return save(existing?.copy(note = null), serverId, itemKey, timeSec, note, now)
+        val new = note?.trim()?.takeIf { it.isNotEmpty() } ?: return existing
+        val old = existing.note
+        if (old == new) return existing
+        return save(existing, serverId, itemKey, timeSec, if (old.isNullOrEmpty()) new else "$old\n$new", now)
+    }
+
+    /** Create or edit the note as given (also revives a tombstone). Books become pending; episode bookmarks stay local. */
     fun save(existing: BookmarkEntity?, serverId: String, itemKey: String, timeSec: Double, note: String?, now: Long): BookmarkEntity {
         val pending = if (isSyncable(itemKey)) BookmarkPending.UPSERT else BookmarkPending.NONE
         val clean = note?.trim()?.takeIf { it.isNotEmpty() }
@@ -43,9 +56,13 @@ object BookmarkRules {
             ?: BookmarkEntity(serverId, itemKey, timeSec, clean, createdAt = now, pending = pending)
     }
 
-    /** Null = remove the row now (the server never had it); otherwise a tombstone waiting for the push. */
+    /**
+     * Null = remove the row now (episode bookmarks, which never leave the device). A book bookmark always becomes a
+     * tombstone, even if no create was confirmed yet: the POST may have reached the server with its response lost, and
+     * the push treats a 404 on DELETE as done.
+     */
     fun delete(existing: BookmarkEntity): BookmarkEntity? =
-        if (!existing.onServer || !isSyncable(existing.itemKey)) null
+        if (!isSyncable(existing.itemKey)) null
         else existing.copy(pending = BookmarkPending.DELETE, rev = existing.rev + 1)
 
     /** [local] = all rows of the server (any key); [server] = the full server list. */

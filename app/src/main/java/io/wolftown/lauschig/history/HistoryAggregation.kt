@@ -23,8 +23,10 @@ data class History(val entries: List<HistoryEntry>, val totalListenedSec: Double
 
 /**
  * Merges the cached server sessions of a title with the sessions recorded on this device. Same id = same session
- * (local sessions are uploaded under their own id): the local row wins while it is not synced (it is the freshest),
- * afterwards the server row (it knows the device). Sessions under [MIN_LISTENED_SEC] are hidden. Newest first.
+ * (local sessions are uploaded under their own id): the local row wins while it is not synced (it is the freshest);
+ * once synced, the copy with more listening time wins (the cache may predate the last upload, or the session may
+ * have grown on the server), keeping the server's device name. Sessions under [MIN_LISTENED_SEC] are hidden.
+ * Newest first.
  */
 object HistoryAggregation {
     const val MIN_LISTENED_SEC = 5.0
@@ -34,7 +36,11 @@ object HistoryAggregation {
         val byId = LinkedHashMap<String, HistoryEntry>()
         for (s in server) {
             val l = localById[s.id]
-            byId[s.id] = if (l != null && !l.synced) l.toEntry() else s.toEntry(thisDevice = l != null)
+            byId[s.id] = when {
+                l == null -> s.toEntry(thisDevice = false)
+                !l.synced || l.timeListeningSec > s.timeListeningSec -> l.toEntry().copy(deviceName = s.deviceName)
+                else -> s.toEntry(thisDevice = true)
+            }
         }
         for (l in local) if (l.id !in byId) byId[l.id] = l.toEntry()
         val entries = byId.values.filter { it.listenedSec >= MIN_LISTENED_SEC }.sortedByDescending { it.startedAt }

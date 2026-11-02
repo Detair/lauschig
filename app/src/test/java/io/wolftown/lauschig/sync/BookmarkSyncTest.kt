@@ -13,7 +13,11 @@ import io.wolftown.lauschig.absapi.me.LocalSessionsResult
 import io.wolftown.lauschig.absapi.me.ProgressUpdate
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.BookmarkPending
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
@@ -32,9 +36,12 @@ private fun http(code: Int) = HttpException(Response.error<Any>(code, "".toRespo
 
 /** In-memory ABS bookmark store with the server's rules (create is idempotent, update/delete 404 when missing). */
 private class BookmarkServer : StubMeApi() {
-    val rows = mutableMapOf<Pair<String, Double>, BookmarkDto>()
-    val calls = mutableListOf<String>()
+    val rows = java.util.concurrent.ConcurrentHashMap<Pair<String, Double>, BookmarkDto>()
+    val calls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
     var goneItems = setOf<String>()
+    var forbiddenItems = setOf<String>()
+    /** When set, every create waits for it (to overlap two syncs). */
+    var createGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     var noBookmarksEndpoint = false
     var failAll = false
 
@@ -49,12 +56,14 @@ private class BookmarkServer : StubMeApi() {
         calls += "POST $itemId ${body.time} ${body.title}"
         if (failAll) throw IOException("down")
         if (itemId in goneItems) throw http(404)
+        if (itemId in forbiddenItems) throw http(403)
+        createGate?.await()
         return BookmarkDto(itemId, body.time, body.title, 1).also { rows[itemId to body.time] = it }
     }
     override suspend fun updateBookmark(itemId: String, body: BookmarkBody): BookmarkDto {
         calls += "PATCH $itemId ${body.time} ${body.title}"
         val key = itemId to body.time
-        if (key !in rows) throw http(404)
+        if (!rows.containsKey(key)) throw http(404)
         return rows.getValue(key).copy(title = body.title).also { rows[key] = it }
     }
     override suspend fun deleteBookmark(itemId: String, time: String) {
@@ -122,6 +131,29 @@ class BookmarkSyncTest {
         sync.sync(s)
         assertEquals(BookmarkPending.UPSERT, db.bookmarkDao().get(s, "li_gone", 1.0)!!.pending)
         assertEquals(BookmarkPending.NONE, db.bookmarkDao().get(s, "li_ok", 2.0)!!.pending)
+    }
+
+    @Test fun forbiddenItem_keepsItsOpPending_othersGoThrough() = runTest {
+        server.forbiddenItems = setOf("li_no")
+        db.bookmarkDao().save(s, "li_no", 1.0, null, now = 1)
+        db.bookmarkDao().save(s, "li_ok", 2.0, null, now = 1)
+        sync.sync(s)
+        assertEquals(BookmarkPending.UPSERT, db.bookmarkDao().get(s, "li_no", 1.0)!!.pending)
+        assertEquals(BookmarkPending.NONE, db.bookmarkDao().get(s, "li_ok", 2.0)!!.pending)
+    }
+
+    @Test fun parallelSyncs_runOneAfterTheOther_soAnOpIsPushedOnce() = runBlocking {
+        db.bookmarkDao().save(s, "li_1", 7.0, null, now = 1)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        server.createGate = gate
+        val other = BookmarkSync(flowOf(server), db.bookmarkDao())
+        val a = launch(Dispatchers.IO) { sync.sync(s) }
+        while (server.calls.none { it.startsWith("POST") }) delay(5)
+        val b = launch(Dispatchers.IO) { other.sync(s) }
+        delay(200)
+        gate.complete(Unit)
+        a.join(); b.join()
+        assertEquals(1, server.calls.count { it.startsWith("POST") })
     }
 
     @Test fun episodeBookmarks_neverReachTheServer_andSurviveThePull() = runTest {

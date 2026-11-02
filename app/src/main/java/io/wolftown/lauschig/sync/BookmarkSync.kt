@@ -11,12 +11,14 @@ import io.wolftown.lauschig.db.entities.BookmarkPending
 import io.wolftown.lauschig.net.ApiProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import javax.inject.Inject
 
 /**
  * Pushes the bookmark outbox, then pulls the server list and merges it (rules in [BookmarkRules]). A 404/400 for one
- * bookmark (title gone on the server) keeps that op pending without blocking the others; any other failure
+ * bookmark (title gone or not accessible: 404/403/400) keeps that op pending without blocking the others; any other failure
  * propagates and leaves the outbox as it was, so the next run retries.
  */
 class BookmarkSync(
@@ -25,18 +27,20 @@ class BookmarkSync(
 ) {
     @Inject constructor(apiProvider: ApiProvider, dao: BookmarkDao) : this(apiProvider.meApi, dao)
 
-    suspend fun sync(serverId: String) {
-        val api = api.first() ?: return
+    /** One sync at a time per process (the worker and the bookmark-only work may overlap). */
+    suspend fun sync(serverId: String) = lock.withLock {
+        val api = api.first() ?: return@withLock
         for (row in dao.pending(serverId)) {
             if (!BookmarkRules.isSyncable(row.itemKey)) continue
             try {
                 push(api, row)
             } catch (e: HttpException) {
-                if (e.code() == 404 || e.code() == 400) continue
+                // This title is gone, refused or rejected for this user: keep its op, let the others through.
+                if (e.code() == 404 || e.code() == 400 || e.code() == 403) continue
                 throw e
             }
         }
-        val server = fetchAll(api) ?: return
+        val server = fetchAll(api) ?: return@withLock
         dao.mergeFromServer(serverId, server)
     }
 
@@ -67,6 +71,11 @@ class BookmarkSync(
                 dao.deletePushed(row.serverId, row.itemKey, row.timeSec, row.rev)
             }
         }
+    }
+
+    private companion object {
+        /** Process-wide: every instance shares it. */
+        val lock = Mutex()
     }
 
     /** `/api/me/bookmarks`, or the list inside `/api/me` on servers without that route. Null = unknown, no merge. */

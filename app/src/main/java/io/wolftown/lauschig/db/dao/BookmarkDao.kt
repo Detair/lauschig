@@ -32,6 +32,15 @@ abstract class BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE serverId = :serverId")
     abstract suspend fun all(serverId: String): List<BookmarkEntity>
 
+    /** "Set a bookmark here": merges with a bookmark on the same second instead of replacing its note ([BookmarkRules.add]). */
+    @Transaction
+    open suspend fun add(serverId: String, itemKey: String, timeSec: Double, note: String?, now: Long) {
+        val existing = get(serverId, itemKey, timeSec)
+        val next = BookmarkRules.add(existing, serverId, itemKey, timeSec, note, now)
+        if (next != existing) put(next)
+    }
+
+    /** Edit: writes the note as given (null clears it). */
     @Transaction
     open suspend fun save(serverId: String, itemKey: String, timeSec: Double, note: String?, now: Long) {
         put(BookmarkRules.save(get(serverId, itemKey, timeSec), serverId, itemKey, timeSec, note, now))

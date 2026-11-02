@@ -51,12 +51,32 @@ class BookmarkRulesTest {
         assertEquals(UPSERT, revived.pending)
     }
 
-    @Test fun delete_neverPushed_removesRow_pushed_becomesTombstone() {
-        assertNull(BookmarkRules.delete(row("li_1", 60.0, pending = UPSERT, onServer = false)))
+    @Test fun delete_bookAlwaysTombstones_evenIfNeverConfirmed_episodeGoesNow() {
+        // The POST may have reached the server with the response lost: only the push may remove the row.
+        val unconfirmed = BookmarkRules.delete(row("li_1", 60.0, pending = UPSERT, onServer = false))!!
+        assertEquals(DELETE, unconfirmed.pending)
         assertNull(BookmarkRules.delete(row("li_p~e", 60.0, onServer = false)))
         val tomb = BookmarkRules.delete(row("li_1", 60.0, rev = 1))!!
         assertEquals(DELETE, tomb.pending)
         assertEquals(2L, tomb.rev)
+    }
+
+    @Test fun add_atAnOccupiedSecond_neverErasesTheNote() {
+        val existing = row("li_1", 60.0, "Alt", rev = 2)
+        assertEquals(existing, BookmarkRules.add(existing, s, "li_1", 60.0, null, now = 9))
+        assertEquals(existing, BookmarkRules.add(existing, s, "li_1", 60.0, " Alt ", now = 9))
+        val joined = BookmarkRules.add(existing, s, "li_1", 60.0, "Neu", now = 9)
+        assertEquals("Alt\nNeu", joined.note)
+        assertEquals(UPSERT, joined.pending)
+        assertEquals(3L, joined.rev)
+        assertEquals("Neu", BookmarkRules.add(row("li_1", 60.0, null), s, "li_1", 60.0, "Neu", now = 9).note)
+    }
+
+    @Test fun add_overATombstone_startsFresh() {
+        val revived = BookmarkRules.add(row("li_1", 60.0, "gelöscht", pending = DELETE, rev = 4), s, "li_1", 60.0, null, now = 9)
+        assertNull(revived.note)
+        assertEquals(UPSERT, revived.pending)
+        assertEquals(5L, revived.rev)
     }
 
     @Test fun merge_insertsNew_takesServerTitleForSynced_deletesVanishedSynced() {

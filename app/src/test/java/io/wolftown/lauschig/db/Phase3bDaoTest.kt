@@ -31,11 +31,21 @@ class Phase3bDaoTest {
 
     @After fun tearDown() = db.close()
 
-    @Test fun bookmark_createThenDeleteBeforePush_leavesNothing() = runTest {
+    @Test fun bookmark_createThenDeleteBeforePush_leavesAHiddenTombstone() = runTest {
         val dao = db.bookmarkDao()
         dao.save(s, "li_1", 60.0, "n", now = 1)
         dao.delete(s, "li_1", 60.0)
-        assertTrue(dao.all(s).isEmpty())
+        assertTrue(dao.observeForKey(s, "li_1").first().isEmpty())
+        assertEquals(BookmarkPending.DELETE, dao.pending(s).single().pending)
+    }
+
+    @Test fun bookmark_addKeepsNote_saveReplacesIt() = runTest {
+        val dao = db.bookmarkDao()
+        dao.add(s, "li_1", 60.0, "Alt", now = 1)
+        dao.add(s, "li_1", 60.0, null, now = 2)
+        assertEquals("Alt", dao.get(s, "li_1", 60.0)!!.note)
+        dao.save(s, "li_1", 60.0, null, now = 3)
+        assertNull(dao.get(s, "li_1", 60.0)!!.note)
     }
 
     @Test fun bookmark_pushedThenDeleted_isHiddenTombstone_untilConfirmed() = runTest {
