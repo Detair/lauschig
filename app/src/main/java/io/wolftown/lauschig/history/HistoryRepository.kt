@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.history
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.db.dao.HistoryDao
 import io.wolftown.lauschig.db.dao.SessionDao
@@ -24,6 +25,7 @@ class HistoryRepository(
 
     /** Replaces the cache with the server's newest [LIMIT] sessions; offline is a no-op, a failure throws and keeps the cache. */
     suspend fun refresh(serverId: String, key: String) {
+        if (DeviceLibrary.isLocal(serverId, key)) return // no server knows a device title; its history is this device's
         val api = api.first() ?: return
         val parsed = PlayableKey.parse(key)
         val page = if (parsed.episodeId != null) api.episodeListeningSessions(parsed.libraryItemId, parsed.episodeId, LIMIT)

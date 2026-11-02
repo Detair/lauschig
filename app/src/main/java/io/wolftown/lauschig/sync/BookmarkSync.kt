@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.BookmarkBody
 import io.wolftown.lauschig.absapi.me.BookmarkDto
 import io.wolftown.lauschig.absapi.me.MeApi
@@ -29,6 +30,7 @@ class BookmarkSync(
 
     /** One sync at a time per process (the worker and the bookmark-only work may overlap). */
     suspend fun sync(serverId: String) = lock.withLock {
+        if (DeviceLibrary.isLocal(serverId)) return@withLock // device bookmarks never leave the device
         val api = api.first() ?: return@withLock
         for (row in dao.pending(serverId)) {
             if (!BookmarkRules.isSyncable(row.itemKey)) continue

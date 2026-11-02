@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -40,6 +41,7 @@ class NextVolumePrefetcher @Inject constructor(
 
     private suspend fun prefetchAfter(itemId: String) {
         if (PlayableKey.parse(itemId).episodeId != null) return // episodes have no next volume
+        if (DeviceLibrary.isLocalKey(itemId)) return // nothing to download for a device title
         val serverId = accounts.account.first()?.serverId ?: return
         if (!handled.add("$serverId:$itemId")) return
         val next = nextVolume(items, serverId, itemId) ?: return

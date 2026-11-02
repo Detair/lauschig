@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.download
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -51,10 +52,12 @@ class DefaultDownloadManager @Inject constructor(
 ) : DownloadManager {
 
     override suspend fun enqueue(serverId: String, itemId: String, network: NetworkType?) {
+        if (DeviceLibrary.isLocal(serverId, itemId)) return // already on the device; no server has it
         val existing = downloads.get(serverId, itemId)
         if (existing?.state == DownloadState.COMPLETE) return
         if (existing == null || existing.state == DownloadState.PAUSED || existing.state == DownloadState.FAILED) {
-            downloads.upsert(DownloadEntity(serverId, itemId, DownloadState.QUEUED, System.currentTimeMillis()))
+            // A resumed or retried download keeps the date it was first added (sorting on the downloads page).
+            downloads.upsert(DownloadEntity(serverId, itemId, DownloadState.QUEUED, existing?.requestedAt ?: System.currentTimeMillis()))
         }
         val required = network ?: if (settings.wifiOnly.first()) NetworkType.UNMETERED else NetworkType.CONNECTED
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -72,6 +75,8 @@ class DefaultDownloadManager @Inject constructor(
     }
 
     override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {
+        // Never touches a device title: its "files" are the user's own documents.
+        if (DeviceLibrary.isLocal(serverId, itemId)) return
         // Row first, then the work: a stopping worker's conditional state writes then cannot override it.
         if (deleteFiles) downloads.delete(serverId, itemId)
         else downloads.setState(serverId, itemId, DownloadState.PAUSED, null)

@@ -236,15 +236,15 @@ fun canKeepPosition(p: ProgressEntity?): Boolean =
 
 private const val KEEP_POSITION_END_SEC = 5.0
 
-/** Which progress actions make sense for this state. */
-fun progressEntries(p: ProgressEntity?, offline: Boolean): List<ProgressEntry> = buildList {
+/** Which progress actions make sense for this state; [local]: a device title (no server to fetch from). */
+fun progressEntries(p: ProgressEntity?, offline: Boolean, local: Boolean = false): List<ProgressEntry> = buildList {
     val finished = p?.isFinished == true
     val started = (p?.currentTimeSec ?: 0.0) > 0
     if (!finished) add(ProgressEntry.MarkFinished)
     if (canKeepPosition(p)) add(ProgressEntry.MarkNotFinishedKeep)
     if (finished || started) add(ProgressEntry.StartOver)
     if (!finished && started && p?.hideFromContinue != true) add(ProgressEntry.HideFromContinue)
-    if (!offline) add(ProgressEntry.PullFromServer)
+    if (!offline && !local) add(ProgressEntry.PullFromServer)
 }
 
 /**

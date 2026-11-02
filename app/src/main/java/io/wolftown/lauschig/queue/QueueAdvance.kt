@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.queue
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -26,12 +27,16 @@ object AdvancePolicy {
     }
 }
 
-/** [AdvancePolicy.classify] from Room: a book needs its item row, an episode its podcast and episode rows. */
+/**
+ * [AdvancePolicy.classify] from Room: a book needs its item row, an episode its podcast and episode rows. [serverId] is
+ * the queue's (the account's); a device title's key resolves to the device library and counts as downloaded.
+ */
 suspend fun queueEntryState(items: ItemDao, episodes: EpisodeDao, downloads: DownloadDao, online: Boolean, serverId: String, key: String): QueueEntryState {
     val p = PlayableKey.parse(key)
-    val item = items.get(serverId, p.libraryItemId)
-    val exists = item != null && (p.episodeId == null || episodes.get(serverId, p.libraryItemId, p.episodeId) != null)
-    val downloaded = downloads.get(serverId, key)?.state == DownloadState.COMPLETE
+    val sid = DeviceLibrary.serverFor(serverId, key) ?: serverId
+    val item = items.get(sid, p.libraryItemId)
+    val exists = item != null && (p.episodeId == null || episodes.get(sid, p.libraryItemId, p.episodeId) != null)
+    val downloaded = DeviceLibrary.isLocal(sid) || downloads.get(sid, key)?.state == DownloadState.COMPLETE
     return AdvancePolicy.classify(exists, item?.orphaned == true, downloaded, online)
 }
 

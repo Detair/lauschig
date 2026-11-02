@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.DeviceInfoDto
 import io.wolftown.lauschig.absapi.me.LocalSessionDto
 import io.wolftown.lauschig.absapi.me.LocalSessionsBody
@@ -47,6 +48,8 @@ class ProgressSync(
     ) : this(apiProvider.meApi, progress, sessions, items, episodes, device::get)
 
     suspend fun sync(serverId: String): List<PositionJump> {
+        // The device library never syncs; a local key under a real server (should not exist) is never sent either.
+        if (DeviceLibrary.isLocal(serverId)) return emptyList()
         val api = api.first() ?: return emptyList()
         uploadSessions(api, serverId)
 
@@ -56,7 +59,10 @@ class ProgressSync(
             .filter { it.libraryItemId != null }
             .associateBy { it.episodeId?.let { ep -> PlayableKey.episode(it.libraryItemId!!, ep) } ?: it.libraryItemId!! }
 
-        for (local in progress.dirty(serverId)) push(api, serverId, local, server[local.itemId]?.lastUpdate)
+        for (local in progress.dirty(serverId)) {
+            if (DeviceLibrary.isLocalKey(local.itemId)) continue
+            push(api, serverId, local, server[local.itemId]?.lastUpdate)
+        }
 
         val rows = server.map { (key, it) ->
             ProgressEntity(serverId, key, it.currentTime, it.duration, it.isFinished, it.lastUpdate, hideFromContinue = it.hideFromContinueListening)
@@ -67,7 +73,7 @@ class ProgressSync(
     }
 
     private suspend fun uploadSessions(api: MeApi, serverId: String) {
-        val pending = sessions.unsynced(serverId)
+        val pending = sessions.unsynced(serverId).filterNot { DeviceLibrary.isLocalKey(it.itemId) }
         if (pending.isEmpty()) return
         val device = deviceInfo()
         val result = api.syncLocalSessions(

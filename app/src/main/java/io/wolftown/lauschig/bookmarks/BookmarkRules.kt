@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.bookmarks
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.BookmarkDto
 import io.wolftown.lauschig.db.entities.BookmarkEntity
 import io.wolftown.lauschig.db.entities.BookmarkPending
@@ -20,7 +21,8 @@ data class BookmarkMergePlan(val upserts: List<BookmarkEntity>, val deletes: Lis
  * - Episode bookmarks are device-local (ABS bookmarks carry no episode id) and are never merged.
  */
 object BookmarkRules {
-    fun isSyncable(itemKey: String): Boolean = PlayableKey.parse(itemKey).episodeId == null
+    /** Books only: episode bookmarks and every bookmark of a device title ([DeviceLibrary]) stay on the device. */
+    fun isSyncable(itemKey: String): Boolean = !DeviceLibrary.isLocalKey(itemKey) && PlayableKey.parse(itemKey).episodeId == null
 
     /** The server title for an empty note: the clock text of the position (`02:03`, `1:02:03`). */
     fun defaultTitle(timeSec: Double): String {

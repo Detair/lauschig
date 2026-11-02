@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.library.EpisodeDto
 import io.wolftown.lauschig.absapi.library.LibraryItemDto
@@ -57,6 +58,7 @@ class LibrarySync(
      * from a library whose pages were all fetched and add up to the reported total.
      */
     suspend fun syncAll(serverId: String) {
+        if (DeviceLibrary.isLocal(serverId)) return
         val api = api.first() ?: return
         val remote = api.libraries().libraries
         libraries.upsertFromServer(
@@ -135,6 +137,8 @@ class LibrarySync(
 
     /** Fetches the expanded item and stores details, chapters and audio files. */
     suspend fun loadDetails(serverId: String, itemId: String) {
+        // A device title has no server details (the scan wrote everything); never ask the server for its id.
+        if (DeviceLibrary.isLocal(serverId, itemId)) return
         val api = api.first() ?: return
         val dto = api.item(itemId, 1)
         val meta = dto.media.metadata

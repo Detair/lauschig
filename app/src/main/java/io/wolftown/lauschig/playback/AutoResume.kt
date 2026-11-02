@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -38,8 +39,10 @@ class LastTitleStarter @Inject constructor(
     data class Last(val serverId: String, val itemId: String, val pausedAt: Long)
 
     suspend fun last(): Last? {
-        val serverId = accounts.account.first()?.serverId ?: return null
-        val stored = store.get()?.takeIf { it.serverId == serverId } ?: return null
+        val account = accounts.account.first()?.serverId ?: return null
+        // A device title is this device's whatever the account; anything else must belong to the signed-in server.
+        val stored = store.get()?.takeIf { it.serverId == account || DeviceLibrary.isLocal(it.serverId) } ?: return null
+        val serverId = stored.serverId
         val key = PlayableKey.parse(stored.itemId)
         val item = items.get(serverId, key.libraryItemId)
         if (item == null || item.orphaned) return null
