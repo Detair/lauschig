@@ -54,9 +54,20 @@ class ResumeRewindTest {
         assertEquals(10_000L, r.onResumed("b1", 0, 120_000, now = 12 * min, baseSec = 5))
     }
 
-    @Test fun rewind_isClampedToTheStartOfTheFile() {
+    @Test fun rewind_isNotCappedByTheFile() {
         val r = ResumeRewind()
         r.onPaused("b1", 2, 2_000, now = 0)
-        assertEquals(2_000L, r.onResumed("b1", 2, 2_000, now = 60_000, baseSec = 5))
+        assertEquals(5_000L, r.onResumed("b1", 2, 2_000, now = 60_000, baseSec = 5))
+    }
+
+    @Test fun stepBack_crossesIntoPreviousFiles() {
+        val durations = mapOf(0 to 1_000L, 1 to 60_000L, 2 to 30_000L)
+        assertEquals(2 to 1_000L, stepBack(2, 6_000, 5_000) { durations[it] })
+        assertEquals(1 to 57_000L, stepBack(2, 2_000, 5_000) { durations[it] })
+        // Through a short file into the one before it.
+        assertEquals(0 to 500L, stepBack(2, 1_000, 61_500) { durations[it] })
+        // Never before the start of the book; an unknown duration stops at the file start.
+        assertEquals(0 to 0L, stepBack(1, 1_000, 99_000) { durations[it] })
+        assertEquals(2 to 0L, stepBack(2, 2_000, 5_000) { null })
     }
 }

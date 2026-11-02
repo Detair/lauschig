@@ -29,6 +29,10 @@ class PlaybackComfort(
     private val titleAudio: TitleAudioDao,
     private val settings: PlaybackSettings,
     private val scope: CoroutineScope,
+    /** Outlives the service: speed saves and the last-played record still land after release. */
+    private val saveScope: CoroutineScope,
+    /** The title paused, stopped or started on this device (see [LastPlayedStore]). */
+    private val onTitleActivity: (serverId: String, itemId: String) -> Unit = { _, _ -> },
     private val clock: () -> Long = SystemClock::elapsedRealtime,
 ) : Player.Listener {
     private data class Key(val serverId: String, val itemId: String) {
@@ -42,19 +46,33 @@ class PlaybackComfort(
     private var titleJob: Job? = null
     private var saveJob: Job? = null
     private var rewindSec = PlaybackSettings.DEFAULT_REWIND
+    /** Cached so a new title gets the default speed synchronously, before its own row is read. */
+    private var defaultSpeed = 1f
+    private var pendingSpeed: Pair<Key, Float>? = null
 
     fun start() {
         exo.addListener(this)
         boost.attach(exo.audioSessionId)
         scope.launch { settings.rewindOnResumeSec.collect { rewindSec = it } }
         scope.launch { settings.skipSilence.collect { exo.skipSilenceEnabled = it } }
+        scope.launch { settings.defaultSpeed.collect { defaultSpeed = it } }
         onTitle(exo.currentMediaItem)
     }
 
     fun release() {
+        key?.let { if (exo.mediaItemCount > 0) onTitleActivity(it.serverId, it.itemId) }
         exo.removeListener(this)
         titleJob?.cancel()
+        flushSpeed()
         boost.release()
+    }
+
+    /** Writes a speed change that is still waiting for the slider to settle. */
+    private fun flushSpeed() {
+        saveJob?.cancel()
+        val (k, speed) = pendingSpeed ?: return
+        pendingSpeed = null
+        saveScope.launch { titleAudio.setSpeed(k.serverId, k.itemId, speed) }
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = onTitle(mediaItem)
@@ -62,22 +80,26 @@ class PlaybackComfort(
     private fun onTitle(item: MediaItem?) {
         val k = item?.key()
         if (k == key) return
+        flushSpeed() // a pending change belongs to the previous title
         key = k
         rewind.invalidate()
         speeds.beginTitle()
         titleJob?.cancel()
         if (k == null) return
+        // Synchronously: never let the new title start at the previous title's speed. Its own speed follows.
+        exo.setPlaybackSpeed(speeds.onTitle(k.toString(), null, defaultSpeed))
         titleJob = scope.launch {
             var first = true
-            combine(titleAudio.observe(k.serverId, k.itemId), settings.defaultSpeed, settings.defaultBoostDb) { row, speed, boostDb ->
-                Triple(row, speed, boostDb)
-            }.collect { (row, defaultSpeed, defaultBoost) ->
-                if (first) {
-                    first = false
-                    exo.setPlaybackSpeed(speeds.onTitle(k.toString(), row?.speed, defaultSpeed))
+            combine(titleAudio.observe(k.serverId, k.itemId), settings.defaultSpeed, settings.defaultBoostDb) { row, speed, boostDb -> Triple(row, speed, boostDb) }
+                .collect { (row, default, defaultBoost) ->
+                    if (first) {
+                        first = false
+                        // The title's own speed, or the default if the cached one was not read yet.
+                        val target = row?.speed ?: default
+                        if (target != exo.playbackParameters.speed) exo.setPlaybackSpeed(speeds.onTitle(k.toString(), row?.speed, default))
+                    }
+                    boost.setGainDb(row?.boostDb ?: defaultBoost)
                 }
-                boost.setGainDb(row?.boostDb ?: defaultBoost)
-            }
         }
     }
 
@@ -86,10 +108,11 @@ class PlaybackComfort(
         val k = key ?: return
         val speed = playbackParameters.speed
         // The speed slider changes it many times a second; store the value it settles on.
+        pendingSpeed = k to speed
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(SAVE_DELAY_MS)
-            titleAudio.setSpeed(k.serverId, k.itemId, speed)
+            flushSpeed()
         }
     }
 
@@ -113,6 +136,7 @@ class PlaybackComfort(
         val k = key ?: return
         if (exo.playbackState == Player.STATE_ENDED || exo.mediaItemCount == 0) return
         rewind.onPaused(k.toString(), exo.currentMediaItemIndex, exo.currentPosition, clock())
+        onTitleActivity(k.serverId, k.itemId)
     }
 
     private fun resumed() {
@@ -120,9 +144,13 @@ class PlaybackComfort(
         val pos = exo.currentPosition
         val back = rewind.onResumed(k.toString(), exo.currentMediaItemIndex, pos, clock(), rewindSec)
         if (back > 0) {
+            val (i, ms) = stepBack(exo.currentMediaItemIndex, pos, back) { idx ->
+                if (idx < exo.mediaItemCount) exo.getMediaItemAt(idx).mediaMetadata.extras?.getLong(MediaItemFactory.EXTRA_FILE_DURATION_MS)?.takeIf { it > 0 } else null
+            }
             Log.i(TAG, "rewinding ${back}ms after the pause")
-            exo.seekTo(exo.currentMediaItemIndex, pos - back)
+            exo.seekTo(i, ms)
         }
+        onTitleActivity(k.serverId, k.itemId)
     }
 
     private fun MediaItem.key(): Key? {

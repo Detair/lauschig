@@ -44,6 +44,7 @@ class MediaItemFactory(
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)
                 putInt(EXTRA_FILE_INDEX, f.index)
+                putLong(EXTRA_FILE_DURATION_MS, (f.durationSec * 1000).toLong())
             }
             MediaItem.Builder()
                 .setMediaId("${item.item.id}#${f.index}")
@@ -70,5 +71,7 @@ class MediaItemFactory(
         const val EXTRA_SERVER_ID = "serverId"
         const val EXTRA_ITEM_ID = "itemId"
         const val EXTRA_FILE_INDEX = "fileIndex"
+        /** Length of this file; lets the service step back across file boundaries (resume rewind). */
+        const val EXTRA_FILE_DURATION_MS = "fileDurationMs"
     }
 }

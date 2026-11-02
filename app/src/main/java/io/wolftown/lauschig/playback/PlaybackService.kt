@@ -58,6 +58,8 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var streamMonitor: StreamMonitor
     @Inject lateinit var titleAudioDao: TitleAudioDao
     @Inject lateinit var playbackSettings: PlaybackSettings
+    @Inject lateinit var lastPlayed: LastPlayedStore
+    @Inject lateinit var sleepTimer: SleepTimer
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -126,7 +128,10 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         player = exo
-        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope).also { it.start() }
+        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope, appScope, onTitleActivity = { serverId, itemId ->
+            val at = System.currentTimeMillis()
+            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
+        }).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
         bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
@@ -194,6 +199,7 @@ class PlaybackService : MediaLibraryService() {
         bridge?.let { player?.removeListener(it) }
         comfort?.release()
         comfort = null
+        sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
         bridge?.shutdown(final, appScope)
         session?.release()
