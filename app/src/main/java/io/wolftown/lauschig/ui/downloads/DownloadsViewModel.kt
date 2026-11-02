@@ -18,7 +18,10 @@ import io.wolftown.lauschig.download.DownloadWorker
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -88,6 +91,7 @@ fun entryStatus(row: DownloadEntryRow): EntryStatus = when (row.state) {
 }
 
 private const val OFFLINE = "offline"
+private const val FREE_SPACE_REFRESH_MS = 30_000L
 
 /**
  * The download management page: every download of the signed-in server with its state and size, sorted and searched in
@@ -114,7 +118,7 @@ class DownloadsViewModel(
 
     val state: StateFlow<DownloadsUiState> = serverId.flatMapLatest { sid ->
         if (sid == null) flowOf(DownloadsUiState(loaded = true))
-        else combine(dao.observeEntries(sid), sort, query) { all, so, q ->
+        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid)) { all, so, q, free ->
             rows = all
             val totals = DownloadList.totals(all)
             DownloadsUiState(
@@ -122,7 +126,7 @@ class DownloadsViewModel(
                 entries = DownloadList.arrange(all, so, q).map { it.toUi() },
                 total = all.size,
                 usedBytes = totals.usedBytes,
-                freeBytes = freeSpace(),
+                freeBytes = free,
                 finishedCount = totals.finishedCount,
                 finishedBytes = totals.finishedBytes,
                 sort = so,
@@ -130,6 +134,14 @@ class DownloadsViewModel(
             )
         }
     }.flowOn(dispatcher).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsUiState())
+
+    /**
+     * Free space, read when the set of downloads or their states change (one finished, one deleted) and otherwise every
+     * [FREE_SPACE_REFRESH_MS]; never on a progress tick (a running download updates its row about once a second).
+     */
+    private fun freeBytes(sid: String): Flow<Long?> =
+        dao.observeEntries(sid).map { all -> all.mapTo(HashSet()) { it.itemKey to it.state } }.distinctUntilChanged()
+            .flatMapLatest { flow { while (true) { emit(freeSpace()); delay(FREE_SPACE_REFRESH_MS) } } }
 
     private fun DownloadEntryRow.toUi() =
         DownloadEntryUi(itemKey, DownloadList.displayTitle(this), subtitle?.takeIf { it.isNotBlank() }, entryStatus(this), bytesDone, bytesTotal, isFinished)
