@@ -355,4 +355,30 @@
         <item quantity="other">%d titles</item>
     </plurals>
     <string name="error_local_unavailable">The file on this device cannot be reached. Was it moved or deleted?</string>
+    <!-- Download management (phase 3C) -->
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_manage">Manage downloads</string>
+    <string name="downloads_manage_hint">Pause, resume, sort, search and see the storage used</string>
+    <string name="downloads_storage">%1$s used · %2$s free</string>
+    <string name="downloads_storage_used">%1$s used</string>
+    <string name="downloads_search">Search downloads</string>
+    <string name="downloads_sort_name">Name</string>
+    <string name="downloads_sort_size">Size</string>
+    <string name="downloads_sort_added">Date added</string>
+    <string name="downloads_sort_played">Recently played</string>
+    <string name="downloads_empty">No downloads yet.</string>
+    <string name="downloads_no_match">No download matches the search.</string>
+    <string name="downloads_delete_finished">Delete finished (%1$d · %2$s)</string>
+    <string name="downloads_delete_finished_title">Delete finished downloads?</string>
+    <plurals name="downloads_delete_finished_message">
+        <item quantity="one">%1$d title marked as finished is removed from this device (%2$s). Your progress is kept.</item>
+        <item quantity="other">%1$d titles marked as finished are removed from this device (%2$s). Your progress is kept.</item>
+    </plurals>
+    <string name="downloads_status_waiting_network">Waiting for a connection</string>
+    <string name="downloads_status_retrying">Waiting – will try again</string>
+    <string name="downloads_status_running">%1$d %% · %2$s of %3$s</string>
+    <string name="downloads_status_paused_stream">Paused so the stream keeps playing</string>
+    <string name="downloads_status_partial">%1$s of %2$s</string>
+    <string name="downloads_status_complete">Downloaded · %1$s</string>
+    <string name="downloads_finished_badge">Finished</string>
 </resources>

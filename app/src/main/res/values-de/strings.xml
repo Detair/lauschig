@@ -355,4 +355,30 @@
         <item quantity="other">%d Titel</item>
     </plurals>
     <string name="error_local_unavailable">Die Datei auf dem Gerät ist nicht erreichbar. Wurde sie verschoben oder gelöscht?</string>
+    <!-- Download-Verwaltung (Phase 3C) -->
+    <string name="downloads_title">Downloads</string>
+    <string name="downloads_manage">Downloads verwalten</string>
+    <string name="downloads_manage_hint">Pausieren, fortsetzen, sortieren, durchsuchen und belegten Speicher sehen</string>
+    <string name="downloads_storage">%1$s belegt · %2$s frei</string>
+    <string name="downloads_storage_used">%1$s belegt</string>
+    <string name="downloads_search">Downloads durchsuchen</string>
+    <string name="downloads_sort_name">Name</string>
+    <string name="downloads_sort_size">Größe</string>
+    <string name="downloads_sort_added">Hinzugefügt</string>
+    <string name="downloads_sort_played">Zuletzt gehört</string>
+    <string name="downloads_empty">Noch keine Downloads.</string>
+    <string name="downloads_no_match">Kein Download passt zur Suche.</string>
+    <string name="downloads_delete_finished">Gehörte löschen (%1$d · %2$s)</string>
+    <string name="downloads_delete_finished_title">Gehörte Downloads löschen?</string>
+    <plurals name="downloads_delete_finished_message">
+        <item quantity="one">%1$d als gehört markierter Titel wird vom Gerät gelöscht (%2$s). Der Fortschritt bleibt.</item>
+        <item quantity="other">%1$d als gehört markierte Titel werden vom Gerät gelöscht (%2$s). Der Fortschritt bleibt.</item>
+    </plurals>
+    <string name="downloads_status_waiting_network">Wartet auf Verbindung</string>
+    <string name="downloads_status_retrying">Wartet – wird erneut versucht</string>
+    <string name="downloads_status_running">%1$d %% · %2$s von %3$s</string>
+    <string name="downloads_status_paused_stream">Pausiert, damit der Stream flüssig läuft</string>
+    <string name="downloads_status_partial">%1$s von %2$s</string>
+    <string name="downloads_status_complete">Heruntergeladen · %1$s</string>
+    <string name="downloads_finished_badge">Gehört</string>
 </resources>
