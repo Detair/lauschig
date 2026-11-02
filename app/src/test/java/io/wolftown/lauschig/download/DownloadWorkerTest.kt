@@ -23,6 +23,7 @@ import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.playback.StreamMonitor
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.OnlineGate
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +67,7 @@ class DownloadWorkerTest {
     private val a1 = ByteArray(40_000) { (it % 13).toByte() }
     private val cover = ByteArray(500) { 7 }
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
+    private val prompts = DownloadPrompts()
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries().build()
@@ -117,7 +119,7 @@ class DownloadWorkerTest {
 
     private suspend fun run(
         attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false,
-        library: LibraryApi? = null,
+        library: LibraryApi? = null, monitor: StreamMonitor = StreamMonitor { 0L },
     ): ListenableWorker.Result {
         val base = server.url("/")
         val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
@@ -125,6 +127,7 @@ class DownloadWorkerTest {
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
                 c, p, env, gate, sync, db.itemDao(), db.episodeDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
+                monitor, prompts,
             )
         }
         return TestListenableWorkerBuilder<DownloadWorker>(ctx, workDataOf(DownloadWorker.KEY_SERVER to s, DownloadWorker.KEY_ITEM to itemId))
@@ -420,5 +423,38 @@ class DownloadWorkerTest {
         val mgr = DefaultDownloadManager(ctx, db.downloadDao(), db.audioFileDao(), files, DownloadSettings(ctx))
         mgr.cancel(s, item, deleteFiles = true)
         assertNull(mgr.observe(s, item).first())
+    }
+
+    @Test fun streamWithLowBuffer_throttlesButCompletes() = runBlocking {
+        dispatch()
+        // Plays with only 10 s buffered: downloads must yield.
+        val monitor = StreamMonitor { 0L }.apply { update(active = true, playing = true, buffering = false, bufferedAheadMs = 10_000) }
+        val started = System.nanoTime()
+        assertEquals(ListenableWorker.Result.success(), run(monitor = monitor))
+        val ms = (System.nanoTime() - started) / 1_000_000
+        // 140 KB at 250 ms per 64 KB: at least two pauses.
+        assertTrue("took ${ms}ms", ms >= 500)
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(s, item)!!.state)
+        assertFalse(monitor.downloadThrottled.value)
+    }
+
+    @Test fun streamStalledDespiteThrottling_pausesDownloadKeepsPart_andAsks() = runBlocking {
+        dispatch()
+        // Every look at the clock moves it on by a second: the stall outlasts the 5 s after a few chunks.
+        var t = 0L
+        val monitor = StreamMonitor { t += 1_000; t }.apply {
+            update(active = true, playing = true, buffering = false, bufferedAheadMs = 10_000)
+            update(active = true, playing = false, buffering = true, bufferedAheadMs = 0)
+        }
+        assertEquals(ListenableWorker.Result.success(), run(monitor = monitor))
+        val row = db.downloadDao().get(s, item)!!
+        assertEquals(DownloadState.PAUSED, row.state)
+        assertEquals(DownloadWorker.STREAM_PRIORITY, row.error)
+        assertTrue(File(itemDir(), "0.mp3.part").isFile)
+        assertNull(db.audioFileDao().forItem(s, item)[0].localPath)
+        val prompt = prompts.prompt.value as DownloadPrompt.Contention
+        assertEquals(item, prompt.itemId)
+        assertEquals("A Book", prompt.title)
+        assertFalse(monitor.downloadThrottled.value)
     }
 }

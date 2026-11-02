@@ -252,4 +252,5 @@
     <string name="settings_auto_download_hint">Nach einem Abgleich, je Podcast. Die WLAN-Einstellung gilt.</string>
     <string name="settings_auto_download_off">Aus</string>
     <string name="settings_auto_download_newest">Neueste %1$d</string>
+    <string name="download_notification_throttled">Gedrosselt – Stream hat Vorrang</string>
 </resources>

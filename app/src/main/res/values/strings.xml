@@ -252,4 +252,5 @@
     <string name="settings_auto_download_hint">After a sync, per podcast. The Wi-Fi setting applies.</string>
     <string name="settings_auto_download_off">Off</string>
     <string name="settings_auto_download_newest">Newest %1$d</string>
+    <string name="download_notification_throttled">Throttled – stream has priority</string>
 </resources>
