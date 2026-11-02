@@ -71,4 +71,19 @@ class DownloadManagerTest {
         assertFalse(DefaultDownloadManager.replaces(WorkInfo.State.ENQUEUED, NetworkType.UNMETERED, null))
         assertFalse(DefaultDownloadManager.replaces(null, NetworkType.UNMETERED, NetworkType.CONNECTED))
     }
+    @Test fun cancelWithFiles_deletesThemOnTheIoDispatcher_notOnTheCaller() = runBlocking {
+        val root = File(ctx.cacheDir, "dm-io-${System.nanoTime()}")
+        val files = DownloadFiles(root, db.audioFileDao())
+        var dispatched = 0
+        val io = object : kotlinx.coroutines.CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) { dispatched++; kotlinx.coroutines.Dispatchers.IO.dispatch(context, block) }
+        }
+        val m = DefaultDownloadManager(ctx, db.downloadDao(), db.audioFileDao(), files, DownloadSettings(ctx), io)
+        val dir = files.itemDir(s, "it").apply { mkdirs() }
+        File(dir, "1.mp3").writeText("x")
+        m.enqueue(s, "it")
+        m.cancel(s, "it", deleteFiles = true)
+        assertFalse(dir.exists())
+        assertTrue("file deletion must run on the IO dispatcher", dispatched > 0)
+    }
 }

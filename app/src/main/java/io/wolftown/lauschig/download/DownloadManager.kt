@@ -19,9 +19,12 @@ import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,13 +46,22 @@ interface DownloadManager {
 }
 
 @Singleton
-class DefaultDownloadManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+class DefaultDownloadManager(
+    private val context: Context,
     private val downloads: DownloadDao,
     private val audioFiles: AudioFileDao,
     private val files: DownloadFiles,
     private val settings: DownloadSettings,
+    /** File deletion runs here: callers (view models) are on the main thread. */
+    private val io: CoroutineDispatcher,
 ) : DownloadManager {
+    @Inject constructor(
+        @ApplicationContext context: Context,
+        downloads: DownloadDao,
+        audioFiles: AudioFileDao,
+        files: DownloadFiles,
+        settings: DownloadSettings,
+    ) : this(context, downloads, audioFiles, files, settings, Dispatchers.IO)
 
     override suspend fun enqueue(serverId: String, itemId: String, network: NetworkType?) {
         if (DeviceLibrary.isLocal(serverId, itemId)) return // already on the device; no server has it
@@ -83,8 +95,11 @@ class DefaultDownloadManager @Inject constructor(
         WorkManager.getInstance(context).cancelUniqueWork(workName(serverId, itemId))
         if (deleteFiles) {
             audioFiles.clearLocal(serverId, itemId)
-            files.deleteItem(serverId, itemId)
-            files.cleanupOrphans(serverId, itemId)
+            // Blocking file-system work; callers run on the main thread ("delete finished" removes many titles).
+            withContext(io) {
+                files.deleteItem(serverId, itemId)
+                files.cleanupOrphans(serverId, itemId)
+            }
         }
     }
 
