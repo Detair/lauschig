@@ -6,6 +6,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.Binds
@@ -27,8 +28,11 @@ import javax.inject.Singleton
 data class DownloadProgress(val state: DownloadState, val bytesDone: Long, val bytesTotal: Long)
 
 interface DownloadManager {
-    /** Queues the download (unique per item; no-op if already queued/running/complete). */
-    suspend fun enqueue(serverId: String, itemId: String)
+    /**
+     * Queues the download (unique per item; no-op if already queued/running/complete). [network] overrides the
+     * Wi-Fi-only setting; a still waiting download with another network condition is replaced, a running one is kept.
+     */
+    suspend fun enqueue(serverId: String, itemId: String, network: NetworkType? = null)
 
     /** Cancels the work. `deleteFiles=false` keeps the `.part` data and marks the item PAUSED; `true` removes files and rows. */
     suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean)
@@ -46,19 +50,25 @@ class DefaultDownloadManager @Inject constructor(
     private val settings: DownloadSettings,
 ) : DownloadManager {
 
-    override suspend fun enqueue(serverId: String, itemId: String) {
+    override suspend fun enqueue(serverId: String, itemId: String, network: NetworkType?) {
         val existing = downloads.get(serverId, itemId)
         if (existing?.state == DownloadState.COMPLETE) return
         if (existing == null || existing.state == DownloadState.PAUSED || existing.state == DownloadState.FAILED) {
             downloads.upsert(DownloadEntity(serverId, itemId, DownloadState.QUEUED, System.currentTimeMillis()))
         }
-        val network = if (settings.wifiOnly.first()) NetworkType.UNMETERED else NetworkType.CONNECTED
+        val required = network ?: if (settings.wifiOnly.first()) NetworkType.UNMETERED else NetworkType.CONNECTED
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
-            .setInputData(workDataOf(DownloadWorker.KEY_SERVER to serverId, DownloadWorker.KEY_ITEM to itemId))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
+            .setInputData(
+                workDataOf(DownloadWorker.KEY_SERVER to serverId, DownloadWorker.KEY_ITEM to itemId, DownloadWorker.KEY_NETWORK to required.name),
+            )
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(required).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(workName(serverId, itemId), ExistingWorkPolicy.KEEP, request)
+        val wm = WorkManager.getInstance(context)
+        val name = workName(serverId, itemId)
+        val pending = wm.getWorkInfosForUniqueWorkFlow(name).first().firstOrNull { !it.state.isFinished }
+        val policy = if (replaces(pending?.state, pending?.constraints?.requiredNetworkType, network)) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+        wm.enqueueUniqueWork(name, policy, request)
     }
 
     override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {
@@ -79,6 +89,12 @@ class DefaultDownloadManager @Inject constructor(
         }
 
     private fun workName(serverId: String, itemId: String) = "download-$serverId-$itemId"
+
+    companion object {
+        /** Only a waiting download is retargeted to the [wanted] network; a running one keeps going as it is. */
+        fun replaces(state: WorkInfo.State?, current: NetworkType?, wanted: NetworkType?): Boolean =
+            wanted != null && current != wanted && (state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED)
+    }
 }
 
 @Module

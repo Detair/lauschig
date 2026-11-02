@@ -175,6 +175,9 @@ class PlayerControllerTest {
         loadDetails: suspend (String, String) -> Unit = { _, _ -> },
         loadById: suspend (String, String) -> ItemWithDetails? = { _, _ -> load() },
         localCount: (String, String) -> Flow<Int> = { _, _ -> emptyFlow() },
+        onStreamStarted: (String, String) -> Unit = { _, _ -> },
+        streamStats: Flow<StreamStats> = emptyFlow(),
+        downloadThrottled: Flow<Boolean> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -185,6 +188,9 @@ class PlayerControllerTest {
         loadDetails = loadDetails,
         io = io,
         localCount = localCount,
+        onStreamStarted = onStreamStarted,
+        streamStats = streamStats,
+        downloadThrottled = downloadThrottled,
     )
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
@@ -541,5 +547,81 @@ class PlayerControllerTest {
         assertEquals(3, f.items.size)
         assertTrue(checks.isNotEmpty())
         assertTrue("file stats on main: $checks", checks.all { it })
+    }
+
+    @Test fun streamingStart_callsOnStreamStarted_once() = runTest {
+        val f = FakeFacade()
+        val started = mutableListOf<String>()
+        val c = controller(f, { item(listOf(file(0, 600.0, path = null))) }, base = "https://abs.example/", onStreamStarted = { _, id -> started += id })
+        c.play(s, "it")
+        assertEquals(listOf("it"), started)
+        // Resuming the loaded title is not a new start.
+        c.togglePlayPause(); c.togglePlayPause()
+        c.play(s, "it")
+        assertEquals(listOf("it"), started)
+    }
+
+    @Test fun localStart_doesNotCallOnStreamStarted() = runTest {
+        val f = FakeFacade()
+        val started = mutableListOf<String>()
+        val c = controller(f, { item(threeFiles) }, onStreamStarted = { _, id -> started += id })
+        c.play(s, "it")
+        assertTrue(f.snap.isPlaying)
+        assertTrue(started.isEmpty())
+    }
+
+    @Test fun failedStreamingStart_doesNotCallOnStreamStarted() = runTest {
+        val f = FakeFacade()
+        val started = mutableListOf<String>()
+        val c = controller(f, { item(listOf(file(0, 600.0, path = null))) }, base = null, onStreamStarted = { _, id -> started += id })
+        c.play(s, "it")
+        assertEquals(R.string.error_not_downloaded_offline, c.state.value.error)
+        assertTrue(started.isEmpty())
+    }
+
+    @Test fun streamLoad_shownOnlyWhileAStreamLoads() = runTest {
+        val f = FakeFacade()
+        val stats = MutableStateFlow(StreamStats())
+        val c = controller(f, { item(listOf(file(0, 600.0, path = null))) }, base = "https://abs.example/", streamStats = stats)
+        c.play(s, "it")
+        stats.value = StreamStats(active = true, phase = StreamPhase.PLAYING, bytes = 10, bytesPerSec = 100_000)
+        assertNull(c.state.value.streamLoad) // playing
+
+        f.snap = f.snap.copy(isPlaying = false, isBuffering = true)
+        stats.value = StreamStats(active = true, phase = StreamPhase.STALLED, bytes = 250_000, expectedBytes = 1_250_000, bytesPerSec = 100_000)
+        assertTrue(c.state.value.isLoading)
+        assertEquals(StreamLoad(250_000, 1_250_000, 100_000, etaSec = 10), c.state.value.streamLoad)
+
+        stats.value = StreamStats(active = true, phase = StreamPhase.STALLED, bytes = 300_000, bytesPerSec = 0)
+        assertEquals(StreamLoad(300_000, null, 0, etaSec = null), c.state.value.streamLoad)
+
+        f.snap = f.snap.copy(isPlaying = true, isBuffering = false)
+        stats.value = StreamStats(active = true, phase = StreamPhase.PLAYING, bytes = 300_000, bytesPerSec = 0)
+        assertNull(c.state.value.streamLoad)
+    }
+
+    @Test fun streamLoad_notForLocalPlayback() = runTest {
+        val f = FakeFacade()
+        val stats = MutableStateFlow(StreamStats())
+        val c = controller(f, { item(threeFiles) }, streamStats = stats)
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false, isBuffering = true)
+        stats.value = StreamStats(active = true, phase = StreamPhase.STALLED, bytes = 1)
+        assertTrue(c.state.value.isLoading)
+        assertNull(c.state.value.streamLoad)
+    }
+
+    @Test fun downloadThrottled_followsTheFlag_acrossStarts() = runTest {
+        val f = FakeFacade()
+        val throttled = MutableStateFlow(false)
+        val c = controller(f, { item(listOf(file(0, 600.0, path = null))) }, base = "https://abs.example/", downloadThrottled = throttled)
+        c.play(s, "it")
+        assertFalse(c.state.value.downloadThrottled)
+        throttled.value = true
+        assertTrue(c.state.value.downloadThrottled)
+        c.play(s, "it", 10.0)
+        assertTrue(c.state.value.downloadThrottled)
+        throttled.value = false
+        assertFalse(c.state.value.downloadThrottled)
     }
 }

@@ -15,6 +15,7 @@ private class KeyPlayer : PlayerController {
     val plays = mutableListOf<Triple<String, String, Double?>>()
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += Triple(serverId, itemId, startSec) }
     override fun togglePlayPause() {}
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) {}
     override fun seekTo(globalSec: Double) { seeks += globalSec }
     override fun seekToChapter(index: Int) {}

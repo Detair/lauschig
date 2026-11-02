@@ -23,6 +23,7 @@ private class RecordingPlayer : PlayerController {
     val calls = mutableListOf<String>()
     override fun play(serverId: String, itemId: String, startSec: Double?) { calls += "play" }
     override fun togglePlayPause() { calls += "toggle" }
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) { calls += "seekBy:$deltaSec" }
     override fun seekTo(globalSec: Double) { calls += "seekTo:$globalSec" }
     override fun seekToChapter(index: Int) { calls += "chapter:$index" }

@@ -51,6 +51,7 @@ private class FakePlayer : PlayerController {
     val chapterSeeks = mutableListOf<Int>()
     override fun play(serverId: String, itemId: String, startSec: Double?) { plays += Triple(serverId, itemId, startSec) }
     override fun togglePlayPause() {}
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) {}
     override fun seekTo(globalSec: Double) {}
     override fun seekToChapter(index: Int) { chapterSeeks += index }
@@ -59,7 +60,7 @@ private class FakePlayer : PlayerController {
 
 private class FakeDownloads : DownloadManager {
     val calls = mutableListOf<String>()
-    override suspend fun enqueue(serverId: String, itemId: String) { calls += "enqueue" }
+    override suspend fun enqueue(serverId: String, itemId: String, network: androidx.work.NetworkType?) { calls += "enqueue" }
     override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) { calls += "cancel:$deleteFiles" }
     override fun observe(serverId: String, itemId: String): Flow<DownloadProgress?> = MutableStateFlow(null)
 }

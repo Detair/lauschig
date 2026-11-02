@@ -3,6 +3,12 @@ package io.wolftown.lauschig.playback
 import androidx.annotation.StringRes
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * Progress of a loading stream: [bytes] so far, [expectedBytes] and [etaSec] when known (the index of an m4b at the end
+ * of the file), [bytesPerSec] over the last seconds.
+ */
+data class StreamLoad(val bytes: Long, val expectedBytes: Long?, val bytesPerSec: Long, val etaSec: Long?)
+
 /** UI-facing playback state; positions are book-wide seconds. */
 data class PlayerUiState(
     val itemId: String? = null,
@@ -21,6 +27,10 @@ data class PlayerUiState(
     val isStreaming: Boolean = false,
     /** A title is being prepared (details, connection) or the player is buffering; shown instead of play/pause. */
     val isLoading: Boolean = false,
+    /** Only while [isLoading] and [isStreaming] and the stream is actually loading. */
+    val streamLoad: StreamLoad? = null,
+    /** A download is being slowed down so this stream keeps playing. */
+    val downloadThrottled: Boolean = false,
     @StringRes val error: Int? = null,
 )
 
@@ -30,6 +40,9 @@ interface PlayerController {
     /** Starts [itemId]; start position is [startSec], else the saved progress (0 if finished/none). */
     fun play(serverId: String, itemId: String, startSec: Double? = null)
     fun togglePlayPause()
+
+    /** Pauses if playing or waiting to play; never starts anything. */
+    fun pause()
     fun seekBy(deltaSec: Int)
 
     /** Seeks to the absolute book-wide position [globalSec] (clamped to the book). */

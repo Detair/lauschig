@@ -35,6 +35,7 @@ private class RecordingPlayer : PlayerController {
     var toggles = 0
     override fun play(serverId: String, itemId: String, startSec: Double?) {}
     override fun togglePlayPause() { toggles++; state.value = state.value.copy(isPlaying = !state.value.isPlaying) }
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) {}
     override fun seekTo(globalSec: Double) { seeks += globalSec }
     override fun seekToChapter(index: Int) {}

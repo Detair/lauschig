@@ -252,5 +252,31 @@
     <string name="settings_auto_download_hint">After a sync, per podcast. The Wi-Fi setting applies.</string>
     <string name="settings_auto_download_off">Off</string>
     <string name="settings_auto_download_newest">Newest %1$d</string>
+    <!-- Stream + download -->
     <string name="download_notification_throttled">Throttled – stream has priority</string>
+    <string name="player_download_throttled">Download slowed – stream has priority</string>
+    <string name="player_stream_loading">Loading %1$s · %2$s/s</string>
+    <string name="player_stream_loading_of">Loading %1$s of %2$s · %3$s/s</string>
+    <string name="player_stream_eta">%1$s left</string>
+    <string name="player_stream_progress_short">%1$d %% · %2$s left</string>
+    <string name="player_stream_rate_short">Loading · %1$s/s</string>
+    <string name="duration_short_sec">%1$d s</string>
+    <string name="download_metered_title">Download over mobile data?</string>
+    <string name="download_metered_message">“%1$s” is streaming. Download it in the background (%2$s)?</string>
+    <string name="download_metered_now">Download now over mobile data</string>
+    <string name="download_metered_wifi">Download on Wi-Fi</string>
+    <string name="download_remember_choice">Remember choice</string>
+    <string name="download_contention_title">Connection too slow</string>
+    <string name="download_contention_message">The download of “%1$s” is paused so the stream keeps playing. At this speed it would take about %2$s.</string>
+    <string name="download_contention_message_unknown">The download of “%1$s” is paused so the stream keeps playing.</string>
+    <string name="download_contention_hint">Downloading pauses playback.</string>
+    <string name="download_contention_stream">Keep streaming</string>
+    <string name="download_contention_download">Download</string>
+    <string name="settings_download_on_play">Download when playing</string>
+    <string name="settings_download_on_play_hint">Streamed titles are downloaded in the background.</string>
+    <string name="settings_metered_on_play">Over mobile data</string>
+    <string name="settings_metered_on_play_hint">When playing would download over mobile data.</string>
+    <string name="settings_metered_ask">Ask</string>
+    <string name="settings_metered_always">Always</string>
+    <string name="settings_metered_wifi">Wi-Fi only</string>
 </resources>

@@ -47,6 +47,7 @@ fun AppRoot(
     val onSetup = navController.isOnSetup()
     val onPlayer = navController.isOnPlayer()
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
+    val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection)
@@ -74,6 +75,9 @@ fun AppRoot(
                 AppNavHost(navController, startDestination)
             }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
+            downloadPrompt?.let {
+                DownloadPromptDialog(it, viewModel::answerMetered, viewModel::answerContention, viewModel::dismissPrompt)
+            }
         }
     }
 }

@@ -252,5 +252,31 @@
     <string name="settings_auto_download_hint">Nach einem Abgleich, je Podcast. Die WLAN-Einstellung gilt.</string>
     <string name="settings_auto_download_off">Aus</string>
     <string name="settings_auto_download_newest">Neueste %1$d</string>
+    <!-- Stream + Download -->
     <string name="download_notification_throttled">Gedrosselt – Stream hat Vorrang</string>
+    <string name="player_download_throttled">Download gedrosselt – Stream hat Vorrang</string>
+    <string name="player_stream_loading">Lädt %1$s · %2$s/s</string>
+    <string name="player_stream_loading_of">Lädt %1$s von %2$s · %3$s/s</string>
+    <string name="player_stream_eta">noch %1$s</string>
+    <string name="player_stream_progress_short">%1$d %% · noch %2$s</string>
+    <string name="player_stream_rate_short">Lädt · %1$s/s</string>
+    <string name="duration_short_sec">%1$d s</string>
+    <string name="download_metered_title">Über Mobilfunk laden?</string>
+    <string name="download_metered_message">„%1$s“ wird gestreamt. Im Hintergrund herunterladen (%2$s)?</string>
+    <string name="download_metered_now">Jetzt über Mobilfunk laden</string>
+    <string name="download_metered_wifi">Im WLAN laden</string>
+    <string name="download_remember_choice">Auswahl merken</string>
+    <string name="download_contention_title">Verbindung zu langsam</string>
+    <string name="download_contention_message">Der Download von „%1$s“ ist pausiert, damit der Stream weiterläuft. Bei dieser Verbindung dauert er etwa %2$s.</string>
+    <string name="download_contention_message_unknown">Der Download von „%1$s“ ist pausiert, damit der Stream weiterläuft.</string>
+    <string name="download_contention_hint">Beim Herunterladen pausiert die Wiedergabe.</string>
+    <string name="download_contention_stream">Weiter streamen</string>
+    <string name="download_contention_download">Herunterladen</string>
+    <string name="settings_download_on_play">Beim Abspielen herunterladen</string>
+    <string name="settings_download_on_play_hint">Gestreamte Titel werden im Hintergrund geladen.</string>
+    <string name="settings_metered_on_play">Über Mobilfunk</string>
+    <string name="settings_metered_on_play_hint">Wenn beim Abspielen über Mobilfunk geladen würde.</string>
+    <string name="settings_metered_ask">Fragen</string>
+    <string name="settings_metered_always">Immer</string>
+    <string name="settings_metered_wifi">Nur im WLAN</string>
 </resources>

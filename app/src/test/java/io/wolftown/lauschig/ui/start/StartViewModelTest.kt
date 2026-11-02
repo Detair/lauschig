@@ -45,6 +45,7 @@ private class NoopPlayer : PlayerController {
     override val state = MutableStateFlow(PlayerUiState())
     override fun play(serverId: String, itemId: String, startSec: Double?) {}
     override fun togglePlayPause() {}
+    override fun pause() {}
     override fun seekBy(deltaSec: Int) {}
     override fun seekTo(globalSec: Double) {}
     override fun seekToChapter(index: Int) {}
