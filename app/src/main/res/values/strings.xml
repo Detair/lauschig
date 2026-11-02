@@ -254,7 +254,7 @@
     <string name="settings_auto_download_newest">Newest %1$d</string>
     <!-- Stream + download -->
     <string name="download_notification_throttled">Throttled – stream has priority</string>
-    <string name="player_download_throttled">Download slowed – stream has priority</string>
+    <string name="player_download_throttled">Download slow – stream has priority</string>
     <string name="player_stream_loading">Loading %1$s · %2$s/s</string>
     <string name="player_stream_loading_of">Loading %1$s of %2$s · %3$s/s</string>
     <string name="player_stream_eta">%1$s left</string>

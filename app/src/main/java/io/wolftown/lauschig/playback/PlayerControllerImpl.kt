@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,7 +113,7 @@ class PlayerControllerImpl(
     private var pollJob: Job? = null
     /** Watches the downloads of the loaded title; see [syncSources]. */
     private var localJob: Job? = null
-    private var stats = StreamStats()
+    private var load: StreamLoad? = null
     private var throttled = false
 
     init {
@@ -129,7 +130,8 @@ class PlayerControllerImpl(
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
         }
-        scope.launch { streamStats.collect { stats = it; if (current != null) refresh() } }
+        // Only what the UI shows: a playing stream's stats change constantly but map to null.
+        scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
         scope.launch { downloadThrottled.collect { t -> throttled = t; _state.update { it.copy(downloadThrottled = t) } } }
     }
 
@@ -352,7 +354,7 @@ class PlayerControllerImpl(
                 speed = snap.speed,
                 isStreaming = c.streaming,
                 isLoading = loading,
-                streamLoad = if (loading && c.streaming) stats.toLoad() else null,
+                streamLoad = if (loading && c.streaming) load else null,
                 error = if (snap.isPlaying) null else it.error,
             )
         }

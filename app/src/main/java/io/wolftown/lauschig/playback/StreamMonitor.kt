@@ -26,6 +26,8 @@ data class StreamStats(
     val phase: StreamPhase = StreamPhase.IDLE,
     val phaseSinceMs: Long = 0,
     val bufferedAheadMs: Long = 0,
+    /** Everything that can be buffered is (the last streamed file is loaded to its end): the buffer cannot grow. */
+    val bufferComplete: Boolean = false,
     val bytes: Long = 0,
     val expectedBytes: Long? = null,
     /** Over the last ~3 s. */
@@ -99,16 +101,17 @@ class StreamMonitor(private val clock: () -> Long) : TransferListener {
 
     /** Polled by the service. [buffering]: the player waits for data (STATE_BUFFERING). */
     @Synchronized
-    fun update(active: Boolean, playing: Boolean, buffering: Boolean, bufferedAheadMs: Long) {
+    fun update(active: Boolean, playing: Boolean, buffering: Boolean, bufferedAheadMs: Long, bufferComplete: Boolean = false) {
         if (playing) startedPlaying = true
         val phase = when {
             !active -> StreamPhase.IDLE
             buffering -> if (startedPlaying) StreamPhase.STALLED else StreamPhase.STARTING
             else -> StreamPhase.PLAYING
         }
-        val loadStarts = phase != _state.value.phase && (phase == StreamPhase.STARTING || phase == StreamPhase.STALLED)
-        if (loadStarts) freshLoad()
-        publish(active = active, phase = phase, bufferedAheadMs = bufferedAheadMs)
+        // Only a stall starts a new load here; prepare and seek reset in onSeekOrPrepare, before the first poll, so the
+        // reads that begin in between are kept.
+        if (phase == StreamPhase.STALLED && _state.value.phase == StreamPhase.PLAYING) freshLoad()
+        publish(active = active, phase = phase, bufferedAheadMs = bufferedAheadMs, bufferComplete = bufferComplete)
     }
 
     /** A new queue was prepared or the user seeked: the next buffering is a start, not a stall. */
@@ -122,16 +125,18 @@ class StreamMonitor(private val clock: () -> Long) : TransferListener {
     }
 
     /**
-     * A read starts at [position]; [contentLength] is the response's length (null if unknown). Only a jump forward
-     * within a load gives an expectation: that is ExoPlayer fetching the index (`moov`) at the end of an m4b before the
-     * first sound, and that read ends with the file. A read from 0, after a seek or back to the audio data runs to the
-     * end of the book, which says nothing about when playback starts.
+     * A read starts at [position]; [contentLength] is the response's length (null if unknown). Only one pattern gives
+     * an expectation: before anything played since prepare/seek, a read from 0 followed by a jump forward to a part of
+     * less than [MAX_INDEX_BYTES]. That is ExoPlayer fetching the index (`moov`) at the end of an m4b before the first
+     * sound, and that read ends with the file. Any other read (from 0, after a seek, back to the audio data, a reopen
+     * during a stall) runs to the end of the book, which says nothing about when playback starts.
      */
     @Synchronized
     fun onTransferStart(position: Long, contentLength: Long?) {
         val previous = lastTransferStart
         lastTransferStart = position
-        expected = if (contentLength != null && position > 0 && previous != null && position > previous) loadBytes + contentLength else null
+        val indexRead = !startedPlaying && previous == 0L && position > 0 && contentLength != null && contentLength < MAX_INDEX_BYTES
+        expected = contentLength?.takeIf { indexRead }?.let { loadBytes + it }
         val now = clock()
         rate.add(now, 0)
         recentRate.add(now, 0)
@@ -164,6 +169,7 @@ class StreamMonitor(private val clock: () -> Long) : TransferListener {
         active: Boolean = _state.value.active,
         phase: StreamPhase = _state.value.phase,
         bufferedAheadMs: Long = _state.value.bufferedAheadMs,
+        bufferComplete: Boolean = _state.value.bufferComplete,
         forceSince: Boolean = false,
     ) {
         val now = clock()
@@ -174,6 +180,7 @@ class StreamMonitor(private val clock: () -> Long) : TransferListener {
             phase = phase,
             phaseSinceMs = if (forceSince || phase != s.phase) now else s.phaseSinceMs,
             bufferedAheadMs = bufferedAheadMs,
+            bufferComplete = bufferComplete,
             bytes = loadBytes,
             expectedBytes = expected,
             bytesPerSec = rate.bytesPerSec(now),
@@ -198,5 +205,6 @@ class StreamMonitor(private val clock: () -> Long) : TransferListener {
 
     private companion object {
         const val BYTES_PUBLISH_MS = 250L
+        const val MAX_INDEX_BYTES = 64L * 1024 * 1024
     }
 }

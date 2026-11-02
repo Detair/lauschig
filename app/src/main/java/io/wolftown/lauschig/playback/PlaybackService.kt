@@ -90,9 +90,10 @@ class PlaybackService : MediaLibraryService() {
 
         val http = OkHttpDataSource.Factory(callFactory).setTransferListener(streamMonitor)
         // Audio is small: a long read-ahead bridges dead spots and gives a throttled download room (see StreamPriority).
+        // The byte cap wins over the time window, so high-bitrate files get a shorter read-ahead instead of eating memory.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(MIN_BUFFER_MS, MAX_BUFFER_MS, START_BUFFER_MS, REBUFFER_MS)
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(TARGET_BUFFER_BYTES)
             .build()
         val exo = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(DefaultDataSource.Factory(this, http)))
@@ -107,7 +108,10 @@ class PlaybackService : MediaLibraryService() {
             .build()
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) { Log.w(TAG, "playback error ${error.errorCodeName}", error) }
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { Log.i(TAG, "playWhenReady=$playWhenReady reason=$reason") }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                Log.i(TAG, "playWhenReady=$playWhenReady reason=$reason")
+                if (playWhenReady) watchStream(exo)
+            }
             override fun onPlaybackSuppressionReasonChanged(reason: Int) { Log.i(TAG, "suppression=$reason") }
             override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) streamMonitor.onSeekOrPrepare()
@@ -117,18 +121,6 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         player = exo
-        monitorJob = scope.launch {
-            while (true) {
-                val uri = exo.currentMediaItem?.localConfiguration?.uri
-                streamMonitor.update(
-                    active = exo.playWhenReady && (uri?.scheme == "http" || uri?.scheme == "https"),
-                    playing = exo.isPlaying,
-                    buffering = exo.playbackState == Player.STATE_BUFFERING,
-                    bufferedAheadMs = exo.totalBufferedDuration,
-                )
-                delay(MONITOR_INTERVAL_MS)
-            }
-        }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
         bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
@@ -141,6 +133,37 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(activity)
             .build()
     }
+
+    /** Polls the player for [StreamMonitor] while it wants to play; reports the stream inactive once, then stops. */
+    private fun watchStream(exo: ExoPlayer) {
+        if (monitorJob?.isActive == true) return
+        monitorJob = scope.launch {
+            while (true) {
+                val wants = exo.playWhenReady
+                val state = exo.playbackState
+                streamMonitor.update(
+                    // Ended or idle (error, stopped): nothing loads any more, downloads must not wait for it.
+                    active = wants && isStream(exo.currentMediaItem) && state != Player.STATE_ENDED && state != Player.STATE_IDLE,
+                    playing = exo.isPlaying,
+                    buffering = state == Player.STATE_BUFFERING,
+                    bufferedAheadMs = exo.totalBufferedDuration,
+                    bufferComplete = bufferComplete(exo),
+                )
+                if (!wants) break
+                delay(MONITOR_INTERVAL_MS)
+            }
+        }
+    }
+
+    /** The current file is buffered to its end and no streamed file follows: the read-ahead cannot grow. */
+    private fun bufferComplete(exo: ExoPlayer): Boolean {
+        val duration = exo.duration
+        if (duration == C.TIME_UNSET || exo.bufferedPosition < duration) return false
+        val next = exo.nextMediaItemIndex
+        return next == C.INDEX_UNSET || !isStream(exo.getMediaItemAt(next))
+    }
+
+    private fun isStream(item: MediaItem?): Boolean = item?.localConfiguration?.uri?.scheme.let { it == "http" || it == "https" }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
@@ -174,6 +197,7 @@ class PlaybackService : MediaLibraryService() {
         const val START_BUFFER_MS = 2_500
         const val REBUFFER_MS = 5_000
         const val MONITOR_INTERVAL_MS = 500L
+        const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
         const val TAG = "PlaybackService"
     }
 }

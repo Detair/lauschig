@@ -35,9 +35,9 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch { starter.answerMetered(prompt, now, remember) }
     }
 
-    /** [download]: playback pauses so the download gets the whole connection. */
+    /** [download]: playback of that title pauses so the download gets the whole connection. */
     fun answerContention(prompt: DownloadPrompt.Contention, download: Boolean) {
-        if (download) player.pause()
+        if (download && player.state.value.itemId == prompt.itemId) player.pause()
         viewModelScope.launch { starter.answerContention(prompt, download) }
     }
 

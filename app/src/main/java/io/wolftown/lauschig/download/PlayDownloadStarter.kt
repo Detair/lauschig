@@ -25,7 +25,8 @@ import javax.inject.Singleton
  * Downloads a title in the background when playing it started a stream ("download on play"). On Wi-Fi it is queued
  * right away under the usual rules; on mobile data the "over mobile data" setting decides: ask ([DownloadPrompt.Metered]),
  * always, or wait for Wi-Fi. A title that already has a download (complete, queued, running, or paused by the user) is
- * left alone; one paused for the stream ([DownloadWorker.STREAM_PRIORITY]) or failed is started again.
+ * left alone. One that failed is started again unless the storage was full; one paused for the stream
+ * ([DownloadWorker.STREAM_PRIORITY]) only on an unmetered network, so the same weak mobile line does not ask again.
  * Also answers the prompts ([answerMetered], [answerContention]).
  */
 @Singleton
@@ -79,8 +80,12 @@ class PlayDownloadStarter(
     suspend fun onStreamStarted(serverId: String, itemId: String) {
         if (!enabled.first()) return
         val existing = row(serverId, itemId)
-        val restart = existing == null || existing.state == DownloadState.FAILED ||
-            (existing.state == DownloadState.PAUSED && existing.error == DownloadWorker.STREAM_PRIORITY)
+        val restart = when {
+            existing == null -> true
+            existing.state == DownloadState.FAILED -> existing.error != STORAGE_FULL
+            existing.state == DownloadState.PAUSED && existing.error == DownloadWorker.STREAM_PRIORITY -> !isMetered()
+            else -> false
+        }
         if (!restart) return
         if (!isMetered()) {
             downloads.enqueue(serverId, itemId)
@@ -117,5 +122,6 @@ class PlayDownloadStarter(
 
     private companion object {
         const val TAG = "PlayDownloadStarter"
+        const val STORAGE_FULL = "storage_full"
     }
 }

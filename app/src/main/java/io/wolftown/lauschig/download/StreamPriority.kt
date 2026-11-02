@@ -7,7 +7,7 @@ import io.wolftown.lauschig.playback.StreamStats
  * Lets a stream win over a download on a weak connection; one instance per running download, asked before every chunk.
  * Throttles while the stream starts, stalls or has less than 30 s buffered, and stays throttled until 60 s are buffered
  * during playback (hysteresis). If the stream still stalls for 5 s (or does not start within 20 s) while throttled, the
- * download pauses. [clock] must be the [StreamStats] clock ([io.wolftown.lauschig.playback.StreamMonitor.now]).
+ * download pauses. A playing stream whose buffer is complete never throttles. [clock] must be the [StreamStats] clock ([io.wolftown.lauschig.playback.StreamMonitor.now]).
  */
 class StreamPriority(private val clock: () -> Long) {
     enum class Decision { FULL, THROTTLE, PAUSE }
@@ -20,7 +20,8 @@ class StreamPriority(private val clock: () -> Long) {
 
     fun decide(s: StreamStats): Decision {
         val now = clock()
-        if (!s.active || s.phase == StreamPhase.IDLE) {
+        // No stream, or one whose buffer cannot grow any more (last file loaded to its end): nothing to yield for.
+        if (!s.active || s.phase == StreamPhase.IDLE || (s.phase == StreamPhase.PLAYING && s.bufferComplete)) {
             throttling = false
             return Decision.FULL
         }

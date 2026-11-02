@@ -90,4 +90,12 @@ class StreamPriorityTest {
         assertEquals(FULL, p.decide(StreamStats(active = false)))
         assertFalse(p.showThrottled)
     }
+
+    @Test fun bufferThatCannotGrow_full() {
+        // The last file is completely buffered: waiting for 60 s ahead would throttle until the end.
+        assertEquals(THROTTLE, p.decide(stats(StreamPhase.PLAYING, aheadSec = 10)))
+        assertEquals(FULL, p.decide(stats(StreamPhase.PLAYING, aheadSec = 10).copy(bufferComplete = true)))
+        assertFalse(p.showThrottled)
+        assertEquals(FULL, p.decide(stats(StreamPhase.PLAYING, aheadSec = 5).copy(bufferComplete = true)))
+    }
 }

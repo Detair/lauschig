@@ -152,4 +152,21 @@ class PlayDownloadStarterTest {
         prompts.clear(old)
         assertEquals(new, prompts.prompt.value)
     }
+
+    @Test fun pausedForTheStream_onMobileData_staysPaused() = runTest {
+        metered = true
+        mode.value = MeteredDownload.ALWAYS
+        row = DownloadEntity(s, "it", DownloadState.PAUSED, 1, DownloadWorker.STREAM_PRIORITY)
+        starter().onStreamStarted(s, "it")
+        mode.value = MeteredDownload.ASK
+        starter().onStreamStarted(s, "it")
+        assertTrue(enqueued.isEmpty())
+        assertNull(prompts.prompt.value)
+    }
+
+    @Test fun failedForLackOfStorage_isNotRetried() = runTest {
+        row = DownloadEntity(s, "it", DownloadState.FAILED, 1, "storage_full")
+        starter().onStreamStarted(s, "it")
+        assertTrue(enqueued.isEmpty())
+    }
 }

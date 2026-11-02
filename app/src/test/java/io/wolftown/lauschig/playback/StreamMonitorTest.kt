@@ -154,4 +154,56 @@ class StreamMonitorTest {
         m.setDownloadThrottled("b", false)
         assertFalse(m.downloadThrottled.value)
     }
+
+    @Test fun indexJumpBeforeTheFirstPoll_givesExpectedBytes() {
+        // setMediaItems -> onSeekOrPrepare; the reads start before the service polls the first time.
+        m.onSeekOrPrepare()
+        m.onTransferStart(position = 0, contentLength = 400_000_000)
+        m.onTransferStart(position = 399_000_000, contentLength = 1_000_000)
+        assertEquals(1_000_000L, m.state.value.expectedBytes)
+    }
+
+    @Test fun reopenDuringStall_hasNoExpectation() {
+        m.update(active = true, playing = true, buffering = false, bufferedAheadMs = 10_000)
+        m.update(active = true, playing = false, buffering = true, bufferedAheadMs = 0)
+        m.onTransferStart(position = 5_000_000, contentLength = 395_000_000)
+        m.onTransferStart(position = 6_000_000, contentLength = 1_000_000) // retry further on
+        assertNull(m.state.value.expectedBytes)
+    }
+
+    @Test fun readFromZeroThenJump_duringStall_hasNoExpectation() {
+        m.update(active = true, playing = true, buffering = false, bufferedAheadMs = 10_000)
+        m.update(active = true, playing = false, buffering = true, bufferedAheadMs = 0)
+        m.onTransferStart(position = 0, contentLength = 400_000_000)
+        m.onTransferStart(position = 1_000_000, contentLength = 1_000_000)
+        assertNull(m.state.value.expectedBytes)
+    }
+
+    @Test fun jumpFromOffsetNotZero_hasNoExpectation() {
+        m.onSeekOrPrepare()
+        m.onTransferStart(position = 1_000, contentLength = 400_000_000)
+        m.onTransferStart(position = 399_000_000, contentLength = 1_000_000)
+        assertNull(m.state.value.expectedBytes)
+    }
+
+    @Test fun hugeIndexRead_hasNoExpectation() {
+        m.onSeekOrPrepare()
+        m.onTransferStart(position = 0, contentLength = 400_000_000)
+        m.onTransferStart(position = 100_000_000, contentLength = 64L * 1024 * 1024)
+        assertNull(m.state.value.expectedBytes)
+    }
+
+    @Test fun firstPoll_keepsBytesOfReadsThatStartedBeforeIt() {
+        m.onSeekOrPrepare()
+        m.onTransferStart(0, 400_000_000)
+        tick(300); m.onBytes(5_000)
+        m.update(active = true, playing = false, buffering = true, bufferedAheadMs = 0)
+        assertEquals(StreamPhase.STARTING, m.state.value.phase)
+        assertEquals(5_000L, m.state.value.bytes)
+    }
+
+    @Test fun bufferComplete_isReported() {
+        m.update(active = true, playing = true, buffering = false, bufferedAheadMs = 5_000, bufferComplete = true)
+        assertTrue(m.state.value.bufferComplete)
+    }
 }

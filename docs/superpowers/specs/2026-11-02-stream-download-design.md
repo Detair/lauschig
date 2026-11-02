@@ -51,7 +51,9 @@ ExoPlayer liest dafür einen eigenen HTTP-Bereich ab Position p (> 0); `Content-
   Arbeit mit anderer Bedingung wird ersetzt (laufende nicht).
 - Auslöser im `PlayerControllerImpl`: nach erfolgreichem Start eines Streams Hook `onStreamStarted(serverId, itemId)`
   → `PlayDownloadStarter` (Einstellungen, gemessenes Netz via `ConnectivityManager.isActiveNetworkMetered`,
-  vorhandene Download-Zeile: COMPLETE/QUEUED/RUNNING → nichts; PAUSED durch den Nutzer → nichts).
+  vorhandene Download-Zeile: COMPLETE/QUEUED/RUNNING → nichts; PAUSED durch den Nutzer → nichts; PAUSED mit
+  `stream_priority` → nur im ungemessenen Netz neu starten, damit dieselbe schwache Mobilfunkverbindung nicht erneut
+  fragt; FAILED → neu starten, außer bei `storage_full`).
 
 ## Nicht-Ziele
 - Kein HLS/Transcoding über die ABS-Play-Session.
