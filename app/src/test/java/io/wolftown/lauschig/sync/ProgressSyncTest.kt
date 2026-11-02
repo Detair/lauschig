@@ -138,6 +138,16 @@ class ProgressSyncTest {
         assertTrue(db.progressDao().get(s, "b")!!.hideFromContinue)
     }
 
+    @Test fun finishedRow_withAKeptPosition_isPushedAsFullProgress() = runTest {
+        db.progressDao().saveLocal(s, "a", 30.0, 100.0, true, 9_000)
+        me.server = listOf(srv("a", 10.0, 5_000))
+        sync().sync(s)
+        val u = me.patches.single().second
+        assertEquals(1.0, u.progress, 0.0)
+        assertEquals(30.0, u.currentTime, 0.0)
+        assertTrue(u.isFinished)
+    }
+
     @Test fun newerLocalProgress_isPushed_andNotOverwritten() = runTest {
         db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
         db.progressDao().saveLocal(s, "b", 20.0, 100.0, false, 1_000) // server newer: not pushed

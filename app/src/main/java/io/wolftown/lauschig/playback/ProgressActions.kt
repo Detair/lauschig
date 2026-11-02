@@ -33,10 +33,19 @@ class ProgressActions(
     @Inject constructor(progress: ProgressDao, items: ItemDao, episodes: EpisodeDao, player: PlayerController, api: ApiProvider, sync: SyncTrigger) :
         this(progress, items, episodes, player, api.meApi, sync)
 
+    /** Finished; a position already heard stays (for "mark not finished, keep position"), an unstarted title goes to its end. */
     suspend fun markFinished(serverId: String, itemId: String) {
         val duration = duration(serverId, itemId)
         stopIfLoaded(itemId)
-        write(serverId, itemId) { it.copy(currentTimeSec = duration, durationSec = duration, isFinished = true) }
+        write(serverId, itemId) { it.copy(currentTimeSec = it.currentTimeSec.takeIf { t -> t > 0 } ?: duration, durationSec = duration, isFinished = true) }
+    }
+
+    /** Not finished any more, the saved position stays (spec 2.7b). A loaded, paused title jumps there. */
+    suspend fun markNotFinishedKeepPosition(serverId: String, itemId: String) {
+        val row = progress.get(serverId, itemId) ?: return
+        val loaded = stopIfLoaded(itemId)
+        write(serverId, itemId) { it.copy(isFinished = false) }
+        if (loaded) player.seekTo(row.currentTimeSec)
     }
 
     /** Not finished, back to the start (ABS resets the position when a title is unmarked anyway). */

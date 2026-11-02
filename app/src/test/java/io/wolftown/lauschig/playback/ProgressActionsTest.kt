@@ -182,12 +182,42 @@ class ProgressActionsTest {
         assertEquals("v3", nextVolume(dao, s, "v1")?.id)
     }
 
+    @Test fun startOverLabel_isMarkNotFinished_onlyWithoutTheKeepEntry() {
+        val finished = ProgressEntity(s, "b1", 10.0, 100.0, true, 1)
+        assertEquals(io.wolftown.lauschig.R.string.progress_start_over, ProgressEntry.StartOver.label(finished))
+        assertEquals(io.wolftown.lauschig.R.string.progress_mark_unfinished, ProgressEntry.StartOver.label(finished.copy(currentTimeSec = 100.0)))
+    }
+
+    @Test fun markNotFinishedKeep_clearsFinished_keepsPosition_andSeeksLoadedPlayer() = runTest {
+        seed(ProgressEntity(s, "b1", 1200.0, 3600.0, true, 1))
+        player.state.value = PlayerUiState(itemId = "b1", isPlaying = false)
+        actions().markNotFinishedKeepPosition(s, "b1")
+        val p = db.progressDao().get(s, "b1")!!
+        assertFalse(p.isFinished)
+        assertEquals(1200.0, p.currentTimeSec, 0.0)
+        assertTrue(p.dirty)
+        assertEquals(now, p.lastUpdate)
+        assertEquals(1, syncs)
+        assertEquals(listOf(1200.0), player.seeks)
+    }
+
+    @Test fun markFinished_keepsAnExistingPosition() = runTest {
+        seed(ProgressEntity(s, "b1", 1200.0, 3600.0, false, 1))
+        actions().markFinished(s, "b1")
+        val p = db.progressDao().get(s, "b1")!!
+        assertTrue(p.isFinished)
+        assertEquals(1200.0, p.currentTimeSec, 0.0)
+    }
+
     @Test fun progressEntries_dependOnState() {
         assertEquals(listOf(ProgressEntry.MarkFinished, ProgressEntry.PullFromServer), progressEntries(null, offline = false))
         val started = ProgressEntity(s, "b1", 10.0, 100.0, false, 1)
         assertEquals(listOf(ProgressEntry.MarkFinished, ProgressEntry.StartOver, ProgressEntry.HideFromContinue), progressEntries(started, offline = true))
         val finished = started.copy(isFinished = true)
-        assertEquals(listOf(ProgressEntry.StartOver, ProgressEntry.PullFromServer), progressEntries(finished, offline = false))
+        assertEquals(listOf(ProgressEntry.MarkNotFinishedKeep, ProgressEntry.StartOver, ProgressEntry.PullFromServer), progressEntries(finished, offline = false))
+        // Finished at the very end (or never started): keeping the position means nothing, only "start over" is offered.
+        assertEquals(listOf(ProgressEntry.StartOver), progressEntries(finished.copy(currentTimeSec = 96.0), offline = true))
+        assertEquals(listOf(ProgressEntry.StartOver), progressEntries(finished.copy(currentTimeSec = 0.0), offline = true))
         assertEquals(listOf(ProgressEntry.MarkFinished, ProgressEntry.StartOver), progressEntries(started.copy(hideFromContinue = true), offline = true))
     }
 }

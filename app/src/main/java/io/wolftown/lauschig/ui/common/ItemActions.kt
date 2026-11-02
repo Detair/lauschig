@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RemoveDone
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -131,6 +132,7 @@ class ItemActionsViewModel @Inject constructor(
 
     fun markFinished(itemId: String) = withServer { progressActions.markFinished(it, itemId) }
     fun startOver(itemId: String) = withServer { progressActions.startOver(it, itemId) }
+    fun markNotFinishedKeepPosition(itemId: String) = withServer { progressActions.markNotFinishedKeepPosition(it, itemId) }
     fun hideFromContinue(itemId: String) = withServer { progressActions.hideFromContinue(it, itemId) }
 
     /** Result (true = taken from the server) goes to [onResult] on the main thread. */
@@ -195,6 +197,7 @@ fun ItemActionsSheet(
 /** Progress actions, shown in the long-press menu, the detail screen and the player menu. */
 enum class ProgressEntry(val icon: ImageVector) {
     MarkFinished(Icons.Rounded.DoneAll),
+    MarkNotFinishedKeep(Icons.Rounded.RemoveDone),
     StartOver(Icons.Rounded.Replay),
     HideFromContinue(Icons.Rounded.VisibilityOff),
     PullFromServer(Icons.Rounded.CloudDownload);
@@ -202,7 +205,9 @@ enum class ProgressEntry(val icon: ImageVector) {
     @StringRes
     fun label(p: ProgressEntity?): Int = when (this) {
         MarkFinished -> R.string.progress_mark_finished
-        StartOver -> if (p?.isFinished == true) R.string.progress_mark_unfinished else R.string.progress_start_over
+        MarkNotFinishedKeep -> R.string.progress_mark_unfinished_keep
+        // Next to "keep position" this one is plainly "start over"; alone it is the only way back from finished.
+        StartOver -> if (p?.isFinished == true && !canKeepPosition(p)) R.string.progress_mark_unfinished else R.string.progress_start_over
         HideFromContinue -> R.string.progress_hide
         PullFromServer -> R.string.progress_pull
     }
@@ -211,11 +216,21 @@ enum class ProgressEntry(val icon: ImageVector) {
     fun keepsSheetOpen(download: QuickDownload) = this == MarkFinished && download == QuickDownload.Complete
 }
 
+/**
+ * A finished title whose saved position lies inside it can be unmarked without losing the position. Within the
+ * last 5 s ABS marks it finished again, so there it would mean nothing.
+ */
+fun canKeepPosition(p: ProgressEntity?): Boolean =
+    p != null && p.isFinished && p.currentTimeSec > 0 && (p.durationSec <= 0 || p.currentTimeSec < p.durationSec - KEEP_POSITION_END_SEC)
+
+private const val KEEP_POSITION_END_SEC = 5.0
+
 /** Which progress actions make sense for this state. */
 fun progressEntries(p: ProgressEntity?, offline: Boolean): List<ProgressEntry> = buildList {
     val finished = p?.isFinished == true
     val started = (p?.currentTimeSec ?: 0.0) > 0
     if (!finished) add(ProgressEntry.MarkFinished)
+    if (canKeepPosition(p)) add(ProgressEntry.MarkNotFinishedKeep)
     if (finished || started) add(ProgressEntry.StartOver)
     if (!finished && started && p?.hideFromContinue != true) add(ProgressEntry.HideFromContinue)
     if (!offline) add(ProgressEntry.PullFromServer)
@@ -236,6 +251,7 @@ class ProgressActionHost internal constructor(
     fun run(entry: ProgressEntry) {
         when (entry) {
             ProgressEntry.MarkFinished -> { viewModel.markFinished(itemId); if (download() == QuickDownload.Complete) askDelete = true }
+            ProgressEntry.MarkNotFinishedKeep -> viewModel.markNotFinishedKeepPosition(itemId)
             ProgressEntry.StartOver -> viewModel.startOver(itemId)
             ProgressEntry.HideFromContinue -> viewModel.hideFromContinue(itemId)
             ProgressEntry.PullFromServer -> viewModel.pullFromServer(itemId) { ok ->

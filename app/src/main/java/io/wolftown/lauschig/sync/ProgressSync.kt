@@ -89,7 +89,8 @@ class ProgressSync(
         val update = ProgressUpdate(
             currentTime = local.currentTimeSec,
             duration = dur,
-            progress = if (dur > 0) (local.currentTimeSec / dur).coerceIn(0.0, 1.0) else 0.0,
+            // A finished title may keep an earlier position (see ProgressActions.markFinished); ABS must still see 100 %.
+            progress = if (local.isFinished) 1.0 else if (dur > 0) (local.currentTimeSec / dur).coerceIn(0.0, 1.0) else 0.0,
             isFinished = local.isFinished,
             hideFromContinueListening = local.hideFromContinue,
         )
