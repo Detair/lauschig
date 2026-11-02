@@ -150,3 +150,23 @@ Item, audio file and chapter rows of a local title are ordinary `items` / `audio
   worker factory that WorkManager's on-demand initialisation needs.
 - Not verified on a device (no adb in this package): picking a folder, persisted permission across reboots, playback
   of `content://` documents through ExoPlayer, MediaMetadataRetriever on real files.
+
+## Fix round 1 – changed decisions
+
+- `MediaItemFactory` resolves the files of a title once per call; only the first `content://` document is asked for
+  at the provider (one folder, one permission: a single deleted file fails at play time, the next scan drops it).
+  A missing base URL is a `PlaybackUnavailableException`, never an NPE.
+- Scan: removals need a complete listing (no failed subfolder, no depth or entry cap hit); a listed title that cannot
+  be read now keeps its previous rows; one title that throws does not stop the folder. Such scans record
+  `scan_failed` ("Nicht alles konnte gelesen werden"), a provider that throws too; `missing` only when the picked
+  folder itself cannot be found or listed.
+- `DownloadManager.cancel` deletes files on the IO dispatcher.
+- Progress sync order: fetch server progress, push dirty progress (also when the server row is as new but differs in
+  finished/hidden state or position), upload sessions, fetch again and merge. ABS keeps a progress row newer than an
+  uploaded session; the old order (sessions first) let a session reset a title heard to its end to "not finished" at
+  the same timestamp. One progress sync at a time per process. Rows already wrong on the server from earlier builds
+  (local row no longer dirty) are not repaired automatically: marking the title as heard again fixes it.
+- Progress-only sync (`ProgressSyncWorker`, unique `sync-progress`, REPLACE, 10 s initial delay, network required) after
+  a pause (`playWhenReady` false; a buffering stall does not count) or the end of a title, from the playback service;
+  never for device titles.
+- The download page reads the free space when the set of downloads or their states change, else every 30 s.
