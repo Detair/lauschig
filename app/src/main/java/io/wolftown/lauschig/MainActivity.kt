@@ -26,6 +26,8 @@ class MainActivity : ComponentActivity() {
         installSplashScreen().setKeepOnScreenCondition { viewModel.startDestination.value == null }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Before handleOpen strips the extras it consumes.
+        if (isLauncherStart(intent, recreated = savedInstanceState != null)) viewModel.continueOnLauncherStart()
         // A recreation (rotation, process restart) hands us the old intent again; its SSO link was already used.
         handleOpen(intent, replay = savedInstanceState != null)
         setContent {

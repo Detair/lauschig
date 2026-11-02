@@ -4,7 +4,7 @@ import android.media.AudioDeviceInfo
 
 /**
  * Decides whether a newly connected audio output (car, Bluetooth or wired headphones) resumes the last title:
- * only when enabled, nothing plays, and the last title was paused less than [maxPauseMs] ago. Outputs that were
+ * only when enabled, nothing plays, no call is going on, and the last title was paused less than [maxPauseMs] ago. Outputs that were
  * already there when watching started are not "new"; several profiles of one device connecting at once
  * (A2DP + LE audio) trigger once ([debounceMs]).
  */
@@ -32,10 +32,12 @@ class AutoResumePolicy(
         isPlayingOrLoading: Boolean,
         lastPausedAt: Long?,
         now: Long,
+        /** A call is ringing or running (the car often connects for it): never start an audiobook into it. */
+        inCall: Boolean = false,
     ): Boolean {
         val fresh = devices.filter { known.add(it.first) }
         if (fresh.none { isResumeOutput(it.second) }) return false
-        if (!enabled || isPlayingOrLoading || lastPausedAt == null) return false
+        if (!enabled || isPlayingOrLoading || inCall || lastPausedAt == null) return false
         val since = now - lastPausedAt
         if (since < 0 || since > maxPauseMs) return false
         if (lastTrigger != Long.MIN_VALUE && now - lastTrigger < debounceMs) return false

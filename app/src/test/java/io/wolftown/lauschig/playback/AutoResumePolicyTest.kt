@@ -10,8 +10,8 @@ class AutoResumePolicyTest {
     private val a2dp = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
     private val speaker = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     private fun policy() = AutoResumePolicy().also { it.initialDevices(listOf(1 to speaker)) }
-    private fun ok(p: AutoResumePolicy, now: Long = 10 * h, id: Int = 2, type: Int = a2dp, pausedAt: Long? = now - h, playing: Boolean = false, enabled: Boolean = true) =
-        p.onDevicesAdded(listOf(id to type), enabled = enabled, isPlayingOrLoading = playing, lastPausedAt = pausedAt, now = now)
+    private fun ok(p: AutoResumePolicy, now: Long = 10 * h, id: Int = 2, type: Int = a2dp, pausedAt: Long? = now - h, playing: Boolean = false, enabled: Boolean = true, inCall: Boolean = false) =
+        p.onDevicesAdded(listOf(id to type), enabled = enabled, isPlayingOrLoading = playing, lastPausedAt = pausedAt, now = now, inCall = inCall)
 
     @Test fun newCarOrHeadset_recentPause_resumes() {
         assertTrue(ok(policy()))
@@ -23,6 +23,7 @@ class AutoResumePolicyTest {
     @Test fun off_playing_noTitle_orTooOld_doNotResume() {
         assertFalse(ok(policy(), enabled = false))
         assertFalse(ok(policy(), playing = true))
+        assertFalse(ok(policy(), inCall = true)) // the car connects for a call: never start an audiobook into it
         assertFalse(ok(policy(), pausedAt = null))
         assertFalse(ok(policy(), now = 10 * h, pausedAt = 8 * h - 1))
         assertFalse(ok(policy(), now = 10 * h, pausedAt = 10 * h + 60_000)) // clock went backwards: unknown

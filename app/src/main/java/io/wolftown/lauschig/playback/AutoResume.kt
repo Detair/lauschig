@@ -9,6 +9,8 @@ import android.os.Looper
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.db.dao.EpisodeDao
+import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.settings.PlaybackSettings
 import kotlinx.coroutines.CoroutineScope
@@ -19,28 +21,43 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * "The last title": the newest unfinished progress row of the signed-in account (local DB only, no network).
- * [resumeLast] plays it; a loaded, paused title simply continues (see [PlayerController.play]).
+ * "The last title": the one last played on this device ([LastPlayedStore], written by the service on every pause
+ * and stop), not the newest progress row (that may come from another device or from a progress action). Skipped
+ * when it belongs to another account, is gone or orphaned, finished, or hidden from "continue listening".
+ * Local DB only, no network.
  */
 @Singleton
 class LastTitleStarter @Inject constructor(
     private val accounts: AccountStore,
+    private val store: LastPlayedStore,
     private val progress: ProgressDao,
+    private val items: ItemDao,
+    private val episodes: EpisodeDao,
     private val player: PlayerController,
 ) {
-    data class Last(val serverId: String, val itemId: String, val lastUpdate: Long)
+    data class Last(val serverId: String, val itemId: String, val pausedAt: Long)
 
     suspend fun last(): Last? {
         val serverId = accounts.account.first()?.serverId ?: return null
-        val row = progress.newestUnfinished(serverId) ?: return null
-        return Last(serverId, row.itemId, row.lastUpdate)
+        val stored = store.get()?.takeIf { it.serverId == serverId } ?: return null
+        val key = PlayableKey.parse(stored.itemId)
+        val item = items.get(serverId, key.libraryItemId)
+        if (item == null || item.orphaned) return null
+        if (key.episodeId != null && episodes.get(serverId, key.libraryItemId, key.episodeId) == null) return null
+        val p = progress.get(serverId, stored.itemId)
+        if (p != null && (p.isFinished || p.hideFromContinue)) return null
+        return Last(serverId, stored.itemId, stored.pausedAt)
     }
 
-    /** Main thread. Does nothing while something plays or loads. Returns true if it started something. */
-    suspend fun resumeLast(): Boolean {
+    /**
+     * Main thread. Plays the last title unless something plays or loads, or it paused more than [maxAgeMs] ago.
+     * Returns true if it started something.
+     */
+    suspend fun resumeLast(maxAgeMs: Long? = null, now: Long = System.currentTimeMillis()): Boolean {
         val s = player.state.value
         if (s.isPlaying || s.isLoading) return false
         val last = last() ?: return false
+        if (maxAgeMs != null && (now - last.pausedAt < 0 || now - last.pausedAt > maxAgeMs)) return false
         player.play(last.serverId, last.itemId)
         return true
     }
@@ -98,12 +115,14 @@ class AutoResumer @Inject constructor(
         val s = player.state.value
         // Only a relevant output needs the last title; the policy still has to see every device it did not know.
         val last = if (devices.any { AutoResumePolicy.isResumeOutput(it.second) }) starter.last() else null
+        val mode = audio?.mode
         val go = policy.onDevicesAdded(
             devices,
             enabled = callback != null,
             isPlayingOrLoading = s.isPlaying || s.isLoading,
-            lastPausedAt = last?.lastUpdate,
+            lastPausedAt = last?.pausedAt,
             now = System.currentTimeMillis(),
+            inCall = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_RINGTONE,
         )
         if (go) {
             Log.i(TAG, "audio output connected, resuming the last title")
