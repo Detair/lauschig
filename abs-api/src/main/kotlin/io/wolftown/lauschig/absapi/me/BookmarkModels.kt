@@ -16,11 +16,11 @@ data class BookmarkDto(
     val createdAt: Long = 0,
 )
 
-/** `GET /api/me/bookmarks`. */
+/** `GET /api/me/bookmarks`; [bookmarks] is null when the field is absent (never read as "all deleted"). */
 @Serializable
 data class BookmarksResponse(
     @Serializable(with = LenientBookmarkListSerializer::class)
-    val bookmarks: List<BookmarkDto> = emptyList(),
+    val bookmarks: List<BookmarkDto>? = null,
 )
 
 /** Body of create (`POST`) and update (`PATCH`) `/api/me/item/:id/bookmark`; [title] must not be empty. */

@@ -180,21 +180,6 @@ class LibrarySync(
         chapters.replaceFromServer(serverId, key, ep.chapters.mapIndexed { i, c -> ChapterEntity(serverId, key, i, c.start, c.end, c.title) })
     }
 
-    private fun EpisodeDto.toEntity(serverId: String, itemId: String, recent: Boolean = false) = EpisodeEntity(
-        serverId = serverId,
-        itemId = itemId,
-        id = id,
-        title = title,
-        subtitle = subtitle,
-        description = description,
-        season = season?.takeIf { it.isNotBlank() },
-        episode = episode?.takeIf { it.isNotBlank() },
-        publishedAt = publishedAt ?: 0,
-        durationSec = duration ?: audioFile?.duration ?: 0.0,
-        sizeBytes = size ?: audioFile?.metadata?.size ?: 0,
-        recent = recent,
-    )
-
     private fun LibraryItemDto.toListEntity(serverId: String): ItemEntity {
         val m = media.metadata
         val series = parseMinifiedSeries(m.seriesName)
@@ -228,3 +213,19 @@ class LibrarySync(
         const val RECENT_LIMIT = 30
     }
 }
+
+/** Episode row from a server episode (expanded item, recent episodes, playlist entries). */
+internal fun EpisodeDto.toEntity(serverId: String, itemId: String, recent: Boolean = false) = EpisodeEntity(
+    serverId = serverId,
+    itemId = itemId,
+    id = id,
+    title = title,
+    subtitle = subtitle,
+    description = description,
+    season = season?.takeIf { it.isNotBlank() },
+    episode = episode?.takeIf { it.isNotBlank() },
+    publishedAt = publishedAt ?: 0,
+    durationSec = duration ?: audioFile?.duration ?: 0.0,
+    sizeBytes = size ?: audioFile?.metadata?.size ?: 0,
+    recent = recent,
+)

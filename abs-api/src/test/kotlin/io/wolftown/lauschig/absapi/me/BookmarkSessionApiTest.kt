@@ -39,7 +39,7 @@ class BookmarkSessionApiTest {
             ),
         )
 
-        val list = api.bookmarks().bookmarks
+        val list = api.bookmarks().bookmarks!!
 
         assertEquals("/api/me/bookmarks", server.takeRequest().path)
         assertEquals(2, list.size)
@@ -54,6 +54,15 @@ class BookmarkSessionApiTest {
         val me = api.me()
 
         assertEquals(listOf(BookmarkDto("li_1", 1.0, "t", 2)), me.bookmarks)
+    }
+
+    @Test
+    fun missingBookmarksField_isNull_notEmpty() = runBlocking {
+        server.enqueue(json("""{"id":"u","username":"a","type":"user"}"""))
+        server.enqueue(json("""{}"""))
+
+        assertNull(api.me().bookmarks)
+        assertNull(api.bookmarks().bookmarks)
     }
 
     @Test
