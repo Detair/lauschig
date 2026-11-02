@@ -43,10 +43,15 @@ class LocalFolders @Inject constructor(
 ) {
     val folders: Flow<List<LocalFolderWithCount>> = dao.observeFolders()
 
-    /** A scan is queued or running. */
-    val scanning: Flow<Boolean> = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK)
-        .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } }
-        .distinctUntilChanged()
+    /**
+     * A scan is queued or running. Lazy: this singleton is injected into the Application, and WorkManager's on-demand
+     * initialisation must not run before the Hilt worker factory is injected there.
+     */
+    val scanning: Flow<Boolean> by lazy {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK)
+            .map { infos -> infos.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED } }
+            .distinctUntilChanged()
+    }
 
     /** [uri] from `ACTION_OPEN_DOCUMENT_TREE`. False if the permission could not be kept. */
     suspend fun add(uri: Uri): Boolean = withContext(Dispatchers.IO) {
