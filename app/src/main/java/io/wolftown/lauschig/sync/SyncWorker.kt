@@ -49,7 +49,7 @@ class SyncWorker @AssistedInject constructor(
             ok = false // the outbox stays; retry
         }
         try {
-            collectionSync.sync(serverId)
+            collectionSync.syncIfDue(serverId)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

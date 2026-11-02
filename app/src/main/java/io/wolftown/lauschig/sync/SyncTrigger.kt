@@ -8,6 +8,9 @@ import dagger.hilt.components.SingletonComponent
 /** Starts a one-time library/progress sync without waiting for it. */
 interface SyncTrigger {
     fun syncNow()
+
+    /** Pushes and pulls only the bookmarks (after a local bookmark change). */
+    fun syncBookmarks() = syncNow()
 }
 
 @Module

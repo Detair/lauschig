@@ -29,6 +29,8 @@ class CollectionSync(
     private val collections: CollectionDao,
     private val episodes: EpisodeDao,
     private val audioFiles: AudioFileDao,
+    private val stamps: SyncStamps = InMemorySyncStamps(),
+    private val clock: () -> Long = System::currentTimeMillis,
     private val transaction: suspend (suspend () -> Unit) -> Unit,
 ) {
     @Inject constructor(
@@ -37,9 +39,22 @@ class CollectionSync(
         collections: CollectionDao,
         episodes: EpisodeDao,
         audioFiles: AudioFileDao,
+        stamps: SyncStamps,
         db: LauschigDatabase,
-    ) : this(apiProvider.libraryApi, libraries, collections, episodes, audioFiles, { block -> db.withTransaction { block() } })
+    ) : this(apiProvider.libraryApi, libraries, collections, episodes, audioFiles, stamps, System::currentTimeMillis, { block -> db.withTransaction { block() } })
 
+    /**
+     * Background variant: the server sends every collection with fully expanded books, so the periodic sync refreshes
+     * the cache at most once per [MIN_INTERVAL_MS] after a successful run (a failure does not count). Opening the
+     * collections/playlists UI calls [sync] directly.
+     */
+    suspend fun syncIfDue(serverId: String) {
+        val last = stamps.get(stampKey(serverId))
+        if (last != null && clock() - last in 0 until MIN_INTERVAL_MS) return
+        sync(serverId)
+    }
+
+    /** Fetches now (unthrottled); a fully successful run is recorded for [syncIfDue]. */
     suspend fun sync(serverId: String) {
         val api = api.first() ?: return
         var failure: Exception? = null
@@ -74,6 +89,12 @@ class CollectionSync(
             fail(e)
         }
         failure?.let { throw it }
+        stamps.set(stampKey(serverId), clock())
+    }
+
+    companion object {
+        const val MIN_INTERVAL_MS = 6 * 60 * 60 * 1000L
+        private fun stampKey(serverId: String) = "collections:$serverId"
     }
 
     private fun PlaylistItemDto.key(): String = episodeId?.let { PlayableKey.episode(libraryItemId, it) } ?: libraryItemId

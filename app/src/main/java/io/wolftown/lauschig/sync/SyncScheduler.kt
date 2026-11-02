@@ -60,7 +60,16 @@ class SyncScheduler @Inject constructor(
         )
     }
 
+    /** Bookmark-only run; appended so a change made while one runs is pushed by the next one. */
+    override fun syncBookmarks() {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            BOOKMARKS, ExistingWorkPolicy.APPEND_OR_REPLACE,
+            OneTimeWorkRequestBuilder<BookmarkSyncWorker>().setConstraints(constraints).build(),
+        )
+    }
+
     companion object {
+        const val BOOKMARKS = "sync-bookmarks"
         const val NOW = "sync-now"
         const val PERIODIC = "sync-periodic"
         const val ON_ONLINE = "sync-on-online"

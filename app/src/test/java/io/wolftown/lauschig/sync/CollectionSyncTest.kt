@@ -118,6 +118,27 @@ class CollectionSyncTest {
         assertEquals(1, db.collectionDao().observeByKind(s, CollectionKind.PLAYLIST).first().size)
     }
 
+    @Test fun syncIfDue_atMostOncePer6h_afterASuccess_failuresRetry() = runTest {
+        libs()
+        var now = 1_000_000L
+        val stamps = InMemorySyncStamps()
+        fun throttled() = CollectionSync(flowOf(api), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao(), stamps, { now }) { it() }
+        throttled().syncIfDue(s)
+        assertEquals(2, asked.size)
+        now += CollectionSync.MIN_INTERVAL_MS - 1
+        throttled().syncIfDue(s)
+        assertEquals(2, asked.size)
+        now += 1
+        failing = setOf("more")
+        assertTrue(runCatching { throttled().syncIfDue(s) }.isFailure)
+        assertEquals(4, asked.size)
+        failing = emptySet()
+        throttled().syncIfDue(s) // the failed run did not count
+        assertEquals(6, asked.size)
+        throttled().sync(s) // opening the UI is never throttled
+        assertEquals(8, asked.size)
+    }
+
     @Test fun offline_isNoop() = runTest {
         CollectionSync(flowOf(null), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() }.sync(s)
         assertTrue(asked.isEmpty())
