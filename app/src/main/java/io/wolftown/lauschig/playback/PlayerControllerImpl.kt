@@ -10,6 +10,7 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.download.PlayDownloadStarter
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.sync.LibrarySync
@@ -176,7 +177,13 @@ class PlayerControllerImpl(
                 if (previous == null) _state.update { it.copy(isLoading = false, error = error) }
                 else { refresh(); watchDownloads(previous); _state.update { it.copy(error = error) } }
             }
+            // A device title never touches a server: no base URL, no details, no download on play.
+            val deviceTitle = DeviceLibrary.isLocal(serverId, itemId)
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
+            if (deviceTitle && !allLocal) {
+                fail(R.string.error_local_unavailable)
+                return@launch
+            }
             val base = if (allLocal) null else onlineBaseUrl()
             if (item.audioFiles.isEmpty()) {
                 // The library list carries no audio files; they arrive with the details, which may not be loaded yet.
@@ -217,7 +224,7 @@ class PlayerControllerImpl(
             facade.play()
             refresh()
             watchDownloads(started)
-            if (!allLocal) onStreamStarted(serverId, itemId)
+            if (!allLocal && !deviceTitle) onStreamStarted(serverId, itemId)
         }
     }
 
@@ -241,7 +248,7 @@ class PlayerControllerImpl(
         val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return
         if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return
         val allLocal = withContext(io) { factory.isFullyLocal(fresh) }
-        val base = if (allLocal) null else c.base ?: onlineBaseUrl()
+        val base = if (allLocal || DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) null else c.base ?: onlineBaseUrl()
         val items = try {
             withContext(io) { factory.build(fresh, base) }
         } catch (e: PlaybackUnavailableException) {
@@ -409,7 +416,7 @@ class PlayerControllerImpl(
             if (facade.currentKey()?.second != itemId) return@launch
             localJob?.cancel(); localJob = null
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
-            val base = if (allLocal) null else onlineBaseUrl()
+            val base = if (allLocal || DeviceLibrary.isLocal(serverId, itemId)) null else onlineBaseUrl()
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {

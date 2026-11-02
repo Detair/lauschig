@@ -3,17 +3,25 @@ package io.wolftown.lauschig.download
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.db.dao.AudioFileDao
+import io.wolftown.lauschig.local.DeviceLibrary
+import io.wolftown.lauschig.local.LocalCovers
 import io.wolftown.lauschig.playback.PlayableKey
 import java.io.File
 import javax.inject.Inject
 
-/** On-disk layout: `<root>/<serverId>/<itemId>/<index>.<ext>` (+ `.part` while downloading) and `cover.jpg`. */
+/**
+ * On-disk layout: `<root>/<serverId>/<itemId>/<index>.<ext>` (+ `.part` while downloading) and `cover.jpg`. Titles of the
+ * device library are never downloaded; only their covers live in app storage ([deviceCovers], see [LocalCovers]).
+ */
 class DownloadFiles(
     private val root: File,
     private val audioFiles: AudioFileDao,
     /** Seam for tests: free bytes on the volume holding the given directory. */
     private val usableSpace: (File) -> Long = { dir -> generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() }?.usableSpace ?: 0L },
+    deviceCovers: File = File(root.absoluteFile.parentFile, LocalCovers.DIR),
 ) {
+    private val localCovers = LocalCovers(deviceCovers)
+
     @Inject constructor(@ApplicationContext context: Context, audioFiles: AudioFileDao) :
         this(File(context.filesDir, "downloads"), audioFiles)
 
@@ -27,16 +35,23 @@ class DownloadFiles(
     fun audioFile(serverId: String, itemId: String, index: Int, ext: String): File =
         guard(File(itemDir(serverId, itemId), if (EXT.matches(ext)) "$index.$ext" else "$index"))
 
-    fun coverFile(serverId: String, itemId: String) = guard(File(itemDir(serverId, itemId), COVER))
+    /** A device title's cover is the one its scan copied into app storage. */
+    fun coverFile(serverId: String, itemId: String): File =
+        if (DeviceLibrary.isLocal(serverId)) localCovers.file(itemId) ?: throw FatalDownloadException("invalid_path")
+        else guard(File(itemDir(serverId, itemId), COVER))
 
     /** Cover shown for a playable key: its own downloaded cover, else (episodes) the podcast's. */
     fun playableCover(serverId: String, key: String): File {
+        if (DeviceLibrary.isLocal(serverId)) return coverFile(serverId, key)
         val own = coverFile(serverId, key)
         if (own.isFile) return own
         return coverFile(serverId, PlayableKey.parse(key).libraryItemId)
     }
 
     fun usableSpace(serverId: String, itemId: String): Long = usableSpace(itemDir(serverId, itemId))
+
+    /** Free bytes on the volume that holds the downloads (shown on the download management page). Blocking. */
+    fun freeSpace(): Long = usableSpace(root)
 
     /** Defense in depth: every target must resolve (symlinks included) to below the downloads root. */
     private fun guard(f: File): File {

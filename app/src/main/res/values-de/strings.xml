@@ -354,4 +354,5 @@
         <item quantity="one">%d Titel</item>
         <item quantity="other">%d Titel</item>
     </plurals>
+    <string name="error_local_unavailable">Die Datei auf dem Gerät ist nicht erreichbar. Wurde sie verschoben oder gelöscht?</string>
 </resources>

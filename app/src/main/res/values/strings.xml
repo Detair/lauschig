@@ -354,4 +354,5 @@
         <item quantity="one">%d title</item>
         <item quantity="other">%d titles</item>
     </plurals>
+    <string name="error_local_unavailable">The file on this device cannot be reached. Was it moved or deleted?</string>
 </resources>

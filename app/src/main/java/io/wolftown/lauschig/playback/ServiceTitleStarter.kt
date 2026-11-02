@@ -3,6 +3,7 @@ package io.wolftown.lauschig.playback
 import android.util.Log
 import androidx.media3.common.MediaItem
 import io.wolftown.lauschig.db.dao.ItemWithDetails
+import io.wolftown.lauschig.local.DeviceLibrary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -27,6 +28,8 @@ class ServiceTitleStarter(
     suspend fun start(serverId: String, key: String): Boolean {
         var item = loadItem(serverId, key) ?: return false
         val allLocal = withContext(io) { factory.isFullyLocal(item) }
+        // A device title plays from its documents or not at all: no server, no details, no download on play.
+        if (!allLocal && DeviceLibrary.isLocal(serverId, key)) return false
         val base = if (allLocal) null else baseUrl() ?: return false
         if (item.audioFiles.isEmpty()) {
             item = try {
