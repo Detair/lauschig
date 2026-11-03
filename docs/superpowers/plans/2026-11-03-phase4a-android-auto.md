@@ -246,3 +246,8 @@ Verification: `testDebugUnitTest` 789 tests, 0 failures; `lintDebug` 0 errors; `
   (`PlayerControllerTest`, 5 cases) only.
 - **watchLibrary** observes `CatalogDao.observeVersion` (count, newest update, cover and added sums) instead of every title.
 - R8 (`./gradlew :app:assembleRelease`, no signing variables set): build successful, only the planned "release signing incomplete … UNSIGNED" warning; `minifyReleaseWithR8` printed no warnings and wrote no `missing_rules.txt`; manifest components, Media3 `MediaButtonReceiver`, the cover provider and 70 kotlinx.serialization `$$serializer` classes are kept (mapping checked). Output `app-release-unsigned.apk` (8.9 MB), not installed; no keystore created.
+- **Re-review of the queue move:** moving a streamed queue never calls `play()` (it plays on only if ExoPlayer still
+  wanted to – `playWhenReady` survives errors and the queue swap), so an old network error can no longer start audio
+  later; the error flag is gone. An address that changed while playing applies as soon as playback stops for any
+  reason (network error or a pause from the app, notification or car). The service's `lastOnline` only takes an Online
+  of the signed-in account's addresses (`Online.belongsTo`), so a replayed state of the previous server is ignored.
