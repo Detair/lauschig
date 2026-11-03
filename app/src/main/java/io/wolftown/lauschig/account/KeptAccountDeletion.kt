@@ -7,11 +7,16 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Deletes the data of a kept (signed-out) account on request: the question after a sign-in, the Downloads page. */
-class KeptAccountDeletion @Inject constructor(
+class KeptAccountDeletion(
     private val accounts: AccountStore,
     private val data: AccountData,
     private val kept: KeptAccountStore,
+    /** Called after every attempt that touched the data: the sizes of the kept data changed, whatever the entry says. */
+    private val changed: () -> Unit = {},
 ) {
+    @Inject constructor(accounts: AccountStore, data: AccountData, kept: KeptAccountStore, sizes: KeptDownloadSizes) :
+        this(accounts, data, kept, sizes::refresh)
+
     /**
      * True if everything of [account] is gone. On failure (disk full, files left) the entry is put back as [account]
      * is, so the data stays reachable and can be deleted again later. The signed-in account is never deleted here (the
@@ -29,7 +34,7 @@ class KeptAccountDeletion @Inject constructor(
             Log.w(TAG, "refused to delete the signed-in account's data")
             return@withContext false
         }
-        try {
+        val deleted = try {
             data.purge(account.serverId)
             kept.remove(account.serverId)
             true
@@ -42,6 +47,8 @@ class KeptAccountDeletion @Inject constructor(
             }
             false
         }
+        changed()
+        deleted
     }
 
     private companion object {
