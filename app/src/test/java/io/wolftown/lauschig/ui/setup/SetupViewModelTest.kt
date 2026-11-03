@@ -7,6 +7,9 @@ import io.wolftown.lauschig.absapi.auth.AuthFormData
 import io.wolftown.lauschig.absapi.auth.LoginResponse
 import io.wolftown.lauschig.absapi.auth.StatusResponse
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.account.AccountSignOut
+import io.wolftown.lauschig.account.SignOutCheck
+import io.wolftown.lauschig.account.SignOutResult
 import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.NetworkInfo
@@ -67,6 +70,18 @@ private class FakeNet(var ssid: String? = null) : NetworkInfo {
     override suspend fun currentSsid() = ssid
 }
 
+/** Records which account was replaced by which (signed out keeping its data) and saves the next one like the real one. */
+private class FakeSignOut(private val store: FakeAccountStore) : AccountSignOut {
+    val switched = mutableListOf<Pair<String, String>>()
+    override suspend fun check(): SignOutCheck? = null
+    override suspend fun downloadBytes(): Long = 0
+    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult = error("not a sign-out")
+    override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) {
+        switched += store.acc.value!!.serverId to next.serverId
+        store.save(next, accessToken, refreshToken)
+    }
+}
+
 private fun ok(access: String? = "acc", refresh: String? = "ref", type: String = "user") =
     LoginResponse(AbsUser("u1", "fabian", type, access, refresh))
 
@@ -78,13 +93,14 @@ class SetupViewModelTest {
     private val net = FakeNet()
     private val oidc = FakeOidc()
     private val bus = OidcCallbackBus()
+    private val signOut = FakeSignOut(store)
     private val dispatcher = UnconfinedTestDispatcher()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     private val viewModels = TestViewModels()
     @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
-    private fun vm() = viewModels.own(SetupViewModel(store, login, net, sync, oidc, bus))
+    private fun vm() = viewModels.own(SetupViewModel(store, login, net, sync, oidc, bus, signOut))
 
     private fun SetupViewModel.fill(local: String = "", public: String = "", user: String = "fabian", pw: String = "secret") {
         onLocalChanged(local); onPublicChanged(public); onUsernameChanged(user); onPasswordChanged(pw)
@@ -223,6 +239,38 @@ class SetupViewModelTest {
         assertEquals(setOf("HomeNet"), store.acc.value!!.addresses.homeSsids)
         assertEquals("acc", store.access)
         assertFalse(store.reauth.value)
+        assertTrue("the same account is not signed out", signOut.switched.isEmpty())
+    }
+
+    @Test fun reauth_withAnotherAccount_signsTheOldOneOutKeepingItsData_beforeSaving() {
+        val before = existingAccount()
+        store.acc.value = before
+        store.reauth.value = true
+        login.behaviour = { LoginResponse(AbsUser("u2", "lukas", "user", "acc2", "ref2")) }
+        val v = vm()
+        v.onUsernameChanged("lukas")
+        v.onPasswordChanged("secret")
+        v.login()
+        assertTrue(v.state.value.done)
+        // Its work stops and its data stays reachable ("Downloads früherer Konten"), as with „Abmelden“ + „Behalten“,
+        // and the new account takes its place in the same step.
+        assertEquals(listOf(before.serverId to store.acc.value!!.serverId), signOut.switched)
+        assertEquals("u2", store.acc.value!!.userId)
+        assertNull("never cleared", store.clearedKeeping)
+        assertEquals("acc2", store.access)
+    }
+
+    @Test fun reauth_withAnotherPublicAddress_isAnotherServerId_andSignsTheOldOneOut() {
+        val before = existingAccount()
+        store.acc.value = before
+        store.reauth.value = true
+        val v = vm()
+        v.onPublicChanged("https://abs.example.net")
+        v.onPasswordChanged("secret")
+        v.login()
+        assertTrue(v.state.value.done)
+        assertTrue(before.serverId != store.acc.value!!.serverId)
+        assertEquals(listOf(before.serverId to store.acc.value!!.serverId), signOut.switched)
     }
 
     @Test fun status_withOpenid_showsSsoButton() {
@@ -327,7 +375,7 @@ class SetupViewModelTest {
         first.loginWithSso()
         oidc.finishResult = { OidcResult("https://abs.example.org/".toHttpUrl(), ok(), oidc.lastFlow) }
         val freshBus = OidcCallbackBus() // the first VM is gone with its process
-        val second = viewModels.own(SetupViewModel(store, login, net, sync, oidc, freshBus))
+        val second = viewModels.own(SetupViewModel(store, login, net, sync, oidc, freshBus, signOut))
         freshBus.post(OidcCallback("c", "s", null))
         assertTrue(second.state.value.done)
         assertFalse(first.state.value.done)

@@ -61,6 +61,14 @@ interface AccountSignOut {
      * stopped aborts with [SignOutResult.Changed] instead of deleting changes the user was not warned about.
      */
     suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int? = null): SignOutResult
+
+    /**
+     * Signs the stored account out keeping its data (as „Abmelden“ with „Behalten“) and stores [next] in its place as
+     * the last step, instead of clearing it: the app never sees "no account" in between, so a re-auth Setup on top of
+     * the app finishes like any re-auth. For a re-auth that turned out to be another account or another public address
+     * (another server id). Without a stored account it just saves [next].
+     */
+    suspend fun switchTo(next: Account, accessToken: String, refreshToken: String)
 }
 
 /**
@@ -144,7 +152,18 @@ class SignOut(
         0
     }
 
-    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult = withContext(NonCancellable) {
+    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult =
+        signOut(keepDownloads, shownUnsynced) { accounts.clear(keepDownloads) }
+
+    override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) {
+        withContext(NonCancellable) {
+            if (accounts.account.first() == null) accounts.save(next, accessToken, refreshToken)
+            else signOut(keepDownloads = true, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
+        }
+    }
+
+    /** The sign-out; [finish] is its last step, once the data is in its final state (clearing or replacing the account). */
+    private suspend fun signOut(keepDownloads: Boolean, shownUnsynced: Int?, finish: suspend () -> Unit): SignOutResult = withContext(NonCancellable) {
         val account = accounts.account.first() ?: return@withContext SignOutResult.Done
         val serverId = account.serverId
         val refresh = try { accounts.refreshToken() } catch (e: Exception) { null }
@@ -180,7 +199,7 @@ class SignOut(
         // the logout's few seconds have passed. Idempotent.
         if (!keepDownloads) step("rows again") { data.deleteRows(serverId) }
         Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: $serverConfirmed)")
-        accounts.clear(keepDownloads)
+        finish()
         SignOutResult.Done
     }
 

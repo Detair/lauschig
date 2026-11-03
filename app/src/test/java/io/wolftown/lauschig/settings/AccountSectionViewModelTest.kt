@@ -54,6 +54,7 @@ class AccountSectionViewModelTest {
             accounts.clear(keepDownloads)
             return SignOutResult.Done
         }
+        override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) = error("not used here")
     }
 
     private val signOut = FakeSignOut(accounts)

@@ -175,6 +175,44 @@ class SignOutTest {
         assertNull(lastPlayed.value) // a play key cannot start the old account's title
     }
 
+    @Test fun switchTo_keepsTheOldAccount_andReplacesItWithoutEverClearing() = runTest {
+        seed(a)
+        db.downloadDao().upsert(DownloadEntity(a, "book2", DownloadState.QUEUED, 1))
+        lastPlayed.value = LastPlayed(a, "book1", 1)
+        val next = Account(b, "u2", "lukas", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        val seen = mutableListOf<String?>()
+        val watching = backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) {
+            accounts.acc.collect { seen += it?.serverId }
+        }
+
+        signOut().switchTo(next, "access-2", "refresh-2")
+
+        // As „Abmelden“ with „Behalten“: rows, files and a paused download stay, the work stops, the account is kept ...
+        assertEquals(List(6) { true }, rows(a))
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(a, "book2")!!.state)
+        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org", userId = "u1")), kept.list.value)
+        assertEquals(listOf(a), cancelled)
+        assertEquals(listOf("refresh-1"), logouts)
+        assertNull(lastPlayed.value)
+        // ... but the last step stores the next account instead of clearing: never "no account" in between.
+        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "state:$a"), calls - "logout")
+        assertNull(accounts.clearedKeeping)
+        assertEquals(next, accounts.acc.value)
+        assertEquals("access-2", accounts.access)
+        assertEquals("refresh-2", accounts.refresh)
+        assertEquals(listOf<String?>(a, b), seen)
+        watching.cancel()
+    }
+
+    @Test fun switchTo_withoutAccount_justSaves() = runTest {
+        accounts.acc.value = null
+        val next = Account(b, "u2", "lukas", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        signOut().switchTo(next, "access-2", "refresh-2")
+        assertEquals(next, accounts.acc.value)
+        assertTrue(calls.isEmpty())
+        assertTrue(cancelled.isEmpty())
+    }
+
     @Test fun moreChangesAfterStopping_thanShown_abortWithoutDeleting() = runTest {
         seed(a) // 2 unsynced: the dirty progress row and the pending bookmark
         val out = SignOut(
