@@ -67,5 +67,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_OPEN = "open"
         const val OPEN_CLEANUP = "cleanup"
+        /** The player, if a title is loaded (the widget's cover and title). */
+        const val OPEN_PLAYER = "player"
     }
 }

@@ -134,6 +134,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.androidx.profileinstaller)
+    implementation(libs.androidx.glance.appwidget)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)
@@ -143,6 +144,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.androidx.glance.appwidget.testing)
     testImplementation(libs.hilt.android.testing)
     kspTest(libs.hilt.compiler)
     testImplementation(platform(libs.androidx.compose.bom))

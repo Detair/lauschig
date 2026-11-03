@@ -47,6 +47,9 @@ import io.wolftown.lauschig.queue.QueueAdvancer
 import io.wolftown.lauschig.queue.queueEntryState
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.widget.WidgetPublisher
+import io.wolftown.lauschig.widget.WidgetSource
+import io.wolftown.lauschig.widget.WidgetStore
 import kotlinx.coroutines.CancellationException
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
@@ -109,6 +112,8 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var catalogDao: CatalogDao
     @Inject lateinit var libraryDao: LibraryDao
     @Inject lateinit var coverStore: CoverStore
+    @Inject lateinit var widgetStore: WidgetStore
+    @Inject lateinit var widgetSource: WidgetSource
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -124,6 +129,7 @@ class PlaybackService : MediaLibraryService() {
     private var carPlayer: CarSafePlayer? = null
     private var carButtons: CarButtons? = null
     private var buttonState: CarButtons.State? = null
+    private var widgets: WidgetPublisher? = null
     /** Counts covers that arrived in the background; browsers reload their lists when it changes. */
     private val coverArrivals = MutableStateFlow(0)
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
@@ -223,6 +229,8 @@ class PlaybackService : MediaLibraryService() {
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
         watchLibrary(built)
+        // The homescreen widget follows the player (also right now: a fresh process starts with an empty player).
+        widgets = WidgetPublisher(exo, scope, appScope, widgetStore, widgetSource::refresh).also { it.start() }
         grantCoverReaders()
         coverStore.onFetched = { serverId, itemId -> scope.launch { coverArrived(serverId, itemId) } }
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
@@ -258,6 +266,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun coverArrived(serverId: String, itemId: String) {
         coverArrivals.value++
+        appScope.launch { widgetSource.coverArrived() }
         val exo = player ?: return
         val (sid, key) = currentKey(exo) ?: return
         if (sid != serverId || PlayableKey.parse(key).libraryItemId != itemId) return
@@ -500,6 +509,8 @@ class PlaybackService : MediaLibraryService() {
         coverStore.onFetched = null
         sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
+        widgets?.release()
+        widgets = null
         bridge?.shutdown(final, appScope)
         session?.release()
         player?.release()

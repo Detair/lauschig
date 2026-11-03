@@ -426,4 +426,13 @@
     <string name="car_error_not_found">This title is no longer available.</string>
     <string name="car_error_nothing_found">Nothing found in Lauschig.</string>
     <string name="car_error_nothing_to_resume">Nothing to continue yet.</string>
+    <!-- Homescreen widget (phase 4B) -->
+    <string name="widget_label">Lauschig</string>
+    <string name="widget_description">Cover, play/pause and 30 seconds back or forward</string>
+    <string name="widget_empty">Nothing loaded – tap to open</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_back_30">Back 30 seconds</string>
+    <string name="widget_forward_30">Forward 30 seconds</string>
+    <string name="widget_open">Open %1$s in Lauschig</string>
 </resources>

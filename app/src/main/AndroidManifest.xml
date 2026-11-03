@@ -75,6 +75,19 @@
             android:exported="false"
             android:grantUriPermissions="true" />
 
+        <!-- Homescreen widget (Glance); its buttons send media-button intents to the playback service. -->
+        <receiver
+            android:name=".widget.LauschigWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lauschig_widget_info" />
+        </receiver>
+
         <!-- Android Auto: a media app. -->
         <meta-data
             android:name="com.google.android.gms.car.application"

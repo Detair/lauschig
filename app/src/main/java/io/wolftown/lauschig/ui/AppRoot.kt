@@ -23,6 +23,12 @@ import io.wolftown.lauschig.ui.nav.isOnPlayer
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.nav.navigateToTab
+import androidx.navigation.NavDestination.Companion.hasRoute
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** How long a widget tap waits for the service's title before it stays on the start screen. */
+private const val PLAYER_OPEN_WAIT_MS = 2_000L
 
 /** Wires ViewModel state, navigation and the shell together; hosts the mini player above the bottom bar. */
 @Composable
@@ -34,9 +40,18 @@ fun AppRoot(
 ) {
     val navController = rememberNavController()
     LaunchedEffect(openRequest) {
-        if (openRequest == MainActivity.OPEN_CLEANUP) {
-            navController.navigate(Cleanup) { launchSingleTop = true }
-            onOpenHandled()
+        when (openRequest) {
+            MainActivity.OPEN_CLEANUP -> {
+                navController.navigate(Cleanup) { launchSingleTop = true }
+                onOpenHandled()
+            }
+            MainActivity.OPEN_PLAYER -> {
+                // From the widget: the service may hold a title the app has not seen yet (it was started from the widget).
+                viewModel.player.adoptFromService()
+                val loaded = withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
+                if (loaded && navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Player) { launchSingleTop = true }
+                onOpenHandled()
+            }
         }
     }
     val connection by viewModel.connection.collectAsStateWithLifecycle()

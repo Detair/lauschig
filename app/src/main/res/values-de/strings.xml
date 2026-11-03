@@ -426,4 +426,13 @@
     <string name="car_error_not_found">Dieser Titel ist nicht mehr verfügbar.</string>
     <string name="car_error_nothing_found">Nichts in Lauschig gefunden.</string>
     <string name="car_error_nothing_to_resume">Noch nichts zum Fortsetzen.</string>
+    <!-- Homescreen-Widget (Phase 4B) -->
+    <string name="widget_label">Lauschig</string>
+    <string name="widget_description">Cover, Abspielen/Pause und 30 Sekunden zurück oder vor</string>
+    <string name="widget_empty">Nichts geladen – tippen zum Öffnen</string>
+    <string name="widget_play">Abspielen</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_back_30">30 Sekunden zurück</string>
+    <string name="widget_forward_30">30 Sekunden vor</string>
+    <string name="widget_open">%1$s in Lauschig öffnen</string>
 </resources>
