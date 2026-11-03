@@ -367,6 +367,8 @@
     <string name="downloads_manage_hint">Pause, resume, sort, search and see the storage used</string>
     <string name="downloads_storage">%1$s used · %2$s free</string>
     <string name="downloads_storage_used">%1$s used</string>
+    <string name="downloads_storage_kept">%1$s used (%2$s from earlier accounts) · %3$s free</string>
+    <string name="downloads_storage_used_kept">%1$s used (%2$s from earlier accounts)</string>
     <string name="downloads_search">Search downloads</string>
     <string name="downloads_sort_name">Name</string>
     <string name="downloads_sort_size">Size</string>

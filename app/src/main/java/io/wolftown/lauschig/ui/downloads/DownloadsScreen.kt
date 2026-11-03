@@ -72,6 +72,22 @@ class DownloadsActions(
     val onDeleteFinished: () -> Unit = {},
 )
 
+/**
+ * What the downloads occupy and what is free; when earlier accounts kept data on the device, the used figure includes it
+ * and names that part (their sizes never break between number and unit).
+ */
+@Composable
+private fun storageText(state: DownloadsUiState, size: (Long) -> String): String {
+    val free = state.freeBytes
+    if (state.keptBytes <= 0) {
+        return free?.let { stringResource(R.string.downloads_storage, size(state.usedBytes), size(it)) }
+            ?: stringResource(R.string.downloads_storage_used, size(state.usedBytes))
+    }
+    fun fixed(bytes: Long) = size(bytes).replace(' ', '\u00A0')
+    return free?.let { stringResource(R.string.downloads_storage_kept, fixed(state.usedBytes), fixed(state.keptBytes), fixed(it)) }
+        ?: stringResource(R.string.downloads_storage_used_kept, fixed(state.usedBytes), fixed(state.keptBytes))
+}
+
 /** Storage on top, then search, sort chips, "delete finished" and one row per download with its actions. */
 @Composable
 fun DownloadsScreen(
@@ -93,8 +109,7 @@ fun DownloadsScreen(
             Text(stringResource(R.string.downloads_title), style = MaterialTheme.typography.titleLarge)
         }
         Text(
-            state.freeBytes?.let { stringResource(R.string.downloads_storage, size(state.usedBytes), size(it)) }
-                ?: stringResource(R.string.downloads_storage_used, size(state.usedBytes)),
+            storageText(state, ::size),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsStorage"),
         )

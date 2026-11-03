@@ -1,7 +1,10 @@
 package io.wolftown.lauschig.ui.downloads
 
 import androidx.compose.ui.test.assertIsDisplayed
+import android.text.format.Formatter
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
+import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -108,5 +111,25 @@ class DownloadsScreenTest {
         rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
         rule.onNodeWithText("Delete heard", substring = true).assertIsDisplayed()
         rule.onNodeWithText("Downloaded", substring = true).assertTextContains("Heard", substring = true)
+    }
+
+    private fun size(bytes: Long) = Formatter.formatShortFileSize(ApplicationProvider.getApplicationContext(), bytes)
+
+    @Test fun header_withoutKeptData_isUnchanged() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("${size(5_000_000)} used · ${size(10_000_000_000)} free")
+    }
+
+    @Test fun header_namesTheDownloadsOfEarlierAccounts() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(usedBytes = 955_000_000, keptBytes = 950_000_000), {}, {}, DownloadsActions()) } }
+        val nb = { bytes: Long -> size(bytes).replace(' ', '\u00A0') }
+        rule.onNodeWithTag("downloadsStorage")
+            .assertTextEquals("${nb(955_000_000)} used (${nb(950_000_000)} from earlier accounts) · ${nb(10_000_000_000)} free")
+    }
+
+    @Test fun header_withoutFreeSpace_stillNamesThem() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(freeBytes = null, keptBytes = 2_000_000), {}, {}, DownloadsActions()) } }
+        val nb = { bytes: Long -> size(bytes).replace(' ', '\u00A0') }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("${nb(5_000_000)} used (${nb(2_000_000)} from earlier accounts)")
     }
 }

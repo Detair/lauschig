@@ -36,6 +36,7 @@ import io.wolftown.lauschig.account.KeptAccount
 import io.wolftown.lauschig.account.KeptAccountDeletion
 import io.wolftown.lauschig.account.KeptAccountStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,12 @@ import javax.inject.Inject
 /** Data another (signed-out) account kept on this device, with its size on disk. */
 @Immutable
 data class KeptDownloads(val account: KeptAccount, val bytes: Long)
+
+/** Every kept account but the signed-in one, each with its size on disk ([bytes], by server id). */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun keptDownloads(accounts: AccountStore, kept: KeptAccountStore, bytes: suspend (serverId: String) -> Long): Flow<List<KeptDownloads>> =
+    combine(accounts.account, kept.accounts) { a, list -> list.filter { it.serverId != a?.serverId } }
+        .mapLatest { list -> list.map { KeptDownloads(it, bytes(it.serverId)) } }
 
 /**
  * The Downloads page's "Downloads früherer Konten": every kept account but the signed-in one, also after its one-time
@@ -65,8 +72,7 @@ class KeptDownloadsViewModel(
     @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, deletion: KeptAccountDeletion) :
         this(accounts, kept, data::downloadBytes, deletion::delete)
 
-    val entries: StateFlow<List<KeptDownloads>> = combine(accounts.account, kept.accounts) { a, list -> list.filter { it.serverId != a?.serverId } }
-        .mapLatest { list -> list.map { KeptDownloads(it, bytes(it.serverId)) } }
+    val entries: StateFlow<List<KeptDownloads>> = keptDownloads(accounts, kept, bytes)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Server id being deleted right now. */
