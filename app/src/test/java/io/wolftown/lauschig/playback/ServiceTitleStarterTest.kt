@@ -5,6 +5,7 @@ import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -98,5 +99,32 @@ class ServiceTitleStarterTest {
         assertFalse(starter({ current }, base = "https://abs.example/", loadDetails = { error("down") }).start(s, "b"))
         assertFalse(starter({ null }, base = "https://abs.example/").start(s, "missing"))
         assertEquals(1, queued.size)
+    }
+
+    @Test fun resumption_onAColdStart_waitsForTheFirstProbe_insteadOfCallingAStreamOffline() = runTest {
+        // The first drive: process dead, mobile + NetBird. The probe tries the unreachable home address first (3 s
+        // timeout), then the public one: online after 5 s. A fixed 3 s wait reported OFFLINE for the streamed title.
+        val connection = kotlinx.coroutines.flow.MutableStateFlow<io.wolftown.lauschig.connection.ConnectionState>(io.wolftown.lauschig.connection.ConnectionState.Offline)
+        val checking = kotlinx.coroutines.flow.MutableStateFlow(true)
+        val streamed = item(listOf(file(0, 100.0, null)))
+        val st = ServiceTitleStarter(
+            loadItem = { _, _ -> streamed }, factory = MediaItemFactory({ true }) { _, _ -> null },
+            baseUrl = { io.wolftown.lauschig.connection.awaitOnlineAnswer(connection, checking, io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS)?.baseUrl },
+            loadDetails = { _, _ -> }, io = UnconfinedTestDispatcher(testScheduler), setQueue = { _: List<MediaItem>, _, _ -> },
+        )
+        backgroundScope.launch {
+            kotlinx.coroutines.delay(5_000)
+            connection.value = io.wolftown.lauschig.connection.ConnectionState.Online("https://abs.example/".toHttpUrl(), io.wolftown.lauschig.connection.ConnectionState.Via.PUBLIC)
+            checking.value = false
+        }
+        val r = st.resolve(s, "b", rewind = true)
+        assertTrue(r.toString(), r is ServiceTitleStarter.Resolved.Ready && r.streaming)
+        assertEquals(5_000L, testScheduler.currentTime)
+
+        // Truly offline (the probe answered "offline"): no waiting at all.
+        val before = testScheduler.currentTime
+        connection.value = io.wolftown.lauschig.connection.ConnectionState.Offline
+        assertEquals(ServiceTitleStarter.Failure.OFFLINE, (st.resolve(s, "b") as ServiceTitleStarter.Resolved.Failed).reason)
+        assertEquals(before, testScheduler.currentTime)
     }
 }

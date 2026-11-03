@@ -52,4 +52,17 @@ class ConnectionWaitTest {
         assertTrue(awaitConnectionAnswer(connection, checking, 10_000))
         assertEquals(0, testScheduler.currentTime)
     }
+
+    @Test fun theAnsweredOnlineState_isHandedOver_forStreams() = runTest {
+        val r = async { awaitOnlineAnswer(connection, checking, CONNECTION_ANSWER_WAIT_MS) }
+        advanceTimeBy(5_000)
+        connection.value = online
+        checking.value = false
+        runCurrent()
+        assertEquals(online, r.await())
+        checking.value = false
+        connection.value = ConnectionState.Offline
+        assertEquals(null, awaitOnlineAnswer(connection, checking, CONNECTION_ANSWER_WAIT_MS))
+        assertEquals(10_000L, CONNECTION_ANSWER_WAIT_MS)
+    }
 }

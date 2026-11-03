@@ -3,6 +3,8 @@ package io.wolftown.lauschig.auto
 import android.os.Bundle
 import android.util.Log
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
+import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.LastTitleStarter
 import io.wolftown.lauschig.playback.PlayerController
@@ -30,8 +32,8 @@ class VoicePlayer @Inject constructor(
 
     fun playFromSearch(query: String?, extras: Bundle?) {
         scope.launch {
-            // Like the player: a few seconds for the connection check, so a streamed title is not taken for offline.
-            val online = awaitOnline(api.connection, ONLINE_WAIT_MS)
+            // Like the player: wait for the first connection check, so a streamed title is not taken for offline.
+            val online = awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)
             val ctx = CarContext(accounts.account.first()?.serverId, online)
             val title = search.resolve(query.orEmpty(), CarStarts.hints(extras), ctx) {
                 lastTitle.last()?.let { CarNode.Title(it.serverId, it.itemId) }
@@ -45,7 +47,6 @@ class VoicePlayer @Inject constructor(
     }
 
     private companion object {
-        const val ONLINE_WAIT_MS = 3_000L
         const val TAG = "VoicePlayer"
     }
 }

@@ -42,10 +42,12 @@ import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
-import io.wolftown.lauschig.auto.awaitOnline
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
+import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.connection.awaitConnectionAnswer
+import io.wolftown.lauschig.connection.awaitOnlineAnswer
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.QueueDao
@@ -88,6 +90,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
+import okhttp3.HttpUrl
 import javax.inject.Inject
 
 /**
@@ -338,9 +341,14 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    /** The server for streams: the one online now, else whichever comes online within a few seconds (like the app). */
-    private suspend fun streamBase() = lastOnline?.baseUrl
-        ?: withTimeoutOrNull(ONLINE_WAIT_MS) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
+    /**
+     * The server for streams of a car, voice or resumption start: the one online now; during the first connection check
+     * of a cold start its answer (at most [CONNECTION_ANSWER_WAIT_MS]); none when the check answered "offline". Runs in
+     * the library callback's background scope, never on the main thread.
+     */
+    private suspend fun streamBase(): HttpUrl? =
+        (api.connectionState.value as? ConnectionState.Online)?.baseUrl
+            ?: awaitOnlineAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)?.baseUrl
 
     private suspend fun carContext() = CarContext(accountStore.account.first()?.serverId, api.connectionState.value is ConnectionState.Online)
 
@@ -366,9 +374,10 @@ class PlaybackService : MediaLibraryService() {
         )
         val starts = CarStarts(
             resolveTitle = starter::resolve,
-            // After the connection check: right after a cold start the state is still Offline (see awaitOnline).
+            // After the first connection check: right after a cold start the state is still Offline.
             searchTitle = { query, hints ->
-                val ctx = CarContext(accountStore.account.first()?.serverId, awaitOnline(api.connection, ONLINE_WAIT_MS))
+                val online = awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)
+                val ctx = CarContext(accountStore.account.first()?.serverId, online)
                 carSearch.resolve(query, hints, ctx, ::lastTitle)
             },
             lastTitle = ::lastTitle,
@@ -640,7 +649,6 @@ class PlaybackService : MediaLibraryService() {
         private const val REBUFFER_MS = 5_000
         private const val MONITOR_INTERVAL_MS = 500L
         private const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
-        private const val ONLINE_WAIT_MS = 3_000L
         private const val LIBRARY_DEBOUNCE_MS = 1_500L
         private const val MAX_SUBSCRIBED = 32
         private const val TAG = "PlaybackService"

@@ -2,7 +2,9 @@ package io.wolftown.lauschig.playback
 
 import android.util.Log
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.connection.awaitOnlineAnswer
 import androidx.media3.common.MediaItem
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
@@ -48,7 +50,7 @@ class PlayerControllerImpl(
     private val facade: PlayerFacade,
     private val factory: MediaItemFactory,
     private val loadItem: suspend (serverId: String, itemId: String) -> ItemWithDetails?,
-    /** Waits briefly for an online base URL; only called when the item is not fully local. */
+    /** The online base URL, after the first connection check if it is still running; only called for streams. */
     private val onlineBaseUrl: suspend () -> HttpUrl?,
     private val coverFile: (serverId: String, itemId: String) -> File?,
     /** Fetches chapters and audio files from the server; used when a title is played before its details were loaded. */
@@ -88,8 +90,10 @@ class PlayerControllerImpl(
         facade = facade,
         factory = factory,
         loadItem = { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) },
+        // The first connection check of a cold start may take a while (unreachable home address first): wait for its answer.
         onlineBaseUrl = {
-            withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
+            (api.connectionState.value as? ConnectionState.Online)?.baseUrl
+                ?: awaitOnlineAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)?.baseUrl
         },
         coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
         // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
