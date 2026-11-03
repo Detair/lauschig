@@ -13,6 +13,7 @@ data class CoverRef(val serverId: String, val key: String, val version: Long)
  */
 object CoverUris {
     private const val COVER = "cover"
+    private const val READY = "ready"
     private val SERVER_ID = Regex("[0-9a-f]{16}")
     private val SERVER_KEY = Regex("[A-Za-z0-9_-]{1,128}(~[A-Za-z0-9_-]{1,128})?")
     private val VERSION = Regex("[0-9]{1,19}")
@@ -22,8 +23,14 @@ object CoverUris {
     /** Every cover URI starts with this (the prefix grant to the car hosts). */
     fun prefix(authority: String): Uri = Uri.Builder().scheme("content").authority(authority).appendPath(COVER).build()
 
-    fun forTitle(authority: String, ref: CoverRef): Uri = Uri.Builder().scheme("content").authority(authority)
-        .appendPath(COVER).appendPath(ref.serverId).appendPath(ref.key).appendPath(ref.version.coerceAtLeast(0).toString()).build()
+    /**
+     * [ready]: the cover is on the device already. Android Auto remembers a failed load per URI, so a list built after
+     * the cover arrived must not repeat the URI the car failed on before it was there ([parse] ignores the query).
+     */
+    fun forTitle(authority: String, ref: CoverRef, ready: Boolean = false): Uri = Uri.Builder().scheme("content").authority(authority)
+        .appendPath(COVER).appendPath(ref.serverId).appendPath(ref.key).appendPath(ref.version.coerceAtLeast(0).toString())
+        .apply { if (ready) appendQueryParameter(READY, "1") }
+        .build()
 
     /** Null for anything that is not one of our cover URIs (other authority, extra segments, malformed ids). */
     fun parse(uri: Uri, authority: String? = null): CoverRef? {

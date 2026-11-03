@@ -394,7 +394,7 @@ class PlaybackService : MediaLibraryService() {
             library = carLibrary,
             search = carSearch,
             starts = starts,
-            mediaItems = CarMediaItems(CoverUris.authority(packageName)),
+            mediaItems = CarMediaItems(CoverUris.authority(packageName), coverStore::present),
             carContext = ::carContext,
             lastTitle = ::lastTitle,
             buttons = { buttons.buttons(currentButtonState()) },

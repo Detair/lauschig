@@ -31,6 +31,13 @@ class CoverTest {
         ).forEach { assertNull(it, CoverUris.parse(Uri.parse(it), auth)) }
     }
 
+    @Test fun aReadyUri_isANewUriForTheSameCover() {
+        val ref = CoverRef(s, "b", 3)
+        val ready = CoverUris.forTitle(auth, ref, ready = true)
+        assertEquals("content://$auth/cover/$s/b/3?ready=1", ready.toString())
+        assertEquals(ref, CoverUris.parse(ready, auth))
+    }
+
     private val tmp = File(System.getProperty("java.io.tmpdir"), "cover-test-${System.nanoTime()}")
     @After fun cleanUp() { tmp.deleteRecursively() }
 
@@ -87,6 +94,22 @@ class CoverTest {
         assertFalse(f.exists())
         assertTrue(st.file(CoverRef(s, "pod", 4))!!.exists())
         assertEquals(2, fetched.size)
+    }
+
+    @Test fun present_answersFromTheDeviceOnly_andNeverFetches() {
+        val st = store()
+        // Nothing here yet: not present, and asking queues no fetch (the car's lists are built with it).
+        assertFalse(st.present(CoverRef(s, "pod~ep1", 3)))
+        assertTrue(queued.isEmpty())
+        // Once the provider fetched it, the cached cover is present (the podcast's, for every episode) ...
+        st.file(CoverRef(s, "pod~ep1", 3)); runQueued()
+        assertTrue(st.present(CoverRef(s, "pod~ep2", 3)))
+        // ... but not another version of it.
+        assertFalse(st.present(CoverRef(s, "pod", 4)))
+        val local = File(tmp, "cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(9)) }
+        assertTrue(store(local).present(CoverRef(s, "b", 1)))
+        assertFalse(store().present(CoverRef("device", "local:0123456789abcdef01234567", 1)))
+        assertTrue(queued.isEmpty())
     }
 
     @Test fun offline_isNotRemembered_andDeviceTitlesAreNeverFetched() {

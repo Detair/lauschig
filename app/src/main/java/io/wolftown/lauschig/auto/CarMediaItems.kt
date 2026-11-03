@@ -12,10 +12,12 @@ import io.wolftown.lauschig.R
 /**
  * [CarEntry] → Media3 item for browsers (Android Auto, SystemUI, Assistant): title + subtitle as the description,
  * the cover as a [CoverProvider] URI, the media type, completion and download status (AA shows them as badges and
- * progress bars) and, on folders, how their children are laid out (grid for covers, list for text).
+ * progress bars) and, on folders, how their children are laid out (grid for covers, list for text). A cover that is
+ * on the device already ([coverReady], no fetch) gets a URI of its own: the car remembers the miss of the plain URI it
+ * asked for before the cover arrived, and the lists reloaded on its arrival would otherwise stay without it.
  */
 @OptIn(UnstableApi::class)
-class CarMediaItems(private val coverAuthority: String) {
+class CarMediaItems(private val coverAuthority: String, private val coverReady: (CoverRef) -> Boolean = { false }) {
     fun toMediaItem(e: CarEntry): MediaItem {
         val extras = Bundle()
         if (e.type == CarEntry.Type.HINT) {
@@ -43,7 +45,7 @@ class CarMediaItems(private val coverAuthority: String) {
             .setTitle(e.title)
             .setDisplayTitle(e.title)
             .setSubtitle(e.subtitle)
-            .setArtworkUri(e.cover?.let { CoverUris.forTitle(coverAuthority, it) })
+            .setArtworkUri(e.cover?.let { CoverUris.forTitle(coverAuthority, it, ready = coverReady(it)) })
             .setIsBrowsable(e.browsable)
             .setIsPlayable(e.playable)
             .setMediaType(

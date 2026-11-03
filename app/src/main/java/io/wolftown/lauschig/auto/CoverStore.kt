@@ -44,13 +44,12 @@ class CoverStore(
 
     /** The cover file now, or null (and, for a server title, a fetch in the background). Never blocks on the network. */
     fun file(ref: CoverRef): File? {
-        localCover(ref.serverId, ref.key)?.takeIf { it.isFile && it.length() > 0 }?.let { return it }
+        local(ref)?.let { return it }
         if (DeviceLibrary.isLocal(ref.serverId, ref.key)) return null
-        // Episodes show their podcast's cover; one cached file per podcast.
+        val target = cached(ref)
+        if (target.isUsable()) return target
         val itemId = PlayableKey.parse(ref.key).libraryItemId
-        val dir = File(cacheDir, ref.serverId)
-        val target = File(dir, "$itemId@${ref.version}.jpg") // "@" never occurs in an id
-        if (target.isFile && target.length() > 0) return target
+        val dir = target.parentFile!!
         misses[target.path]?.let { until -> if (clock() < until) return null }
         if (inFlight.add(target.path)) {
             try {
@@ -67,6 +66,18 @@ class CoverStore(
         }
         return null
     }
+
+    /** Whether [file] would answer with a file right now; never fetches (the car's lists are built with it). */
+    fun present(ref: CoverRef): Boolean =
+        local(ref) != null || (!DeviceLibrary.isLocal(ref.serverId, ref.key) && cached(ref).isUsable())
+
+    private fun local(ref: CoverRef): File? = localCover(ref.serverId, ref.key)?.takeIf { it.isUsable() }
+
+    /** Episodes show their podcast's cover; one cached file per podcast and cover version ("@" never occurs in an id). */
+    private fun cached(ref: CoverRef): File =
+        File(File(cacheDir, ref.serverId), "${PlayableKey.parse(ref.key).libraryItemId}@${ref.version}.jpg")
+
+    private fun File.isUsable() = isFile && length() > 0
 
     /** Sign-out: drops every cached server cover of [serverId] (a title's own downloaded cover is not in this cache). Blocking. */
     fun forgetServer(serverId: String) {
