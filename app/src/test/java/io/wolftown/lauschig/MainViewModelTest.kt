@@ -95,4 +95,13 @@ class MainViewModelTest {
         assertEquals(Start, vm.startDestination.value) // used on the next cold start
         assertEquals(io.wolftown.lauschig.ui.TopLevelTab.Discover, vm.tabLayout.value.start) // the bar follows at once
     }
+
+    @Test fun continueOnStart_runsAlsoWithAnotherStartScreen() {
+        var runs = 0
+        val layout = io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT.withStart(io.wolftown.lauschig.ui.TopLevelTab.Library)
+        val vm = viewModels.own(MainViewModel(signedIn(), tabLayoutSource = kotlinx.coroutines.flow.flowOf(layout)) { runs++ })
+        assertEquals(io.wolftown.lauschig.ui.nav.Library, vm.startDestination.value)
+        vm.continueOnLauncherStart()
+        assertEquals(1, runs)
+    }
 }

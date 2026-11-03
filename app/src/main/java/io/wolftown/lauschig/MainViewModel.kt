@@ -83,7 +83,8 @@ class MainViewModel(
         if (continued) return
         continued = true
         viewModelScope.launch {
-            if (_startDestination.filterNotNull().first() != Start) return@launch
+            // Signed in = anything but Setup (the start screen may be any tab).
+            if (_startDestination.filterNotNull().first() == Setup) return@launch
             try {
                 onStartWithAccount()
             } catch (e: CancellationException) {
