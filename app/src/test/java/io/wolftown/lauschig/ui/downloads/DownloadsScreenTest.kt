@@ -2,6 +2,7 @@ package io.wolftown.lauschig.ui.downloads
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -108,5 +109,49 @@ class DownloadsScreenTest {
         rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
         rule.onNodeWithText("Delete heard", substring = true).assertIsDisplayed()
         rule.onNodeWithText("Downloaded", substring = true).assertTextContains("Heard", substring = true)
+    }
+
+    // The literal texts, with the sizes as Robolectric's Formatter writes them.
+    @Test fun header_withoutKeptData_isUnchanged() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used · 10\u00A0GB free")
+    }
+
+    @Test fun header_namesTheDownloadsOfEarlierAccounts() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(usedBytes = 800_000_000, keptBytes = 600_000_000), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("800\u00A0MB used (600\u00A0MB from earlier accounts) · 10\u00A0GB free")
+    }
+
+    @Test fun header_withoutFreeSpace_stillNamesThem() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(freeBytes = null, keptBytes = 2_000_000), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used (2.0\u00A0MB from earlier accounts)")
+    }
+
+    @Test fun header_withoutFreeSpaceAndKeptData_isJustTheUsedFigure() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(freeBytes = null), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used")
+    }
+
+    @Config(qualifiers = "+de")
+    @Test fun header_inGerman_namesTheDownloadsOfEarlierAccounts() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(usedBytes = 800_000_000, keptBytes = 600_000_000), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("800\u00A0MB belegt (davon 600\u00A0MB von früheren Konten) · 10\u00A0GB frei")
+    }
+
+    @Config(qualifiers = "+de")
+    @Test fun header_inGerman_withoutKeptData_isUnchanged() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5,0\u00A0MB belegt · 10\u00A0GB frei")
+    }
+
+    @Config(qualifiers = "+de")
+    @Test fun header_inGerman_withoutFreeSpace() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(freeBytes = null, keptBytes = 2_000_000), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5,0\u00A0MB belegt (davon 2,0\u00A0MB von früheren Konten)")
+    }
+
+    @Test fun noBreakSpaces_joinANumberToItsUnit() {
+        assertEquals("22\u00A0MB", "22 MB".noBreakSpaces())
+        assertEquals("8,8\u00A0GB", "8,8\u00A0GB".noBreakSpaces())
     }
 }

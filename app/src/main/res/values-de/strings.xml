@@ -367,6 +367,8 @@
     <string name="downloads_manage_hint">Pausieren, fortsetzen, sortieren, durchsuchen und belegten Speicher sehen</string>
     <string name="downloads_storage">%1$s belegt · %2$s frei</string>
     <string name="downloads_storage_used">%1$s belegt</string>
+    <string name="downloads_storage_kept">%1$s belegt (davon %2$s von früheren Konten) · %3$s frei</string>
+    <string name="downloads_storage_used_kept">%1$s belegt (davon %2$s von früheren Konten)</string>
     <string name="downloads_search">Downloads durchsuchen</string>
     <string name="downloads_sort_name">Name</string>
     <string name="downloads_sort_size">Größe</string>

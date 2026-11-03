@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -30,44 +29,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
-import io.wolftown.lauschig.account.AccountData
-import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.KeptAccount
 import io.wolftown.lauschig.account.KeptAccountDeletion
-import io.wolftown.lauschig.account.KeptAccountStore
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import io.wolftown.lauschig.account.KeptDownloadSizes
+import io.wolftown.lauschig.account.KeptDownloads
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-/** Data another (signed-out) account kept on this device, with its size on disk. */
-@Immutable
-data class KeptDownloads(val account: KeptAccount, val bytes: Long)
 
 /**
  * The Downloads page's "Downloads früherer Konten": every kept account but the signed-in one, also after its one-time
  * question was answered with "Behalten" – keeping is never final, the storage can always be given back.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class KeptDownloadsViewModel(
-    accounts: AccountStore,
-    kept: KeptAccountStore,
-    private val bytes: suspend (serverId: String) -> Long,
+    sizes: Flow<List<KeptDownloads>>,
     private val deleteAccount: suspend (KeptAccount) -> Boolean,
 ) : ViewModel() {
-    @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, deletion: KeptAccountDeletion) :
-        this(accounts, kept, data::downloadBytes, deletion::delete)
+    @Inject constructor(sizes: KeptDownloadSizes, deletion: KeptAccountDeletion) : this(sizes.entries, deletion::delete)
 
-    val entries: StateFlow<List<KeptDownloads>> = combine(accounts.account, kept.accounts) { a, list -> list.filter { it.serverId != a?.serverId } }
-        .mapLatest { list -> list.map { KeptDownloads(it, bytes(it.serverId)) } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val entries: StateFlow<List<KeptDownloads>> = sizes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Server id being deleted right now. */
     private val _deleting = MutableStateFlow<String?>(null)

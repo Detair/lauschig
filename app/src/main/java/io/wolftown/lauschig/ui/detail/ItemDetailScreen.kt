@@ -11,12 +11,14 @@ import io.wolftown.lauschig.ui.extras.TitleExtrasViewModel
 import io.wolftown.lauschig.ui.extras.titleExtrasSections
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -111,6 +114,32 @@ fun ItemDetailRoute(
     }
 }
 
+/** Below this height the cover moves beside the texts (see [headerBesideCover]). */
+private val SHORT_WINDOW = 600.dp
+
+/**
+ * The row needs this width: with the gutters (32 dp) and the gap (16 dp) the cover then gets 40 % of the content width
+ * (147 dp) and the texts about 205 dp; narrower, and the texts would be squeezed below 200 dp.
+ */
+private val ROW_MIN_WIDTH = 400.dp
+
+/** The cover beside the texts: smaller than above them, at most 40 % of the width and never taller than the window leaves room for. */
+private val SIDE_COVER_MAX = 200.dp
+private val SIDE_COVER_MIN = 120.dp
+
+/**
+ * Whether the header lays the cover out beside title, chips and buttons instead of above them. The column needs about
+ * 550-650 dp until the primary button (back row, 280 dp cover, title, chips, button), so below [SHORT_WINDOW] the button
+ * lands under the fold: the landscape pane of a tablet (about 455 dp wide, 470 dp high with the mini player) and a phone
+ * in landscape (800 x 360 dp). Windows narrower than [ROW_MIN_WIDTH] keep the column, as do portrait phones and tablets
+ * (tall enough).
+ */
+internal fun headerBesideCover(width: Dp, height: Dp): Boolean = width >= ROW_MIN_WIDTH && height < SHORT_WINDOW
+
+/** The cover's size beside the texts in a window of this size. */
+internal fun sideCoverSize(width: Dp, height: Dp): Dp =
+    minOf(SIDE_COVER_MAX, (width - 32.dp) * 0.4f, height - 96.dp).coerceAtLeast(SIDE_COVER_MIN)
+
 @Composable
 fun ItemDetailScreen(
     state: ItemDetailUiState,
@@ -128,67 +157,87 @@ fun ItemDetailScreen(
     extras: LazyListScope.() -> Unit = {},
 ) {
     val settledOffline = LocalOfflineDimming.current
-    LazyColumn(modifier.fillMaxSize()) {
-        item("back") {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
-                Spacer(Modifier.weight(1f))
-                topActions()
+    // The window (or pane) this page has, not the page's own height: the list below scrolls and has no bounds.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val sideCover = if (headerBesideCover(maxWidth, maxHeight)) sideCoverSize(maxWidth, maxHeight) else null
+        LazyColumn(Modifier.fillMaxSize()) {
+            item("back") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
+                    Spacer(Modifier.weight(1f))
+                    topActions()
+                }
             }
-        }
-        if (!state.found) {
-            item("missing") {
-                Text(stringResource(R.string.detail_not_found), Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+            if (!state.found) {
+                item("missing") {
+                    Text(stringResource(R.string.detail_not_found), Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
+                }
+                return@LazyColumn
             }
-            return@LazyColumn
-        }
-        item("header") { Header(state, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
-        item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
-        extras()
-        item("chapters-title") {
-            Text(
-                stringResource(R.string.detail_chapters),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
-            )
-        }
-        if (state.chapters.isEmpty() && !state.detailsLoaded && settledOffline) {
-            item("chapters-offline") {
+            item("header") { Header(state, sideCover, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
+            item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
+            extras()
+            item("chapters-title") {
                 Text(
-                    stringResource(R.string.detail_chapters_offline_hint),
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    stringResource(R.string.detail_chapters),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
                 )
             }
+            if (state.chapters.isEmpty() && !state.detailsLoaded && settledOffline) {
+                item("chapters-offline") {
+                    Text(
+                        stringResource(R.string.detail_chapters_offline_hint),
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            chapterItems(state.chapters, onChapter)
         }
-        chapterItems(state.chapters, onChapter)
     }
 }
 
+/** [sideCover]: the cover's size when it sits beside the texts (see [headerBesideCover]); null puts it above them. */
 @Composable
-private fun Header(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+private fun Header(state: ItemDetailUiState, sideCover: Dp?, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Cover(state)
-        Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
-        state.subtitle?.let {
-            Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
-        }
-        Chips(state, onOpenBrowse)
-        PrimaryButton(state, onPrimary)
-        if (state.isLocal) {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("localSource")) { Hint(stringResource(R.string.detail_local_source)) }
+        if (sideCover == null) {
+            Cover(state)
+            HeaderTexts(state, titleTop = 16.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse)
         } else {
-            DownloadControls(state, onDownload, onPause, onDelete)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Cover(state, sideCover)
+                // The primary action and the download controls stay with the title, so they are above the fold.
+                Column(Modifier.weight(1f)) { HeaderTexts(state, titleTop = 0.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse) }
+            }
         }
         state.description?.let { Description(it) }
     }
 }
 
 @Composable
-private fun Cover(state: ItemDetailUiState) {
+private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = titleTop))
+    state.subtitle?.let {
+        Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
+    }
+    Chips(state, onOpenBrowse)
+    PrimaryButton(state, onPrimary)
+    if (state.isLocal) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("localSource")) { Hint(stringResource(R.string.detail_local_source)) }
+    } else {
+        DownloadControls(state, onDownload, onPause, onDelete)
+    }
+}
+
+/** [side]: the square's size beside the texts; null is the column's cover, as wide as the window up to 280 dp. */
+@Composable
+private fun Cover(state: ItemDetailUiState, side: Dp? = null) {
     val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion)
-    Box(Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).testTag("cover")) {
+    val shape = if (side != null) Modifier.size(side) else Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f)
+    Box(shape.clip(RoundedCornerShape(12.dp)).testTag("cover")) {
         Initials(state.title)
         if (model != null) {
             AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())

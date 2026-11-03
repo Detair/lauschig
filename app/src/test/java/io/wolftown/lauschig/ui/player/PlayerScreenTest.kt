@@ -191,4 +191,55 @@ class PlayerScreenTest {
         assertTrue("cover cut off", cover.bottom <= root.bottom && cover.top >= 0.dp)
         assertTrue("play below the fold", play.bottom <= root.bottom)
     }
+
+    private val actionTags = listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")
+
+    // A tablet in landscape (1006×601 dp minus the system bars): the cover alone on the start side, as large as fits and
+    // centred; the end side holds the transport and, under it, the action grid, so nothing is left empty and nothing scrolls.
+    @Config(qualifiers = "w1006dp-h520dp")
+    @Test fun tabletLandscape_coverAlone_actionGridUnderTheTransport() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        assertAllActionsOnScreen()
+        val root = rule.onRoot().getUnclippedBoundsInRoot()
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        val play = rule.onNodeWithContentDescription("Play").getUnclippedBoundsInRoot()
+        for (tag in actionTags) {
+            val b = rule.onNodeWithTag(tag).getUnclippedBoundsInRoot()
+            assertTrue("$tag not on the end side: ${b.left} < ${cover.right}", b.left >= cover.right)
+            assertTrue("$tag not under the transport controls", b.top >= play.bottom)
+        }
+        assertTrue("cover not as large as fits: ${cover.bottom - cover.top}", cover.bottom - cover.top >= 440.dp)
+        assertTrue("cover not centred", kotlin.math.abs(cover.top.value - (root.bottom - cover.bottom).value) <= 1f)
+    }
+
+    // A phone in landscape has no room for the grid under the transport controls: today's arrangement (cover with the grid
+    // under it on the start side) stays, and the transport controls are on screen.
+    @Config(qualifiers = "w800dp-h360dp")
+    @Test fun phoneLandscape_keepsTheGridUnderTheCover_transportVisible() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        val root = rule.onRoot().getUnclippedBoundsInRoot()
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        val play = rule.onNodeWithContentDescription("Play").getUnclippedBoundsInRoot()
+        val speed = rule.onNodeWithTag("speedButton").getUnclippedBoundsInRoot()
+        assertTrue("grid not under the cover", speed.right <= play.left && speed.top >= cover.bottom)
+        for (d in listOf("Previous chapter", "Play", "Next chapter")) {
+            assertTrue("$d below the fold", rule.onNodeWithContentDescription(d).getUnclippedBoundsInRoot().bottom <= root.bottom)
+        }
+    }
+
+    // The same window width, just below the height the end side needs for the grid.
+    @Config(qualifiers = "w1006dp-h470dp")
+    @Test fun shortTabletLandscape_keepsTheGridUnderTheCover() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        val speed = rule.onNodeWithTag("speedButton").getUnclippedBoundsInRoot()
+        assertTrue("grid not under the cover", speed.top >= cover.bottom)
+    }
+
+    @Test fun actionGridUnderTransport_needsHeightForTheWholeEndColumn() {
+        assertTrue(actionGridUnderTransport(520.dp))
+        assertTrue(actionGridUnderTransport(480.dp))
+        assertTrue(!actionGridUnderTransport(479.dp))
+        assertTrue(!actionGridUnderTransport(360.dp))
+    }
 }

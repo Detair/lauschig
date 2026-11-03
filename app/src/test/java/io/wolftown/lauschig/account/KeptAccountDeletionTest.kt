@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.account
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,6 +39,24 @@ class KeptAccountDeletionTest {
         kept.remove(entry.serverId)
         assertFalse(KeptAccountDeletion(accounts, data, kept).delete(entry))
         assertTrue(entry in kept.list.value)
+    }
+
+    @Test fun afterADeleteThatFailedHalfWay_theKeptSizesAreWalkedAgainAtOnce() = runTest {
+        // The entry is last in the list, so putting it back changes nothing in the store: only the refresh shows the new size.
+        kept.remove(entry.serverId)
+        kept.put(entry)
+        var size = 900L
+        val sizes = KeptDownloadSizes(accounts, kept, { sid -> if (sid == entry.serverId) size else 0L }, backgroundScope)
+        var seen = emptyList<KeptDownloads>()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)).launch { sizes.entries.collect { seen = it } }
+        testScheduler.runCurrent()
+        assertEquals(900L, seen.first { it.account == entry }.bytes)
+        val partial = object : AccountData by data {
+            override suspend fun purge(serverId: String) { size = 400L; throw java.io.IOException("disk full") }
+        }
+        assertFalse(KeptAccountDeletion(accounts, partial, kept, sizes).delete(entry))
+        testScheduler.runCurrent()
+        assertEquals(400L, seen.first { it.account == entry }.bytes)
     }
 
     @Test fun theSignedInAccount_isNeverDeleted() = runTest {

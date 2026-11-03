@@ -169,6 +169,18 @@ private fun speedFormat(): NumberFormat = speedFormats.getOrPut(java.util.Locale
 /** From this width on, a window wider than high shows the cover beside the controls (phones in landscape, tablets). */
 private val WIDE_MIN_WIDTH = 600.dp
 
+/**
+ * From this height on, the wide layout puts the action grid under the transport controls on the end side (the start side
+ * is the cover alone, as large as fits). The end side then needs about 410-440 dp (top bar, title and chapter, progress,
+ * transport, two button rows), so 480 dp leaves some room for a longer title; the test tablet has about 520 dp of
+ * content height with its system bars. Below it (phones) the grid stays under the cover and the cover gives up height
+ * for it, so nothing needs scrolling; a taller title or a larger font than the room allows scrolls the end side, with
+ * the transport controls first.
+ */
+private val END_COLUMN_MIN_HEIGHT = 480.dp
+
+internal fun actionGridUnderTransport(height: Dp): Boolean = height >= END_COLUMN_MIN_HEIGHT
+
 /** The cover never shrinks below this; when even that does not fit, the player scrolls. */
 private val MIN_COVER = 96.dp
 
@@ -352,22 +364,40 @@ fun PlayerScreen(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val viewport = constraints.maxHeight
         val viewportDp = maxHeight
-        if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
-            // Cover with the action area under it on the start side, title, progress and transport controls beside it.
-            Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
+        // End side of the wide layouts: top bar, title, progress and transport controls, centred in the height that is
+        // left; [withActions] adds the action area under them.
+        val endSide: @Composable RowScope.(withActions: Boolean) -> Unit = { withActions ->
+            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                Column(Modifier.heightIn(min = viewportDp)) {
+                    topBar()
+                    Spacer(Modifier.weight(1f))
+                    info()
+                    progress()
+                    controls()
+                    finished()
+                    Spacer(Modifier.weight(1f))
+                    if (withActions) actions()
                 }
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    Column(Modifier.heightIn(min = viewportDp)) {
-                        topBar()
-                        Spacer(Modifier.weight(1f))
-                        info()
-                        progress()
-                        controls()
-                        finished()
-                        Spacer(Modifier.weight(1f))
+            }
+        }
+        if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
+            if (actionGridUnderTransport(maxHeight)) {
+                // Tablets in landscape: the cover alone on the start side, as large as fits and centred; everything
+                // else, the action area last, on the end side.
+                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(minOf(maxWidth, maxHeight - 32.dp, 560.dp))) { cover() }
                     }
+                    endSide(true)
+                }
+            } else {
+                // Phones in landscape: cover with the action area under it on the start side, the rest beside it (the
+                // end side has no room left for the action area).
+                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                        CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
+                    }
+                    endSide(false)
                 }
             }
         } else {

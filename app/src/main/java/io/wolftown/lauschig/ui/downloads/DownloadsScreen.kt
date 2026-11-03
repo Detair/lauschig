@@ -72,6 +72,28 @@ class DownloadsActions(
     val onDeleteFinished: () -> Unit = {},
 )
 
+/** The device's file-size formatter joins number and unit with a plain space for some sizes and a no-break one for others. */
+internal fun String.noBreakSpaces(): String = replace(' ', '\u00A0')
+
+/**
+ * What the downloads occupy and what is free; when earlier accounts kept data on the device, the used figure includes it
+ * and names that part. Every size in this line is joined to its unit with a no-break space, so a wrapped line never
+ * separates "950 MB" into two.
+ */
+@Composable
+private fun storageText(state: DownloadsUiState): String {
+    val context = LocalContext.current
+    fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes).noBreakSpaces()
+    val used = size(state.usedBytes)
+    val free = state.freeBytes?.let(::size)
+    return when {
+        state.keptBytes > 0 && free != null -> stringResource(R.string.downloads_storage_kept, used, size(state.keptBytes), free)
+        state.keptBytes > 0 -> stringResource(R.string.downloads_storage_used_kept, used, size(state.keptBytes))
+        free != null -> stringResource(R.string.downloads_storage, used, free)
+        else -> stringResource(R.string.downloads_storage_used, used)
+    }
+}
+
 /** Storage on top, then search, sort chips, "delete finished" and one row per download with its actions. */
 @Composable
 fun DownloadsScreen(
@@ -93,8 +115,7 @@ fun DownloadsScreen(
             Text(stringResource(R.string.downloads_title), style = MaterialTheme.typography.titleLarge)
         }
         Text(
-            state.freeBytes?.let { stringResource(R.string.downloads_storage, size(state.usedBytes), size(it)) }
-                ?: stringResource(R.string.downloads_storage_used, size(state.usedBytes)),
+            storageText(state),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsStorage"),
         )

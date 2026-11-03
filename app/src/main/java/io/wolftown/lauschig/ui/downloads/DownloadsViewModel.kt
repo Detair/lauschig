@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.account.KeptDownloadSizes
+import io.wolftown.lauschig.account.KeptDownloads
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.DownloadEntryRow
 import io.wolftown.lauschig.db.entities.DownloadState
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -32,6 +35,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,7 +70,10 @@ data class DownloadsUiState(
     val entries: List<DownloadEntryUi> = emptyList(),
     /** Downloads before the search filter. */
     val total: Int = 0,
+    /** Everything the downloads occupy on the device: this account's and what earlier accounts kept ([keptBytes]). */
     val usedBytes: Long = 0,
+    /** The part of [usedBytes] that belongs to earlier accounts (not listed in [entries]; see `KeptDownloadsSection`). */
+    val keptBytes: Long = 0,
     /** Free space of the app storage volume; null until read. */
     val freeBytes: Long? = null,
     val finishedCount: Int = 0,
@@ -96,7 +103,8 @@ private const val FREE_SPACE_REFRESH_MS = 30_000L
 /**
  * The download management page: every download of the signed-in server with its state and size, sorted and searched in
  * memory ([DownloadList]). Actions go through the [DownloadManager] exactly like on the detail page, so the worker rules
- * (Wi-Fi, stream priority) apply unchanged.
+ * (Wi-Fi, stream priority) apply unchanged. The storage figure also counts what earlier accounts kept on the device
+ * ([kept], the list of the "Downloads früherer Konten" section), so it is what the device really holds.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -105,27 +113,32 @@ class DownloadsViewModel(
     private val dao: DownloadDao,
     private val downloads: DownloadManager,
     private val freeSpace: suspend () -> Long?,
+    kept: Flow<List<KeptDownloads>>,
     dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
-    @Inject constructor(accountStore: AccountStore, dao: DownloadDao, downloads: DownloadManager, files: DownloadFiles) :
-        this(accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, Dispatchers.Default)
+    @Inject constructor(accountStore: AccountStore, dao: DownloadDao, downloads: DownloadManager, files: DownloadFiles, kept: KeptDownloadSizes) :
+        this(accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept.entries, Dispatchers.Default)
 
     private val sort = MutableStateFlow(DownloadSort.ADDED)
     private val query = MutableStateFlow("")
     private val serverId = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    // The page does not wait for the directories of earlier accounts: it starts with this account's own figures and the
+    // kept part joins when it is known. A failure there keeps the last figure; it never takes the page down.
+    private val keptTotal: Flow<Long> = kept.map { list -> list.sumOf { it.bytes } }.onStart { emit(0L) }.catch { }
     @Volatile private var rows: List<DownloadEntryRow> = emptyList()
 
     val state: StateFlow<DownloadsUiState> = serverId.flatMapLatest { sid ->
         if (sid == null) flowOf(DownloadsUiState(loaded = true))
-        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid)) { all, so, q, free ->
+        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid), keptTotal) { all, so, q, free, keptSum ->
             rows = all
             val totals = DownloadList.totals(all)
             DownloadsUiState(
                 loaded = true,
                 entries = DownloadList.arrange(all, so, q).map { it.toUi() },
                 total = all.size,
-                usedBytes = totals.usedBytes,
+                usedBytes = totals.usedBytes + keptSum,
+                keptBytes = keptSum,
                 freeBytes = free,
                 finishedCount = totals.finishedCount,
                 finishedBytes = totals.finishedBytes,
