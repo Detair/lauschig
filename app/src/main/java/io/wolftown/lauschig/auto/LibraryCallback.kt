@@ -215,25 +215,29 @@ class LibraryCallback(
         return Futures.immediateFuture(SessionResult(if (done) SessionResult.RESULT_SUCCESS else SessionError.ERROR_NOT_SUPPORTED))
     }
 
-    /** A coroutine on [scope] as a future; a cancelled future cancels the coroutine. */
-    private fun <T> future(block: suspend () -> T): ListenableFuture<T> {
-        val f = SettableFuture.create<T>()
-        val job = scope.launch {
-            try {
-                f.set(block())
-            } catch (e: CancellationException) {
-                f.cancel(false)
-                throw e
-            } catch (e: Throwable) {
-                if (e !is IllegalStateException) Log.w(TAG, "library request failed", e)
-                f.setException(e)
-            }
-        }
-        f.addListener({ if (f.isCancelled) job.cancel() }, MoreExecutors.directExecutor())
-        return f
-    }
+    private fun <T> future(block: suspend () -> T): ListenableFuture<T> = scopeFuture(scope, block)
 
     private companion object {
         const val TAG = "LibraryCallback"
     }
+}
+
+/** A coroutine on [scope] as a future that always completes; a cancelled future cancels the coroutine. */
+internal fun <T> scopeFuture(scope: CoroutineScope, block: suspend () -> T): ListenableFuture<T> {
+    val f = SettableFuture.create<T>()
+    val job = scope.launch {
+        try {
+            f.set(block())
+        } catch (e: CancellationException) {
+            f.cancel(false)
+            throw e
+        } catch (e: Throwable) {
+            if (e !is IllegalStateException) Log.w("LibraryCallback", "library request failed", e)
+            f.setException(e)
+        }
+    }
+    // A scope cancelled before the coroutine ran (service destroyed) never runs the block: answer anyway.
+    job.invokeOnCompletion { if (!f.isDone) f.cancel(false) }
+    f.addListener({ if (f.isCancelled) job.cancel() }, MoreExecutors.directExecutor())
+    return f
 }
