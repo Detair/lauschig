@@ -47,8 +47,9 @@ class WidgetSource @Inject constructor(
     private val progress: ProgressDao,
     private val covers: CoverStore,
 ) {
-    /** Bumped when a cover arrived; the widget then decodes it again. */
+    /** Bumped when the widget's own cover arrived; the widget then decodes it again. */
     private val coverTick = MutableStateFlow(0)
+    private val coverCache = WidgetCoverCache<Bitmap>()
 
     fun views(): Flow<WidgetView> = combine(store.state, coverTick) { stored, _ -> stored }
         .map { stored ->
@@ -56,7 +57,8 @@ class WidgetSource @Inject constructor(
             // "Play" from the widget resumes through the service (onPlaybackResumption); without a title it can resume
             // the button opens the app instead, so no foreground start ends without playback.
             val canResume = state.hasTitle && (state.playing || safe { last.last() } != null)
-            WidgetView(state, state.coverRef()?.let { safe { covers.file(it) } }?.let(::decode), canResume)
+            val cover = coverCache.get(state.coverRef()) { ref -> safe { covers.file(ref) }?.let(::decode) }
+            WidgetView(state, cover, canResume)
         }
         .flowOn(Dispatchers.IO)
 
@@ -71,8 +73,12 @@ class WidgetSource @Inject constructor(
         }
     }
 
-    /** A cover arrived in the background (see [CoverStore.onFetched]). */
-    suspend fun coverArrived() {
+    /**
+     * A cover arrived in the background (see [CoverStore.onFetched]; the car and SystemUI make it fetch many). Only the
+     * widget's own cover redraws it.
+     */
+    suspend fun coverArrived(serverId: String, libraryItemId: String) {
+        if (!coverCache.arrived(serverId, libraryItemId)) return
         coverTick.value++
         refresh()
     }

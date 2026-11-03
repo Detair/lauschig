@@ -289,7 +289,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun coverArrived(serverId: String, itemId: String) {
         coverArrivals.value++
-        appScope.launch { widgetSource.coverArrived() }
+        appScope.launch { widgetSource.coverArrived(serverId, itemId) }
         val exo = player ?: return
         val (sid, key) = currentKey(exo) ?: return
         if (sid != serverId || PlayableKey.parse(key).libraryItemId != itemId) return
