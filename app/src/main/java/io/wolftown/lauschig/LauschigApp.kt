@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import io.wolftown.lauschig.widget.WidgetAccountWatcher
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -28,6 +29,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var prefetcher: NextVolumePrefetcher
     @Inject lateinit var autoResumer: AutoResumer
     @Inject lateinit var localFolders: LocalFolders
+    @Inject lateinit var widgetAccounts: WidgetAccountWatcher
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -42,6 +44,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         scope.launch { syncScheduler.start(scope) }
         // Picks up files added to the device folders meanwhile (throttled; a WorkManager job, nothing waits for it).
         scope.launch { localFolders.scanIfDue() }
+        // Sign-out or another server: the homescreen widget forgets the old account's title.
+        scope.launch { widgetAccounts.run() }
         // The player state is main-thread bound; the prefetcher only reads it.
         prefetcher.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         // Registers its audio-device callback only while the setting is on.

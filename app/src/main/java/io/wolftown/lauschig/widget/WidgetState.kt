@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.widget
 
 import io.wolftown.lauschig.auto.CoverRef
+import io.wolftown.lauschig.local.DeviceLibrary
 
 /**
  * What the homescreen widget shows: the title in the player (or the last one, paused), written by the playback
@@ -55,8 +56,14 @@ object WidgetMapping {
      * What the widget shows of the [stored] state: "playing" only while the playback service runs in this process – after
      * a process death, a reboot or an app update the store can still say "playing" (pause would then do nothing).
      */
-    fun forDisplay(stored: WidgetState?, serviceRunning: Boolean): WidgetState? =
-        stored?.let { if (it.playing && !serviceRunning) it.copy(playing = false) else it }
+    fun forDisplay(stored: WidgetState?, serviceRunning: Boolean, accountServerId: String?): WidgetState? =
+        stored?.takeIf { belongsTo(it, accountServerId) }?.let { if (it.playing && !serviceRunning) it.copy(playing = false) else it }
+
+    /** A title of the signed-in account's server, or a device title (this device's, whoever is signed in). */
+    fun belongsTo(state: WidgetState, accountServerId: String?): Boolean {
+        val sid = state.serverId ?: return false
+        return DeviceLibrary.isLocal(sid) || sid == accountServerId
+    }
 
     /**
      * The widget state for [s]. An empty player keeps [previous]'s title, paused (the title can be resumed from the

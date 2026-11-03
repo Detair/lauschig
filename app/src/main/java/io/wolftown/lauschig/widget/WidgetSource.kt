@@ -12,7 +12,9 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.auto.CoverStore
+import kotlinx.coroutines.flow.distinctUntilChanged
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
@@ -42,6 +44,7 @@ class WidgetView(val state: WidgetState, val cover: Bitmap?, val canResume: Bool
 class WidgetSource @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: WidgetStore,
+    private val accounts: AccountStore,
     private val last: LastTitleStarter,
     private val items: ItemDao,
     private val episodes: EpisodeDao,
@@ -52,9 +55,9 @@ class WidgetSource @Inject constructor(
     private val coverTick = MutableStateFlow(0)
     private val coverCache = WidgetCoverCache<Bitmap>()
 
-    fun views(): Flow<WidgetView> = combine(store.state, coverTick) { stored, _ -> stored }
-        .map { stored ->
-            val state = WidgetMapping.forDisplay(stored, PlaybackService.running) ?: fallback()
+    fun views(): Flow<WidgetView> = combine(store.state, accounts.account.map { it?.serverId }.distinctUntilChanged(), coverTick) { stored, sid, _ -> stored to sid }
+        .map { (stored, sid) ->
+            val state = WidgetMapping.forDisplay(stored, PlaybackService.running, sid) ?: fallback()
             // "Play" from the widget resumes through the service (onPlaybackResumption); without a title it can resume
             // the button opens the app instead, so no foreground start ends without playback.
             val canResume = state.hasTitle && (state.playing || safe { last.last() } != null)

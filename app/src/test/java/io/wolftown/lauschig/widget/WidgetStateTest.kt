@@ -64,9 +64,18 @@ class WidgetStateTest {
     @Test fun storedPlaying_onlyCountsWhileTheServiceRuns() {
         // After a process death, a reboot or an app update the store may still say "playing".
         val stored = WidgetState("0123456789abcdef", "li_1", "Titel", null, 0, playing = true, positionMs = 1, durationMs = 2)
-        assertEquals(stored.copy(playing = false), WidgetMapping.forDisplay(stored, serviceRunning = false))
-        assertEquals(stored, WidgetMapping.forDisplay(stored, serviceRunning = true))
-        assertEquals(null, WidgetMapping.forDisplay(null, serviceRunning = true))
+        assertEquals(stored.copy(playing = false), WidgetMapping.forDisplay(stored, serviceRunning = false, accountServerId = stored.serverId))
+        assertEquals(stored, WidgetMapping.forDisplay(stored, serviceRunning = true, accountServerId = stored.serverId))
+        assertEquals(null, WidgetMapping.forDisplay(null, serviceRunning = true, accountServerId = stored.serverId))
+    }
+
+    @Test fun anotherAccountsTitle_isNotShown_deviceTitlesAlways() {
+        val stored = WidgetState("0123456789abcdef", "li_1", "Titel", null, 0, playing = false, positionMs = 1, durationMs = 2)
+        // Signed out, or signed in on another server: the old title is gone from the widget.
+        assertEquals(null, WidgetMapping.forDisplay(stored, serviceRunning = false, accountServerId = null))
+        assertEquals(null, WidgetMapping.forDisplay(stored, serviceRunning = false, accountServerId = "fedcba9876543210"))
+        val device = stored.copy(serverId = "device", key = "local:0123456789abcdef01234567")
+        assertEquals(device, WidgetMapping.forDisplay(device, serviceRunning = false, accountServerId = null))
     }
 
     @Test fun position_isClampedToTheBook() {
