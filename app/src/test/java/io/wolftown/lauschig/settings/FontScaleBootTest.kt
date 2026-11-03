@@ -30,4 +30,14 @@ class FontScaleBootTest {
         assertEquals(1.3f * 1.15f, FontScaleBoot.overrideFor(system, 115)!!.fontScale, 0.0001f)
         assertEquals(0.85f, FontScaleBoot.overrideFor(Configuration().apply { fontScale = 1f }, 85)!!.fontScale, 0.0001f)
     }
+
+    @Test fun recreateGuard_onlyForADifferentValue_andTheCacheHoldsItFirst() {
+        FontScaleBoot.write(context, 100)
+        assertEquals(false, FontScaleBoot.needsRecreate(context, applied = 115, wanted = 115))
+        assertEquals(100, FontScaleBoot.read(context)) // nothing written for an unchanged value
+        assertEquals(true, FontScaleBoot.needsRecreate(context, applied = 100, wanted = 130))
+        // The recreated activity reads 130 in attachBaseContext, so it does not recreate again.
+        assertEquals(130, FontScaleBoot.read(context))
+        assertEquals(false, FontScaleBoot.needsRecreate(context, applied = FontScaleBoot.read(context), wanted = 130))
+    }
 }

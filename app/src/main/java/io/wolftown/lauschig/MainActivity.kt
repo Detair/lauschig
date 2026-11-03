@@ -53,10 +53,7 @@ class MainActivity : ComponentActivity() {
         // A new text size in the settings: remember it for attachBaseContext and rebuild the activity with it.
         lifecycleScope.launch {
             viewModel.appearance.filterNotNull().map { it.fontScalePercent }.distinctUntilChanged().collect { percent ->
-                if (percent != appliedFontScale) {
-                    FontScaleBoot.write(this@MainActivity, percent)
-                    recreate()
-                }
+                if (FontScaleBoot.needsRecreate(this@MainActivity, appliedFontScale, percent)) recreate()
             }
         }
         // Before handleOpen strips the extras it consumes.

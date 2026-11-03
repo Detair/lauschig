@@ -24,6 +24,16 @@ object FontScaleBoot {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit { putInt(KEY, percent) }
     }
 
+    /**
+     * The activity was created with [applied] and the settings now want [wanted]: true when it has to be recreated, in
+     * which case the cache already holds [wanted] (the recreated activity applies it and does not recreate again).
+     */
+    fun needsRecreate(context: Context, applied: Int, wanted: Int): Boolean {
+        if (wanted == applied) return false
+        write(context, wanted)
+        return true
+    }
+
     /** The override for `applyOverrideConfiguration`: the system's font scale times [percent]; null for 100 %. */
     fun overrideFor(system: Configuration, percent: Int): Configuration? =
         if (percent == 100) null else Configuration().apply { fontScale = system.fontScale * percent / 100f }
