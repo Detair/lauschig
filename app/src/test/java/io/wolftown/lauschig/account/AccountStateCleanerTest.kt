@@ -56,26 +56,38 @@ class AccountStateCleanerTest {
     @Test fun everyPartIsCleared() = runBlocking {
         seed()
         var images = 0
-        AccountStateCleaner(rmab, oidc, searches, prompts) { images++ }.clear(a)
+        var notifications = 0
+        AccountStateCleaner(rmab, oidc, searches, prompts, { images++ }, { notifications++ }).clear(a)
         assertNull(rmab.config.first())
         assertTrue(oidcStore.data.first().asMap().isEmpty())
         assertEquals(emptyList<String>(), searches.queries.first())
         assertNull(prompts.prompt.value)
         assertEquals(1, images)
+        assertEquals(1, notifications)
     }
 
     @Test fun aFailingPart_neverStopsTheOthers() = runBlocking {
         seed()
-        AccountStateCleaner(rmab, oidc, searches, prompts) { error("disk cache") }.clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, { error("disk cache") }, {}).clear(a)
         assertNull(rmab.config.first())
         assertEquals(emptyList<String>(), searches.queries.first())
         assertNull(prompts.prompt.value)
     }
 
+    @Test fun theCleanupReminder_isCancelled() = runBlocking {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        nm.createNotificationChannel(android.app.NotificationChannel("t", "t", android.app.NotificationManager.IMPORTANCE_LOW))
+        nm.notify(io.wolftown.lauschig.cleanup.CleanupReminderWorker.NOTIFICATION_ID, androidx.core.app.NotificationCompat.Builder(ctx, "t").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Der Anfang").build())
+        assertEquals(1, nm.activeNotifications.size)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx).clear(a)
+        assertEquals(0, nm.activeNotifications.size)
+    }
+
     @Test fun aPromptOfAnotherServer_stays() = runBlocking {
         val other = DownloadPrompt.Metered("bbbbbbbbbbbbbbbb", "x", "T", 1)
         prompts.show(other)
-        AccountStateCleaner(rmab, oidc, searches, prompts) {}.clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}).clear(a)
         assertEquals(other, prompts.prompt.value)
     }
 }

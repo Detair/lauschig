@@ -42,6 +42,19 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** What to do with a request from outside (a notification, a widget tap, a link) right now. */
+enum class IncomingGate { WAIT, DROP, OPEN }
+
+/**
+ * Not read yet: wait. Signed out: drop it – no page may open over the sign-in (the screens of the old account's
+ * notification or link would be empty anyway). Signed in: open it. The SSO callback is not such a request.
+ */
+fun incomingGate(signedIn: Boolean?): IncomingGate = when (signedIn) {
+    null -> IncomingGate.WAIT
+    false -> IncomingGate.DROP
+    true -> IncomingGate.OPEN
+}
+
 /** How long a widget tap waits for the service's title before it stays on the start screen. */
 private const val PLAYER_OPEN_WAIT_MS = 2_000L
 
@@ -71,7 +84,13 @@ fun AppRoot(
     }
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(openRequest) {
+    LaunchedEffect(openRequest, signedIn) {
+        if (openRequest == null) return@LaunchedEffect
+        when (incomingGate(signedIn)) {
+            IncomingGate.WAIT -> return@LaunchedEffect
+            IncomingGate.DROP -> { onOpenHandled(); return@LaunchedEffect }
+            IncomingGate.OPEN -> Unit
+        }
         when (openRequest) {
             MainActivity.OPEN_CLEANUP -> {
                 navController.navigate(Cleanup) { launchSingleTop = true }
@@ -91,8 +110,13 @@ fun AppRoot(
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
     val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
-    LaunchedEffect(linkRequest) {
+    LaunchedEffect(linkRequest, signedIn) {
         val url = linkRequest ?: return@LaunchedEffect
+        when (incomingGate(signedIn)) {
+            IncomingGate.WAIT -> return@LaunchedEffect
+            IncomingGate.DROP -> { onLinkHandled(); return@LaunchedEffect }
+            IncomingGate.OPEN -> Unit
+        }
         when (val target = links.open(url)) {
             is LinkTarget.Item -> navController.navigate(ItemDetail(target.itemId)) { launchSingleTop = true }
             is LinkTarget.Series -> navController.navigate(Browse(BrowseKind.SERIES, target.name)) { launchSingleTop = true }
