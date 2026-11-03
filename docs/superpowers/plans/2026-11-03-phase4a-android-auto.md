@@ -197,3 +197,36 @@ Verification: `testDebugUnitTest` 767 tests, 0 failures (one earlier run had a M
 emulator-5554 (API 35). SystemUI's `MediaResumeListener` now logs "Connected … Can get resumable media" instead of
 `onConnectFailed`. A media-key PLAY with the app process killed started the service and resumed the last title at its
 saved position while offline; the app then showed it in the mini player with the chapter as subtitle.
+
+## Fix round 1 (independent review, 2026-11-03)
+
+- **Voice after a cold start** (`awaitOnline`): car play-from-search and the phone's `MEDIA_PLAY_FROM_SEARCH` wait up
+  to 3 s for the server before resolving (the shared state starts Offline until the first probe). An empty query
+  always means the last title; if it cannot stream, the start reports "not downloaded" instead of playing another book.
+  Browse starts and resumption already waited in `streamBase()`.
+- **"Next" on one-file books / the last file**: `CarSafePlayer` offers next/previous (both variants) whenever a title is
+  loaded, also through `onAvailableCommandsChanged`, via an explicitly written forwarding listener (Kotlin `by`
+  delegation does not forward Java default methods – it would have dropped every other player event; a reflection test
+  guards the wrapper against new Media3 callbacks). Instrumented: legacy `skipToNext` and a `KEYCODE_MEDIA_NEXT` key
+  each move +30 s on a one-file m4b.
+- **Starting the loaded title** (tap on the playing title, "Spiel Lauschig" while it is loaded): `CarStarts` reports
+  `AlreadyLoaded`; the session skips the request (cancelled future = `RESULT_INFO_SKIPPED`) and just plays. Only a ready
+  or buffering player counts as loaded; an ended title is started again normally.
+- **Covers never block a binder thread**: a miss is "not found" at once, the cover is fetched on a 2-thread pool (once per
+  cover), resized (`?width=400&format=jpeg`, original as fallback on a 4xx other than 404). On arrival, subscribed
+  folders are reloaded and the playing items get a fresh artwork query (Media3, AA and SystemUI remember a failed load per
+  URI). 404 → 30 min, other failures → 2 min, offline → not remembered.
+- **Stale Online**: `ApiProvider`'s shared state expires its replay (`replayExpirationMillis = 0`): 5 s after the last
+  listener it is Offline again, so a process idling at home never hands Online(LOCAL) to a service started in the car.
+- **Futures always complete**: `scopeFuture` cancels the future when its coroutine ends without a result (scope cancelled
+  before it ran).
+- **Device titles resume while signed out** (`LastTitleStarter.last()`).
+- **New tests**: `LibraryCallbackTest`, `CarSafePlayerTest`, `ChapterTrackerTest`, `OnlineCheckTest`, `ScopeFutureTest`,
+  plus cases in `CarSearchTest`, `CarStartsTest`, `CoverTest`, `ApiProviderTest`, `LastTitleStarterTest`.
+
+Not changed (briefing for Fabian): every `isTrusted` caller (including notification-listener apps) gets full access;
+cover prefix grants are never revoked. Note: a force-stop (also the end of an instrumented run or an app update)
+revokes the grants; SystemUI cannot open covers until the service starts again and re-grants.
+
+Verification: `testDebugUnitTest` 789 tests, 0 failures; `lintDebug` 0 errors; `assembleDebug` ok; `CarBrowseTest`
+6/6 on emulator-5554; SystemUI resumption still connects; debug APK reinstalled, login kept.
