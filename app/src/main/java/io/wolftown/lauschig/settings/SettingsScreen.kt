@@ -240,6 +240,8 @@ fun SettingsScreen(
         )
         linksSection()
         adminSection()
+
+        AboutSection()
     }
 }
 

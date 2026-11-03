@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.settings.Appearance
+import io.wolftown.lauschig.whatsnew.WhatsNewSheet
+import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
 import io.wolftown.lauschig.ui.nav.Cleanup
 import io.wolftown.lauschig.ui.nav.ConnectionStatus
 import androidx.compose.runtime.getValue
@@ -53,6 +55,7 @@ fun AppRoot(
     linkRequest: String? = null,
     onLinkHandled: () -> Unit = {},
     links: LinkViewModel = hiltViewModel(),
+    whatsNew: WhatsNewViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
     val resources = LocalResources.current
@@ -126,6 +129,9 @@ fun AppRoot(
             downloadPrompt?.let {
                 DownloadPromptDialog(it, viewModel::answerMetered, viewModel::answerContention, viewModel::dismissPrompt)
             }
+            // Once after an update (never on a first install or over the sign-in).
+            val news by whatsNew.pending.collectAsStateWithLifecycle()
+            if (news.isNotEmpty() && !onSetup) WhatsNewSheet(news, whatsNew::dismiss)
         }
     }
 }

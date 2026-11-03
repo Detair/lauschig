@@ -70,6 +70,13 @@ class UiSettings(private val store: DataStore<Preferences>) {
         }
     }
 
+    /** The versionCode whose "Was ist neu" was seen (or skipped on a first install); null before the first check. */
+    val lastSeenVersion: Flow<Int?> = store.data.map { it[LAST_SEEN_VERSION] }.distinctUntilChanged()
+
+    suspend fun setLastSeenVersion(code: Int) {
+        store.edit { it[LAST_SEEN_VERSION] = code }
+    }
+
     suspend fun setTheme(mode: ThemeMode) {
         store.edit { it[THEME] = mode.name }
     }
@@ -96,5 +103,6 @@ class UiSettings(private val store: DataStore<Preferences>) {
         val TAB_ORDER = stringPreferencesKey("tab_order")
         val TABS_HIDDEN = stringSetPreferencesKey("tabs_hidden")
         val START_TAB = stringPreferencesKey("start_tab")
+        val LAST_SEEN_VERSION = intPreferencesKey("whats_new_seen_version")
     }
 }

@@ -567,4 +567,31 @@
     <string name="nav_settings_visible">Show %1$s</string>
     <string name="nav_settings_up">Move %1$s up</string>
     <string name="nav_settings_down">Move %1$s down</string>
+    <string name="whatsnew_title">What\'s new in Lauschig</string>
+    <string name="whatsnew_version">Version %1$s</string>
+    <string name="whatsnew_done">Got it</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_whats_new">What\'s new</string>
+    <string name="settings_whats_new_hint">The changes of every version</string>
+    <string-array name="whatsnew_0_2_0">
+        <item>Sleep timer with a gentle fade-out – shake to extend it</item>
+        <item>Every book remembers its speed and volume boost; silence can be skipped</item>
+        <item>After a pause Lauschig jumps back a few seconds</item>
+        <item>Optionally keep playing as soon as headphones or the car connect</item>
+        <item>Bookmarks with notes, listening history per book and a queue</item>
+        <item>Collections and playlists from Audiobookshelf</item>
+        <item>Pause, sort and search downloads and see the storage they use</item>
+        <item>Play your own audiobooks from the phone – under “On this device”</item>
+        <item>Streaming titles download in the background, with progress</item>
+        <item>Android Auto and voice commands like “Play The Hobbit in Lauschig”</item>
+        <item>Home screen widget with cover, pause and ±30 seconds</item>
+        <item>Connection status to check when the server cannot be reached</item>
+        <item>Audiobookshelf links open the title right in Lauschig</item>
+        <item>For admins: scan a library, re-match a title and see who is online</item>
+        <item>Your look: light, dark, pure black and larger text</item>
+        <item>Reorder or hide tabs and choose the start screen</item>
+        <item>More room on tablets and in landscape; every player button without scrolling</item>
+        <item>Filter by tags in Library and Discover</item>
+    </string-array>
 </resources>

@@ -567,4 +567,31 @@
     <string name="nav_settings_visible">%1$s anzeigen</string>
     <string name="nav_settings_up">%1$s nach oben</string>
     <string name="nav_settings_down">%1$s nach unten</string>
+    <string name="whatsnew_title">Neu in Lauschig</string>
+    <string name="whatsnew_version">Version %1$s</string>
+    <string name="whatsnew_done">Alles klar</string>
+    <string name="settings_section_about">Über</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_whats_new">Was ist neu</string>
+    <string name="settings_whats_new_hint">Die Änderungen jeder Version</string>
+    <string-array name="whatsnew_0_2_0">
+        <item>Schlaf-Timer mit sanftem Ausblenden – Schütteln verlängert ihn</item>
+        <item>Jedes Buch merkt sich sein Tempo und seinen Lautstärke-Boost; Stille lässt sich überspringen</item>
+        <item>Nach einer Pause springt Lauschig ein paar Sekunden zurück</item>
+        <item>Auf Wunsch weiterspielen, sobald Kopfhörer oder das Auto verbunden sind</item>
+        <item>Lesezeichen mit Notiz, Hörverlauf pro Buch und eine Warteschlange</item>
+        <item>Sammlungen und Playlists aus Audiobookshelf</item>
+        <item>Downloads pausieren, sortieren, durchsuchen und den belegten Speicher sehen</item>
+        <item>Eigene Hörbücher vom Handy abspielen – unter „Auf dem Gerät“</item>
+        <item>Beim Streamen wird im Hintergrund heruntergeladen, mit Fortschrittsanzeige</item>
+        <item>Android Auto und Sprachbefehle wie „Spiel Die drei ??? in Lauschig“</item>
+        <item>Widget für den Startbildschirm mit Cover, Pause und ±30 Sekunden</item>
+        <item>Verbindungsstatus zum Nachsehen, wenn der Server nicht erreichbar ist</item>
+        <item>Links aus Audiobookshelf öffnen den Titel direkt in Lauschig</item>
+        <item>Für Admins: Bibliothek scannen, Titel neu zuordnen und sehen, wer online ist</item>
+        <item>Darstellung nach Wunsch: hell, dunkel, reines Schwarz und größere Schrift</item>
+        <item>Reiter umsortieren, ausblenden und den Startbildschirm wählen</item>
+        <item>Mehr Platz auf Tablets und im Querformat; alle Player-Knöpfe ohne Scrollen</item>
+        <item>Nach Tags filtern in Bibliothek und Entdecken</item>
+    </string-array>
 </resources>
