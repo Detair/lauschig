@@ -31,6 +31,8 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     if (hasReleaseSigning) {
@@ -146,4 +148,9 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.media)
+    androidTestImplementation(libs.junit)
 }
