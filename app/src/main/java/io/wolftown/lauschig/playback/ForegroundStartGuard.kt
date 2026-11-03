@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import android.content.Intent
+import android.os.Build
 import android.view.KeyEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -9,55 +10,87 @@ import kotlinx.coroutines.launch
 
 /**
  * A "play" media button (Bluetooth, car, the homescreen widget) may start the service with `startForegroundService`
- * from a dead process. Android then requires `startForeground` within a few seconds, and Media3 only calls it once
+ * from a dead process. Android then requires `startForeground` within a deadline, and Media3 only calls it once
  * something plays. When the resumption fails (offline and not downloaded, the title is gone, nothing to resume),
  * nothing plays and the system kills the app with `ForegroundServiceDidNotStartInTimeException`.
  *
- * [arm] on such an intent; when the resumption reports a failure, or nothing plays after [timeoutMs], [settle] runs
- * (the service goes foreground for a moment and stops, like Media3's own `stopSelfSafely`). Main thread.
+ * [arm] on such an intent (only with an empty player, see [shouldArm]). Then:
+ * - something plays ([onEngaged]): Media3 owns the foreground, the guard lets go for good;
+ * - the resumption fails: [settle] with stop = true (go foreground for a moment, stop the service), at once;
+ * - the deadline ([timeoutMs], the first press counts) passes while the resumption is still running: [settle] with
+ *   stop = false (in the foreground with a placeholder, the service keeps running) and wait for the answer – a failure
+ *   then settles with stop = true, a success hands over to Media3;
+ * - the deadline passes after a successful resumption but nothing plays: [settle] with stop = true.
+ * Main thread.
  */
 class ForegroundStartGuard(
     private val scope: CoroutineScope,
     /** Something plays or is about to (Media3 then goes foreground itself). */
     private val engaged: () -> Boolean,
-    private val settle: () -> Unit,
-    private val timeoutMs: Long = TIMEOUT_MS,
+    private val settle: (stop: Boolean) -> Unit,
+    private val timeoutMs: Long = timeoutFor(Build.VERSION.SDK_INT),
 ) {
     private var job: Job? = null
+    private var isArmed = false
+    /** null: the resumption has not answered yet. */
+    private var answer: Boolean? = null
 
-    val armed: Boolean get() = job?.isActive == true
+    val armed: Boolean get() = isArmed
 
+    /** A play key on an empty player; a second press keeps the first deadline (Android counts from the first start). */
     fun arm() {
-        job?.cancel()
+        if (isArmed) return
+        isArmed = true
+        answer = null
         job = scope.launch {
             delay(timeoutMs)
             job = null
-            if (!engaged()) settle()
+            deadline()
+        }
+    }
+
+    private fun deadline() {
+        if (!isArmed) return
+        when {
+            engaged() -> disarm()
+            answer == null -> settle(false) // keep waiting for the answer, in the foreground
+            else -> {
+                disarm()
+                settle(true)
+            }
         }
     }
 
     /** Something plays (player listener): Media3 owns the foreground from here; this arming is over for good. */
-    fun onEngaged() {
-        job?.cancel()
-        job = null
-    }
+    fun onEngaged() = disarm()
 
-    /** The playback resumption answered: on success Media3 takes over; a failure settles at once. */
+    /** The playback resumption answered: a success waits for playback (or the deadline), a failure settles at once. */
     fun resumption(ok: Boolean) {
-        if (!armed) return
-        job?.cancel()
-        job = null
-        if (!ok && !engaged()) settle()
+        if (!isArmed) return
+        answer = ok
+        if (ok) return
+        val playing = engaged()
+        disarm()
+        if (!playing) settle(true)
     }
 
-    fun release() {
+    fun release() = disarm()
+
+    private fun disarm() {
         job?.cancel()
         job = null
+        isArmed = false
     }
 
     companion object {
-        /** Below Android's 10 s deadline for `startForeground` (API 26–33; newer versions allow more). */
-        const val TIMEOUT_MS = 8_000L
+        /**
+         * Android's deadline for `startForeground` after `startForegroundService` is 10 s up to API 33 and longer from 34
+         * (30 s seen on the API 35 emulator); keep a margin.
+         */
+        fun timeoutFor(sdk: Int): Long = if (sdk >= 34) 20_000L else 7_000L
+
+        /** The deadline on this device. */
+        val TIMEOUT_MS: Long get() = timeoutFor(Build.VERSION.SDK_INT)
 
         /**
          * Arm only for a play key while the player holds nothing: with a loaded (paused) title PLAY just plays it and
@@ -68,9 +101,10 @@ class ForegroundStartGuard(
         /**
          * Settling calls `startForeground` with its own notification id, which makes Android cancel the notification of
          * whoever is in the foreground now (Media3's media notification). On API 29+ a service already in the foreground
-         * ([foregroundServiceType] != 0) is left alone; API 28 cannot tell.
+         * ([foregroundServiceType] != 0) is left alone unless that is the guard's [ownPlaceholder]; API 28 cannot tell.
          */
-        fun maySettle(sdk: Int, foregroundServiceType: Int): Boolean = sdk < 29 || foregroundServiceType == 0
+        fun maySettle(sdk: Int, foregroundServiceType: Int, ownPlaceholder: Boolean): Boolean =
+            ownPlaceholder || sdk < 29 || foregroundServiceType == 0
 
         /** A media-button intent that may start playback (the keys Media3's MediaButtonReceiver forwards, and PLAY_PAUSE). */
         fun isPlayKey(intent: Intent): Boolean {

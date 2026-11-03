@@ -139,6 +139,8 @@ class PlaybackService : MediaLibraryService() {
     private var buttonState: CarButtons.State? = null
     private var widgets: WidgetPublisher? = null
     private var startGuard: ForegroundStartGuard? = null
+    /** The guard's placeholder notification is the foreground notification right now. */
+    private var startPlaceholder = false
     /** Counts covers that arrived in the background; browsers reload their lists when it changes. */
     private val coverArrivals = MutableStateFlow(0)
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
@@ -242,7 +244,9 @@ class PlaybackService : MediaLibraryService() {
 
             // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.
             override fun onEvents(player: Player, events: Player.Events) {
-                if (isEngaged(exo)) startGuard?.onEngaged()
+                if (!isEngaged(exo)) return
+                startGuard?.onEngaged()
+                startPlaceholder = false // Media3's notification replaces it (same service, its own id)
             }
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
@@ -409,32 +413,42 @@ class PlaybackService : MediaLibraryService() {
         exo.mediaItemCount > 0 && exo.playWhenReady && (exo.playbackState == Player.STATE_READY || exo.playbackState == Player.STATE_BUFFERING)
 
     /**
-     * Nothing started after a play key: go foreground for a moment and stop, so Android does not kill the app for a
-     * foreground start without `startForeground` (Media3 does the same in its own `stopSelfSafely`). If a controller
-     * (the app, a car) is still bound, the service stays alive without being in the foreground.
+     * The play-key guard's way out (see [ForegroundStartGuard]): go foreground with a placeholder notification, and with
+     * [stop] leave the foreground again and stop, so Android does not kill the app for a foreground start without
+     * `startForeground` (Media3 does the same in its own `stopSelfSafely`). Never while Media3 is in the foreground
+     * itself: `startForeground` with another id would make Android cancel its media notification. If a controller (the
+     * app, a car) is still bound, the service stays alive without being in the foreground.
      */
-    private fun settleForegroundStart() {
+    private fun settleForegroundStart(stop: Boolean) {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) foregroundServiceType else 0
-        if (!ForegroundStartGuard.maySettle(Build.VERSION.SDK_INT, type)) {
+        if (!ForegroundStartGuard.maySettle(Build.VERSION.SDK_INT, type, startPlaceholder)) {
             Log.i(TAG, "play key: already in the foreground, nothing to settle")
             return
         }
         try {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(START_CHANNEL, getString(R.string.playback_start_channel), NotificationManager.IMPORTANCE_LOW))
-            val notification = NotificationCompat.Builder(this, START_CHANNEL)
-                .setSmallIcon(R.drawable.ic_widget_play)
-                .setContentTitle(getString(R.string.app_name))
-                .setSilent(true)
-                .build()
-            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
-            ServiceCompat.startForeground(this, START_NOTIFICATION_ID, notification, type)
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            Log.i(TAG, "play key started nothing: left the foreground start")
+            if (!startPlaceholder) {
+                val nm = getSystemService(NotificationManager::class.java)
+                nm.createNotificationChannel(NotificationChannel(START_CHANNEL, getString(R.string.playback_start_channel), NotificationManager.IMPORTANCE_LOW))
+                val notification = NotificationCompat.Builder(this, START_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_widget_play)
+                    .setContentTitle(getString(R.string.app_name))
+                    .setSilent(true)
+                    .build()
+                val fgType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+                ServiceCompat.startForeground(this, START_NOTIFICATION_ID, notification, fgType)
+                startPlaceholder = true
+            }
+            if (stop) {
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                startPlaceholder = false
+                Log.i(TAG, "play key started nothing: left the foreground start")
+            } else {
+                Log.i(TAG, "play key: resumption still running at the deadline, in the foreground meanwhile")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "could not settle the foreground start", e)
         }
-        stopSelf()
+        if (stop) stopSelf()
     }
 
     /**
