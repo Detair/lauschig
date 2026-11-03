@@ -9,6 +9,7 @@ import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.FakeKeptAccounts
 import io.wolftown.lauschig.account.KeptAccount
+import io.wolftown.lauschig.account.keptDownloads
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.AudioFileEntity
@@ -18,6 +19,7 @@ import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadProgress
 import io.wolftown.lauschig.net.FakeAccountStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -74,7 +76,7 @@ class DownloadsViewModelTest {
         val reads = AtomicInteger()
         val accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
         val vm = viewModels.get(
-            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { reads.incrementAndGet(); 5_000L }, FakeKeptAccounts(), { 0L }, Dispatchers.Default) } },
+            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { reads.incrementAndGet(); 5_000L }, flowOf(emptyList()), Dispatchers.Default) } },
             DownloadsViewModel::class,
         )
         // One subscriber for the whole test, as on screen (WhileSubscribed would restart the upstream between awaits).
@@ -93,12 +95,14 @@ class DownloadsViewModelTest {
         assertEquals(before + 1, reads.get())
     }
 
-    private val mine = "bbbbbbbbbbbbbbbb"
+    private val signedIn = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
+    private val earlier = KeptAccount("cccccccccccccccc", "lukas", "nas")
+    private val other = KeptAccount("dddddddddddddddd", "fabian", "abs")
 
-    private fun vmWithKept(kept: List<KeptAccount>, sizes: Map<String, Long>, scope: kotlinx.coroutines.CoroutineScope): DownloadsViewModel {
-        val accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
+    private fun vmWithKept(kept: FakeKeptAccounts, bytes: suspend (String) -> Long, scope: kotlinx.coroutines.CoroutineScope): DownloadsViewModel {
+        val accounts = FakeAccountStore().apply { acc.value = signedIn }
         val vm = viewModels.get(
-            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { 9_000_000_000L }, FakeKeptAccounts(kept), { sid -> sizes.getValue(sid) }, Dispatchers.Default) } },
+            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { 9_000_000_000L }, keptDownloads(accounts, kept, bytes), Dispatchers.Default) } },
             DownloadsViewModel::class,
         )
         scope.launch(UnconfinedTestDispatcher()) { vm.state.collect {} }
@@ -114,9 +118,8 @@ class DownloadsViewModelTest {
 
     @Test fun usedStorage_includesTheDownloadsOfEarlierAccounts_andNamesThatPart() = runTest {
         oneDownloadOf100Bytes()
-        val earlier = KeptAccount("cccccccccccccccc", "lukas", "nas")
         // A stale entry of the signed-in account itself must not be counted twice.
-        val vm = vmWithKept(listOf(earlier, KeptAccount(s, "u", "n")), mapOf(earlier.serverId to 950_000_000L, s to 7_000L), backgroundScope)
+        val vm = vmWithKept(FakeKeptAccounts(listOf(earlier, KeptAccount(s, "u", "n"))), { sid -> if (sid == s) 7_000L else 950_000_000L }, backgroundScope)
         val st = vm.await { it.loaded && it.total == 1 && it.keptBytes > 0 }
         assertEquals(950_000_000L, st.keptBytes)
         assertEquals(950_000_100L, st.usedBytes)
@@ -124,7 +127,7 @@ class DownloadsViewModelTest {
 
     @Test fun usedStorage_withoutKeptData_isTheAccountsOwnAsBefore() = runTest {
         oneDownloadOf100Bytes()
-        val vm = vmWithKept(emptyList(), emptyMap(), backgroundScope)
+        val vm = vmWithKept(FakeKeptAccounts(), { error("no kept account, no walk") }, backgroundScope)
         val st = vm.await { it.loaded && it.total == 1 }
         assertEquals(0L, st.keptBytes)
         assertEquals(100L, st.usedBytes)
@@ -132,10 +135,36 @@ class DownloadsViewModelTest {
 
     @Test fun usedStorage_aKeptAccountWithoutDownloads_addsNothing() = runTest {
         oneDownloadOf100Bytes()
-        val earlier = KeptAccount("cccccccccccccccc", "lukas", "nas")
-        val vm = vmWithKept(listOf(earlier), mapOf(earlier.serverId to 0L), backgroundScope)
+        val vm = vmWithKept(FakeKeptAccounts(listOf(earlier)), { 0L }, backgroundScope)
         val st = vm.await { it.loaded && it.total == 1 }
         assertEquals(0L, st.keptBytes)
         assertEquals(100L, st.usedBytes)
+    }
+
+    @Test fun thePageDoesNotWaitForTheDirectoryWalkOfEarlierAccounts() = runTest {
+        oneDownloadOf100Bytes()
+        val walk = CompletableDeferred<Long>()
+        val vm = vmWithKept(FakeKeptAccounts(listOf(earlier)), { walk.await() }, backgroundScope)
+        // The walk is still running: the page is loaded with this account's own figures ...
+        val first = vm.await { it.loaded && it.total == 1 }
+        assertEquals(100L, first.usedBytes)
+        assertEquals(0L, first.keptBytes)
+        // ... and the kept part joins when it is known.
+        walk.complete(2_000_000L)
+        assertEquals(2_000_100L, vm.await { it.keptBytes > 0 }.usedBytes)
+    }
+
+    @Test fun aFailingWalk_countsZeroForThatAccount_andNeverEndsTheFigure() = runTest {
+        oneDownloadOf100Bytes()
+        val kept = FakeKeptAccounts(listOf(earlier, other))
+        var failing = true
+        val vm = vmWithKept(kept, { sid -> if (sid == earlier.serverId && failing) throw java.io.IOException("unreadable") else 2_000_000L }, backgroundScope)
+        // The other account's size is there although the first walk failed ...
+        assertEquals(2_000_000L, vm.await { it.loaded && it.keptBytes > 0 }.keptBytes)
+        // ... and the figure still follows: the failing directory reads fine now and a change makes it count.
+        failing = false
+        kept.remove(other.serverId)
+        kept.put(other)
+        assertEquals(4_000_000L, vm.await { it.keptBytes == 4_000_000L }.keptBytes)
     }
 }

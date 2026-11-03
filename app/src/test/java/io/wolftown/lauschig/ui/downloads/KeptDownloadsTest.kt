@@ -8,6 +8,8 @@ import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.FakeKeptAccounts
 import io.wolftown.lauschig.account.KeptAccount
+import io.wolftown.lauschig.account.KeptDownloads
+import io.wolftown.lauschig.account.keptDownloads
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.ui.LauschigTheme
@@ -47,7 +49,7 @@ class KeptDownloadsTest {
     @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
     private fun vm() = viewModels.own(
-        KeptDownloadsViewModel(accounts, kept, { sid -> if (sid == a) 2_000_000_000 else 0 }) { k ->
+        KeptDownloadsViewModel(keptDownloads(accounts, kept) { sid -> if (sid == a) 2_000_000_000 else 0 }) { k ->
             if (fails) false else { deleted += k.serverId; kept.remove(k.serverId); true }
         },
     )

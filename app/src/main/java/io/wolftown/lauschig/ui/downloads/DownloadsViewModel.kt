@@ -6,9 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
-import io.wolftown.lauschig.account.AccountData
 import io.wolftown.lauschig.account.AccountStore
-import io.wolftown.lauschig.account.KeptAccountStore
+import io.wolftown.lauschig.account.KeptDownloadSizes
+import io.wolftown.lauschig.account.KeptDownloads
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.DownloadEntryRow
 import io.wolftown.lauschig.db.entities.DownloadState
@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,7 +104,7 @@ private const val FREE_SPACE_REFRESH_MS = 30_000L
  * The download management page: every download of the signed-in server with its state and size, sorted and searched in
  * memory ([DownloadList]). Actions go through the [DownloadManager] exactly like on the detail page, so the worker rules
  * (Wi-Fi, stream priority) apply unchanged. The storage figure also counts what earlier accounts kept on the device
- * ([kept], sized by [keptBytes] like the "Downloads früherer Konten" section), so it is what the device really holds.
+ * ([kept], the list of the "Downloads früherer Konten" section), so it is what the device really holds.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -112,19 +113,19 @@ class DownloadsViewModel(
     private val dao: DownloadDao,
     private val downloads: DownloadManager,
     private val freeSpace: suspend () -> Long?,
-    kept: KeptAccountStore,
-    keptBytes: suspend (serverId: String) -> Long,
+    kept: Flow<List<KeptDownloads>>,
     dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
-    @Inject constructor(accountStore: AccountStore, dao: DownloadDao, downloads: DownloadManager, files: DownloadFiles, kept: KeptAccountStore, data: AccountData) :
-        this(accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept, data::downloadBytes, Dispatchers.Default)
+    @Inject constructor(accountStore: AccountStore, dao: DownloadDao, downloads: DownloadManager, files: DownloadFiles, kept: KeptDownloadSizes) :
+        this(accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept.entries, Dispatchers.Default)
 
     private val sort = MutableStateFlow(DownloadSort.ADDED)
     private val query = MutableStateFlow("")
     private val serverId = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-    // An unreadable directory of an earlier account leaves the figure at this account's own bytes, never takes the page down.
-    private val keptTotal: Flow<Long> = keptDownloads(accountStore, kept, keptBytes).map { list -> list.sumOf { it.bytes } }.catch { emit(0L) }
+    // The page does not wait for the directories of earlier accounts: it starts with this account's own figures and the
+    // kept part joins when it is known. A failure there keeps the last figure; it never takes the page down.
+    private val keptTotal: Flow<Long> = kept.map { list -> list.sumOf { it.bytes } }.onStart { emit(0L) }.catch { }
     @Volatile private var rows: List<DownloadEntryRow> = emptyList()
 
     val state: StateFlow<DownloadsUiState> = serverId.flatMapLatest { sid ->
