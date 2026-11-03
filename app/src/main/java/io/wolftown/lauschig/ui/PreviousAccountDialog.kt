@@ -113,7 +113,11 @@ fun PreviousAccountDialog(question: PreviousAccountQuestion, deleting: Boolean, 
         title = { Text(stringResource(R.string.previous_account_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.previous_account_message, question.account.username, question.account.host, size))
+                // Kept without downloads (only changes not on the server yet): "Daten".
+                Text(
+                    if (question.bytes > 0) stringResource(R.string.previous_account_message, question.account.username, question.account.host, size)
+                    else stringResource(R.string.previous_account_message_data, question.account.username, question.account.host),
+                )
                 if (failed) {
                     Text(
                         stringResource(R.string.kept_delete_failed),

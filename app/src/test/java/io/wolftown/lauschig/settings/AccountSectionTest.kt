@@ -75,6 +75,13 @@ class AccountSectionTest {
         rule.onNodeWithText("1 change is not on the server yet and will be lost when you sign out.").assertExists()
     }
 
+    @Test fun question_changesButNoDownloads_offersToKeepTheData() {
+        show(SignOutStep.Confirm(unsynced = 3, downloadBytes = 0))
+        rule.onNodeWithTag("keepDownloads").assertIsOn()
+        rule.onNodeWithText("Keep data on this device").assertExists()
+        rule.onNodeWithText("3 changes are not on the server yet. They are uploaded when you sign in with this account again.").assertExists()
+    }
+
     @Test fun question_withoutDownloads_hasNoCheckbox_andNothingPending_noWarning() {
         show(SignOutStep.Confirm(unsynced = 0, downloadBytes = 0))
         rule.onNodeWithTag("keepDownloads").assertDoesNotExist()

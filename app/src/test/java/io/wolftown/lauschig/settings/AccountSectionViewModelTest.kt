@@ -123,8 +123,20 @@ class AccountSectionViewModelTest {
         vm.startSignOut()
         val confirm = vm.step.value as SignOutStep.Confirm
         assertEquals(false, confirm.hasDownloads)
+        assertEquals(false, confirm.canKeep)
         vm.confirm()
         assertEquals(listOf(false), signOut.executed)
+    }
+
+    @Test fun noDownloads_butUnsyncedChanges_keepsTheDataByDefault() {
+        signOut.answer = CompletableDeferred(SignOutCheck(unsynced = 3, downloadBytes = 0))
+        val vm = vm()
+        vm.startSignOut()
+        val confirm = vm.step.value as SignOutStep.Confirm
+        assertTrue(confirm.canKeep)
+        assertTrue(confirm.keepDownloads)
+        vm.confirm()
+        assertEquals(listOf(true), signOut.executed)
     }
 
     @Test fun cancel_whileChecking_orAsking_closesWithoutSigningOut() {

@@ -66,9 +66,14 @@ sealed interface SignOutStep {
 
     /** The question; [keepDownloads] is the checkbox (default on: no data loss by default). */
     data class Confirm(val unsynced: Int, val downloadBytes: Long, val keepDownloads: Boolean = true) : SignOutStep {
-        /** Without downloads there is nothing to keep: no checkbox, everything of the account goes. */
         val hasDownloads: Boolean get() = downloadBytes > 0
-        val keeps: Boolean get() = hasDownloads && keepDownloads
+
+        /**
+         * Something to keep: downloads, or changes not on the server yet (then the checkbox keeps the account's data).
+         * Neither: no checkbox, everything of the account goes.
+         */
+        val canKeep: Boolean get() = hasDownloads || unsynced > 0
+        val keeps: Boolean get() = canKeep && keepDownloads
     }
 
     /** Signing out; cannot be cancelled. When it is done the account is gone and the app shows the sign-in. */
@@ -180,9 +185,13 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                 SignOutStep.SigningOut -> Busy(null)
                 is SignOutStep.Confirm -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.sign_out_message, host))
-                    if (step.hasDownloads) {
-                        // "22 MB" never breaks between number and unit.
-                        val size = Formatter.formatShortFileSize(LocalContext.current, step.downloadBytes).replace(' ', '\u00A0')
+                    if (step.canKeep) {
+                        // "22 MB" never breaks between number and unit. Keeping keeps the downloads and the changes.
+                        val label = if (step.hasDownloads) {
+                            stringResource(R.string.sign_out_keep_downloads, Formatter.formatShortFileSize(LocalContext.current, step.downloadBytes).replace(' ', '\u00A0'))
+                        } else {
+                            stringResource(R.string.sign_out_keep_data)
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
@@ -190,7 +199,7 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                                 .testTag("keepDownloads"),
                         ) {
                             Checkbox(checked = step.keepDownloads, onCheckedChange = null)
-                            Text(stringResource(R.string.sign_out_keep_downloads, size), modifier = Modifier.padding(start = 8.dp))
+                            Text(label, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
                     if (step.unsynced > 0) {
