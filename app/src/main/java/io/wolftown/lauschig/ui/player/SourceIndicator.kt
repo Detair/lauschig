@@ -21,6 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.TextAutoSize
 import io.wolftown.lauschig.R
 
 /** Where the loaded title plays from. */
@@ -55,7 +58,14 @@ fun SourceIndicator(source: PlaySource, modifier: Modifier = Modifier, showLabel
     }
     Row(modifier.testTag(tag), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = if (showLabel) null else label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-        if (showLabel) Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        if (showLabel) {
+            val style = MaterialTheme.typography.labelMedium
+            // One line in the player's top bar, also with large text in German ("Heruntergeladen").
+            Text(
+                label, style = style, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize, stepSize = 0.5.sp),
+            )
+        }
     }
 }
 

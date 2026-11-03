@@ -49,4 +49,19 @@ class PlayerActionTest {
         assertFalse("label cut off", layoutOf("Warteschlange").hasVisualOverflow)
         assertFalse("label cut off", layoutOf("Lesezeichen").hasVisualOverflow)
     }
+
+    // The source label in the player's top bar: one line also in German at 130 %, never "Heruntergelad / en".
+    @Test fun sourceLabel_staysOnOneLine() {
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, 1.3f)) {
+                LauschigTheme {
+                    androidx.compose.foundation.layout.Box(Modifier.width(110.dp)) { SourceIndicator(PlaySource.DOWNLOAD) }
+                }
+            }
+        }
+        val layout = layoutOf("Downloaded")
+        org.junit.Assert.assertEquals(1, layout.lineCount)
+        assertFalse("label cut off", layout.hasVisualOverflow)
+    }
 }
