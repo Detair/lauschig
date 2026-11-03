@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.core.graphics.scale
 import androidx.glance.appwidget.updateAll
 import dagger.Binds
 import dagger.Module
@@ -118,7 +119,7 @@ class WidgetSource @Inject constructor(
             val edge = maxOf(bitmap.width, bitmap.height)
             if (edge <= maxPx) return bitmap
             val scale = maxPx.toFloat() / edge
-            return Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+            return bitmap.scale((bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1))
                 .also { if (it !== bitmap) bitmap.recycle() }
         }
     }

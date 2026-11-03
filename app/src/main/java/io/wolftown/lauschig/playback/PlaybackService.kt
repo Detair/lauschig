@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -412,7 +413,8 @@ class PlaybackService : MediaLibraryService() {
                 .setContentTitle(getString(R.string.app_name))
                 .setSilent(true)
                 .build()
-            ServiceCompat.startForeground(this, START_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+            ServiceCompat.startForeground(this, START_NOTIFICATION_ID, notification, type)
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             Log.i(TAG, "play key started nothing: left the foreground start")
         } catch (e: Exception) {

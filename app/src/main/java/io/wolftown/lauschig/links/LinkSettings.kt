@@ -4,11 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.verify.domain.DomainVerificationManager
 import android.content.pm.verify.domain.DomainVerificationUserState
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -63,8 +62,8 @@ fun allowedLinkHosts(context: Context): Set<String>? {
 
 /** Android's page where the user allows the hosts ("Open by default"); app details below Android 12. */
 fun openByDefaultIntent(context: Context): Intent =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:${context.packageName}"))
-    else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, "package:${context.packageName}".toUri())
+    else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())
 
 @Composable
 fun LinksSection(viewModel: LinkSettingsViewModel = hiltViewModel()) {

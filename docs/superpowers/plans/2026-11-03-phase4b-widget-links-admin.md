@@ -89,3 +89,43 @@ Scan/match only against the local test server (emulator), never a real server.
 Plan → widget → Verbindungsstatus (with the debounce) → links → admin; one or more commits per task on `phase-4`.
 End: `timeout 900 ./gradlew testDebugUnitTest lintDebug assembleDebug -q`, `CarBrowseTest` on emulator-5554 with
 `leaveApksInstalledAfterRun`, debug APK reinstalled.
+
+## Implementation notes (2026-11-03)
+
+Decisions made or changed while building it:
+
+- **Glance, not RemoteViews.** Glance 1.2.0 sets its own data URI on a service intent only when none is set, so each
+  media-button intent carries `lauschig://widget/key/<code>` and the PendingIntents stay apart; Media3 finds the
+  session through `onGetSession` (the data is no session URI). `GlanceTheme` gives Material You colors; `SizeMode.Responsive`
+  with SMALL 48×48 dp (1×1 … 2×2: cover + play/pause) and WIDE 200×48 dp (row with title, chapter, −30 s, play/pause,
+  +30 s, progress; default 4×1). Tests run the composables with `runGlanceAppWidgetUnitTest` (Robolectric for strings).
+- **Buttons like Media3's notification**: PLAY (widget shows paused) = `getForegroundService`, PAUSE and
+  REWIND/FAST_FORWARD (`CarSafePlayer`: ±30 s) = `getService`. Without a title `LastTitleStarter` can resume, play opens
+  the app. The service writes a fresh paused state when it starts, so a widget that still said "playing" after a
+  process death corrects itself.
+- **A failing resumption crashed the app (also 4A's Bluetooth path).** With the process dead, offline and a last title
+  that is not downloaded, a play key ended in `ForegroundServiceDidNotStartInTimeException` 30 s later (API 35
+  emulator): Media3 only goes foreground once something plays. `ForegroundStartGuard`: a play-key intent arms it in
+  `onStartCommand`; a failed resumption (reported by `LibraryCallback.onResumption`) or nothing playing after 8 s makes
+  the service go foreground for a moment with its own low-importance channel, stop it and `stopSelf()` (Media3's
+  `stopSelfSafely` does the same), plus a toast with the reason. Verified on the emulator: no crash after 40 s.
+- **Connection log in memory only**: probes and decisions of this process; a fresh process starts empty and the first
+  probe fills it. `ProgressSync` writes a `SyncStamps` entry `progress_sync:<serverId>` after each successful run.
+- **Offline banner**: `ApiProvider.checking` (true from the start of the shared probe loop, and again after it stopped
+  because nobody listened, until its first answer). Banner and dimming need "not online" for 3 s (was 2 s); "Offline"
+  only when a probe answered, "Verbinde …" while the first check is still running. The banner is tappable (window).
+- **Links**: generated manifest overlay via `variant.sources.manifests.addGeneratedManifestFile`; the property is
+  validated (host names only). Series links resolve through the `seriesId` Room knows from loaded details (new
+  `ItemDao.seriesNameById`); no extra API call for unknown series. The settings section reads the user's choice with
+  `DomainVerificationManager` (12+) and re-reads it on resume.
+- **Admin**: quick match ships – ABS 2.37.1 sends `provider` per library (the test library: `audible.de`) and its own
+  "match all" passes exactly `{ provider: library.provider }`; Lauschig sends only that (title/author come from the
+  item on the server). A library without a provider shows "keinen Metadaten-Anbieter" instead of guessing. The detail
+  page gets its own admin icon (dropdown) next to the existing "more" menu instead of growing the shared progress menu.
+  "Wer ist online" names the signed-in user's own open sessions too (they have no socket entry).
+
+Not done / left for later: the series page for a series Lauschig has never seen (needs `GET /api/series/<id>`); the
+widget preview is a static layout (no generated preview); podcast pages have no admin entries (book detail page only).
+
+Verification: see the phase report (unit tests, lint, assemble, `CarBrowseTest` on emulator-5554, widget presses with
+the process killed, failing resumption, links via VIEW/SEND, admin scan/match/online users against the local test ABS).

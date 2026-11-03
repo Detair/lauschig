@@ -471,7 +471,7 @@
     <string name="connection_section_sync">Sync</string>
     <string name="connection_last_sync">Progress last synced %1$s</string>
     <string name="connection_last_sync_never">Progress not synced yet on this device</string>
-    <string name="connection_pending">Waiting to be sent: %1$d progress, %2$d listening sessions</string>
+    <string name="connection_pending">Waiting to be sent – progress: %1$d, listening sessions: %2$d</string>
     <string name="connection_no_socket">Lauschig keeps no live (socket) connection to the server; it syncs over HTTP.</string>
     <string name="connection_reconnect">Reconnect</string>
     <string name="connection_reconnecting">Checking all addresses …</string>

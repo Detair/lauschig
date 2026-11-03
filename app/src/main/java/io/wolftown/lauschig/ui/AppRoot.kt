@@ -30,7 +30,7 @@ import io.wolftown.lauschig.ui.nav.Browse
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.nav.ItemDetail
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import kotlinx.coroutines.launch
 import androidx.navigation.NavDestination.Companion.hasRoute
 import kotlinx.coroutines.flow.first
@@ -51,7 +51,7 @@ fun AppRoot(
     links: LinkViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(openRequest) {
         when (openRequest) {
@@ -79,7 +79,7 @@ fun AppRoot(
             is LinkTarget.Item -> navController.navigate(ItemDetail(target.itemId)) { launchSingleTop = true }
             is LinkTarget.Series -> navController.navigate(Browse(BrowseKind.SERIES, target.name)) { launchSingleTop = true }
             // Outside this effect: clearing the request restarts it, which would dismiss the snackbar at once.
-            is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(context.getString(target.text)) }
+            is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(resources.getString(target.text)) }
         }
         onLinkHandled()
     }

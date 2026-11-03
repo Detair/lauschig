@@ -471,7 +471,7 @@
     <string name="connection_section_sync">Synchronisierung</string>
     <string name="connection_last_sync">Fortschritt zuletzt synchronisiert %1$s</string>
     <string name="connection_last_sync_never">Fortschritt auf diesem Gerät noch nicht synchronisiert</string>
-    <string name="connection_pending">Wartet auf Versand: %1$d Fortschritte, %2$d Hörsitzungen</string>
+    <string name="connection_pending">Wartet auf Versand – Fortschritte: %1$d, Hörsitzungen: %2$d</string>
     <string name="connection_no_socket">Lauschig hält keine Live-Verbindung (Socket) zum Server, es synchronisiert über HTTP.</string>
     <string name="connection_reconnect">Neu verbinden</string>
     <string name="connection_reconnecting">Prüfe alle Adressen …</string>

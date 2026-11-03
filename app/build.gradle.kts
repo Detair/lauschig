@@ -31,7 +31,8 @@ abstract class LinkManifestTask : DefaultTask() {
     fun write() {
         val list = hosts.get()
         val filter = if (list.isEmpty()) "" else buildString {
-            appendLine("            <intent-filter>")
+            // No autoVerify on purpose: the server has no assetlinks.json (the user allows the hosts instead).
+            appendLine("            <intent-filter tools:ignore=\"AppLinkWarning\">")
             appendLine("                <action android:name=\"android.intent.action.VIEW\" />")
             appendLine("                <category android:name=\"android.intent.category.DEFAULT\" />")
             appendLine("                <category android:name=\"android.intent.category.BROWSABLE\" />")
@@ -50,7 +51,7 @@ abstract class LinkManifestTask : DefaultTask() {
             |<manifest xmlns:android="http://schemas.android.com/apk/res/android"
             |    xmlns:tools="http://schemas.android.com/tools">
             |    <application>
-            |        <activity android:name="io.wolftown.lauschig.MainActivity" tools:node="merge">
+            |        <activity android:name="io.wolftown.lauschig.MainActivity" android:exported="true" tools:node="merge">
             |$filter        </activity>
             |    </application>
             |</manifest>
