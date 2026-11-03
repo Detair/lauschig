@@ -600,9 +600,9 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Keep playing in the background; stop only if nothing is playing.
+        // Keep playing in the background; stop only if nothing is playing (and never while the play-key guard waits).
         val p = player
-        if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+        if (stopsOnTaskRemoved(p != null, p?.playWhenReady == true, p?.mediaItemCount ?: 0, startGuard?.armed == true)) stopSelf()
     }
 
     override fun onDestroy() {
@@ -635,6 +635,14 @@ class PlaybackService : MediaLibraryService() {
     }
 
     companion object {
+        /**
+         * Swiped from Recents: stop unless something plays. Never while the play-key guard is armed: a service started
+         * with `startForegroundService` that stops before `startForeground` crashes; the guard settles and stops an empty
+         * service itself.
+         */
+        fun stopsOnTaskRemoved(hasPlayer: Boolean, playWhenReady: Boolean, itemCount: Int, guardArmed: Boolean): Boolean =
+            !guardArmed && (!hasPlayer || !playWhenReady || itemCount == 0)
+
         /** The service runs in this process (the widget shows "playing" only then). */
         @Volatile
         var running: Boolean = false
