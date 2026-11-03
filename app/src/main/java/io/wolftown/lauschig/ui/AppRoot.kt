@@ -4,6 +4,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import io.wolftown.lauschig.MainActivity
+import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.ui.nav.Cleanup
 import io.wolftown.lauschig.ui.nav.ConnectionStatus
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ private const val PLAYER_OPEN_WAIT_MS = 2_000L
 @Composable
 fun AppRoot(
     startDestination: Any,
+    appearance: Appearance = Appearance(),
     viewModel: AppViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
@@ -92,7 +94,7 @@ fun AppRoot(
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection, checking)
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
-        LauschigTheme {
+        LauschigTheme(appearance) {
             AppScaffold(
                 connection = connection,
                 miniPlayer = {

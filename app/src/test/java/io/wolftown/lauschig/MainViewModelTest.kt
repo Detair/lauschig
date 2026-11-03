@@ -51,4 +51,18 @@ class MainViewModelTest {
     }
 
     @Test fun noAccount_setup() = assertEquals(Setup, viewModels.own(MainViewModel(FakeAccountStore())).startDestination.value)
+
+    @Test fun appearance_nullUntilRead_thenTheStoredLook() {
+        val source = kotlinx.coroutines.flow.MutableSharedFlow<io.wolftown.lauschig.settings.Appearance>()
+        val vm = viewModels.own(MainViewModel(FakeAccountStore(), source))
+        assertEquals(null, vm.appearance.value) // the splash waits for this
+        val dark = io.wolftown.lauschig.settings.Appearance(io.wolftown.lauschig.settings.ThemeMode.DARK, pureBlack = true)
+        kotlinx.coroutines.runBlocking { source.emit(dark) }
+        assertEquals(dark, vm.appearance.value)
+    }
+
+    @Test fun appearance_unreadableStore_givesDefaults() {
+        val vm = viewModels.own(MainViewModel(FakeAccountStore(), flow { throw IOException("corrupt") }))
+        assertEquals(io.wolftown.lauschig.settings.Appearance(), vm.appearance.value)
+    }
 }

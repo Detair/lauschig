@@ -5,11 +5,18 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.playback.LastTitleStarter
+import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.PlaybackSettings
+import io.wolftown.lauschig.settings.UiSettings
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.Start
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -24,11 +31,20 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel(
     accounts: AccountStore,
+    appearanceSource: Flow<Appearance> = flowOf(Appearance()),
     /** "Continue on app start" (see [continueOnLauncherStart]); never blocks the start. */
     private val onStartWithAccount: suspend () -> Unit = {},
 ) : ViewModel() {
-    @Inject constructor(accounts: AccountStore, settings: PlaybackSettings, starter: LastTitleStarter) :
-        this(accounts, { if (settings.continueOnStart.first()) starter.resumeLast(maxAgeMs = CONTINUE_MAX_AGE_MS) })
+    @Inject constructor(accounts: AccountStore, settings: PlaybackSettings, starter: LastTitleStarter, ui: UiSettings) :
+        this(accounts, ui.appearance, { if (settings.continueOnStart.first()) starter.resumeLast(maxAgeMs = CONTINUE_MAX_AGE_MS) })
+
+    /**
+     * The look (theme, colors, text size); null until the first local read, so the splash stays up until the first
+     * frame can be drawn in the right theme. An unreadable store gives the defaults.
+     */
+    val appearance: StateFlow<Appearance?> = appearanceSource
+        .catch { e -> if (e is CancellationException) throw e else emit(Appearance()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _startDestination = MutableStateFlow<Any?>(null)
     val startDestination: StateFlow<Any?> = _startDestination

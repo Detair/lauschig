@@ -538,4 +538,20 @@
     <string name="admin_matched_nothing">Match found, nothing changed</string>
     <string name="admin_no_match">No match: %1$s</string>
     <string name="admin_no_provider">The library has no metadata provider</string>
+    <string name="settings_section_look">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_hint">Light, dark or like the system</string>
+    <string name="theme_system">Like the system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_pure_black">Pure black</string>
+    <string name="settings_pure_black_hint">Black background in the dark theme – easy on OLED screens and at night</string>
+    <string name="settings_pure_black_light">Only in the dark theme</string>
+    <string name="settings_dynamic_color">Dynamic colors</string>
+    <string name="settings_dynamic_color_hint">Colors matching your wallpaper</string>
+    <string name="settings_font_scale">Text size</string>
+    <string name="settings_font_scale_hint">On top of the system\'s text size</string>
+    <string name="font_scale_percent">%1$d %%</string>
+    <string name="settings_preview_title">Preview</string>
+    <string name="settings_preview_text">This is how titles and text look.</string>
 </resources>

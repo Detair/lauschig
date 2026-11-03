@@ -1,0 +1,56 @@
+package io.wolftown.lauschig.settings
+
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+class UiSettingsTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val store by lazy { PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("ui.preferences_pb") } }
+    private val settings by lazy { UiSettings(store) }
+
+    @After fun tearDown() = scope.cancel()
+
+    @Test fun defaults_matchTheAppBefore() = runTest {
+        assertEquals(Appearance(ThemeMode.SYSTEM, pureBlack = false, dynamicColor = true, fontScalePercent = 100), settings.appearance.first())
+    }
+
+    @Test fun everyAppearanceValue_isStored() = runTest {
+        settings.setTheme(ThemeMode.DARK)
+        settings.setPureBlack(true)
+        settings.setDynamicColor(false)
+        settings.setFontScale(130)
+        assertEquals(Appearance(ThemeMode.DARK, pureBlack = true, dynamicColor = false, fontScalePercent = 130), settings.appearance.first())
+        // A second instance on the same file (a new process) reads the same.
+        assertEquals(130, UiSettings(store).appearance.first().fontScalePercent)
+    }
+
+    @Test fun fontScale_onlyTheOfferedSteps() = runTest {
+        settings.setFontScale(115)
+        settings.setFontScale(300)
+        assertEquals(115, settings.appearance.first().fontScalePercent)
+    }
+
+    @Test fun unknownStoredValues_fallBackToDefaults() = runTest {
+        store.edit {
+            it[stringPreferencesKey("theme_mode")] = "SEPIA"
+            it[intPreferencesKey("font_scale_percent")] = 42
+        }
+        val a = settings.appearance.first()
+        assertEquals(ThemeMode.SYSTEM, a.theme)
+        assertEquals(100, a.fontScalePercent)
+    }
+}

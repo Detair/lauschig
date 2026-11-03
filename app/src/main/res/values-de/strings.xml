@@ -538,4 +538,20 @@
     <string name="admin_matched_nothing">Treffer gefunden, nichts geändert</string>
     <string name="admin_no_match">Kein Treffer: %1$s</string>
     <string name="admin_no_provider">Die Bibliothek hat keinen Metadaten-Anbieter</string>
+    <string name="settings_section_look">Darstellung</string>
+    <string name="settings_theme">Design</string>
+    <string name="settings_theme_hint">Hell, dunkel oder wie das System</string>
+    <string name="theme_system">Wie das System</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="settings_pure_black">Reines Schwarz</string>
+    <string name="settings_pure_black_hint">Schwarzer Hintergrund im dunklen Design – schont OLED-Displays und ist nachts angenehm</string>
+    <string name="settings_pure_black_light">Nur im dunklen Design</string>
+    <string name="settings_dynamic_color">Dynamische Farben</string>
+    <string name="settings_dynamic_color_hint">Farben passend zum Hintergrundbild</string>
+    <string name="settings_font_scale">Schriftgröße</string>
+    <string name="settings_font_scale_hint">Zusätzlich zur Schriftgröße des Systems</string>
+    <string name="font_scale_percent">%1$d %%</string>
+    <string name="settings_preview_title">Vorschau</string>
+    <string name="settings_preview_text">So sehen Titel und Text aus.</string>
 </resources>
