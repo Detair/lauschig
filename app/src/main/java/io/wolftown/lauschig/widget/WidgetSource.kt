@@ -17,6 +17,7 @@ import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.playback.LastTitleStarter
+import io.wolftown.lauschig.playback.PlaybackService
 import io.wolftown.lauschig.playback.loadPlayable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +54,7 @@ class WidgetSource @Inject constructor(
 
     fun views(): Flow<WidgetView> = combine(store.state, coverTick) { stored, _ -> stored }
         .map { stored ->
-            val state = stored ?: fallback()
+            val state = WidgetMapping.forDisplay(stored, PlaybackService.running) ?: fallback()
             // "Play" from the widget resumes through the service (onPlaybackResumption); without a title it can resume
             // the button opens the app instead, so no foreground start ends without playback.
             val canResume = state.hasTitle && (state.playing || safe { last.last() } != null)

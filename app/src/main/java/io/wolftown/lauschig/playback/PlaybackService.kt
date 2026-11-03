@@ -153,6 +153,7 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class) // transfer listener, load control
     override fun onCreate() {
         super.onCreate()
+        running = true
         // Requests to the last online server keep its authenticated client (token refresh included) even after the state
         // flipped to offline: a failed probe on a busy link must not turn the next stream request into a 401 that stops
         // playback. Other origins get the plain client (no credentials).
@@ -600,25 +601,31 @@ class PlaybackService : MediaLibraryService() {
         player = null
         scope.cancel()
         carScope.cancel()
+        running = false
         super.onDestroy()
     }
 
-    private companion object {
+    companion object {
+        /** The service runs in this process (the widget shows "playing" only then). */
+        @Volatile
+        var running: Boolean = false
+            private set
+
         /** Request code of the session activity (the cleanup notification uses 0). */
-        const val SESSION_ACTIVITY_REQUEST = 1
-        const val SEEK_MS = 30_000L
-        const val MIN_BUFFER_MS = 5 * 60_000
-        const val MAX_BUFFER_MS = 10 * 60_000
-        const val START_BUFFER_MS = 2_500
-        const val REBUFFER_MS = 5_000
-        const val MONITOR_INTERVAL_MS = 500L
-        const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
-        const val ONLINE_WAIT_MS = 3_000L
-        const val LIBRARY_DEBOUNCE_MS = 1_500L
-        const val MAX_SUBSCRIBED = 32
-        const val TAG = "PlaybackService"
-        const val START_CHANNEL = "playback_start"
+        private const val SESSION_ACTIVITY_REQUEST = 1
+        private const val SEEK_MS = 30_000L
+        private const val MIN_BUFFER_MS = 5 * 60_000
+        private const val MAX_BUFFER_MS = 10 * 60_000
+        private const val START_BUFFER_MS = 2_500
+        private const val REBUFFER_MS = 5_000
+        private const val MONITOR_INTERVAL_MS = 500L
+        private const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
+        private const val ONLINE_WAIT_MS = 3_000L
+        private const val LIBRARY_DEBOUNCE_MS = 1_500L
+        private const val MAX_SUBSCRIBED = 32
+        private const val TAG = "PlaybackService"
+        private const val START_CHANNEL = "playback_start"
         /** Not Media3's notification id (1001) nor its shutdown id (20938). */
-        const val START_NOTIFICATION_ID = 4711
+        private const val START_NOTIFICATION_ID = 4711
     }
 }

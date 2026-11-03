@@ -61,6 +61,14 @@ class WidgetStateTest {
         assertEquals(null, WidgetState().coverRef())
     }
 
+    @Test fun storedPlaying_onlyCountsWhileTheServiceRuns() {
+        // After a process death, a reboot or an app update the store may still say "playing".
+        val stored = WidgetState("0123456789abcdef", "li_1", "Titel", null, 0, playing = true, positionMs = 1, durationMs = 2)
+        assertEquals(stored.copy(playing = false), WidgetMapping.forDisplay(stored, serviceRunning = false))
+        assertEquals(stored, WidgetMapping.forDisplay(stored, serviceRunning = true))
+        assertEquals(null, WidgetMapping.forDisplay(null, serviceRunning = true))
+    }
+
     @Test fun position_isClampedToTheBook() {
         assertEquals(180_000, WidgetMapping.map(snap(index = 2, positionMs = 99_000), null).positionMs)
     }

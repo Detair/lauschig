@@ -52,6 +52,13 @@ object WidgetMapping {
     private const val STATE_READY = 3 // Player.STATE_READY
 
     /**
+     * What the widget shows of the [stored] state: "playing" only while the playback service runs in this process – after
+     * a process death, a reboot or an app update the store can still say "playing" (pause would then do nothing).
+     */
+    fun forDisplay(stored: WidgetState?, serviceRunning: Boolean): WidgetState? =
+        stored?.let { if (it.playing && !serviceRunning) it.copy(playing = false) else it }
+
+    /**
      * The widget state for [s]. An empty player keeps [previous]'s title, paused (the title can be resumed from the
      * widget); with no previous title the widget is empty. "Playing" is the user's intent (play/pause button), like
      * the notification: buffering counts, an ended or failed title does not.
