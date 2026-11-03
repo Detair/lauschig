@@ -22,8 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,6 +104,12 @@ fun NavDestination.isPaneHost(): Boolean = hasRoute<Library>() || hasRoute<Searc
 private const val SELECTION = "listDetailPane.selection"
 /** A page the outer stack hands to the pane ([AdoptOuterPageIntoPane]); the pane takes it and clears it. */
 private const val HANDOFF = "listDetailPane.handoff"
+/**
+ * Counts the pane's page moves onto the outer stack; the nested controller is keyed by it, so a later wide window starts
+ * with a fresh one. Kept here too: after the rail flipped, the position-keyed saved state of an older controller would
+ * be found again under generation 0 and bring a page back that the user had backed out of.
+ */
+private const val GENERATION = "listDetailPane.generation"
 
 /**
  * Library and search on wide windows: the list on the start side, the details of what was tapped beside it.
@@ -134,8 +139,6 @@ fun ListDetailPane(
     paneGraph: NavGraphBuilder.(NavHostController) -> Unit = { appPaneGraph(it) },
 ) {
     val saved = host.savedStateHandle
-    // A new nested controller after the pane's page moved to the outer stack, so a later wide window starts empty.
-    var generation by rememberSaveable { mutableIntStateOf(0) }
     if (!twoPane) {
         LaunchedEffect(Unit) {
             // The pane's page, or one handed over just before the window shrank again, goes onto the outer stack.
@@ -143,7 +146,7 @@ fun ListDetailPane(
             saved[SELECTION] = null
             page?.let {
                 outer.navigate(it.route())
-                generation++
+                saved[GENERATION] = (saved.get<Int>(GENERATION) ?: 0) + 1
             }
         }
         list(
@@ -155,7 +158,9 @@ fun ListDetailPane(
         )
         return
     }
-    val handed by saved.getStateFlow<ArrayList<String>?>(HANDOFF, null).collectAsState()
+    // `getStateFlow` returns a new wrapper on every call; collecting a new one each time would restart the collector.
+    val handed by remember(saved) { saved.getStateFlow<ArrayList<String>?>(HANDOFF, null) }.collectAsState()
+    val generation by remember(saved) { saved.getStateFlow(GENERATION, 0) }.collectAsState()
     key(generation) {
         val inner = rememberNavController()
         val top by inner.currentBackStackEntryAsState()

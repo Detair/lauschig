@@ -380,6 +380,29 @@ class ListDetailPaneTest {
         rule.onNodeWithText("the list").assertIsDisplayed()
     }
 
+    // A large phone, wide -> narrow -> backed out of the page -> wide again: the pane must not bring the page back.
+    // (The pane's old nested controller state is still in the saved state; the counter that discards it is not found
+    // again after the rail flips twice, unless it is kept with the host entry.)
+    @Test fun recreation_aPageBackedOutOfDoesNotReappearInThePane_whenTheRailFlips() {
+        val restoration = StateRestorationTester(rule)
+        frozen = Window(twoPane = true, rail = true)
+        show(setContent = restoration::setContent)
+        rule.onNodeWithText("open b").performClick()
+        assertShownOnce(inPane = true)
+        frozen = Window(twoPane = false, rail = false)
+        restoration.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        assertShownOnce(inPane = false)
+        onOuter { it.popBackStack() }
+        rule.waitForIdle()
+        rule.onNodeWithText("the list").assertIsDisplayed()
+        frozen = Window(twoPane = true, rail = true)
+        restoration.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        rule.onNodeWithTag("emptyPane").assertIsDisplayed()
+        assertEquals("pane:b", 0, count("pane:b"))
+    }
+
     @Test fun recreation_whileWide_keepsThePanePage() {
         recreate(Window(twoPane = true, rail = true), Window(twoPane = true, rail = true))
         assertShownOnce(inPane = true)
