@@ -60,6 +60,16 @@ class IncomingIntentsTest {
         assertEquals(null, IncomingIntents.consume(voice, replay = true).voice)
     }
 
+    @Test fun consume_onReplay_theOpenExtraIsDropped() {
+        // After a process death Recents restores the task with its original intent: the widget's or notification's
+        // "open the player" was used then and must not pull the user out of where they were.
+        for (target in listOf(MainActivity.OPEN_PLAYER, MainActivity.OPEN_CLEANUP)) {
+            val restored = Intent(Intent.ACTION_MAIN).putExtra(MainActivity.EXTRA_OPEN, target)
+            assertEquals(Incoming(), IncomingIntents.consume(restored, replay = true))
+            assertEquals(null, restored.getStringExtra(MainActivity.EXTRA_OPEN))
+        }
+    }
+
     @Test fun consume_ssoCallback_isNeverALink() {
         val sso = Intent(Intent.ACTION_VIEW, Uri.parse("lauschig://oauth?code=1&state=2"))
         val r = IncomingIntents.consume(sso, replay = false)

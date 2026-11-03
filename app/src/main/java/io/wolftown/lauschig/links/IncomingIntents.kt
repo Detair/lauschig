@@ -38,15 +38,16 @@ object IncomingIntents {
     }
 
     /**
-     * Takes what [intent] asks for and strips it from the intent. A recreation ([replay]: rotation, process restart)
-     * hands the old intent again: voice, links and the SSO redirect were used already and are left alone then. The open
-     * extra is removed after its first use.
+     * Takes what [intent] asks for and strips it from the intent. A recreation ([replay]: rotation, process restart,
+     * a task restored from Recents after a process death – then with its original extras) hands the old intent again:
+     * every one-shot request (open a screen, voice, links, the SSO redirect) was used already and is ignored; the open
+     * extra is still stripped.
      */
     fun consume(intent: Intent?, replay: Boolean): Incoming {
         if (intent == null) return Incoming()
         val open = intent.getStringExtra(MainActivity.EXTRA_OPEN)
         intent.removeExtra(MainActivity.EXTRA_OPEN)
-        if (replay) return Incoming(open = open)
+        if (replay) return Incoming()
         var voice: VoiceRequest? = null
         if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             voice = VoiceRequest(intent.getStringExtra(SearchManager.QUERY), intent.extras)

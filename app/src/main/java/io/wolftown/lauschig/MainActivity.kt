@@ -61,7 +61,8 @@ class MainActivity : ComponentActivity() {
         }
         // Before handleOpen strips the extras it consumes.
         if (isLauncherStart(intent, recreated = savedInstanceState != null)) viewModel.continueOnLauncherStart()
-        // A recreation (rotation, process restart) hands us the old intent again; its SSO link was already used.
+        // A recreation (rotation, process restart, Recents after a process death) hands us the old intent again; its
+        // one-shot requests (open the player, links, voice, SSO) were already used.
         handleOpen(intent, replay = savedInstanceState != null)
         setContent {
             val appearance = viewModel.appearance.collectAsStateWithLifecycle().value ?: Appearance()
