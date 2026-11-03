@@ -156,3 +156,37 @@ the process killed, failing resumption, links via VIEW/SEND, admin scan/match/on
 - **Tests** (#9): widget actions checked with `assertHasStartServiceClickAction` (intents built once per key);
   `WidgetPublisher` takes a snapshot function (ticker, release, stale-state correction tested); MainActivity's routing
   moved to `IncomingIntents.consume` (replay, stripping, open extra, voice, SSO never a link).
+
+## Fix round 2 (re-review of the play-key guard, 2026-11-03)
+
+Checked against the sources before changing anything:
+- AOSP `ActiveServices` (android-13.0.0_r1 vs android-14.0.0_r1): `getForegroundServiceTypeLocked` returns
+  `r.foregroundServiceType` whether or not the service is foreground, and only 14 resets it in the stopForeground
+  branch – the type says nothing on API 29–33. A start of a service whose record is foreground gets no deadline
+  ("Service already foreground; no new timeout"); any later `startForeground` clears the deadline; bringing the service
+  down before it crashes the app; `startForeground` with another id cancels the previous foreground notification.
+- Media3 1.11.1: the media notification is `DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID` = 1001, posted with
+  `NotificationManager.notify(1001, …)` without tag (Lauschig keeps the default provider). For a player that does not
+  need the foreground, every notification update calls `stopForeground(DETACH)` itself. `isPlaybackOngoing()` /
+  `startedInForeground` is never reset after the first foreground start, so it cannot tell "foreground now" either.
+
+Final design (`ForegroundStartGuard` + `PlaybackService.StartHost`):
+- Arm on every play key (PLAY, PLAY_PAUSE, HEADSETHOOK) while nothing plays, loaded or empty; the first press's deadline
+  counts (7 s / 20 s). Engagement ends the arming for good (play → pause within the timeout never settles).
+- Settle at the deadline, or at once when the resumption fails, never reading the foreground type:
+  - loaded title and Media3's notification (id 1001, no tag) is posted → `startForeground(1001, that notification)`:
+    same id and object, nothing swapped or cancelled, no stop. Media3's next update detaches it again by itself (doing a
+    DETACH here would end Media3's own foreground after a recent pause, so it is left to Media3);
+  - otherwise placeholder (4711): with a resumption still running it stays up, at most 60 s (cap), else it is left at
+    once: `stopForeground(REMOVE)` plus `cancel(4711)` (Media3's own DETACH may have detached it meanwhile) and
+    `stopSelf()` only for an empty player (a loaded title stays with Media3). The toast for a failed resumption stays.
+- Deviation from the ruling: none in substance; "stop" is limited to an empty player (a loaded but unplayable title is
+  not unloaded), and the placeholder is also cancelled explicitly.
+
+Verified on the emulator (API 35): play on a loaded title, pause after 2 s → notification 1001 still posted after 15 s;
+headset double tap on a paused title (platform dispatch) → +30 s, no crash after 40 s, notification intact; failing
+resumption with the process killed, twice in a row (first with Android still holding the record as foreground, then
+not) and twice more with the app's controller bound → placeholder shown and left each time, process alive after 42 s,
+no placeholder left behind. New instrumented `PlayKeyGuardTest`: a held PLAY key (Media3 ignores repeats) and two
+headset presses delivered with `startForegroundService` on a paused title survive the deadline; the held key went
+through the "adopt the media notification" path.
