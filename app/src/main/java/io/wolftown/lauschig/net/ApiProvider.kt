@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.net
 
 import io.wolftown.lauschig.absapi.AbsClientFactory
+import io.wolftown.lauschig.absapi.admin.AdminApi
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
@@ -8,6 +9,10 @@ import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -23,7 +28,8 @@ import retrofit2.Retrofit
  * [TokenAuthenticator] whose refresh call uses [okHttp] itself (no authenticator, no recursion, no redirects).
  */
 class ApiProvider(
-    connection: Flow<ConnectionState>,
+    /** The account server's connection; `null` = a new server, reset to Offline and checking (see `accountConnection`). */
+    connection: Flow<ConnectionState?>,
     okHttp: OkHttpClient,
     private val store: AccountStore,
     scope: CoroutineScope,
@@ -34,13 +40,30 @@ class ApiProvider(
     private val cache = HashMap<HttpUrl, Retrofit>()
     private val clients = HashMap<HttpUrl, OkHttpClient>()
 
-    // Shared so that several API flows do not each run their own probe loop.
-    private val shared = connection.stateIn(scope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
+    // Shared so that several API flows do not each run their own probe loop. When nobody has listened for 5 s the
+    // value falls back to Offline: a process kept alive at home must not hand an old Online(LOCAL) to the next
+    // listener (e.g. the car starting the playback service) before a fresh probe answered.
+    private val firstCheck = MutableStateFlow(true)
+    private val shared = connection
+        .onStart { firstCheck.value = true }
+        .onEach { firstCheck.value = it == null }
+        .map { it ?: ConnectionState.Offline }
+        .onCompletion { firstCheck.value = true }
+        .stateIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline)
+
+    /**
+     * True while the shared probe loop has not answered yet since it (re)started or the server changed: its
+     * [ConnectionState.Offline] is then only the initial value, not a result. For the UI's offline indicator only; the state itself is unchanged.
+     */
+    val checking: StateFlow<Boolean> = firstCheck
 
     /** The shared connection state (one probe loop for everyone). */
     val connection: Flow<ConnectionState> get() = shared
 
-    /** Same shared state with a synchronous [StateFlow.value] (stays [ConnectionState.Offline] until something collects). */
+    /**
+     * Same shared state with a synchronous [StateFlow.value]: [ConnectionState.Offline] until something collects, and
+     * again once nothing has collected for a few seconds (never an old value from before).
+     */
     val connectionState: StateFlow<ConnectionState> get() = shared
 
     private val retrofit: Flow<Retrofit?> = shared
@@ -50,6 +73,7 @@ class ApiProvider(
     val authApi: Flow<AuthApi?> = retrofit.map { it?.create(AuthApi::class.java) }
     val libraryApi: Flow<LibraryApi?> = retrofit.map { it?.create(LibraryApi::class.java) }
     val meApi: Flow<MeApi?> = retrofit.map { it?.create(MeApi::class.java) }
+    val adminApi: Flow<AdminApi?> = retrofit.map { it?.create(AdminApi::class.java) }
 
     /** Guarded client without credentials, for requests while no server is online (they fail fast). */
     fun unauthenticatedClient(): OkHttpClient = okHttp

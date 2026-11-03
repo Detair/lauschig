@@ -44,6 +44,8 @@ class DownloadManagerTest {
         mgr.enqueue(s, "it", NetworkType.CONNECTED)
         assertEquals(NetworkType.CONNECTED, waiting().constraints.requiredNetworkType)
         assertEquals(DownloadState.QUEUED, db.downloadDao().get(s, "it")!!.state)
+        // Sign-out cancels every download of a server by this tag.
+        assertTrue(DefaultDownloadManager.serverTag(s) in waiting().tags)
     }
 
     @Test fun override_replacesWaitingWorkWithAnotherNetwork() = runBlocking {

@@ -14,6 +14,9 @@ interface SyncTrigger {
 
     /** Progress and sessions only, a few seconds from now (after a pause or the end of a title); repeated calls debounce. */
     fun syncProgress() {}
+
+    /** A full sync in about a minute (after an admin started a library scan, which the server runs in the background). */
+    fun syncLibrarySoon() = syncNow()
 }
 
 @Module

@@ -171,6 +171,20 @@ class PlaybackProgressBridgeTest {
         assertEquals(650.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
     }
 
+    @Test fun clearedQueue_endsThePlayer_butNeverMarksTheTitleFinished() = runTest {
+        // A controller (car, watch, Assistant) clears the queue: ExoPlayer goes to ENDED with an empty timeline.
+        val (p, br) = playingA()
+        val old = p.positionInfo()
+        p.items = emptyList(); p.index = 0; p.positionMs = 0; p.playing = false; p.state = Player.STATE_ENDED
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_REMOVE)
+        br.onIsPlayingChanged(false)
+        br.onPlaybackStateChanged(Player.STATE_ENDED)
+        runCurrent()
+        val saved = db.progressDao().get(s, "A")!!
+        assertEquals(800.0, saved.currentTimeSec, 0.0)
+        assertFalse(saved.isFinished)
+    }
+
     @Test fun currentGlobalSec_isNull_whenQueueHoldsAnotherItem() = runTest {
         val (p, br) = playingA()
         assertEquals(800.0, br.currentGlobalSec()!!, 0.0)

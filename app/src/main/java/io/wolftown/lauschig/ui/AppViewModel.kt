@@ -46,6 +46,9 @@ class AppViewModel @Inject constructor(
     val connection: StateFlow<ConnectionState> =
         api.connection.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
 
+    /** The first connection check since the start is still running (the banner shows "Verbinde …", not "Offline"). */
+    val checking: StateFlow<Boolean> = api.checking
+
     val serverId: StateFlow<String?> =
         accountStore.account.map { it?.serverId }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

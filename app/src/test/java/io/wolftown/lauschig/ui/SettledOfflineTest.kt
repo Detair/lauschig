@@ -43,4 +43,36 @@ class SettledOfflineTest {
         rule.waitForIdle()
         assertEquals(false, settled)
     }
+
+    @Test fun firstCheckStillRunning_neverSettlesToOffline_showsConnecting() {
+        var checking by mutableStateOf(true)
+        var settled = true
+        var banner: ConnectionBanner? = null
+        rule.setContent {
+            settled = rememberSettledOffline(ConnectionState.Offline, checking)
+            banner = rememberConnectionBanner(ConnectionState.Offline, checking)
+        }
+        rule.mainClock.advanceTimeBy(OFFLINE_BANNER_DELAY_MS / 2)
+        rule.runOnIdle { assertEquals(null, banner); assertFalse(settled) }
+        // A slow first probe (unreachable local address, then the public one): "Verbinde …", no dimming.
+        rule.mainClock.advanceTimeBy(OFFLINE_BANNER_DELAY_MS)
+        rule.runOnIdle { assertEquals(ConnectionBanner.CONNECTING, banner); assertFalse(settled) }
+        // The probe answered "offline": now it is offline, at once.
+        checking = false
+        rule.waitForIdle()
+        assertEquals(ConnectionBanner.OFFLINE, banner)
+        assertTrue(settled)
+    }
+
+    @Test fun firstCheckAnswersOnline_noBannerAtAll() {
+        var state: ConnectionState by mutableStateOf(ConnectionState.Offline)
+        var checking by mutableStateOf(true)
+        var banner: ConnectionBanner? = null
+        rule.setContent { banner = rememberConnectionBanner(state, checking) }
+        rule.mainClock.advanceTimeBy(OFFLINE_BANNER_DELAY_MS - 500)
+        state = online
+        checking = false
+        rule.mainClock.advanceTimeBy(OFFLINE_BANNER_DELAY_MS * 2)
+        rule.runOnIdle { assertEquals(null, banner) }
+    }
 }

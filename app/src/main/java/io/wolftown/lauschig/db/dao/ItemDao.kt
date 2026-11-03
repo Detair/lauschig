@@ -62,6 +62,10 @@ abstract class ItemDao {
     @Query("SELECT * FROM items WHERE serverId = :serverId AND id = :id")
     abstract suspend fun get(serverId: String, id: String): ItemEntity?
 
+    /** The name of the ABS series [seriesId] (known from the details of any of its titles), for series links. */
+    @Query("SELECT seriesName FROM items WHERE serverId = :serverId AND seriesId = :seriesId AND seriesName IS NOT NULL LIMIT 1")
+    abstract suspend fun seriesNameById(serverId: String, seriesId: String): String?
+
     /**
      * The next volume of the same series (same name, case-insensitive) that is not finished yet: smallest sort key
      * above [afterKey]. Volumes already heard are skipped.

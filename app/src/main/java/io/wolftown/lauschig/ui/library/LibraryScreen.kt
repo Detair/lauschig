@@ -41,6 +41,7 @@ import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.TagFilterChip
 
 @StringRes
 private fun LibraryTab.label(): Int = when (this) {
@@ -66,6 +67,7 @@ fun LibraryRoute(
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     LibraryScreen(
         state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it },
+        onTag = viewModel::selectTag,
         collections = { kind -> CollectionListTab(kind, onOpenCollection) },
         device = { DeviceTab(onOpenItem, onPlay = actions::play, onMenu = { menuFor = it }) },
         onOpenDownloads = onOpenDownloads,
@@ -87,6 +89,7 @@ fun LibraryScreen(
     /** Content of the "on this device" tab. */
     device: @Composable () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onTag: (String?) -> Unit = {},
 ) {
     val tile: @Composable (ItemSummary) -> Unit = { item ->
         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
@@ -110,7 +113,10 @@ fun LibraryScreen(
             device()
             return@Column
         }
-        KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(top = 8.dp))
+        KindFilterChips(
+            state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(top = 8.dp),
+            trailing = if (state.availableTags.isEmpty()) null else ({ TagFilterChip(state.availableTags, state.selectedTag, onTag) }),
+        )
         if (state.tab == LibraryTab.Downloaded) {
             TextButton(onClick = onOpenDownloads, modifier = Modifier.padding(horizontal = 8.dp).testTag("openDownloads")) {
                 Icon(Icons.Rounded.Downloading, contentDescription = null)

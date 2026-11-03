@@ -78,6 +78,7 @@ class DefaultDownloadManager(
             )
             .setConstraints(Constraints.Builder().setRequiredNetworkType(required).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .addTag(serverTag(serverId))
             .build()
         val wm = WorkManager.getInstance(context)
         val name = workName(serverId, itemId)
@@ -108,9 +109,13 @@ class DefaultDownloadManager(
             d?.let { DownloadProgress(it.state, b.done, b.total) }
         }
 
-    private fun workName(serverId: String, itemId: String) = "download-$serverId-$itemId"
-
     companion object {
+        /** Unique work name of one download. */
+        fun workName(serverId: String, itemId: String) = "download-$serverId-$itemId"
+
+        /** Tag of every download work of [serverId] (sign-out cancels them all). */
+        fun serverTag(serverId: String) = "downloads-$serverId"
+
         /** Only a waiting download is retargeted to the [wanted] network; a running one keeps going as it is. */
         fun replaces(state: WorkInfo.State?, current: NetworkType?, wanted: NetworkType?): Boolean =
             wanted != null && current != wanted && (state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED)

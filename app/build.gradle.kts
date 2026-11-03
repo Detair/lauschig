@@ -15,6 +15,60 @@ plugins {
 fun signingValue(name: String): String? =
     (System.getenv(name) ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
 
+// Web links of the Audiobookshelf UI (`/item/<id>`) open in Lauschig for these hosts (comma-separated Gradle property
+// `lauschig.linkHosts`). Manifests cannot list hosts at run time; without assetlinks on the server there is no
+// autoVerify either: the user allows them once under Android's "Open by default" (see links/LinkSettings).
+val linkHosts: List<String> = (providers.gradleProperty("lauschig.linkHosts").orNull ?: "audiobookshelf.wolftown.io")
+    .split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+    .onEach { require(Regex("[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*").matches(it)) { "lauschig.linkHosts: not a host name: $it" } }
+
+/** Writes the VIEW intent filter for [hosts] into a manifest overlay that is merged into MainActivity. */
+abstract class LinkManifestTask : DefaultTask() {
+    @get:Input abstract val hosts: ListProperty<String>
+    @get:OutputFile abstract val manifest: RegularFileProperty
+
+    @TaskAction
+    fun write() {
+        val list = hosts.get()
+        val filter = if (list.isEmpty()) "" else buildString {
+            // No autoVerify on purpose: the server has no assetlinks.json (the user allows the hosts instead).
+            appendLine("            <intent-filter tools:ignore=\"AppLinkWarning\">")
+            appendLine("                <action android:name=\"android.intent.action.VIEW\" />")
+            appendLine("                <category android:name=\"android.intent.category.DEFAULT\" />")
+            appendLine("                <category android:name=\"android.intent.category.BROWSABLE\" />")
+            appendLine("                <data android:scheme=\"https\" />")
+            appendLine("                <data android:scheme=\"http\" />")
+            list.forEach { appendLine("                <data android:host=\"$it\" />") }
+            // Android's globs do not backtrack: ".*" stops at the next "/", so every prefix depth needs its own pattern.
+            // pathPattern (all versions): up to 2 prefix segments ("/audiobookshelf/item/<id>");
+            // pathAdvancedPattern (Android 12+): 3 and 4 prefix segments.
+            val routes = listOf("/item/.*", "/library/.*/series/.*")
+            routes.forEach { route ->
+                listOf("", "/.*", "/.*/.*").forEach { appendLine("                <data android:pathPattern=\"$it$route\" />") }
+            }
+            listOf("/item/.*", "/library/[^/]+/series/.*").forEach { route ->
+                listOf("/[^/]+/[^/]+/[^/]+", "/[^/]+/[^/]+/[^/]+/[^/]+").forEach {
+                    appendLine("                <data android:pathAdvancedPattern=\"$it$route\" tools:targetApi=\"s\" />")
+                }
+            }
+            appendLine("            </intent-filter>")
+        }
+        manifest.get().asFile.apply { parentFile.mkdirs() }.writeText(
+            """
+            |<?xml version="1.0" encoding="utf-8"?>
+            |<!-- Generated from the Gradle property lauschig.linkHosts (app/build.gradle.kts). -->
+            |<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            |    xmlns:tools="http://schemas.android.com/tools">
+            |    <application>
+            |        <activity android:name="io.wolftown.lauschig.MainActivity" android:exported="true" tools:node="merge">
+            |$filter        </activity>
+            |    </application>
+            |</manifest>
+            |""".trimMargin(),
+        )
+    }
+}
+
 val keystorePath = signingValue("LAUSCHIG_KEYSTORE")
 val hasReleaseSigning = keystorePath != null &&
     signingValue("LAUSCHIG_KEYSTORE_PASSWORD") != null &&
@@ -29,8 +83,11 @@ android {
         applicationId = "io.wolftown.lauschig"
         minSdk = 28
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "LINK_HOSTS", "\"${linkHosts.joinToString(",")}\"")
     }
 
     if (hasReleaseSigning) {
@@ -73,6 +130,16 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+androidComponents {
+    onVariants { variant ->
+        val task = tasks.register<LinkManifestTask>("generate${variant.name.replaceFirstChar { it.uppercase() }}LinkManifest") {
+            hosts.set(linkHosts)
+            manifest.set(layout.buildDirectory.file("generated/linkManifest/${variant.name}/AndroidManifest.xml"))
+        }
+        variant.sources.manifests.addGeneratedManifestFile(task, LinkManifestTask::manifest)
+    }
 }
 
 // Warn whenever a release artifact is built without complete signing config (any of the four values missing).
@@ -132,6 +199,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.androidx.profileinstaller)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.layout)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)
@@ -141,9 +211,15 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.androidx.work.testing)
+    testImplementation(libs.androidx.glance.appwidget.testing)
     testImplementation(libs.hilt.android.testing)
     kspTest(libs.hilt.compiler)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.media)
+    androidTestImplementation(libs.junit)
 }

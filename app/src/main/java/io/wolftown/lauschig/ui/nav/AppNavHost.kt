@@ -11,9 +11,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.cleanup.CleanupRoute
+import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.adaptive.ListDetailPane
+import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
+import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
+import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.playback.PlayableKey
@@ -25,26 +30,51 @@ import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
 
 /**
- * [startDestination] is [Setup] when there is no account and [Start] otherwise (decided from the local
- * account store, never from the network). After a successful login [Setup] is removed from the back stack.
+ * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
+ * stores, never from the network); the first sign-in then leads to [homeRoute] (see [finishSetup]). After a successful login [Setup] is removed from the back stack.
  * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
-fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
+fun AppNavHost(
+    navController: NavHostController,
+    startDestination: Any,
+    modifier: Modifier = Modifier,
+    /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
+    homeRoute: Any = Start,
+) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
-        composable<Settings> { SettingsRoute(onBack = { navController.popBackStack() }, onOpenCleanup = { navController.navigate(Cleanup) }, onOpenDownloads = { navController.navigate(Downloads) }) }
+        composable<Settings> {
+            ReadableWidth {
+                SettingsRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenCleanup = { navController.navigate(Cleanup) },
+                    onOpenDownloads = { navController.navigate(Downloads) },
+                    onOpenConnection = { navController.navigate(ConnectionStatus) },
+                    onOpenAdmin = { navController.navigate(ServerAdmin) },
+                    onOpenNavigation = { navController.navigate(NavigationSettings) },
+                )
+            }
+        }
+        composable<NavigationSettings> { ReadableWidth { NavigationSettingsRoute(onBack = { navController.popBackStack() }) } }
+        composable<ConnectionStatus> { ReadableWidth { ConnectionStatusRoute(onBack = { navController.popBackStack() }) } }
+        composable<ServerAdmin> { ReadableWidth { ServerAdminRoute(onBack = { navController.popBackStack() }) } }
         composable<Downloads> {
             // An episode's details are its podcast's page.
-            DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })
+            ReadableWidth {
+                DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })
+            }
         }
-        composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
+        composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
         composable<Library> {
-            LibraryRoute(
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenCollection = { navController.navigate(Collection(it)) },
-                onOpenDownloads = { navController.navigate(Downloads) { launchSingleTop = true } },
-            )
+            // Wide windows: the details of a title open beside the library (see ListDetailPane).
+            ListDetailPane(navController, listShare = 0.45f, list = { open ->
+                LibraryRoute(
+                    onOpenItem = open.openItem,
+                    onOpenCollection = open.openCollection,
+                    onOpenDownloads = { navController.navigate(Downloads) { launchSingleTop = true } },
+                )
+            })
         }
         composable<Collection> { CollectionRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> {
@@ -54,17 +84,16 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             )
         }
         composable<Search> {
-            SearchRoute(
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
-            )
+            ListDetailPane(navController, listShare = 0.4f, list = { open -> SearchRoute(onOpenItem = open.openItem, onOpenBrowse = open.openBrowse) })
         }
         composable<ItemDetail> {
-            ItemDetailEntry(
-                onBack = { navController.popBackStack() },
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
-            )
+            ReadableWidth {
+                ItemDetailEntry(
+                    onBack = { navController.popBackStack() },
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+                )
+            }
         }
         composable<Browse> {
             BrowseRoute(
@@ -81,13 +110,34 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             )
         }
         composable<Setup> {
-            SetupRoute(onDone = {
-                // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.
-                if (navController.previousBackStackEntry != null) navController.popBackStack()
-                else navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
-            })
+            ReadableWidth {
+                SetupRoute(onDone = { navController.finishSetup(homeRoute) })
+            }
         }
     }
+}
+
+/**
+ * After a sign-in. Re-auth (opened on top of the app): just go back. First setup: Setup is replaced by the user's start
+ * screen [home], which also becomes the graph's start destination, so "back" from another tab returns to it and the
+ * tab switches pop up to it instead of piling up.
+ */
+fun NavHostController.finishSetup(home: Any) {
+    if (previousBackStackEntry != null) {
+        popBackStack()
+        return
+    }
+    graph.setStartDestination(home)
+    navigate(home) { popUpTo<Setup> { inclusive = true } }
+}
+
+/**
+ * Signed out while the app runs: only [Setup] is left, so "back" never returns to the old account's pages. Already
+ * the only page (a start without an account): nothing changes. The next sign-in leads to the start tab ([finishSetup]).
+ */
+fun NavHostController.showSignIn() {
+    if (currentDestination?.hasRoute<Setup>() == true && previousBackStackEntry == null) return
+    navigate(Setup) { popUpTo(graph.id) { inclusive = true } }
 }
 
 @Composable
@@ -112,13 +162,7 @@ fun NavHostController.currentTab(): TopLevelTab? {
 }
 
 fun NavHostController.navigateToTab(tab: TopLevelTab) {
-    val route: Any = when (tab) {
-        TopLevelTab.Start -> Start
-        TopLevelTab.Library -> Library
-        TopLevelTab.Discover -> Discover
-        TopLevelTab.Search -> Search
-    }
-    navigate(route) {
+    navigate(tab.route()) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true

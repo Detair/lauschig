@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.account
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -26,11 +27,11 @@ private val Context.accountDataStore by preferencesDataStore(
 
 /** Account metadata as JSON, tokens encrypted with [TokenCipher], all in a Preferences DataStore. */
 @Singleton
-class DataStoreAccountStore @Inject constructor(
-    @ApplicationContext context: Context,
+class DataStoreAccountStore(
+    private val store: DataStore<Preferences>,
     private val cipher: TokenCipher,
 ) : AccountStore {
-    private val store = context.accountDataStore
+    @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher) : this(context.accountDataStore, cipher)
 
     @Serializable
     private data class Dto(
@@ -63,8 +64,10 @@ class DataStoreAccountStore @Inject constructor(
 
     override suspend fun refreshToken(): String? = read(REFRESH)
 
+    /** Only while an account is stored: a refresh that lands after a sign-out never writes tokens back. */
     override suspend fun updateTokens(access: String, refresh: String) {
         store.edit {
+            if (it[ACCOUNT] == null) return@edit
             it[ACCESS] = cipher.encrypt(access)
             it[REFRESH] = cipher.encrypt(refresh)
             it[NEEDS_REAUTH] = false
@@ -72,7 +75,7 @@ class DataStoreAccountStore @Inject constructor(
     }
 
     override suspend fun markNeedsReauth() {
-        store.edit { it[NEEDS_REAUTH] = true }
+        store.edit { if (it[ACCOUNT] != null) it[NEEDS_REAUTH] = true }
     }
 
     override suspend fun clear(keepDownloads: Boolean) {

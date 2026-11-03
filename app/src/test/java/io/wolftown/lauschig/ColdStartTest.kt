@@ -13,6 +13,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.room.Room
@@ -49,15 +52,19 @@ import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerControllerImpl
 import io.wolftown.lauschig.playback.PlayerFacade
 import io.wolftown.lauschig.playback.PlayerSnapshot
+import io.wolftown.lauschig.settings.UiSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -90,7 +97,7 @@ class RecordingFacade : PlayerFacade {
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
     override fun hasMedia() = queue.isNotEmpty()
-    override fun setOnError(onError: () -> Unit) {}
+    override fun setOnError(onError: (Int) -> Unit) {}
     override fun setOnDisconnected(onDisconnected: () -> Unit) {}
     override fun setOnChange(onChange: () -> Unit) { this.onChange = onChange }
 }
@@ -100,6 +107,22 @@ class RecordingFacade : PlayerFacade {
  * that awaited the network would hang here instead of passing quickly on an instant "unreachable".
  */
 private val DEAD_PROBE = ReachabilityProbe { awaitCancellation() }
+
+/**
+ * The look and tab settings (`ui_settings`) held in memory. The start waits for them (first frame in the right theme,
+ * the chosen start tab). A real DataStore answers from a background thread, so Robolectric's `launch` returns while
+ * the first composition is still to come, and the 2 s wait in the test then covers the whole cold composition instead
+ * of just the Room read (cold JVM: ~0.4 s instead of ~0.06 s, ~1.3 s instead of ~0.2 s with CPUs 2x oversubscribed).
+ * Like the account store and the database here, this one answers on the calling thread; the real DataStore is covered
+ * by `UiSettingsTest`.
+ */
+private class InMemoryPreferences : DataStore<Preferences> {
+    private val state = MutableStateFlow(emptyPreferences())
+    private val lock = Mutex()
+    override val data: Flow<Preferences> = state
+    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
+        lock.withLock { transform(state.value).also { state.value = it } }
+}
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -116,6 +139,8 @@ object ColdStartTestModule {
     }
 
     @Provides @Singleton fun probe(): ReachabilityProbe = DEAD_PROBE
+
+    @Provides @Singleton fun uiSettings(): UiSettings = UiSettings(InMemoryPreferences())
 
     @Provides @Singleton fun networkInfo(): NetworkInfo = object : NetworkInfo {
         override val isConnected: Flow<Boolean> = flowOf(true)

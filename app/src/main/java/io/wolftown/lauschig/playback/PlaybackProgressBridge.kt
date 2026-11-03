@@ -62,7 +62,9 @@ class PlaybackProgressBridge(
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        if (playbackState == Player.STATE_ENDED) queue.trySend { tracker.onEnded() }
+        // ENDED with an empty queue means it was cleared (a car, watch or Assistant controller): the removal already
+        // saved the title where it was; only a queue played to its end finishes the title.
+        if (playbackState == Player.STATE_ENDED && player.mediaItemCount > 0) queue.trySend { tracker.onEnded() }
     }
 
     // PositionInfo.mediaItem is the only way to identify the item of a queue that has already been replaced.

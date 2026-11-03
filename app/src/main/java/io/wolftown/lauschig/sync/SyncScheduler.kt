@@ -35,10 +35,7 @@ class SyncScheduler @Inject constructor(
     /** Schedules the periodic sync and a one-time sync on every Offline -> Online transition. */
     fun start(scope: CoroutineScope) {
         val wm = WorkManager.getInstance(context)
-        wm.enqueueUniquePeriodicWork(
-            PERIODIC, ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build(),
-        )
+        schedulePeriodic(wm)
         // Only probe while the app is visible; background syncs come from the periodic worker.
         scope.launch(Dispatchers.Main) {
             ProcessLifecycleOwner.get().lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -52,11 +49,23 @@ class SyncScheduler @Inject constructor(
         }
     }
 
-    /** One-time sync (e.g. right after login); returns immediately, the work runs in WorkManager. */
+    /**
+     * One-time sync (e.g. right after login); returns immediately, the work runs in WorkManager. Also schedules the
+     * periodic sync again if a sign-out cancelled it (KEEP: an existing schedule stays as it is).
+     */
     override fun syncNow() {
-        WorkManager.getInstance(context).enqueueUniqueWork(
+        val wm = WorkManager.getInstance(context)
+        wm.enqueueUniqueWork(
             NOW, ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(constraints).build(),
+        )
+        schedulePeriodic(wm)
+    }
+
+    private fun schedulePeriodic(wm: WorkManager) {
+        wm.enqueueUniquePeriodicWork(
+            PERIODIC, ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build(),
         )
     }
 
@@ -69,6 +78,13 @@ class SyncScheduler @Inject constructor(
     }
 
     override fun syncProgress() = enqueueProgressSync(WorkManager.getInstance(context))
+
+    override fun syncLibrarySoon() {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            AFTER_SCAN, ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<SyncWorker>().setInitialDelay(AFTER_SCAN_DELAY_MS, TimeUnit.MILLISECONDS).setConstraints(constraints).build(),
+        )
+    }
 
     companion object {
         const val PROGRESS = "sync-progress"
@@ -86,9 +102,15 @@ class SyncScheduler @Inject constructor(
         }
 
         const val BOOKMARKS = "sync-bookmarks"
+        const val AFTER_SCAN = "sync-after-scan"
+        /** A library scan of a few hundred titles usually finishes within a minute. */
+        const val AFTER_SCAN_DELAY_MS = 60_000L
         const val NOW = "sync-now"
         const val PERIODIC = "sync-periodic"
         const val ON_ONLINE = "sync-on-online"
+
+        /** Every sync work; all of it belongs to the signed-in account (sign-out cancels it). */
+        val ACCOUNT_WORK = listOf(PERIODIC, NOW, ON_ONLINE, PROGRESS, BOOKMARKS, AFTER_SCAN)
 
         /** Emits once per Offline -> Online transition (the upstream's initial Offline counts as the "from"). */
         fun onlineTransitions(connection: Flow<ConnectionState>): Flow<Unit> =

@@ -63,7 +63,7 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(state.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                            SourceIndicator(state.isStreaming, Modifier.padding(start = 6.dp), showLabel = false)
+                            SourceIndicator(playSource(state.itemId, state.isStreaming), Modifier.padding(start = 6.dp), showLabel = false)
                         }
                         // The throttle hint only while loading: during playback the chapter title matters more.
                         val sub = state.error?.let { stringResource(it) }

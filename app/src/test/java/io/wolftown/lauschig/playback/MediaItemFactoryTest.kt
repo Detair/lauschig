@@ -39,6 +39,9 @@ class MediaItemFactoryTest {
         val items = MediaItemFactory({ true }) { _, _ -> null }.build(item(f(0, "/d/0.mp3"), f(1, null)), "https://abs.example/".toHttpUrl())
         assertTrue(items[1].localConfiguration!!.uri.toString().startsWith("https://abs.example/"))
         assertTrue(items[1].localConfiguration!!.uri.toString().contains("ino1"))
+        // The app can tell which server a queue streams from (and move it when the address changes).
+        assertEquals("https://abs.example/", items[1].mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_STREAM_BASE))
+        assertEquals(null, items[0].mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_STREAM_BASE))
     }
 
     @Test fun coverIsUsedWhenPresent() {

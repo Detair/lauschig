@@ -67,6 +67,32 @@ class AuthApiTest {
     }
 
     @Test
+    fun logout_sendsTheRefreshTokenAsHeader_toTheServerRoot() = runBlocking {
+        // ABS 2.37.1 Auth.js: POST /logout (no /api prefix, no auth), token from the cookie or x-refresh-token.
+        server.enqueue(json("""{"redirect_url":null}"""))
+
+        val res = api.logout("r1")
+
+        val req = server.takeRequest()
+        assertEquals("/logout", req.path)
+        assertEquals("POST", req.method)
+        assertEquals("r1", req.getHeader("x-refresh-token"))
+        assertEquals(null, req.getHeader("Authorization"))
+        assertEquals(null, res.redirectUrl)
+    }
+
+    @Test
+    fun logout_underASubPath_staysUnderIt() = runBlocking {
+        server.enqueue(json("""{"redirect_url":"https://idp.example/logout"}"""))
+        val sub = AbsClientFactory.retrofit(server.url("/abs"), OkHttpClient()).create(AuthApi::class.java)
+
+        val res = sub.logout("r1")
+
+        assertEquals("/abs/logout", server.takeRequest().path)
+        assertEquals("https://idp.example/logout", res.redirectUrl)
+    }
+
+    @Test
     fun unknownFields_areIgnored() = runBlocking {
         server.enqueue(json(fixture("login.json").replaceFirst("{", "{\"brandNewTopLevel\": {\"x\": 1},")))
 

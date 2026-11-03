@@ -75,7 +75,8 @@ class CleanupReminderWorker @AssistedInject constructor(
 
     companion object {
         const val CHANNEL = "cleanup"
-        private const val NOTIFICATION_ID = 4711
+        /** Also cancelled on sign-out (it names the old account's titles). */
+        const val NOTIFICATION_ID = 4711
         private const val WORK = "cleanup-reminder"
 
         /** Idempotent; called on every app start. */

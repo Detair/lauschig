@@ -46,6 +46,9 @@ class ProgressSync(
     private val episodes: EpisodeDao,
     private val deviceInfo: () -> DeviceInfoDto,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    /** When the last run went through (Verbindungsstatus window). */
+    private val stamps: SyncStamps = InMemorySyncStamps(),
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     @Inject constructor(
         apiProvider: ApiProvider,
@@ -54,7 +57,8 @@ class ProgressSync(
         items: ItemDao,
         episodes: EpisodeDao,
         device: DeviceInfoProvider,
-    ) : this(apiProvider.meApi, progress, sessions, items, episodes, device::get)
+        stamps: SyncStamps,
+    ) : this(apiProvider.meApi, progress, sessions, items, episodes, device::get, stamps = stamps)
 
     suspend fun sync(serverId: String): List<PositionJump> = lock.withLock {
         // The device library never syncs; a local key under a real server (should not exist) is never sent either.
@@ -74,9 +78,11 @@ class ProgressSync(
         val rows = server.map { (key, it) ->
             ProgressEntity(serverId, key, it.currentTime, it.duration, it.isFinished, it.lastUpdate, hideFromContinue = it.hideFromContinueListening)
         }
-        progress.mergeFromServer(rows)
+        val jumps = progress.mergeFromServer(rows)
             .filter { abs(it.newCurrentTimeSec - it.oldCurrentTimeSec) > JUMP_THRESHOLD_SEC }
             .map { PositionJump(it.itemId, it.oldCurrentTimeSec, it.newCurrentTimeSec) }
+        stamps.set(stampKey(serverId), clock())
+        jumps
     }
 
     /** Keyed like local rows: a book by its item id, an episode by its playable key. */
@@ -160,6 +166,8 @@ class ProgressSync(
     }
 
     companion object {
+        /** [SyncStamps] key of the last successful run for [serverId]. */
+        fun stampKey(serverId: String) = "progress_sync:$serverId"
         const val JUMP_THRESHOLD_SEC = 60.0
         private const val SAME_POSITION_SEC = 1.0
 

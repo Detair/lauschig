@@ -4,6 +4,7 @@ import io.wolftown.lauschig.absapi.LenientMediaProgressListSerializer
 import io.wolftown.lauschig.absapi.me.BookmarkDto
 import io.wolftown.lauschig.absapi.me.LenientBookmarkListSerializer
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -49,6 +50,10 @@ data class ServerSettings(
 
 @Serializable
 data class PingResponse(val success: Boolean)
+
+/** `POST /logout`: the identity provider's logout page for a browser SSO session, null otherwise (always for apps). */
+@Serializable
+data class LogoutResponse(@SerialName("redirect_url") val redirectUrl: String? = null)
 
 /** `GET /status` (no login needed). */
 @Serializable

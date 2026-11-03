@@ -51,6 +51,28 @@ class AndroidNetworkInfo @Inject constructor(
         awaitClose { cm.unregisterNetworkCallback(callback) }
     }.distinctUntilChanged().map { it.second }
 
+    override fun describe(): NetworkDescription? {
+        val caps = try {
+            cm.getNetworkCapabilities(cm.activeNetwork ?: return null) ?: return null
+        } catch (e: SecurityException) {
+            return null
+        }
+        val map = listOf(
+            NetworkCapabilities.TRANSPORT_WIFI to NetworkDescription.Transport.WIFI,
+            NetworkCapabilities.TRANSPORT_CELLULAR to NetworkDescription.Transport.CELLULAR,
+            NetworkCapabilities.TRANSPORT_ETHERNET to NetworkDescription.Transport.ETHERNET,
+            NetworkCapabilities.TRANSPORT_VPN to NetworkDescription.Transport.VPN,
+            NetworkCapabilities.TRANSPORT_BLUETOOTH to NetworkDescription.Transport.BLUETOOTH,
+        )
+        val transports = map.filter { caps.hasTransport(it.first) }.map { it.second }.toSet()
+            .ifEmpty { setOf(NetworkDescription.Transport.OTHER) }
+        return NetworkDescription(
+            transports = transports,
+            metered = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+            validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+        )
+    }
+
     /** Only called when SSID binding is active. Returns null without permission or when not on Wi-Fi. */
     @Suppress("DEPRECATION")
     override suspend fun currentSsid(): String? {

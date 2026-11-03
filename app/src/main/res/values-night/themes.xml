@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Lauschig" parent="android:Theme.Material.NoActionBar" />
+    <!-- Black, not the platform's grey: the window shows between frames (after the splash, rotation, recreation) until
+         Compose paints it in the theme's background (WindowBackground). -->
+    <style name="Theme.Lauschig" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 
     <style name="Theme.Lauschig.Starting" parent="Theme.SplashScreen">
         <item name="postSplashScreenTheme">@style/Theme.Lauschig</item>

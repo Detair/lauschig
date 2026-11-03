@@ -107,6 +107,9 @@ class Catalog @Inject constructor() {
 
     fun byTag(items: List<ItemEntity>, tag: String): List<ItemEntity> = byList(items, tag) { it.tags }
 
+    /** Tags of [items] like [facets] counts them (most items first, then name; case-insensitive, trimmed). */
+    fun tags(items: List<ItemEntity>): List<Facet> = buildFacets(items.sortedBy { it.title.lowercase() }) { clean(it.tags) }
+
     /** All facets, most items first, then name; empty names are skipped. */
     fun facets(items: List<ItemEntity>): Facets {
         val byTitle = items.sortedBy { it.title.lowercase() }

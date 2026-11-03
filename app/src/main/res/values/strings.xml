@@ -53,6 +53,9 @@
     <string name="filter_all">All</string>
     <string name="filter_audiobooks">Audiobooks</string>
     <string name="filter_radio_plays">Radio plays</string>
+    <string name="filter_tags">Tags</string>
+    <string name="filter_tags_all">All tags</string>
+    <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Book %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
     <string name="cover_offline_available">Available offline</string>
@@ -108,6 +111,7 @@
     <string name="player_open_details">Show details</string>
     <string name="source_streaming">Streaming</string>
     <string name="source_local">Downloaded</string>
+    <string name="source_device">On this device</string>
     <string name="cover_actions">Open menu</string>
     <string name="player_loading">Loading…</string>
     <string name="progress_menu">More actions</string>
@@ -169,6 +173,7 @@
     <string name="discover_recent">Recently added</string>
     <string name="discover_series">Series</string>
     <string name="discover_genres">Genres</string>
+    <string name="discover_tags">Tags</string>
     <string name="discover_authors">Authors</string>
     <string name="discover_all">All titles</string>
     <string name="discover_sort">Sort: %s</string>
@@ -281,6 +286,7 @@
     <string name="settings_metered_wifi">Wi-Fi only</string>
     <string name="progress_mark_unfinished_keep">Mark as not finished (keep position)</string>
     <string name="player_sleep_timer">Sleep timer</string>
+    <string name="player_sleep_short">Timer</string>
     <string name="player_sleep_active">Sleep timer: %1$s left</string>
     <string name="player_sleep_chapter_active">Sleep timer: end of chapter, %1$s left</string>
     <string name="sleep_minutes">%1$d min</string>
@@ -406,4 +412,223 @@
     <string name="local_empty">No folders yet. Add a folder with audiobooks from this device – they play without a server.</string>
     <string name="local_empty_titles">No audiobooks found in the folders.</string>
     <string name="local_folder_scan_failed">Not everything could be read – the titles found before are kept</string>
+    <!-- Android Auto, voice, media controls (phase 4A) -->
+    <string name="car_continue">Continue listening</string>
+    <string name="car_downloads">Downloaded</string>
+    <string name="car_series">Series</string>
+    <string name="car_libraries">Libraries</string>
+    <string name="car_remaining">%1$s left</string>
+    <string name="car_duration_h_min">%1$d h %2$d min</string>
+    <string name="car_duration_min">%1$d min</string>
+    <string name="car_volume">Volume %1$s</string>
+    <string name="car_seek_back">Back 30 seconds</string>
+    <string name="car_seek_forward">Forward 30 seconds</string>
+    <string name="car_speed">Speed %1$s×</string>
+    <string name="car_sleep_off">Sleep timer off</string>
+    <string name="car_sleep_minutes">Sleep timer: %1$d min</string>
+    <string name="car_sleep_chapter">Sleep timer: end of chapter</string>
+    <string name="car_chapter_back">Chapter start</string>
+    <string name="car_chapter_next">Next chapter</string>
+    <string name="car_error_not_found">This title is no longer available.</string>
+    <string name="car_error_nothing_found">Nothing found in Lauschig.</string>
+    <string name="car_error_nothing_to_resume">Nothing to continue yet.</string>
+    <!-- Homescreen widget (phase 4B) -->
+    <string name="widget_label">Lauschig</string>
+    <string name="widget_description">Cover, play/pause and 30 seconds back or forward</string>
+    <string name="widget_empty">Nothing loaded – tap to open</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_back_30">Back 30 seconds</string>
+    <string name="widget_forward_30">Forward 30 seconds</string>
+    <string name="widget_open">Open %1$s in Lauschig</string>
+    <!-- Verbindungsstatus (phase 4B) -->
+    <string name="connecting_banner">Connecting to the server …</string>
+    <string name="connection_title">Connection status</string>
+    <string name="connection_state_local">Connected – local address</string>
+    <string name="connection_state_public">Connected – public address</string>
+    <string name="connection_state_offline">Offline</string>
+    <string name="connection_state_checking">Connecting …</string>
+    <string name="connection_signed_in_as">Signed in as %1$s</string>
+    <string name="connection_not_signed_in">Not signed in</string>
+    <string name="connection_section_addresses">Addresses</string>
+    <string name="connection_local_address">Local address</string>
+    <string name="connection_public_address">Public address</string>
+    <string name="connection_in_use">in use</string>
+    <string name="connection_probe_ok">Answered in %1$d ms · %2$s</string>
+    <string name="connection_probe_failed">No answer · %1$s</string>
+    <string name="connection_probe_none">Not checked yet</string>
+    <string name="connection_only_home">Only tried on the home Wi-Fi (%1$s)</string>
+    <string name="connection_section_network">Network</string>
+    <string name="connection_network_none">No network</string>
+    <string name="connection_wifi">Wi-Fi</string>
+    <string name="connection_cellular">Mobile data</string>
+    <string name="connection_ethernet">Ethernet</string>
+    <string name="connection_vpn">VPN</string>
+    <string name="connection_bluetooth">Bluetooth</string>
+    <string name="connection_other">Other</string>
+    <string name="connection_metered">metered</string>
+    <string name="connection_unmetered">not metered</string>
+    <string name="connection_not_validated">internet not confirmed</string>
+    <string name="connection_section_checks">Last check</string>
+    <string name="connection_last_success">Last answer: %1$s in %2$d ms · %3$s</string>
+    <string name="connection_last_success_none">No answer from the server yet</string>
+    <string name="connection_last_error">Last error %1$s: %2$s</string>
+    <string name="connection_no_answer">no answer</string>
+    <string name="connection_section_sync">Sync</string>
+    <string name="connection_last_sync">Progress last synced %1$s</string>
+    <string name="connection_last_sync_never">Progress not synced yet on this device</string>
+    <string name="connection_pending">Waiting to be sent – progress: %1$d, listening sessions: %2$d</string>
+    <string name="connection_no_socket">Lauschig keeps no live (socket) connection to the server; it syncs over HTTP.</string>
+    <string name="connection_reconnect">Reconnect</string>
+    <string name="connection_reconnecting">Checking all addresses …</string>
+    <string name="connection_reconnect_online">Connected.</string>
+    <string name="connection_reconnect_offline">No address answered. Downloaded titles keep working.</string>
+    <string name="connection_copy">Copy details</string>
+    <string name="connection_copied">Details copied</string>
+    <string name="settings_section_connection">Connection</string>
+    <string name="settings_connection_status">Connection status</string>
+    <string name="settings_connection_status_hint">Local, public or offline, addresses, network, reconnect</string>
+    <string name="playback_start_channel">Starting playback</string>
+    <!-- Links (phase 4B) -->
+    <string name="link_no_server">This link belongs to no server set up in Lauschig</string>
+    <string name="link_unsupported">Lauschig cannot open this link</string>
+    <string name="link_offline">Title not available offline</string>
+    <string name="link_not_found">Title not found on the server</string>
+    <string name="link_failed">The title could not be loaded</string>
+    <string name="link_series_unknown">Series not known yet – open one of its titles first</string>
+    <string name="settings_links_title">Open links</string>
+    <string name="settings_links_hint">Links to titles in the Audiobookshelf web app (%1$s) open in Lauschig once you add these addresses under “Open by default”.</string>
+    <string name="settings_links_enabled">Allowed: %1$s</string>
+    <string name="settings_links_not_enabled">Not allowed yet</string>
+    <string name="settings_links_other_server">Your server (%1$s) is not one of them – share its links with Lauschig instead.</string>
+    <string name="settings_links_none">No link addresses built in – share links with Lauschig instead.</string>
+    <string name="settings_links_open">Open by default …</string>
+    <!-- Admin menu (phase 4B) -->
+    <string name="admin_title">Server administration</string>
+    <string name="admin_entry_hint">Scan libraries, see who is online</string>
+    <string name="admin_offline_hint">Only while connected to the server</string>
+    <string name="admin_section_libraries">Libraries</string>
+    <string name="admin_scan">Scan</string>
+    <string name="admin_scan_library_title">Scan library?</string>
+    <string name="admin_scan_library_message">The server looks for new, changed and removed titles in “%1$s”. This can take a while.</string>
+    <string name="admin_scan_started">Scan of “%1$s” started – Lauschig refreshes the library in about a minute</string>
+    <string name="admin_section_online">Who is online</string>
+    <string name="admin_refresh">Refresh</string>
+    <string name="admin_online_none">Nobody is online in the web app or the official app</string>
+    <string name="admin_online_note">Lauschig keeps no live connection to the server, so people listening in Lauschig do not show up here.</string>
+    <string name="admin_listening">Listening: %1$s · %2$s</string>
+    <string name="admin_not_listening">Online, not listening</string>
+    <string name="admin_sessions_title">Other open playback sessions</string>
+    <string name="admin_unknown_user">Unknown user</string>
+    <string name="admin_forbidden">No permission on the server</string>
+    <string name="admin_failed">That did not work: %1$s</string>
+    <string name="admin_offline">Not connected to the server</string>
+    <string name="admin_item_menu">Server administration</string>
+    <string name="admin_rescan_item">Rescan title</string>
+    <string name="admin_rescan_item_message">The server reads the files of “%1$s” again.</string>
+    <string name="admin_match_item">Re-match title</string>
+    <string name="admin_match_item_message">The server looks up “%1$s” with the library’s metadata provider (quick match) and takes over what it finds.</string>
+    <string name="admin_confirm">Start</string>
+    <string name="admin_cancel">Cancel</string>
+    <string name="admin_scan_updated">Rescanned – the title was updated</string>
+    <string name="admin_scan_uptodate">Rescanned – the title was already up to date</string>
+    <string name="admin_scan_removed">Rescanned – the title is gone on the server</string>
+    <string name="admin_scan_done">Rescanned</string>
+    <string name="admin_matched">Matched – details updated</string>
+    <string name="admin_matched_nothing">Match found, nothing changed</string>
+    <string name="admin_no_match">No match: %1$s</string>
+    <string name="admin_no_provider">The library has no metadata provider</string>
+    <string name="settings_section_look">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_hint">Light, dark or like the system</string>
+    <string name="theme_system">Like the system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_pure_black">Pure black</string>
+    <string name="settings_pure_black_hint">Black background in the dark theme – easy on OLED screens and at night</string>
+    <string name="settings_pure_black_light">Only in the dark theme</string>
+    <string name="settings_dynamic_color">Dynamic colors</string>
+    <string name="settings_dynamic_color_hint">Colors matching your wallpaper</string>
+    <string name="settings_font_scale">Text size</string>
+    <string name="settings_font_scale_hint">On top of the system\'s text size</string>
+    <string name="font_scale_percent">%1$d %%</string>
+    <string name="settings_preview_title">Preview</string>
+    <string name="settings_preview_text">This is how titles and text look.</string>
+    <string name="nav_settings_title">Navigation</string>
+    <string name="nav_settings_entry">Customise navigation</string>
+    <string name="nav_settings_entry_hint">Order of the tabs, hidden tabs and the start screen</string>
+    <string name="nav_settings_hint">Changes to the tabs apply at once.</string>
+    <string name="nav_settings_tabs">Tabs</string>
+    <string name="nav_settings_start">Start screen</string>
+    <string name="nav_settings_start_hint">Lauschig opens here from the next start. The player, links and notifications still open their own page.</string>
+    <string name="nav_settings_reset">Reset</string>
+    <string name="nav_settings_always">Always shown</string>
+    <string name="nav_settings_hidden">Hidden</string>
+    <string name="nav_settings_visible">Show %1$s</string>
+    <string name="nav_settings_up">Move %1$s up</string>
+    <string name="nav_settings_down">Move %1$s down</string>
+    <string name="whatsnew_title">What\'s new in Lauschig</string>
+    <string name="whatsnew_version">Version %1$s</string>
+    <string name="whatsnew_done">Got it</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_whats_new">What\'s new</string>
+    <string name="settings_whats_new_hint">The changes of every version</string>
+    <string-array name="whatsnew_0_2_0">
+        <item>Sleep timer with a gentle fade-out – shake to extend it</item>
+        <item>Every book remembers its speed and volume boost; silence can be skipped</item>
+        <item>After a pause Lauschig jumps back a few seconds</item>
+        <item>Optionally keep playing as soon as headphones or the car connect</item>
+        <item>Bookmarks with notes, listening history per book and a queue</item>
+        <item>Collections and playlists from Audiobookshelf</item>
+        <item>Pause, sort and search downloads and see the storage they use</item>
+        <item>Play your own audiobooks from the phone – under “On this device”</item>
+        <item>Streaming titles download in the background, with progress</item>
+        <item>Android Auto and voice commands like “Play The Hobbit in Lauschig”</item>
+        <item>Home screen widget with cover, pause and ±30 seconds</item>
+        <item>Connection status to check when the server cannot be reached</item>
+        <item>Audiobookshelf links open the title right in Lauschig</item>
+        <item>For admins: scan a library, re-match a title and see who is online</item>
+        <item>Your look: light, dark, pure black and larger text</item>
+        <item>Reorder or hide tabs and choose the start screen</item>
+        <item>More room on tablets and in landscape; every player button without scrolling</item>
+        <item>Filter by tags in Library and Discover</item>
+        <item>Sign out in the settings – your downloads can stay on the device</item>
+    </string-array>
+    <string name="pane_empty">Choose a title to see its details here.</string>
+    <string name="settings_section_account">Account</string>
+    <string name="account_admin">Admin</string>
+    <string name="sign_out">Sign out</string>
+    <string name="sign_out_hint">Your downloads can stay on this device</string>
+    <string name="sign_out_title">Sign out?</string>
+    <string name="sign_out_message">This device will be signed out of %1$s.</string>
+    <string name="sign_out_syncing">Uploading your progress …</string>
+    <string name="sign_out_keep_downloads">Keep downloads on this device (%1$s)</string>
+    <string name="sign_out_confirm">Sign out</string>
+    <string name="sign_out_cancel">Cancel</string>
+    <string name="sign_out_running">Signing out …</string>
+    <plurals name="sign_out_unsynced_lost">
+        <item quantity="one">%1$d change is not on the server yet and will be lost when you sign out.</item>
+        <item quantity="other">%1$d changes are not on the server yet and will be lost when you sign out.</item>
+    </plurals>
+    <plurals name="sign_out_unsynced_kept">
+        <item quantity="one">%1$d change is not on the server yet. It is uploaded when you sign in with this account again.</item>
+        <item quantity="other">%1$d changes are not on the server yet. They are uploaded when you sign in with this account again.</item>
+    </plurals>
+    <string name="previous_account_title">Downloads of another account</string>
+    <string name="previous_account_message">Downloads of %1$s (%2$s, %3$s) are still on this device. Delete them?</string>
+    <string name="previous_account_delete">Delete</string>
+    <string name="previous_account_keep">Keep</string>
+    <string name="kept_delete_failed">Not everything could be deleted. Please try again later.</string>
+    <string name="sign_out_keep_data">Keep data on this device</string>
+    <string name="previous_account_message_data">Data of %1$s (%2$s) is still on this device. Delete it?</string>
+    <string name="sign_out_unsynced_unknown">Whether changes are still missing on the server could not be checked.</string>
+    <string name="car_sign_in">Sign in to Lauschig on your phone</string>
+    <string name="downloads_previous_accounts">Downloads of earlier accounts</string>
+    <string name="downloads_previous_entry">%1$s (%2$s)</string>
+    <string name="downloads_previous_data">Data, no downloads</string>
+    <string name="downloads_previous_delete">Delete the data of %1$s</string>
+    <string name="downloads_previous_confirm_title">Delete the data of %1$s?</string>
+    <string name="downloads_previous_confirm_message">The downloads (%1$s) and changes of this account that are not on the server yet are deleted from this device.</string>
+    <string name="downloads_previous_confirm_message_data">The changes of this account that are not on the server yet are deleted from this device.</string>
 </resources>

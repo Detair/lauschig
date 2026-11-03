@@ -3,22 +3,19 @@ package io.wolftown.lauschig.ui.player
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,45 +50,35 @@ fun sleepDescription(sleep: SleepTimerUi): String = stringResource(
 @Composable
 fun boostLabel(db: Int): String = if (db <= 0) stringResource(R.string.audio_boost_off) else stringResource(R.string.audio_boost_db, db)
 
-/** Sleep timer and audio buttons of the full player, with their sheets. The timer button shows the countdown. */
+/** Sleep timer and audio buttons of the full player's action area, with their sheets. The timer button shows the countdown. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ComfortRow(
+fun RowScope.ComfortButtons(
     state: ComfortUiState,
     onStartSleep: (SleepMode) -> Unit,
     onCancelSleep: () -> Unit,
     onSkipSilence: (Boolean) -> Unit,
     onBoost: (Int?) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     var showSleep by rememberSaveable { mutableStateOf(false) }
     var showAudio by rememberSaveable { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            val sleep = state.sleep
-            val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_timer)
-            OutlinedButton(onClick = { showSleep = true }, modifier = Modifier.testTag("sleepButton").semantics { contentDescription = sleepLabel }) {
-                Icon(Icons.Rounded.Bedtime, null, Modifier.size(18.dp))
-                Text(
-                    if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_sleep_timer),
-                    Modifier.padding(start = 8.dp).testTag("sleepCountdown"),
-                )
-            }
-            OutlinedButton(onClick = { showAudio = true }, modifier = Modifier.testTag("audioButton")) {
-                Icon(Icons.Rounded.GraphicEq, null, Modifier.size(18.dp))
-                Text(stringResource(R.string.player_audio), Modifier.padding(start = 8.dp))
-            }
-        }
-        if (state.sleep?.shakeToExtend == true) {
-            Text(
-                stringResource(R.string.sleep_shake_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("shakeHint"),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        }
-    }
+    val sleep = state.sleep
+    val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_timer)
+    PlayerAction(
+        Icons.Rounded.Bedtime,
+        // The short name fits the narrow button; the description keeps the full one.
+        if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_sleep_short),
+        onClick = { showSleep = true },
+        active = sleep != null,
+        modifier = Modifier.testTag("sleepButton").semantics { contentDescription = sleepLabel },
+    )
+    PlayerAction(
+        Icons.Rounded.GraphicEq,
+        stringResource(R.string.player_audio),
+        onClick = { showAudio = true },
+        active = state.skipSilence || (state.titleBoostDb ?: state.defaultBoostDb) > 0,
+        modifier = Modifier.testTag("audioButton"),
+    )
     if (showSleep) {
         ModalBottomSheet(onDismissRequest = { showSleep = false }) {
             SleepSheet(state.sleep, onStart = { onStartSleep(it); showSleep = false }, onCancel = { onCancelSleep(); showSleep = false })
@@ -100,6 +87,19 @@ fun ComfortRow(
     if (showAudio) {
         ModalBottomSheet(onDismissRequest = { showAudio = false }) { AudioSheet(state, onSkipSilence, onBoost) }
     }
+}
+
+/** "Shake to extend" while the sleep timer is in its last minute. */
+@Composable
+fun ShakeHint(state: ComfortUiState, modifier: Modifier = Modifier) {
+    if (state.sleep?.shakeToExtend != true) return
+    Text(
+        stringResource(R.string.sleep_shake_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp).testTag("shakeHint"),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

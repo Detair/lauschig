@@ -20,12 +20,19 @@ private val Context.syncStampsDataStore by preferencesDataStore(name = "sync_sta
 interface SyncStamps {
     suspend fun get(key: String): Long?
     suspend fun set(key: String, at: Long)
+
+    /** Forgets every stamp of [serverId] (keys end in `:<serverId>`, e.g. `progress_sync:<id>`); device stamps stay. */
+    suspend fun removeServer(serverId: String)
 }
+
+/** Per-server stamp keys end with this suffix. */
+internal fun serverStampSuffix(serverId: String) = ":$serverId"
 
 class InMemorySyncStamps : SyncStamps {
     private val map = ConcurrentHashMap<String, Long>()
     override suspend fun get(key: String): Long? = map[key]
     override suspend fun set(key: String, at: Long) { map[key] = at }
+    override suspend fun removeServer(serverId: String) { map.keys.removeAll { it.endsWith(serverStampSuffix(serverId)) } }
 }
 
 @Singleton
@@ -33,6 +40,9 @@ class DataStoreSyncStamps @Inject constructor(@ApplicationContext context: Conte
     private val store = context.syncStampsDataStore
     override suspend fun get(key: String): Long? = store.data.first()[longPreferencesKey(key)]
     override suspend fun set(key: String, at: Long) { store.edit { it[longPreferencesKey(key)] = at } }
+    override suspend fun removeServer(serverId: String) {
+        store.edit { prefs -> prefs.asMap().keys.filter { it.name.endsWith(serverStampSuffix(serverId)) }.forEach { prefs.remove(it) } }
+    }
 }
 
 @Module

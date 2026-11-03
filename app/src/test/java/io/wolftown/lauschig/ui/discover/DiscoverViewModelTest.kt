@@ -87,10 +87,10 @@ class DiscoverViewModelTest {
 
     private fun item(
         id: String, title: String, lib: String = "lib1", author: String? = null, series: String? = null, genres: List<String> = emptyList(),
-        added: Long = 0, duration: Double = 100.0,
+        added: Long = 0, duration: Double = 100.0, tags: List<String> = emptyList(),
     ) = ItemEntity(
         serverId = sid, id = id, libraryId = lib, title = title, author = author, seriesName = series, seriesSortKey = if (series != null) 1.0 else null,
-        genres = genres, addedAt = added, durationSec = duration,
+        genres = genres, addedAt = added, durationSec = duration, tags = tags,
     )
 
     private suspend fun seed(vararg items: ItemEntity) {
@@ -109,9 +109,9 @@ class DiscoverViewModelTest {
         )
         db.itemDao().upsertFromList(
             listOf(
-                item("1", "Buch Eins", "lib1", "Ann", "Reihe A", listOf("Krimi"), added = 10),
+                item("1", "Buch Eins", "lib1", "Ann", "Reihe A", listOf("Krimi"), added = 10, tags = listOf("Gute Nacht")),
                 item("2", "Buch Zwei", "lib1", "Ann", "Reihe A", listOf("Krimi"), added = 20),
-                item("3", "Spiel", "lib2", "Bob", "Reihe B", listOf("Kinder"), added = 30),
+                item("3", "Spiel", "lib2", "Bob", "Reihe B", listOf("Kinder"), added = 30, tags = listOf("Auto", "gute nacht")),
             ),
         )
         val v = vm()
@@ -119,6 +119,7 @@ class DiscoverViewModelTest {
         assertEquals(listOf("Spiel", "Buch Zwei", "Buch Eins"), all.recent.map { it.title })
         assertEquals(setOf("Reihe A" to 2, "Reihe B" to 1), all.series.map { it.name to it.count }.toSet())
         assertEquals(setOf("Krimi", "Kinder"), all.genres.map { it.name }.toSet())
+        assertEquals(listOf("Gute Nacht" to 2, "Auto" to 1), all.tags.map { it.name to it.count })
         assertEquals(setOf("Ann", "Bob"), all.authors.map { it.name }.toSet())
 
         v.setKinds(setOf(LibraryKind.AUDIOBOOK))
@@ -126,6 +127,7 @@ class DiscoverViewModelTest {
         assertEquals(listOf("Buch Zwei", "Buch Eins"), books.recent.map { it.title })
         assertEquals(listOf("Reihe A"), books.series.map { it.name })
         assertEquals(listOf("Krimi"), books.genres.map { it.name })
+        assertEquals(listOf("Gute Nacht"), books.tags.map { it.name })
         assertEquals(listOf("Ann"), books.authors.map { it.name })
     }
 

@@ -16,12 +16,10 @@ import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.DataStoreAccountStore
 import io.wolftown.lauschig.account.TokenCipher
 import io.wolftown.lauschig.connection.AddressResolver
-import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.connection.ConnectionLog
+import io.wolftown.lauschig.connection.accountConnection
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.ReachabilityProbe
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import okhttp3.OkHttpClient
 import javax.inject.Singleton
 
@@ -41,14 +39,12 @@ object NetModule {
     )
 
     @Provides @Singleton
-    fun addressResolver(probe: ReachabilityProbe, net: NetworkInfo) = AddressResolver(probe, net)
+    fun addressResolver(probe: ReachabilityProbe, net: NetworkInfo, log: ConnectionLog) = AddressResolver(probe, net, log = log)
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     @Provides @Singleton
     fun apiProvider(store: AccountStore, resolver: AddressResolver): ApiProvider {
-        val connection = store.account.flatMapLatest { a ->
-            if (a == null) flowOf(ConnectionState.Offline) else resolver.states(a.addresses)
-        }
+        // A server switch resets the shared state to Offline/checking first (never the old server's Online).
+        val connection = accountConnection(store.account, resolver::states)
         return ApiProvider(connection, OkHttpClient(), store, CoroutineScope(SupervisorJob() + Dispatchers.Default))
     }
 }

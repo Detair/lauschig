@@ -4,6 +4,7 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import io.wolftown.lauschig.db.dao.AccountDataDao
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.ChapterDao
@@ -68,4 +69,5 @@ abstract class LauschigDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun collectionDao(): CollectionDao
     abstract fun localLibraryDao(): LocalLibraryDao
+    abstract fun accountDataDao(): AccountDataDao
 }

@@ -2,7 +2,9 @@ package io.wolftown.lauschig.playback
 
 import android.util.Log
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.connection.awaitOnlineAnswer
 import androidx.media3.common.MediaItem
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -36,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,7 +52,7 @@ class PlayerControllerImpl(
     private val facade: PlayerFacade,
     private val factory: MediaItemFactory,
     private val loadItem: suspend (serverId: String, itemId: String) -> ItemWithDetails?,
-    /** Waits briefly for an online base URL; only called when the item is not fully local. */
+    /** The online base URL, after the first connection check if it is still running; only called for streams. */
     private val onlineBaseUrl: suspend () -> HttpUrl?,
     private val coverFile: (serverId: String, itemId: String) -> File?,
     /** Fetches chapters and audio files from the server; used when a title is played before its details were loaded. */
@@ -69,6 +73,8 @@ class PlayerControllerImpl(
      */
     private val rewindAfterPause: suspend (pauseMs: Long) -> Long = { 0 },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** The online server's base URL as it changes (null while offline); a streamed queue follows it. */
+    private val onlineBase: Flow<HttpUrl?> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -88,8 +94,10 @@ class PlayerControllerImpl(
         facade = facade,
         factory = factory,
         loadItem = { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) },
+        // The first connection check of a cold start may take a while (unreachable home address first): wait for its answer.
         onlineBaseUrl = {
-            withTimeoutOrNull(3_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
+            (api.connectionState.value as? ConnectionState.Online)?.baseUrl
+                ?: awaitOnlineAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)?.baseUrl
         },
         coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
         // An episode's details are its podcast's: one expanded-item fetch stores the episodes with their files and chapters.
@@ -99,6 +107,7 @@ class PlayerControllerImpl(
         streamStats = monitor.state,
         downloadThrottled = monitor.downloadThrottled,
         rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
+        onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -112,6 +121,9 @@ class PlayerControllerImpl(
     ) {
         val chapterEnds: List<Double> = item.chapters.map { it.endSec }
     }
+
+    /** The scope's dispatcher (main in the app): [stop] runs there like every other call. */
+    private val mainContext = scope.coroutineContext.minusKey(Job)
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -129,19 +141,29 @@ class PlayerControllerImpl(
     private var pollJob: Job? = null
     /** Watches the downloads of the loaded title; see [syncSources]. */
     private var localJob: Job? = null
+    /** Follows the online server's address for a streamed queue; see [onOnlineBase]. */
+    private var baseJob: Job? = null
+    /** The address changed while playing: move the queue when it stops playing (network error, pause), not mid-buffer. */
+    private var pendingBase: HttpUrl? = null
+    /** The player played at the last [refresh]; its stop applies a [pendingBase]. */
+    private var wasPlaying = false
     private var load: StreamLoad? = null
     private var throttled = false
 
     init {
         facade.setOnChange { refresh() }
-        facade.setOnError {
+        facade.setOnError { code ->
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
+            // A stream that ran dry at an old address (home LAN, now in the car): move to the new one. It plays on only
+            // because ExoPlayer still wants to (playWhenReady survives the error); nothing here ever starts playback.
+            if (code in IO_ERRORS && facade.streamBase() != null) applyPendingBase()
         }
         facade.setOnDisconnected {
             // The service is gone; forget the loaded item so the next play() rebuilds the queue.
             playJob?.cancel(); pollJob?.cancel(); pollJob = null
             localJob?.cancel(); localJob = null
+            baseJob?.cancel(); baseJob = null
             current = null
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
@@ -164,6 +186,7 @@ class PlayerControllerImpl(
             if (previous != null) {
                 current = null
                 localJob?.cancel(); localJob = null
+                baseJob?.cancel(); baseJob = null
                 pollJob?.cancel(); pollJob = null
                 if (facade.snapshot().isPlaying) facade.pause()
             }
@@ -229,13 +252,64 @@ class PlayerControllerImpl(
         }
     }
 
-    /** While [c] is loaded, a finished or deleted download of one of its files changes that file's source. */
+    /**
+     * While [c] is loaded, a finished or deleted download of one of its files changes that file's source, and a change
+     * of the server's address moves its streamed files ([onOnlineBase]).
+     */
     private fun watchDownloads(c: Current) {
         localJob?.cancel(); localJob = null
+        baseJob?.cancel(); baseJob = null
+        pendingBase = null
         val key = c.item.item
         localJob = scope.launch {
             localCount(key.serverId, key.id).distinctUntilChanged().collect { syncSources() }
         }
+        watchBase(c)
+    }
+
+    /** Follows the server's address for [c] (also when its files could not be rebuilt yet, e.g. adopted offline). */
+    private fun watchBase(c: Current) {
+        baseJob?.cancel(); baseJob = null
+        val key = c.item.item
+        if (!DeviceLibrary.isLocal(key.serverId, key.id)) baseJob = scope.launch {
+            onlineBase.filterNotNull().distinctUntilChanged().collect { onOnlineBase(it) }
+        }
+    }
+
+    /**
+     * The online server's address is [base] now (e.g. the home LAN address gave way to the public one in the car). A
+     * queue that streams from another address moves there: right away while it does not play (current file reloaded at
+     * its position, the others swapped in place); while it plays it keeps playing from its buffer and moves as soon as
+     * it stops – a network error or a pause ([pendingBase]) – so coming home causes no hiccup. Moving never changes
+     * whether it plays (playWhenReady is kept). Local files never move.
+     */
+    private suspend fun onOnlineBase(base: HttpUrl) {
+        val c = current ?: return
+        val actual = facade.streamBase()?.toHttpUrlOrNull() ?: return
+        if (actual == base) {
+            pendingBase = null
+            return
+        }
+        if (facade.snapshot().isPlaying) {
+            pendingBase = base
+            return
+        }
+        rebase(c, base)
+    }
+
+    /** The player stopped playing (network error, pause): an address that changed meanwhile applies now. */
+    private fun applyPendingBase() {
+        val base = pendingBase ?: return
+        val c = current ?: return
+        pendingBase = null
+        scope.launch { rebase(c, base) }
+    }
+
+    private suspend fun rebase(c: Current, base: HttpUrl) {
+        pendingBase = null
+        Log.i(TAG, "moving the streamed queue to $base")
+        syncSources(newBase = base, force = true)
+        refresh()
     }
 
     /**
@@ -244,12 +318,12 @@ class PlayerControllerImpl(
      * by reloading the queue at the current position (a short re-buffer). A changed file layout (server rescan) is
      * left alone until the next start. A deleted download while offline pauses with the not-downloaded error.
      */
-    private suspend fun syncSources() {
-        val c = current ?: return
-        val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return
-        if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return
+    private suspend fun syncSources(newBase: HttpUrl? = null, force: Boolean = false): Boolean {
+        val c = current ?: return false
+        val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return false
+        if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return false
         val allLocal = withContext(io) { factory.isFullyLocal(fresh) }
-        val base = if (allLocal || DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) null else c.base ?: onlineBaseUrl()
+        val base = if (allLocal || DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) null else newBase ?: c.base ?: onlineBaseUrl()
         val items = try {
             withContext(io) { factory.build(fresh, base) }
         } catch (e: PlaybackUnavailableException) {
@@ -258,11 +332,14 @@ class PlayerControllerImpl(
                 val error = if (DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) R.string.error_local_unavailable else R.string.error_not_downloaded_offline
                 _state.update { it.copy(error = error) }
             }
-            return
+            return false
         }
-        if (current !== c || !facade.hasMedia()) return
-        val changed = items.indices.filter { items[it].localConfiguration?.uri != c.items.getOrNull(it)?.localConfiguration?.uri }
-        if (changed.isEmpty()) return
+        if (current !== c || !facade.hasMedia()) return false
+        // [force]: the player's streamed files may point elsewhere than the app's copy (a title the service started).
+        val changed = items.indices.filter {
+            items[it].localConfiguration?.uri != c.items.getOrNull(it)?.localConfiguration?.uri || (force && isStream(items[it]))
+        }
+        if (changed.isEmpty()) return false
         current = Current(fresh, c.mapper, c.coverPath, streaming = !allLocal, base, items)
         val snap = facade.snapshot()
         if (snap.mediaIndex in changed) {
@@ -272,7 +349,10 @@ class PlayerControllerImpl(
             changed.forEach { facade.replaceMediaItem(it, items[it]) }
         }
         refresh()
+        return true
     }
+
+    private fun isStream(item: MediaItem) = item.localConfiguration?.uri?.scheme.let { it == "http" || it == "https" }
 
     /**
      * Resumes the loaded, paused title. If sync merged a newer position meanwhile (another device; differs by more
@@ -362,6 +442,44 @@ class PlayerControllerImpl(
 
     override fun refreshNow() = refresh()
 
+    /**
+     * The service started a title by itself (Android Auto, voice, playback resumption) and the app may not even be
+     * connected: connect and show it. Idempotent; a title the app started itself is left alone.
+     */
+    override fun adoptFromService() {
+        scope.launch {
+            try {
+                facade.connect()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "connecting to the playback service failed", e)
+                return@launch
+            }
+            refresh()
+        }
+    }
+
+    override suspend fun stop() = withContext(mainContext) {
+        playJob?.cancel(); playJob = null
+        adoptJob?.cancel(); adoptJob = null; adopting = null
+        // Paused first and given a moment: the service's tracker saves the position before the queue is emptied.
+        if (facade.snapshot().isPlaying) {
+            facade.pause()
+            delay(STOP_SETTLE_MS)
+        }
+        pollJob?.cancel(); pollJob = null
+        localJob?.cancel(); localJob = null
+        baseJob?.cancel(); baseJob = null
+        current = null
+        last = null
+        starting = false
+        pendingBase = null
+        wasPlaying = false
+        facade.stop()
+        _state.value = PlayerUiState(downloadThrottled = throttled)
+    }
+
     private fun seekGlobal(c: Current, globalSec: Double) {
         val (i, ms) = c.mapper.toFile(globalSec)
         facade.seekTo(i, ms)
@@ -369,8 +487,17 @@ class PlayerControllerImpl(
     }
 
     private fun refresh() {
-        val c = current ?: return
+        val c = current
+        if (c == null) {
+            wasPlaying = false
+            // Nothing loaded here, but the service may be playing a title it started itself (car, resumption).
+            if (!starting) facade.currentKey()?.let { (serverId, itemId) -> adopt(serverId, itemId) }
+            return
+        }
         val snap = facade.snapshot()
+        val stopped = wasPlaying && !snap.isPlaying
+        wasPlaying = snap.isPlaying
+        if (stopped) applyPendingBase()
         if (snap.isPlaying) starting = false
         val playing = facade.currentKey()
         if (playing != null && !starting && playing.second != c.item.item.id) {
@@ -407,8 +534,8 @@ class PlayerControllerImpl(
     }
 
     /**
-     * The service switched to another title on its own (the next queued one when a title ended): load that title as
-     * the current one, without touching the player's queue.
+     * The service switched to another title on its own (the next queued one when a title ended, a title started from
+     * the car or by playback resumption): load that title as the current one, without touching the player's queue.
      */
     private fun adopt(serverId: String, itemId: String) {
         if (adoptJob?.isActive == true && adopting == itemId) return
@@ -417,6 +544,7 @@ class PlayerControllerImpl(
             val item = loadItem(serverId, itemId) ?: return@launch
             if (facade.currentKey()?.second != itemId) return@launch
             localJob?.cancel(); localJob = null
+            baseJob?.cancel(); baseJob = null
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
             val base = if (allLocal || DeviceLibrary.isLocal(serverId, itemId)) null else onlineBaseUrl()
             val items = try {
@@ -431,7 +559,7 @@ class PlayerControllerImpl(
             current = adopted
             _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, downloadThrottled = throttled)
             refresh()
-            if (items.isNotEmpty()) watchDownloads(adopted)
+            if (items.isNotEmpty()) watchDownloads(adopted) else watchBase(adopted)
         }
     }
 
@@ -449,5 +577,9 @@ class PlayerControllerImpl(
 
     private companion object {
         const val TAG = "PlayerController"
+        /** How long [stop] waits after pausing a playing title before it empties the queue. */
+        const val STOP_SETTLE_MS = 300L
+        /** `PlaybackException.ERROR_CODE_IO_*`: the source could not be read (network gone, address unreachable, 4xx/5xx). */
+        val IO_ERRORS = 2000..2999
     }
 }

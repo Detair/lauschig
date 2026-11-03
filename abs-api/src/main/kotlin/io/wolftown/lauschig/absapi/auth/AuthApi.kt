@@ -14,6 +14,13 @@ interface AuthApi {
     @POST("auth/refresh")
     suspend fun refresh(@Header("x-refresh-token") refreshToken: String): LoginResponse
 
+    /**
+     * Ends this device's session on the server: ABS (2.26+, `Auth.js`) invalidates [refreshToken] (an access token
+     * still runs out on its own). Unauthenticated; the server root, not `/api`. Answers 200 with or without a token.
+     */
+    @POST("logout")
+    suspend fun logout(@Header("x-refresh-token") refreshToken: String): LogoutResponse
+
     /** Unauthenticated; tells which sign-in methods the server offers (`openid` only when OIDC is configured). */
     @GET("status")
     suspend fun status(): StatusResponse

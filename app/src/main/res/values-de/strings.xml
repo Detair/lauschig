@@ -53,6 +53,9 @@
     <string name="filter_all">Alle</string>
     <string name="filter_audiobooks">Hörbücher</string>
     <string name="filter_radio_plays">Hörspiele</string>
+    <string name="filter_tags">Tags</string>
+    <string name="filter_tags_all">Alle Tags</string>
+    <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Band %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
     <string name="cover_offline_available">Offline verfügbar</string>
@@ -108,6 +111,7 @@
     <string name="player_open_details">Details anzeigen</string>
     <string name="source_streaming">Wird gestreamt</string>
     <string name="source_local">Heruntergeladen</string>
+    <string name="source_device">Auf dem Gerät</string>
     <string name="cover_actions">Menü öffnen</string>
     <string name="player_loading">Wird geladen…</string>
     <string name="progress_menu">Weitere Aktionen</string>
@@ -169,6 +173,7 @@
     <string name="discover_recent">Neu hinzugefügt</string>
     <string name="discover_series">Serien</string>
     <string name="discover_genres">Genres</string>
+    <string name="discover_tags">Tags</string>
     <string name="discover_authors">Autoren</string>
     <string name="discover_all">Alle Titel</string>
     <string name="discover_sort">Sortierung: %s</string>
@@ -281,6 +286,7 @@
     <string name="settings_metered_wifi">Nur im WLAN</string>
     <string name="progress_mark_unfinished_keep">Als ungehört markieren (Position bleibt)</string>
     <string name="player_sleep_timer">Sleep-Timer</string>
+    <string name="player_sleep_short">Timer</string>
     <string name="player_sleep_active">Sleep-Timer: noch %1$s</string>
     <string name="player_sleep_chapter_active">Sleep-Timer: Kapitelende, noch %1$s</string>
     <string name="sleep_minutes">%1$d Min.</string>
@@ -406,4 +412,223 @@
     <string name="local_empty">Noch keine Ordner. Füge einen Ordner mit Hörbüchern von diesem Gerät hinzu – sie spielen ohne Server.</string>
     <string name="local_empty_titles">In den Ordnern wurden keine Hörbücher gefunden.</string>
     <string name="local_folder_scan_failed">Nicht alles konnte gelesen werden – die bisher gefundenen Titel bleiben</string>
+    <!-- Android Auto, Sprachsteuerung, Mediensteuerung (Phase 4A) -->
+    <string name="car_continue">Weiterhören</string>
+    <string name="car_downloads">Heruntergeladen</string>
+    <string name="car_series">Serien</string>
+    <string name="car_libraries">Bibliotheken</string>
+    <string name="car_remaining">noch %1$s</string>
+    <string name="car_duration_h_min">%1$d h %2$d min</string>
+    <string name="car_duration_min">%1$d min</string>
+    <string name="car_volume">Band %1$s</string>
+    <string name="car_seek_back">30 Sekunden zurück</string>
+    <string name="car_seek_forward">30 Sekunden vor</string>
+    <string name="car_speed">Tempo %1$s×</string>
+    <string name="car_sleep_off">Sleep-Timer aus</string>
+    <string name="car_sleep_minutes">Sleep-Timer: %1$d min</string>
+    <string name="car_sleep_chapter">Sleep-Timer: Kapitelende</string>
+    <string name="car_chapter_back">Kapitelanfang</string>
+    <string name="car_chapter_next">Nächstes Kapitel</string>
+    <string name="car_error_not_found">Dieser Titel ist nicht mehr verfügbar.</string>
+    <string name="car_error_nothing_found">Nichts in Lauschig gefunden.</string>
+    <string name="car_error_nothing_to_resume">Noch nichts zum Fortsetzen.</string>
+    <!-- Homescreen-Widget (Phase 4B) -->
+    <string name="widget_label">Lauschig</string>
+    <string name="widget_description">Cover, Abspielen/Pause und 30 Sekunden zurück oder vor</string>
+    <string name="widget_empty">Nichts geladen – tippen zum Öffnen</string>
+    <string name="widget_play">Abspielen</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_back_30">30 Sekunden zurück</string>
+    <string name="widget_forward_30">30 Sekunden vor</string>
+    <string name="widget_open">%1$s in Lauschig öffnen</string>
+    <!-- Verbindungsstatus (Phase 4B) -->
+    <string name="connecting_banner">Verbinde mit dem Server …</string>
+    <string name="connection_title">Verbindungsstatus</string>
+    <string name="connection_state_local">Verbunden – lokale Adresse</string>
+    <string name="connection_state_public">Verbunden – öffentliche Adresse</string>
+    <string name="connection_state_offline">Offline</string>
+    <string name="connection_state_checking">Verbinde …</string>
+    <string name="connection_signed_in_as">Angemeldet als %1$s</string>
+    <string name="connection_not_signed_in">Nicht angemeldet</string>
+    <string name="connection_section_addresses">Adressen</string>
+    <string name="connection_local_address">Lokale Adresse</string>
+    <string name="connection_public_address">Öffentliche Adresse</string>
+    <string name="connection_in_use">in Verwendung</string>
+    <string name="connection_probe_ok">Antwortet in %1$d ms · %2$s</string>
+    <string name="connection_probe_failed">Keine Antwort · %1$s</string>
+    <string name="connection_probe_none">Noch nicht geprüft</string>
+    <string name="connection_only_home">Wird nur im Heim-WLAN versucht (%1$s)</string>
+    <string name="connection_section_network">Netz</string>
+    <string name="connection_network_none">Kein Netz</string>
+    <string name="connection_wifi">WLAN</string>
+    <string name="connection_cellular">Mobilfunk</string>
+    <string name="connection_ethernet">Ethernet</string>
+    <string name="connection_vpn">VPN</string>
+    <string name="connection_bluetooth">Bluetooth</string>
+    <string name="connection_other">Andere</string>
+    <string name="connection_metered">getaktet</string>
+    <string name="connection_unmetered">nicht getaktet</string>
+    <string name="connection_not_validated">Internet nicht bestätigt</string>
+    <string name="connection_section_checks">Letzte Prüfung</string>
+    <string name="connection_last_success">Letzte Antwort: %1$s in %2$d ms · %3$s</string>
+    <string name="connection_last_success_none">Noch keine Antwort vom Server</string>
+    <string name="connection_last_error">Letzter Fehler %1$s: %2$s</string>
+    <string name="connection_no_answer">keine Antwort</string>
+    <string name="connection_section_sync">Synchronisierung</string>
+    <string name="connection_last_sync">Fortschritt zuletzt synchronisiert %1$s</string>
+    <string name="connection_last_sync_never">Fortschritt auf diesem Gerät noch nicht synchronisiert</string>
+    <string name="connection_pending">Wartet auf Versand – Fortschritte: %1$d, Hörsitzungen: %2$d</string>
+    <string name="connection_no_socket">Lauschig hält keine Live-Verbindung (Socket) zum Server, es synchronisiert über HTTP.</string>
+    <string name="connection_reconnect">Neu verbinden</string>
+    <string name="connection_reconnecting">Prüfe alle Adressen …</string>
+    <string name="connection_reconnect_online">Verbunden.</string>
+    <string name="connection_reconnect_offline">Keine Adresse hat geantwortet. Heruntergeladene Titel funktionieren weiter.</string>
+    <string name="connection_copy">Details kopieren</string>
+    <string name="connection_copied">Details kopiert</string>
+    <string name="settings_section_connection">Verbindung</string>
+    <string name="settings_connection_status">Verbindungsstatus</string>
+    <string name="settings_connection_status_hint">Lokal, öffentlich oder offline, Adressen, Netz, neu verbinden</string>
+    <string name="playback_start_channel">Wiedergabe starten</string>
+    <!-- Links (Phase 4B) -->
+    <string name="link_no_server">Link gehört zu keinem eingerichteten Server</string>
+    <string name="link_unsupported">Diesen Link kann Lauschig nicht öffnen</string>
+    <string name="link_offline">Titel nicht offline verfügbar</string>
+    <string name="link_not_found">Titel nicht auf dem Server gefunden</string>
+    <string name="link_failed">Der Titel konnte nicht geladen werden</string>
+    <string name="link_series_unknown">Serie noch nicht bekannt – öffne zuerst einen ihrer Titel</string>
+    <string name="settings_links_title">Links öffnen</string>
+    <string name="settings_links_hint">Links zu Titeln in der Audiobookshelf-Weboberfläche (%1$s) öffnen sich in Lauschig, sobald du die Adressen unter „Standardmäßig öffnen“ hinzufügst.</string>
+    <string name="settings_links_enabled">Erlaubt: %1$s</string>
+    <string name="settings_links_not_enabled">Noch nicht erlaubt</string>
+    <string name="settings_links_other_server">Dein Server (%1$s) gehört nicht dazu – teile seine Links stattdessen mit Lauschig.</string>
+    <string name="settings_links_none">Keine Link-Adressen eingebaut – teile Links stattdessen mit Lauschig.</string>
+    <string name="settings_links_open">Standardmäßig öffnen …</string>
+    <!-- Admin-Menü (Phase 4B) -->
+    <string name="admin_title">Server-Verwaltung</string>
+    <string name="admin_entry_hint">Bibliotheken scannen, sehen wer online ist</string>
+    <string name="admin_offline_hint">Nur mit Verbindung zum Server</string>
+    <string name="admin_section_libraries">Bibliotheken</string>
+    <string name="admin_scan">Scannen</string>
+    <string name="admin_scan_library_title">Bibliothek scannen?</string>
+    <string name="admin_scan_library_message">Der Server sucht in „%1$s“ nach neuen, geänderten und entfernten Titeln. Das kann eine Weile dauern.</string>
+    <string name="admin_scan_started">Scan von „%1$s“ gestartet – Lauschig aktualisiert die Bibliothek in etwa einer Minute</string>
+    <string name="admin_section_online">Wer ist online</string>
+    <string name="admin_refresh">Aktualisieren</string>
+    <string name="admin_online_none">Niemand ist in der Weboberfläche oder der offiziellen App online</string>
+    <string name="admin_online_note">Lauschig hält keine Live-Verbindung zum Server, wer in Lauschig hört, erscheint hier nicht.</string>
+    <string name="admin_listening">Hört: %1$s · %2$s</string>
+    <string name="admin_not_listening">Online, hört gerade nicht</string>
+    <string name="admin_sessions_title">Weitere offene Wiedergaben</string>
+    <string name="admin_unknown_user">Unbekannt</string>
+    <string name="admin_forbidden">Keine Berechtigung auf dem Server</string>
+    <string name="admin_failed">Das hat nicht geklappt: %1$s</string>
+    <string name="admin_offline">Keine Verbindung zum Server</string>
+    <string name="admin_item_menu">Server-Verwaltung</string>
+    <string name="admin_rescan_item">Titel neu scannen</string>
+    <string name="admin_rescan_item_message">Der Server liest die Dateien von „%1$s“ neu ein.</string>
+    <string name="admin_match_item">Titel neu zuordnen</string>
+    <string name="admin_match_item_message">Der Server sucht „%1$s“ beim Metadaten-Anbieter der Bibliothek (Quick Match) und übernimmt, was er findet.</string>
+    <string name="admin_confirm">Starten</string>
+    <string name="admin_cancel">Abbrechen</string>
+    <string name="admin_scan_updated">Neu gescannt – der Titel wurde aktualisiert</string>
+    <string name="admin_scan_uptodate">Neu gescannt – der Titel war schon aktuell</string>
+    <string name="admin_scan_removed">Neu gescannt – der Titel ist auf dem Server nicht mehr da</string>
+    <string name="admin_scan_done">Neu gescannt</string>
+    <string name="admin_matched">Zugeordnet – Angaben aktualisiert</string>
+    <string name="admin_matched_nothing">Treffer gefunden, nichts geändert</string>
+    <string name="admin_no_match">Kein Treffer: %1$s</string>
+    <string name="admin_no_provider">Die Bibliothek hat keinen Metadaten-Anbieter</string>
+    <string name="settings_section_look">Darstellung</string>
+    <string name="settings_theme">Design</string>
+    <string name="settings_theme_hint">Hell, dunkel oder wie das System</string>
+    <string name="theme_system">Wie das System</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="settings_pure_black">Reines Schwarz</string>
+    <string name="settings_pure_black_hint">Schwarzer Hintergrund im dunklen Design – schont OLED-Displays und ist nachts angenehm</string>
+    <string name="settings_pure_black_light">Nur im dunklen Design</string>
+    <string name="settings_dynamic_color">Dynamische Farben</string>
+    <string name="settings_dynamic_color_hint">Farben passend zum Hintergrundbild</string>
+    <string name="settings_font_scale">Schriftgröße</string>
+    <string name="settings_font_scale_hint">Zusätzlich zur Schriftgröße des Systems</string>
+    <string name="font_scale_percent">%1$d %%</string>
+    <string name="settings_preview_title">Vorschau</string>
+    <string name="settings_preview_text">So sehen Titel und Text aus.</string>
+    <string name="nav_settings_title">Navigation</string>
+    <string name="nav_settings_entry">Navigation anpassen</string>
+    <string name="nav_settings_entry_hint">Reihenfolge der Reiter, ausgeblendete Reiter und Startbildschirm</string>
+    <string name="nav_settings_hint">Änderungen an den Reitern gelten sofort.</string>
+    <string name="nav_settings_tabs">Reiter</string>
+    <string name="nav_settings_start">Startbildschirm</string>
+    <string name="nav_settings_start_hint">Lauschig öffnet ab dem nächsten Start hier. Player, Links und Benachrichtigungen öffnen weiter ihre eigene Seite.</string>
+    <string name="nav_settings_reset">Zurücksetzen</string>
+    <string name="nav_settings_always">Immer sichtbar</string>
+    <string name="nav_settings_hidden">Ausgeblendet</string>
+    <string name="nav_settings_visible">%1$s anzeigen</string>
+    <string name="nav_settings_up">%1$s nach oben</string>
+    <string name="nav_settings_down">%1$s nach unten</string>
+    <string name="whatsnew_title">Neu in Lauschig</string>
+    <string name="whatsnew_version">Version %1$s</string>
+    <string name="whatsnew_done">Alles klar</string>
+    <string name="settings_section_about">Über</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_whats_new">Was ist neu</string>
+    <string name="settings_whats_new_hint">Die Änderungen jeder Version</string>
+    <string-array name="whatsnew_0_2_0">
+        <item>Schlaf-Timer mit sanftem Ausblenden – Schütteln verlängert ihn</item>
+        <item>Jedes Buch merkt sich sein Tempo und seinen Lautstärke-Boost; Stille lässt sich überspringen</item>
+        <item>Nach einer Pause springt Lauschig ein paar Sekunden zurück</item>
+        <item>Auf Wunsch weiterspielen, sobald Kopfhörer oder das Auto verbunden sind</item>
+        <item>Lesezeichen mit Notiz, Hörverlauf pro Buch und eine Warteschlange</item>
+        <item>Sammlungen und Playlists aus Audiobookshelf</item>
+        <item>Downloads pausieren, sortieren, durchsuchen und den belegten Speicher sehen</item>
+        <item>Eigene Hörbücher vom Handy abspielen – unter „Auf dem Gerät“</item>
+        <item>Beim Streamen wird im Hintergrund heruntergeladen, mit Fortschrittsanzeige</item>
+        <item>Android Auto und Sprachbefehle wie „Spiel Die drei ??? in Lauschig“</item>
+        <item>Widget für den Startbildschirm mit Cover, Pause und ±30 Sekunden</item>
+        <item>Verbindungsstatus zum Nachsehen, wenn der Server nicht erreichbar ist</item>
+        <item>Links aus Audiobookshelf öffnen den Titel direkt in Lauschig</item>
+        <item>Für Admins: Bibliothek scannen, Titel neu zuordnen und sehen, wer online ist</item>
+        <item>Darstellung nach Wunsch: hell, dunkel, reines Schwarz und größere Schrift</item>
+        <item>Reiter umsortieren, ausblenden und den Startbildschirm wählen</item>
+        <item>Mehr Platz auf Tablets und im Querformat; alle Player-Knöpfe ohne Scrollen</item>
+        <item>Nach Tags filtern in Bibliothek und Entdecken</item>
+        <item>Abmelden in den Einstellungen – die Downloads können auf dem Gerät bleiben</item>
+    </string-array>
+    <string name="pane_empty">Wähle einen Titel, um hier seine Details zu sehen.</string>
+    <string name="settings_section_account">Konto</string>
+    <string name="account_admin">Admin</string>
+    <string name="sign_out">Abmelden</string>
+    <string name="sign_out_hint">Deine Downloads können auf dem Gerät bleiben</string>
+    <string name="sign_out_title">Abmelden?</string>
+    <string name="sign_out_message">Dieses Gerät wird von %1$s abgemeldet.</string>
+    <string name="sign_out_syncing">Fortschritt wird übertragen …</string>
+    <string name="sign_out_keep_downloads">Downloads auf diesem Gerät behalten (%1$s)</string>
+    <string name="sign_out_confirm">Abmelden</string>
+    <string name="sign_out_cancel">Abbrechen</string>
+    <string name="sign_out_running">Abmelden …</string>
+    <plurals name="sign_out_unsynced_lost">
+        <item quantity="one">%1$d Änderung ist noch nicht auf dem Server und geht beim Abmelden verloren.</item>
+        <item quantity="other">%1$d Änderungen sind noch nicht auf dem Server und gehen beim Abmelden verloren.</item>
+    </plurals>
+    <plurals name="sign_out_unsynced_kept">
+        <item quantity="one">%1$d Änderung ist noch nicht auf dem Server. Sie wird übertragen, sobald du dich wieder mit diesem Konto anmeldest.</item>
+        <item quantity="other">%1$d Änderungen sind noch nicht auf dem Server. Sie werden übertragen, sobald du dich wieder mit diesem Konto anmeldest.</item>
+    </plurals>
+    <string name="previous_account_title">Downloads eines anderen Kontos</string>
+    <string name="previous_account_message">Auf dem Gerät liegen noch Downloads von %1$s (%2$s, %3$s). Löschen?</string>
+    <string name="previous_account_delete">Löschen</string>
+    <string name="previous_account_keep">Behalten</string>
+    <string name="kept_delete_failed">Es ließ sich nicht alles löschen. Bitte später noch einmal versuchen.</string>
+    <string name="sign_out_keep_data">Daten auf diesem Gerät behalten</string>
+    <string name="previous_account_message_data">Auf dem Gerät liegen noch Daten von %1$s (%2$s). Löschen?</string>
+    <string name="sign_out_unsynced_unknown">Ob noch Änderungen fehlen, ließ sich nicht prüfen.</string>
+    <string name="car_sign_in">In Lauschig auf dem Handy anmelden</string>
+    <string name="downloads_previous_accounts">Downloads früherer Konten</string>
+    <string name="downloads_previous_entry">%1$s (%2$s)</string>
+    <string name="downloads_previous_data">Daten, keine Downloads</string>
+    <string name="downloads_previous_delete">Daten von %1$s löschen</string>
+    <string name="downloads_previous_confirm_title">Daten von %1$s löschen?</string>
+    <string name="downloads_previous_confirm_message">Die Downloads (%1$s) und noch nicht übertragene Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
+    <string name="downloads_previous_confirm_message_data">Die noch nicht übertragenen Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
 </resources>

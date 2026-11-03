@@ -278,6 +278,10 @@ interface DownloadDao {
     @Query("SELECT EXISTS(SELECT 1 FROM downloads WHERE serverId = :serverId AND (itemId = :itemId OR substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'))")
     suspend fun hasAnyForItem(serverId: String, itemId: String): Boolean
 
+    /** Keys of every download row of [serverId], whatever its state. */
+    @Query("SELECT itemId FROM downloads WHERE serverId = :serverId")
+    suspend fun keys(serverId: String): List<String>
+
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND state IN (:states)")
     suspend fun inStates(serverId: String, states: List<DownloadState>): List<DownloadEntity>
 

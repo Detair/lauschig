@@ -2,10 +2,19 @@ package io.wolftown.lauschig.ui.player
 
 import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,7 +31,6 @@ import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.foundation.layout.FlowRow
 import io.wolftown.lauschig.ui.extras.BookmarksSheet
 import io.wolftown.lauschig.ui.extras.HistorySheet
 import io.wolftown.lauschig.ui.extras.QueueSheet
@@ -42,7 +50,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -117,18 +124,18 @@ fun PlayerRoute(
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
         extras = {
-            PlayerExtrasRow(onBookmarks = { sheet = PlayerSheet.Bookmarks }, onQueue = { sheet = PlayerSheet.Queue }, onHistory = { sheet = PlayerSheet.History })
+            PlayerExtraButtons(onBookmarks = { sheet = PlayerSheet.Bookmarks }, onQueue = { sheet = PlayerSheet.Queue }, onHistory = { sheet = PlayerSheet.History })
         },
         comfort = {
-            ComfortRow(
+            ComfortButtons(
                 comfort,
                 onStartSleep = comfortViewModel::startSleep,
                 onCancelSleep = comfortViewModel::cancelSleep,
                 onSkipSilence = comfortViewModel::setSkipSilence,
                 onBoost = comfortViewModel::setBoost,
-                modifier = Modifier.padding(bottom = 16.dp),
             )
         },
+        comfortHint = { ShakeHint(comfort) },
     )
     val close = { sheet = null }
     when (sheet) {
@@ -141,23 +148,12 @@ fun PlayerRoute(
 
 enum class PlayerSheet { Bookmarks, Queue, History }
 
-/** Bookmarks, queue and listening history of the player. */
+/** Bookmarks, queue and listening history buttons of the player's action area. */
 @Composable
-fun PlayerExtrasRow(onBookmarks: () -> Unit, onQueue: () -> Unit, onHistory: () -> Unit, modifier: Modifier = Modifier) {
-    FlowRow(modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-        OutlinedButton(onClick = onBookmarks, modifier = Modifier.testTag("bookmarksButton")) {
-            Icon(Icons.Rounded.Bookmarks, null, Modifier.size(18.dp))
-            Text(stringResource(R.string.player_bookmarks), Modifier.padding(start = 8.dp))
-        }
-        OutlinedButton(onClick = onQueue, modifier = Modifier.testTag("queueButton")) {
-            Icon(Icons.AutoMirrored.Rounded.QueueMusic, null, Modifier.size(18.dp))
-            Text(stringResource(R.string.player_queue), Modifier.padding(start = 8.dp))
-        }
-        OutlinedButton(onClick = onHistory, modifier = Modifier.testTag("historyButton")) {
-            Icon(Icons.Rounded.History, null, Modifier.size(18.dp))
-            Text(stringResource(R.string.player_history), Modifier.padding(start = 8.dp))
-        }
-    }
+fun RowScope.PlayerExtraButtons(onBookmarks: () -> Unit, onQueue: () -> Unit, onHistory: () -> Unit) {
+    PlayerAction(Icons.Rounded.Bookmarks, stringResource(R.string.player_bookmarks), onBookmarks, Modifier.testTag("bookmarksButton"))
+    PlayerAction(Icons.AutoMirrored.Rounded.QueueMusic, stringResource(R.string.player_queue), onQueue, Modifier.testTag("queueButton"))
+    PlayerAction(Icons.Rounded.History, stringResource(R.string.player_history), onHistory, Modifier.testTag("historyButton"))
 }
 
 /** "1,25×" in the user's locale. */
@@ -169,6 +165,12 @@ private val speedFormats = java.util.concurrent.ConcurrentHashMap<java.util.Loca
 private fun speedFormat(): NumberFormat = speedFormats.getOrPut(java.util.Locale.getDefault()) {
     NumberFormat.getNumberInstance().apply { minimumFractionDigits = 1; maximumFractionDigits = 2 }
 }
+
+/** From this width on, a window wider than high shows the cover beside the controls (phones in landscape, tablets). */
+private val WIDE_MIN_WIDTH = 600.dp
+
+/** The cover never shrinks below this; when even that does not fit, the player scrolls. */
+private val MIN_COVER = 96.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -189,10 +191,12 @@ fun PlayerScreen(
     onDeleteDownload: () -> Unit = {},
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
-    /** Sleep timer and audio options ([ComfortRow]); shown only while a title is loaded. */
-    comfort: @Composable () -> Unit = {},
-    /** Bookmarks, queue, history ([PlayerExtrasRow]); shown only while a title is loaded. */
-    extras: @Composable () -> Unit = {},
+    /** Sleep timer and audio buttons ([ComfortButtons]) of the action area; shown only while a title is loaded. */
+    comfort: @Composable RowScope.() -> Unit = {},
+    /** Under the action area, e.g. "shake to extend" ([ShakeHint]); shown only while a title is loaded. */
+    comfortHint: @Composable () -> Unit = {},
+    /** Bookmarks, queue, history ([PlayerExtraButtons]); shown only while a title is loaded. */
+    extras: @Composable RowScope.() -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -205,87 +209,101 @@ fun PlayerScreen(
         pending?.let { if (abs(it * state.chapterDurationSec - state.chapterPositionSec) < 2.0) pending = null }
     }
     val hasChapters = state.chapters.isNotEmpty()
+    val loaded = state.itemId != null
+    val detailsLabel = stringResource(R.string.player_open_details)
 
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        val detailsLabel = stringResource(R.string.player_open_details)
+    val topBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
-            Spacer(Modifier.weight(1f))
+            // Where it plays from sits in the top bar's free middle, which keeps the title block short.
+            Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                if (state.itemId != null) SourceIndicator(playSource(state.itemId, state.isStreaming))
+            }
             if (state.itemId != null) {
                 if (!DeviceLibrary.isLocalKey(state.itemId)) DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
                 IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
                 topActions()
             }
         }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val model = coverModel(LocalServerBaseUrl.current, state.itemId.orEmpty(), state.coverPath, 0)
-            Box(
-                Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp))
-                    .clickable(onClickLabel = detailsLabel, onClick = onOpenDetails).testTag("playerCover"),
-            ) {
-                Initials(state.title)
-                if (model != null) AsyncImage(model, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
+    }
+    val cover: @Composable () -> Unit = {
+        val model = coverModel(LocalServerBaseUrl.current, state.itemId.orEmpty(), state.coverPath, 0)
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = detailsLabel, onClick = onOpenDetails).testTag("playerCover")) {
+            Initials(state.title)
+            if (model != null) AsyncImage(model, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
-        Text(
-            state.title,
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).clickable(onClickLabel = detailsLabel, onClick = onOpenDetails),
-        )
-        if (state.itemId != null) {
-            Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) { SourceIndicator(state.isStreaming) }
-        }
-        state.chapterTitle?.let {
-            Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        }
-        state.error?.let {
-            Text(stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        }
-        state.streamLoad?.let { load ->
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("streamLoad"), horizontalAlignment = Alignment.CenterHorizontally) {
+    }
+    val info: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                state.title,
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().clickable(onClickLabel = detailsLabel, onClick = onOpenDetails),
+            )
+            state.chapterTitle?.let {
                 Text(
-                    streamLoadText(load),
+                    it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            state.error?.let {
+                Text(stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            state.streamLoad?.let { load ->
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("streamLoad"), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        streamLoadText(load),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    load.fraction()?.let { f ->
+                        LinearProgressIndicator(progress = { f }, modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth().padding(top = 4.dp))
+                    }
+                }
+            }
+            if (state.downloadThrottled) {
+                Text(
+                    stringResource(R.string.player_download_throttled),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("downloadThrottled"),
                 )
-                load.fraction()?.let { f ->
-                    LinearProgressIndicator(progress = { f }, modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth().padding(top = 4.dp))
-                }
             }
         }
-        if (state.downloadThrottled) {
-            Text(
-                stringResource(R.string.player_download_throttled),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("downloadThrottled"),
+    }
+    val progress: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth()) {
+            val sliderLabel = stringResource(R.string.player_chapter_slider)
+            Slider(
+                value = dragging ?: pending ?: state.chapterProgress,
+                onValueChange = { dragging = it },
+                onValueChangeFinished = { dragging?.let { onSeekInChapter(it); pending = it }; dragging = null },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).semantics { contentDescription = sliderLabel }.testTag("chapterSlider"),
             )
+            // Chapter elapsed and length at the ends, the position in the whole book between them.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val shownElapsed = dragging?.let { io.wolftown.lauschig.ui.detail.formatClock(it * state.chapterDurationSec) } ?: state.chapterElapsedText
+                Text(shownElapsed, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    stringResource(R.string.player_book_time, state.bookElapsedText, state.bookTotalText),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).testTag("bookTime"),
+                )
+                Text(state.chapterTotalText, style = MaterialTheme.typography.labelLarge)
+            }
         }
-
-        val sliderLabel = stringResource(R.string.player_chapter_slider)
-        Slider(
-            value = dragging ?: pending ?: state.chapterProgress,
-            onValueChange = { dragging = it },
-            onValueChangeFinished = { dragging?.let { onSeekInChapter(it); pending = it }; dragging = null },
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).semantics { contentDescription = sliderLabel }.testTag("chapterSlider"),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            val shownElapsed = dragging?.let { io.wolftown.lauschig.ui.detail.formatClock(it * state.chapterDurationSec) } ?: state.chapterElapsedText
-            Text(shownElapsed, style = MaterialTheme.typography.labelLarge)
-            Text(state.chapterTotalText, style = MaterialTheme.typography.labelLarge)
-        }
-        Text(
-            stringResource(R.string.player_book_time, state.bookElapsedText, state.bookTotalText),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("bookTime"),
-        )
-
-        Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+    }
+    val controls: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onPrevious, enabled = hasChapters, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.player_previous_chapter), Modifier.size(32.dp))
             }
@@ -310,20 +328,68 @@ fun PlayerScreen(
                 Icon(Icons.Rounded.SkipNext, stringResource(R.string.player_next_chapter), Modifier.size(32.dp))
             }
         }
-
-        finished()
-        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            val speedDescription = stringResource(R.string.player_speed_button, formatSpeed(state.speed))
-            OutlinedButton(onClick = { showSpeed = true }, modifier = Modifier.testTag("speedButton").semantics { contentDescription = speedDescription }) {
-                Text(formatSpeed(state.speed))
+    }
+    // One compact area instead of three button rows, so a phone shows it without scrolling.
+    val actions: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) {
+                val speedDescription = stringResource(R.string.player_speed_button, formatSpeed(state.speed))
+                PlayerAction(
+                    Icons.Rounded.Speed, formatSpeed(state.speed), onClick = { showSpeed = true }, active = state.speed != 1f,
+                    modifier = Modifier.testTag("speedButton").semantics { contentDescription = speedDescription },
+                )
+                PlayerAction(
+                    Icons.AutoMirrored.Rounded.List, stringResource(R.string.player_chapters), onClick = { showChapters = true },
+                    enabled = hasChapters, modifier = Modifier.testTag("chaptersButton"),
+                )
+                if (loaded) comfort()
             }
-            OutlinedButton(onClick = { showChapters = true }, enabled = hasChapters, modifier = Modifier.testTag("chaptersButton")) {
-                Icon(Icons.AutoMirrored.Rounded.List, null, Modifier.size(18.dp))
-                Text(stringResource(R.string.player_chapters), Modifier.padding(start = 8.dp))
+            if (loaded) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) { extras() }
+            if (loaded) comfortHint()
+        }
+    }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val viewport = constraints.maxHeight
+        val viewportDp = maxHeight
+        if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
+            // Cover with the action area under it on the start side, title, progress and transport controls beside it.
+            Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
+                }
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    Column(Modifier.heightIn(min = viewportDp)) {
+                        topBar()
+                        Spacer(Modifier.weight(1f))
+                        info()
+                        progress()
+                        controls()
+                        finished()
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+            val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
+            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+                CoverFitColumn(
+                    viewport, MIN_COVER, maxCover,
+                    header = topBar,
+                    cover = cover,
+                    body = {
+                        Column(Modifier.fillMaxWidth()) {
+                            info()
+                            progress()
+                            controls()
+                            finished()
+                            actions()
+                        }
+                    },
+                    modifier = Modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp),
+                )
             }
         }
-        if (state.itemId != null) comfort()
-        if (state.itemId != null) extras()
     }
 
     if (showSpeed) {
@@ -340,6 +406,45 @@ fun PlayerScreen(
                     scope.launch { sheetState.hide() }.invokeOnCompletion { showChapters = false }
                 }
             }
+        }
+    }
+}
+
+/**
+ * [header], a square [cover] and [body] stacked; the cover gets the height that is left of [viewportHeight] (px),
+ * between [minCover] and [maxCover] and never wider than the width. Space left over goes around the cover. When even
+ * the smallest cover does not fit, the column is taller than the viewport (the caller scrolls).
+ */
+@Composable
+private fun CoverFitColumn(
+    viewportHeight: Int,
+    minCover: Dp,
+    maxCover: Dp,
+    header: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
+    body: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    gap: Dp = 12.dp,
+) {
+    Layout(contents = listOf(header, cover, body), modifier = modifier) { (headerParts, coverParts, bodyParts), constraints ->
+        val width = constraints.maxWidth
+        val loose = Constraints(maxWidth = width)
+        val head = headerParts.map { it.measure(loose) }
+        val rest = bodyParts.map { it.measure(loose) }
+        val fixed = head.sumOf { it.height } + rest.sumOf { it.height } + 2 * gap.roundToPx()
+        val largest = minOf(maxCover.roundToPx(), width)
+        val side = (viewportHeight - fixed).coerceIn(minOf(minCover.roundToPx(), largest), largest)
+        val pic = coverParts.map { it.measure(Constraints.fixed(side, side)) }
+        val content = fixed + side
+        val height = maxOf(content, viewportHeight)
+        val extra = height - content
+        layout(width, height) {
+            var y = 0
+            head.forEach { it.place(0, y); y += it.height }
+            y += gap.roundToPx() + extra / 2
+            pic.forEach { it.place((width - side) / 2, y) }
+            y += side + gap.roundToPx() + (extra - extra / 2)
+            rest.forEach { it.place(0, y); y += it.height }
         }
     }
 }

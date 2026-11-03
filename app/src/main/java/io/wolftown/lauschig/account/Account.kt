@@ -35,6 +35,16 @@ data class Account(
 }
 
 /**
+ * The server as the user knows it (settings, sign-out questions): the public address's host, else the local one's,
+ * with the port only when it is not the scheme's default. Empty without any address.
+ */
+val Account.displayHost: String
+    get() {
+        val url = addresses.public ?: addresses.local ?: return ""
+        return if (url.port == HttpUrl.defaultPort(url.scheme)) url.host else "${url.host}:${url.port}"
+    }
+
+/**
  * The form in which a cleartext (http://) server is stored in [Account.allowCleartext]:
  * `scheme://host:port` (no path), so every URL on a confirmed server matches.
  */

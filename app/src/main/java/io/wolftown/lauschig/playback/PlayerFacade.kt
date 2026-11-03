@@ -21,11 +21,20 @@ interface PlayerFacade {
     /** (serverId, playable key) of the playing queue entry; the service may have loaded another title by itself. */
     fun currentKey(): Pair<String, String>? = null
 
+    /** Connects to the service if not connected yet (a title may already be playing there). */
+    suspend fun connect() {}
+
+    /** Stops and empties the queue (sign-out); reaches a running service even if this facade was not connected yet. */
+    suspend fun stop() {}
+
     /** True while the (remote) player is connected and has a queue loaded. */
     fun hasMedia(): Boolean
 
-    /** Invoked on a playback error (e.g. a file vanished). */
-    fun setOnError(onError: () -> Unit)
+    /** Invoked on a playback error (e.g. a file vanished) with its `PlaybackException` error code. */
+    fun setOnError(onError: (errorCode: Int) -> Unit)
+
+    /** The server the queue's streamed files point at (`MediaItemFactory.EXTRA_STREAM_BASE`), null if nothing streams. */
+    fun streamBase(): String? = null
 
     /** Invoked when the service connection was lost (service stopped); the queue is gone. */
     fun setOnDisconnected(onDisconnected: () -> Unit)

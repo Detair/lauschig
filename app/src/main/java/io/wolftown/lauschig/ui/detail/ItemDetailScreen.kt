@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.admin.ItemAdminMenu
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.FinishedCard
@@ -84,6 +85,8 @@ fun ItemDetailRoute(
         state, onBack, viewModel::onPrimary, { viewModel.download(); askNotifications() }, viewModel::pauseDownload,
         viewModel::deleteDownload, viewModel::onChapter, modifier,
         topActions = {
+            // Admins: rescan / re-match this title on the server (hidden for everyone else and for device titles).
+            if (state.found) ItemAdminMenu(state.title)
             if (state.found) {
                 ProgressMenuButton(state.itemId, onEnqueue = {
                     extrasViewModel.enqueue(key)

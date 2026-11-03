@@ -1,0 +1,72 @@
+package io.wolftown.lauschig.links
+
+import android.app.SearchManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.provider.MediaStore
+import io.wolftown.lauschig.MainActivity
+import io.wolftown.lauschig.ui.setup.OidcCallback
+
+/** "Spiel X in Lauschig" from the Assistant outside the car. */
+data class VoiceRequest(val query: String?, val extras: Bundle?)
+
+/** What `MainActivity` takes from one intent. */
+data class Incoming(
+    /** A screen to open ([MainActivity.EXTRA_OPEN]: cleanup, player). */
+    val open: String? = null,
+    val voice: VoiceRequest? = null,
+    /** An Audiobookshelf web link (VIEW of a configured host, or shared text). */
+    val link: String? = null,
+    /** The SSO redirect `lauschig://oauth?…`. */
+    val oidc: Uri? = null,
+)
+
+/** What `MainActivity` does with the intents it receives (pure, so the routing is testable). */
+object IncomingIntents {
+    /**
+     * The web link an intent carries: a VIEW of an http(s) URL (the generated filter for the configured hosts), or a
+     * shared text (`ACTION_SEND`, `text/plain`) with a URL in it. Null for everything else (launcher, SSO callback,
+     * voice, notifications).
+     */
+    fun link(intent: Intent?): String? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.data?.takeIf { it.scheme.equals("http", true) || it.scheme.equals("https", true) }?.toString()
+        Intent.ACTION_SEND -> intent.takeIf { it.type?.startsWith("text/") == true }
+            ?.let { it.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() }
+            ?.let(AbsLinks::firstUrl)
+        else -> null
+    }
+
+    /**
+     * True if [intent] was used before: the activity is [recreated] (saved state), or Android hands an old task's intent
+     * to a new activity from Recents (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`; on Android 9–11 after Back + Recents,
+     * without saved state).
+     */
+    fun isReplay(intent: Intent?, recreated: Boolean): Boolean =
+        recreated || (intent != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0)
+
+    /**
+     * Takes what [intent] asks for and strips it from the intent. A recreation ([replay]: rotation, process restart,
+     * a task restored from Recents after a process death – then with its original extras) hands the old intent again:
+     * every one-shot request (open a screen, voice, links, the SSO redirect) was used already and is ignored; the open
+     * extra is still stripped.
+     */
+    fun consume(intent: Intent?, replay: Boolean): Incoming {
+        if (intent == null) return Incoming()
+        val open = intent.getStringExtra(MainActivity.EXTRA_OPEN)
+        intent.removeExtra(MainActivity.EXTRA_OPEN)
+        if (replay) return Incoming()
+        var voice: VoiceRequest? = null
+        if (intent.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
+            voice = VoiceRequest(intent.getStringExtra(SearchManager.QUERY), intent.extras)
+            intent.action = null
+        }
+        val link = link(intent)?.also {
+            intent.action = null
+            intent.data = null
+            intent.removeExtra(Intent.EXTRA_TEXT)
+        }
+        val oidc = intent.data?.takeIf(OidcCallback::isCallback)?.also { intent.data = null }
+        return Incoming(open, voice, link, oidc)
+    }
+}

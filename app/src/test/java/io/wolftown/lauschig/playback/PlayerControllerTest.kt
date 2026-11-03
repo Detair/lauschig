@@ -46,8 +46,11 @@ private class FakeFacade : PlayerFacade {
     var setCalls = 0
     val replaced = mutableListOf<Int>()
     override fun replaceMediaItem(index: Int, item: MediaItem) { items = items.toMutableList().also { it[index] = item }; replaced += index }
-    override fun play() { snap = snap.copy(isPlaying = true) }
-    override fun pause() { snap = snap.copy(isPlaying = false) }
+    /** ExoPlayer's intent to play; kept across errors and queue swaps, so a rebuilt queue plays on only if it was true. */
+    var playWhenReady = false
+    var playCalls = 0
+    override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
+    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
@@ -57,11 +60,16 @@ private class FakeFacade : PlayerFacade {
         e.getString(MediaItemFactory.EXTRA_SERVER_ID)!! to e.getString(MediaItemFactory.EXTRA_ITEM_ID)!!
     }
     override fun setOnChange(onChange: () -> Unit) { cb = onChange }
-    var errorCb: () -> Unit = {}
+    var errorCb: (Int) -> Unit = {}
     var disconnectedCb: () -> Unit = {}
     override fun hasMedia() = items.isNotEmpty()
-    override fun setOnError(onError: () -> Unit) { errorCb = onError }
+    var connects = 0
+    override suspend fun connect() { connects++ }
+    override fun setOnError(onError: (Int) -> Unit) { errorCb = onError }
+    override fun streamBase() = items.firstNotNullOfOrNull { it.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
+    var stops = 0
+    override suspend fun stop() { stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
     fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
@@ -133,6 +141,151 @@ class PlayerControllerTest {
         assertEquals("Second", c.state.value.title)
         assertEquals(600.0, c.state.value.durationSec, 0.0)
         assertEquals(30.0, c.state.value.positionSec, 0.0)
+    }
+
+    @Test fun titleStartedByTheCar_withNothingLoadedInTheApp_isAdopted() = runTest {
+        val f = FakeFacade()
+        val carTitle = ItemWithDetails(ItemEntity(s, "car", "lib", "Vom Auto", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "car", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val c = controller(f, { null }, loadById = { _, id -> if (id == "car") carTitle else null })
+        // Android Auto started "car" inside the service; the app never played anything and was not connected.
+        f.key = s to "car"
+        f.snap = PlayerSnapshot(true, 0, 30_000, 1f)
+        c.adoptFromService()
+        assertEquals(1, f.connects)
+        assertEquals("car", c.state.value.itemId)
+        assertEquals("Vom Auto", c.state.value.title)
+        assertEquals(30.0, c.state.value.positionSec, 0.0)
+        assertTrue(c.state.value.isPlaying)
+        // A later play/pause from the app acts on the adopted title.
+        c.togglePlayPause()
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun playerEvent_withNothingLoaded_adoptsTheServiceTitle() = runTest {
+        val f = FakeFacade()
+        val carTitle = ItemWithDetails(ItemEntity(s, "car", "lib", "Vom Auto", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "car", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val c = controller(f, { null }, loadById = { _, id -> if (id == "car") carTitle else null })
+        f.key = s to "car"
+        f.change()
+        assertEquals("car", c.state.value.itemId)
+    }
+
+    // ---- the server address changes under a streamed title (home LAN → public address in the car) ----
+
+    private val home = "http://192.168.1.10:13378/"
+    private val public = "https://abs.example.org/"
+    private fun streamedThree() = item(listOf(file(0, 600.0, null), file(1, 300.0, null), file(2, 900.0, null)))
+    private val ioError = androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString() }
+
+    @Test fun pausedStream_movesToTheNewAddress_rightAway_atItsPosition() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0) // second file, 100 s
+        c.pause()
+        online.value = public.toHttpUrl()
+        assertTrue(f.uris().toString(), f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 100_000L, f.started)
+        assertFalse(f.snap.isPlaying)
+        assertEquals(2, f.setCalls)
+    }
+
+    @Test fun playingStream_keepsPlayingFromTheBuffer_andMovesOnTheNextNetworkError() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0)
+        online.value = public.toHttpUrl()
+        assertEquals(1, f.setCalls) // no hiccup while the buffer plays
+        assertTrue(f.uris().all { it.startsWith(home) })
+        // The buffer ran out at the old address: ExoPlayer stops with an error but keeps wanting to play.
+        f.snap = f.snap.copy(isPlaying = false, positionMs = 130_000)
+        f.errorCb(ioError)
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 130_000L, f.started)
+        assertTrue("plays on by itself (playWhenReady kept)", f.playWhenReady)
+        assertEquals("never forced to play", 1, f.playCalls)
+    }
+
+    @Test fun aNetworkErrorBeforeTheNewAddressIsKnown_movesOnceItIs_andPlaysOnOnlyIfStillWanted() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false)
+        f.errorCb(ioError)
+        assertEquals(1, f.setCalls)
+        online.value = null // offline for a moment: nothing to do
+        online.value = public.toHttpUrl()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertTrue(f.playWhenReady)
+        assertEquals(1, f.playCalls)
+    }
+
+    @Test fun anOldNetworkError_neverStartsPlaybackLater() = runTest {
+        // A tunnel: network error. Playback recovers, the user pauses, and at home the Wi-Fi address appears.
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(public.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = public, onlineBase = online)
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false)
+        f.errorCb(ioError)
+        f.snap = f.snap.copy(isPlaying = true) // recovered
+        f.change()
+        c.pause()
+        online.value = home.toHttpUrl()
+        assertTrue(f.uris().all { it.startsWith(home) }) // moved
+        assertFalse(f.snap.isPlaying)
+        assertFalse("stays paused", f.playWhenReady)
+        assertEquals(1, f.playCalls)
+    }
+
+    @Test fun pausingWithAPendingAddress_movesTheQueueRightThen() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0)
+        online.value = public.toHttpUrl() // while playing: waits
+        assertEquals(1, f.setCalls)
+        c.pause()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 100_000L, f.started)
+        assertFalse(f.playWhenReady)
+        // A pause from elsewhere (notification, car) counts the same way.
+        online.value = home.toHttpUrl()
+        f.play(); f.change()
+        online.value = public.toHttpUrl()
+        f.pause(); f.change()
+        assertTrue(f.uris().all { it.startsWith(public) })
+    }
+
+    @Test fun aTitleTheServiceStarted_movesToo() = runTest {
+        // The car resumed the title at home; the app adopted it later, already knowing the new address.
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(public.toHttpUrl())
+        f.items = MediaItemFactory({ true }) { _, _ -> null }.build(streamedThree(), home.toHttpUrl())
+        f.key = s to "it"
+        f.snap = PlayerSnapshot(false, 2, 60_000, 1f)
+        val c = controller(f, { streamedThree() }, base = public, onlineBase = online)
+        c.adoptFromService()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(2 to 60_000L, f.started)
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun localFiles_neverMove() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(threeFiles) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        online.value = public.toHttpUrl()
+        f.errorCb(ioError)
+        assertEquals(1, f.setCalls)
     }
 
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
@@ -214,6 +367,7 @@ class PlayerControllerTest {
         downloadThrottled: Flow<Boolean> = emptyFlow(),
         rewindAfterPause: suspend (Long) -> Long = { 0 },
         clock: () -> Long = { 0 },
+        onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -229,6 +383,7 @@ class PlayerControllerTest {
         downloadThrottled = downloadThrottled,
         rewindAfterPause = rewindAfterPause,
         clock = clock,
+        onlineBase = onlineBase,
     )
 
     @Test fun play_savedProgress_rewindsByThePauseSinceTheLastSave() = runTest {
@@ -524,7 +679,7 @@ class PlayerControllerTest {
         val f = FakeFacade()
         val c = controller(f, item(threeFiles))
         c.play(s, "it")
-        f.errorCb()
+        f.errorCb(0)
         assertEquals(R.string.error_playback_failed, c.state.value.error)
         assertTrue(!c.state.value.isPlaying)
     }
@@ -577,6 +732,53 @@ class PlayerControllerTest {
         assertEquals(3, f.items.size)
         assertEquals(1 to 100_000L, f.started)
         assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun stop_pausesFirst_thenEmptiesTheQueue_andForgetsTheTitle() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.play(s, "it")
+        assertTrue(f.snap.isPlaying)
+        val stopJob = launch { c.stop() }
+        testScheduler.runCurrent()
+        // The pause comes first and is given a moment, so the service saves the position before the queue goes.
+        assertFalse(f.snap.isPlaying)
+        assertEquals(0, f.stops)
+        testScheduler.advanceUntilIdle()
+        stopJob.join()
+        assertEquals(1, f.stops)
+        assertTrue(f.items.isEmpty())
+        assertEquals(PlayerUiState(), c.state.value)
+        // Sign-out: play/pause can never bring the old account's title back.
+        c.togglePlayPause()
+        assertTrue(f.items.isEmpty())
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun stop_whilePaused_doesNotWait_andAfterADisconnectStillForgets() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        c.pause()
+        f.disconnect()
+        c.stop()
+        assertEquals(1, f.stops)
+        assertEquals(null, c.state.value.itemId)
+        c.togglePlayPause()
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun stop_cancelsAStartInProgress() = runTest {
+        val f = FakeFacade()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val c = controller(f, { item(threeFiles) }, loadDetails = { _, _ -> gate.await() }, base = "http://h/", loadById = { _, _ -> item(emptyList()) })
+        c.play(s, "it")
+        assertTrue(c.state.value.isLoading)
+        c.stop()
+        gate.complete(Unit)
+        testScheduler.advanceUntilIdle()
+        assertTrue(f.items.isEmpty())
+        assertEquals(PlayerUiState(), c.state.value)
     }
 
     @Test fun togglePlayPause_withNothingEverPlayed_doesNothing() = runTest {

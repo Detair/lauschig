@@ -46,6 +46,8 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <!-- Media3 session + legacy MediaBrowserService (Android Auto, SystemUI media resumption, Assistant).
+             Who may browse or control is decided per caller in auto/LibraryCallback (CarAccess). -->
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
@@ -56,6 +58,41 @@
             </intent-filter>
         </service>
 
+        <!-- Bluetooth/car "play" with no process: starts the service, which resumes the last title (onPlaybackResumption).
+             Its presence also makes Media3 answer SystemUI's playback resumption (recent root). -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Covers for Android Auto and SystemUI (read-only; access only through prefix grants to allowed callers). -->
+        <provider
+            android:name=".auto.CoverProvider"
+            android:authorities="${applicationId}.covers"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- Homescreen widget (Glance); its buttons send media-button intents to the playback service. -->
+        <receiver
+            android:name=".widget.LauschigWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/lauschig_widget_info" />
+        </receiver>
+
+        <!-- Android Auto: a media app. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -64,6 +101,18 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- "Spiel X in Lauschig" from the Assistant outside the car (the car uses the media session). -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- A shared Audiobookshelf link opens its title (links/IncomingIntents). The VIEW filter for the web links of
+                 the configured hosts is generated from the Gradle property lauschig.linkHosts (app/build.gradle.kts). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
             <!-- SSO: the Audiobookshelf server redirects the Custom Tab back to lauschig://oauth?code=...&state=... -->
             <intent-filter>

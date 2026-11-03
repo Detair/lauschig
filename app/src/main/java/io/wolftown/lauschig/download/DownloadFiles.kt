@@ -60,6 +60,30 @@ class DownloadFiles(
         return f
     }
 
+    /** The directory of every download of [serverId]; only a real server id (the device library has none). */
+    fun serverDir(serverId: String): File {
+        if (!SERVER_ID.matches(serverId)) throw FatalDownloadException("invalid_path")
+        return guard(File(root, serverId))
+    }
+
+    /** Bytes on disk of [serverId]'s downloads: complete and partial files and covers. 0 for none or an invalid id. Blocking. */
+    fun serverBytes(serverId: String): Long {
+        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return 0 }
+        return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /**
+     * Deletes every download of [serverId] (sign-out), partial ones included; never anything outside its directory.
+     * False if something could not be deleted (an invalid id has no directory: true). Blocking.
+     */
+    fun deleteServer(serverId: String): Boolean {
+        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return true }
+        return dir.deleteRecursively()
+    }
+
+    /** The server ids that have a download directory (only real ids; the device library has none). Blocking. */
+    fun serverIds(): List<String> = root.listFiles { f -> f.isDirectory && SERVER_ID.matches(f.name) }?.map { it.name }?.sorted().orEmpty()
+
     /** Never deletes outside the root; invalid ids have no directory, so there is nothing to delete. */
     fun deleteItem(serverId: String, itemId: String) {
         val dir = try { itemDir(serverId, itemId) } catch (e: FatalDownloadException) { return }

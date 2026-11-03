@@ -71,8 +71,8 @@ class LibraryViewModelTest {
         return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao()))
     }
 
-    private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null) =
-        ItemEntity(serverId = sid, id = id, libraryId = lib, title = title, seriesName = series, seriesSequence = seq, seriesSortKey = key, durationSec = 100.0)
+    private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null, tags: List<String> = emptyList()) =
+        ItemEntity(serverId = sid, id = id, libraryId = lib, title = title, seriesName = series, seriesSequence = seq, seriesSortKey = key, durationSec = 100.0, tags = tags)
 
     private suspend fun libs() = db.libraryDao().upsertFromServer(
         listOf(
@@ -162,5 +162,65 @@ class LibraryViewModelTest {
         listen("dl", t = 50.0, last = 2)
         assertEquals(0.5f, vm.await { it.items.singleOrNull()?.progress == 0.5f }.items.single().progress)
         assertEquals(before, statChecks.get())
+    }
+
+    @Test fun tagFilter_offersTheTabsTags_andFiltersCaseInsensitively() = runTest {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("a", tags = listOf("Krimi", "Kinder")),
+                item("b", tags = listOf(" krimi ")),
+                item("c", tags = listOf("Sachbuch")),
+                item("d"),
+                item("unheard", tags = listOf("Fantasy")),
+            ),
+        )
+        listen("a", last = 4); listen("b", last = 3); listen("c", last = 2); listen("d", last = 1)
+        val vm = vm()
+        val all = vm.await { it.items.size == 4 }
+        // Only tags of the tab's titles (not "Fantasy" of an unstarted title), most titles first.
+        assertEquals(listOf("Krimi" to 2, "Kinder" to 1, "Sachbuch" to 1), all.availableTags.map { it.name to it.count })
+        assertNull(all.selectedTag)
+        vm.selectTag("KRIMI")
+        val krimi = vm.await { it.selectedTag != null }
+        assertEquals(listOf("a", "b"), krimi.items.map { it.id }) // the tab's order stays
+        assertEquals("KRIMI", krimi.selectedTag)
+        assertEquals(3, krimi.availableTags.size) // the menu still offers every tag of the tab
+        vm.selectTag(null)
+        assertEquals(4, vm.await { it.selectedTag == null && it.items.size == 4 }.items.size)
+    }
+
+    @Test fun tagFilter_tagMissingInTheTab_isIgnored() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("a", tags = listOf("Krimi")), item("f", tags = listOf("Fantasy"))))
+        listen("a")
+        listen("f", t = 100.0, fin = true)
+        val vm = vm()
+        vm.await { it.items.size == 1 }
+        vm.selectTag("Fantasy")
+        val s = vm.await { it.tab == LibraryTab.InProgress && it.items.size == 1 }
+        assertEquals(listOf("a"), s.items.map { it.id })
+        assertNull(s.selectedTag)
+        vm.selectTab(LibraryTab.Finished)
+        val fin = vm.await { it.tab == LibraryTab.Finished && it.selectedTag != null }
+        assertEquals(listOf("f"), fin.items.map { it.id })
+    }
+
+    @Test fun tagFilter_seriesTab_filtersVolumes() = runTest {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("s1", series = "Saga", seq = "1", key = 1.0, tags = listOf("Krimi")),
+                item("s2", series = "Saga", seq = "2", key = 2.0),
+                item("o1", series = "Other", seq = "1", key = 1.0),
+            ),
+        )
+        val vm = vm()
+        vm.selectTab(LibraryTab.Series)
+        vm.await { it.tab == LibraryTab.Series && it.series.size == 2 }
+        vm.selectTag("Krimi")
+        val s = vm.await { it.tab == LibraryTab.Series && it.selectedTag != null }
+        assertEquals(listOf("Saga"), s.series.map { it.name })
+        assertEquals(listOf("s1"), s.series.single().items.map { it.id })
     }
 }

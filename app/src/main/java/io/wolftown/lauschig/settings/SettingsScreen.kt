@@ -61,6 +61,7 @@ data class SettingsUiState(
     val downloadOnPlay: Boolean = true,
     val meteredOnPlay: MeteredDownload = MeteredDownload.ASK,
     val playback: PlaybackPrefs = PlaybackPrefs(),
+    val appearance: Appearance = Appearance(),
 )
 
 @Immutable
@@ -88,6 +89,7 @@ class SettingsViewModel @Inject constructor(
     private val app: AppSettings,
     private val download: DownloadSettings,
     private val playbackSettings: PlaybackSettings,
+    private val ui: UiSettings,
 ) : ViewModel() {
     private val playback = combine(
         combine(playbackSettings.rewindOnResumeSec, playbackSettings.defaultSpeed, playbackSettings.skipSilence) { r, sp, sk -> Triple(r, sp, sk) },
@@ -105,6 +107,7 @@ class SettingsViewModel @Inject constructor(
         download.meteredOnPlay,
         playback,
     ) { base, auto, onPlay, metered, pb -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered, playback = pb) }
+        .combine(ui.appearance) { s, look -> s.copy(appearance = look) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -115,6 +118,13 @@ class SettingsViewModel @Inject constructor(
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }
     fun setMeteredOnPlay(mode: MeteredDownload) { viewModelScope.launch { download.setMeteredOnPlay(mode) } }
+
+    val appearanceActions = AppearanceActions(
+        onTheme = { viewModelScope.launch { ui.setTheme(it) } },
+        onPureBlack = { viewModelScope.launch { ui.setPureBlack(it) } },
+        onDynamicColor = { viewModelScope.launch { ui.setDynamicColor(it) } },
+        onFontScale = { viewModelScope.launch { ui.setFontScale(it) } },
+    )
 
     val playbackActions = PlaybackPrefsActions(
         onRewind = { viewModelScope.launch { playbackSettings.setRewindOnResumeSec(it) } },
@@ -127,15 +137,29 @@ class SettingsViewModel @Inject constructor(
 }
 
 @Composable
-fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, onOpenDownloads: () -> Unit = {}, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsRoute(
+    onBack: () -> Unit,
+    onOpenCleanup: () -> Unit,
+    onOpenDownloads: () -> Unit = {},
+    onOpenConnection: () -> Unit = {},
+    onOpenAdmin: () -> Unit = {},
+    onOpenNavigation: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
         playbackActions = viewModel.playbackActions,
+        appearanceActions = viewModel.appearanceActions,
+        onOpenNavigation = onOpenNavigation,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
         onOpenDownloads = onOpenDownloads,
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
+        onOpenConnection = onOpenConnection,
+        linksSection = { io.wolftown.lauschig.links.LinksSection() },
+        adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
+        accountSection = { AccountSection() },
     )
 }
 
@@ -154,18 +178,35 @@ fun SettingsScreen(
     onMeteredOnPlay: (MeteredDownload) -> Unit = {},
     playbackActions: PlaybackPrefsActions = PlaybackPrefsActions(),
     modifier: Modifier = Modifier,
+    appearanceActions: AppearanceActions = AppearanceActions(),
+    onOpenNavigation: () -> Unit = {},
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
     /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
     localSection: @Composable () -> Unit = {},
+    onOpenConnection: () -> Unit = {},
+    /** Slot for the links hint (needs the system's link settings). */
+    linksSection: @Composable () -> Unit = {},
+    /** Slot for "Server-Verwaltung" (admins only; needs Hilt). */
+    adminSection: @Composable () -> Unit = {},
+    /** Slot for "Konto" with "Abmelden" (needs Hilt); the first section. */
+    accountSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
         }
+        accountSection()
         PlaybackSection(state.playback, playbackActions)
+        AppearanceSection(state.appearance, appearanceActions) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.nav_settings_entry)) },
+                supportingContent = { Text(stringResource(R.string.nav_settings_entry_hint)) },
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenNavigation).testTag("openNavigation"),
+            )
+        }
 
         Section(R.string.settings_section_series)
         ModeRow(NextVolumeMode.SUGGEST, state.nextVolume, R.string.settings_next_suggest, R.string.settings_next_suggest_hint, onNextVolume)
@@ -194,11 +235,22 @@ fun SettingsScreen(
 
         Section(R.string.settings_section_local)
         localSection()
+
+        Section(R.string.settings_section_connection)
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_connection_status)) },
+            supportingContent = { Text(stringResource(R.string.settings_connection_status_hint)) },
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenConnection).testTag("openConnection"),
+        )
+        linksSection()
+        adminSection()
+
+        AboutSection()
     }
 }
 
 @Composable
-private fun Section(title: Int) {
+internal fun Section(title: Int) {
     Text(
         stringResource(title),
         style = MaterialTheme.typography.titleSmall,
@@ -218,12 +270,12 @@ private fun ModeRow(mode: NextVolumeMode, current: NextVolumeMode, title: Int, h
 }
 
 @Composable
-private fun SwitchRow(title: Int, hint: Int, checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+internal fun SwitchRow(title: Int, hint: Int, checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     ListItem(
         headlineContent = { Text(stringResource(title)) },
         supportingContent = { Text(stringResource(hint)) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = null) },
-        modifier = modifier.fillMaxWidth().selectable(selected = checked, role = Role.Switch) { onChange(!checked) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null, enabled = enabled) },
+        modifier = modifier.fillMaxWidth().selectable(selected = checked, enabled = enabled, role = Role.Switch) { onChange(!checked) },
     )
 }
 
@@ -318,7 +370,7 @@ private fun PlaybackSection(p: PlaybackPrefs, a: PlaybackPrefsActions) {
 
 /** A setting with a few values in a dropdown; [label] renders a value. */
 @Composable
-private fun <T> ChoiceRow(title: Int, hint: Int, tag: String, choices: List<T>, current: T, onSelect: (T) -> Unit, label: @Composable (T) -> String) {
+internal fun <T> ChoiceRow(title: Int, hint: Int, tag: String, choices: List<T>, current: T, onSelect: (T) -> Unit, label: @Composable (T) -> String) {
     var open by remember { mutableStateOf(false) }
     Box {
         ListItem(

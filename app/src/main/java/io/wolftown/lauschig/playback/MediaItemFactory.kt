@@ -6,6 +6,9 @@ import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import io.wolftown.lauschig.absapi.library.audioFileUrl
+import io.wolftown.lauschig.auto.CoverProvider
+import io.wolftown.lauschig.auto.CoverRef
+import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import android.content.Context
@@ -30,10 +33,16 @@ class MediaItemFactory(
     private val fileExists: (File) -> Boolean = { it.isFile },
     /** A `content://` document (device library) counts as local only if the provider still has it. */
     private val contentExists: (Uri) -> Boolean = { true },
+    /**
+     * The artwork other apps can open (Android Auto, SystemUI, Bluetooth): a [CoverProvider] URI for the title's cover
+     * version; null falls back to [coverFile] (only this app can read that one).
+     */
+    private val artworkUri: (serverId: String, key: String, version: Long) -> Uri? = { _, _, _ -> null },
     private val coverFile: (serverId: String, itemId: String) -> File?,
 ) {
     @Inject constructor(files: DownloadFiles, @ApplicationContext context: Context) : this(
         contentExists = { uri -> documentExists(context, uri) },
+        artworkUri = { serverId, key, version -> CoverUris.forTitle(CoverUris.authority(context.packageName), CoverRef(serverId, key, version)) },
         coverFile = { serverId, itemId -> try { files.playableCover(serverId, itemId) } catch (e: Exception) { null } },
     )
 
@@ -49,11 +58,14 @@ class MediaItemFactory(
         val allLocal = files.isNotEmpty() && local.all { it != null }
         val deviceTitle = DeviceLibrary.isLocal(item.item.serverId, item.item.id)
         if (!allLocal && (baseUrl == null || deviceTitle)) throw PlaybackUnavailableException(item.item.id)
-        val cover: Uri? = coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
+        val cover: Uri? = artworkUri(item.item.serverId, item.item.id, item.item.coverUpdatedAt)
+            ?: coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
+        val episode = PlayableKey.parse(item.item.id).episodeId != null
         return files.mapIndexed { i, f ->
             val uri: Uri = local[i]
                 ?: audioFileUrl(baseUrl ?: throw PlaybackUnavailableException(item.item.id), PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
             val extras = Bundle().apply {
+                if (local[i] == null) putString(EXTRA_STREAM_BASE, baseUrl.toString())
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)
                 putInt(EXTRA_FILE_INDEX, f.index)
@@ -66,6 +78,11 @@ class MediaItemFactory(
                     MediaMetadata.Builder()
                         .setTitle(item.item.title)
                         .setArtist(item.item.author)
+                        // Description for cars and the system media controls; the chapter replaces the subtitle
+                        // while playing (ChapterTracker).
+                        .setDisplayTitle(item.item.title)
+                        .setSubtitle(item.item.author)
+                        .setMediaType(if (episode) MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE else MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
                         .setArtworkUri(cover)
                         .setIsPlayable(true)
                         .setExtras(extras)
@@ -111,6 +128,8 @@ class MediaItemFactory(
         const val EXTRA_SERVER_ID = "serverId"
         const val EXTRA_ITEM_ID = "itemId"
         const val EXTRA_FILE_INDEX = "fileIndex"
+        /** The server a streamed file comes from (absent for local files): lets the app move a queue to a new address. */
+        const val EXTRA_STREAM_BASE = "streamBase"
         /** Length of this file; lets the service step back across file boundaries (resume rewind). */
         const val EXTRA_FILE_DURATION_MS = "fileDurationMs"
     }

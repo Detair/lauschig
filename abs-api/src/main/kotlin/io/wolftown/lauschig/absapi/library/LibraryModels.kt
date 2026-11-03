@@ -15,6 +15,8 @@ data class LibraryDto(
     /** "book" | "podcast" */
     val mediaType: String,
     val displayOrder: Int = 0,
+    /** Metadata provider of the library ("audible.de", "google", "itunes", …); what a quick match uses. */
+    val provider: String? = null,
 )
 
 /** `GET /api/libraries/:id/authors` wraps the list: `{ "authors": [...] }`. */

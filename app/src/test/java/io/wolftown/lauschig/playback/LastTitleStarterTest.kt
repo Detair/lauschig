@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -41,6 +42,7 @@ class LastTitleStarterTest {
         var value: LastPlayed? = null
         override suspend fun get() = value
         override suspend fun set(last: LastPlayed) { value = last }
+        override suspend fun clear() { value = null }
     }
 
     private fun starter() = LastTitleStarter(accounts, store, db.progressDao(), db.itemDao(), db.episodeDao(), player)
@@ -96,5 +98,29 @@ class LastTitleStarterTest {
         player.state.value = PlayerUiState(itemId = "x", isPlaying = true)
         assertFalse(starter().resumeLast(now = 2_000))
         assertEquals(emptyList<String>(), plays)
+    }
+
+    @Test fun signedOut_nothingResumes_aDeviceTitleOnlyWhileSignedIn() = runTest {
+        val local = "local:0123456789abcdef01234567"
+        db.itemDao().upsertFromList(listOf(io.wolftown.lauschig.db.entities.ItemEntity(DeviceLibrary.SERVER_ID, local, DeviceLibrary.LIBRARY_ID, "Lokal")))
+        db.progressDao().saveLocal(DeviceLibrary.SERVER_ID, local, 30.0, 600.0, false, 1)
+        store.value = LastPlayed(DeviceLibrary.SERVER_ID, local, 5_000)
+        assertEquals(LastTitleStarter.Last(DeviceLibrary.SERVER_ID, local, 5_000), starter().last())
+        // Signed out only Setup is on the phone: play keys, the car and headphones resume nothing.
+        accounts.acc.value = null
+        assertNull(starter().last())
+        book("srv")
+        store.value = LastPlayed(s, "srv", 5_000)
+        assertNull(starter().last())
+    }
+
+    @Test fun forgetServerTitle_forgetsAServerTitle_keepsADeviceTitle() = runTest {
+        store.set(LastPlayed(s, "it", 1))
+        store.forgetServerTitle()
+        assertEquals(null, store.get())
+        val device = LastPlayed(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:0123456789abcdef01234567", 1)
+        store.set(device)
+        store.forgetServerTitle()
+        assertEquals(device, store.get())
     }
 }
