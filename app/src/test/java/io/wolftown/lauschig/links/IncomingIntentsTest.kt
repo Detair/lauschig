@@ -86,4 +86,14 @@ class IncomingIntentsTest {
         assertEquals(MainActivity.OPEN_PLAYER, IncomingIntents.consume(open, replay = false).open)
         assertEquals(null, open.getStringExtra(MainActivity.EXTRA_OPEN))
     }
+
+    @Test fun anIntentFromRecents_isAReplay_evenWithoutSavedState() {
+        // Android 9–11: Back finishes the activity, Recents hands the old (voice, link, player) intent to a new one.
+        val fromHistory = android.content.Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)
+        assertEquals(true, IncomingIntents.isReplay(fromHistory, recreated = false))
+        assertEquals(false, IncomingIntents.isReplay(android.content.Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH), recreated = false))
+        assertEquals(true, IncomingIntents.isReplay(android.content.Intent(), recreated = true))
+        assertEquals(false, IncomingIntents.isReplay(null, recreated = false))
+    }
 }

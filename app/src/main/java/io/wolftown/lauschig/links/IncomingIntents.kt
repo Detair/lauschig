@@ -38,6 +38,14 @@ object IncomingIntents {
     }
 
     /**
+     * True if [intent] was used before: the activity is [recreated] (saved state), or Android hands an old task's intent
+     * to a new activity from Recents (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`; on Android 9–11 after Back + Recents,
+     * without saved state).
+     */
+    fun isReplay(intent: Intent?, recreated: Boolean): Boolean =
+        recreated || (intent != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0)
+
+    /**
      * Takes what [intent] asks for and strips it from the intent. A recreation ([replay]: rotation, process restart,
      * a task restored from Recents after a process death – then with its original extras) hands the old intent again:
      * every one-shot request (open a screen, voice, links, the SSO redirect) was used already and is ignored; the open
