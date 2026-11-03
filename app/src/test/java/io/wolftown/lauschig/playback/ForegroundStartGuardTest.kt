@@ -2,6 +2,7 @@ package io.wolftown.lauschig.playback
 
 import android.content.Intent
 import android.view.KeyEvent
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -18,137 +19,193 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
 class ForegroundStartGuardTest {
-    private var engaged = false
-    /** Every settle, with its "stop" flag. */
-    private val settles = mutableListOf<Boolean>()
+    /** Stands in for PlaybackService: records what the guard asks it to do. */
+    private class FakeHost : ForegroundStartGuard.Host {
+        var engaged = false
+        var hasItems = false
+        /** Media3's media notification is posted (a loaded, paused title). */
+        var mediaNotification = false
+        val calls = mutableListOf<String>()
+        override fun engaged() = engaged
+        override fun hasItems() = hasItems
+        override fun adoptMediaNotification(): Boolean {
+            if (!mediaNotification) return false
+            calls += "adopt"
+            return true
+        }
+        override fun showPlaceholder() { calls += "placeholder" }
+        override fun leavePlaceholder() { calls += "leave" }
+    }
+
+    private val host = FakeHost()
     private val timeout = 7_000L
+    private val cap = 60_000L
 
-    private fun guard(scope: kotlinx.coroutines.CoroutineScope) = ForegroundStartGuard(scope, { engaged }, { stop -> settles += stop }, timeout)
+    private fun guard(scope: CoroutineScope) = ForegroundStartGuard(scope, host, timeout, cap)
 
-    @Test fun failedResumption_settlesAndStopsAtOnce() = runTest {
+    @Test fun emptyPlayer_failingResumption_placeholderAndStop_atOnce() = runTest {
         val g = guard(backgroundScope)
         g.arm()
         g.resumption(ok = false)
-        assertEquals(listOf(true), settles)
-        advanceTimeBy(timeout * 2)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+        advanceTimeBy(cap * 2)
         runCurrent()
-        assertEquals(listOf(true), settles)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
     }
 
-    @Test fun successfulResumption_thenPlaying_leavesItToMedia3() = runTest {
+    @Test fun secondFailingCycle_goesForegroundAgain() = runTest {
+        // A bound client (car, SystemUI browser) keeps the service alive after the first settle; on API 29–33 Android
+        // still reports the old foreground type then. The guard never asks: every cycle calls startForeground again.
         val g = guard(backgroundScope)
         g.arm()
-        g.resumption(ok = true)
-        engaged = true
-        g.onEngaged()
-        advanceTimeBy(timeout * 2)
-        runCurrent()
-        assertEquals(emptyList<Boolean>(), settles)
+        g.resumption(ok = false)
+        g.arm()
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave", "placeholder", "leave"), host.calls)
     }
 
-    @Test fun successfulResumption_butNothingPlays_settlesAtTheDeadline() = runTest {
+    @Test fun loadedTitle_playKeyThatNeverPlays_adoptsMedia3sNotification() = runTest {
+        // Double tap of the headset key on a paused title: Media3 skips +30 s, nothing plays. The deadline is met with
+        // Media3's own notification id – nothing is swapped, the service is not stopped, the title keeps its controls.
+        host.hasItems = true
+        host.mediaNotification = true
         val g = guard(backgroundScope)
         g.arm()
-        g.resumption(ok = true)
         advanceTimeBy(timeout + 1)
         runCurrent()
-        assertEquals(listOf(true), settles)
-    }
-
-    @Test fun deadlineWithTheResumptionStillPending_goesForeground_andStopsOnlyOnFailure() = runTest {
-        val g = guard(backgroundScope)
-        g.arm()
-        advanceTimeBy(timeout - 1)
-        runCurrent()
-        assertEquals(emptyList<Boolean>(), settles)
-        advanceTimeBy(2)
-        runCurrent()
-        // In the foreground with the placeholder, but still waiting for the answer (a slow server, a details fetch).
-        assertEquals(listOf(false), settles)
-        assertTrue(g.armed)
-        g.resumption(ok = false)
-        assertEquals(listOf(false, true), settles)
+        assertEquals(listOf("adopt"), host.calls)
         assertFalse(g.armed)
     }
 
-    @Test fun deadlineWithTheResumptionStillPending_thenItPlays() = runTest {
+    @Test fun loadedTitle_withoutMedia3sNotification_placeholderThenLeave() = runTest {
+        host.hasItems = true
+        val g = guard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun emptyPlayer_doesNotAdoptAStaleNotification() = runTest {
+        host.mediaNotification = true
+        val g = guard(backgroundScope)
+        g.arm()
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun pendingResumption_placeholderAtTheDeadline_capStopsIt() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        assertTrue(g.armed)
+        // The cap counts from the deadline (now + cap - 1 ms).
+        advanceTimeBy(cap - 10)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        advanceTimeBy(20)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+        // And the next play key arms again.
+        g.arm()
+        assertTrue(g.armed)
+    }
+
+    @Test fun pendingResumption_thatFailsLater_stopsThen() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        advanceTimeBy(cap * 2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun pendingResumption_thatPlaysLater_handsOverToMedia3() = runTest {
         val g = guard(backgroundScope)
         g.arm()
         advanceTimeBy(timeout + 1)
         runCurrent()
         g.resumption(ok = true)
-        engaged = true
+        host.engaged = true
         g.onEngaged()
-        assertEquals(listOf(false), settles)
+        advanceTimeBy(cap * 2)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun successfulResumption_butNothingPlays_leavesAtTheDeadline() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        g.resumption(ok = true)
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun engaged_neverSettles_alsoAfterAQuickPause() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = guard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        host.engaged = false // paused within the timeout
+        advanceTimeBy(cap * 2)
+        runCurrent()
+        g.resumption(ok = false)
+        assertEquals(emptyList<String>(), host.calls)
         assertFalse(g.armed)
     }
 
     @Test fun repeatedPresses_keepTheFirstDeadline() = runTest {
+        host.hasItems = true
         val g = guard(backgroundScope)
         g.arm()
         advanceTimeBy(5_000)
         g.arm()
         advanceTimeBy(timeout - 5_000 + 1)
         runCurrent()
-        assertEquals(listOf(false), settles)
-    }
-
-    @Test fun timeoutPerApiLevel_keepsAMarginToAndroidsDeadline() {
-        assertEquals(7_000L, ForegroundStartGuard.timeoutFor(28))
-        assertEquals(7_000L, ForegroundStartGuard.timeoutFor(33))
-        assertEquals(20_000L, ForegroundStartGuard.timeoutFor(34))
-        assertEquals(20_000L, ForegroundStartGuard.timeoutFor(35))
+        assertEquals(listOf("placeholder", "leave"), host.calls)
     }
 
     @Test fun resumptionWithoutAPlayKey_isIgnored() = runTest {
         // SystemUI's resumption card or a car: no media-button start, nothing to settle.
         val g = guard(backgroundScope)
         g.resumption(ok = false)
-        assertEquals(emptyList<Boolean>(), settles)
-        assertFalse(g.armed)
+        assertEquals(emptyList<String>(), host.calls)
     }
 
-    @Test fun engagedBeforeTheTimeout_disarmsForGood() = runTest {
-        val g = guard(backgroundScope)
-        g.arm()
-        engaged = true
-        g.onEngaged()
-        // The user pauses within the timeout: still nothing to settle (Media3 owns the notification now).
-        engaged = false
-        advanceTimeBy(timeout * 2)
-        runCurrent()
-        assertEquals(emptyList<Boolean>(), settles)
-        assertFalse(g.armed)
-        g.resumption(ok = false)
-        assertEquals(emptyList<Boolean>(), settles)
+    @Test fun timeoutPerApiLevel_keepsAMarginToAndroidsDeadline() {
+        assertEquals(7_000L, ForegroundStartGuard.timeoutFor(28))
+        assertEquals(7_000L, ForegroundStartGuard.timeoutFor(33))
+        assertEquals(20_000L, ForegroundStartGuard.timeoutFor(34))
     }
 
-    @Test fun playKeys() {
+    @Test fun arming_everyPlayKey_unlessSomethingPlays() {
         fun key(code: Int, action: Int = KeyEvent.ACTION_DOWN) = Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(action, code))
-        assertTrue(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_PLAY)))
-        assertTrue(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)))
-        assertTrue(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_HEADSETHOOK)))
-        assertFalse(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_PAUSE)))
-        assertFalse(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_REWIND)))
-        assertFalse(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.ACTION_UP)))
-        assertFalse(ForegroundStartGuard.isPlayKey(Intent("other")))
+        assertTrue(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), engaged = false))
+        assertTrue(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_HEADSETHOOK), engaged = false))
+        assertTrue(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE), engaged = false))
+        // Playing: Media3 is in the foreground, Android sets no new deadline for a start.
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), engaged = true))
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PAUSE), engaged = false))
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_REWIND), engaged = false))
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.ACTION_UP), engaged = false))
+        assertFalse(ForegroundStartGuard.shouldArm(Intent("other"), engaged = false))
     }
+}
 
-    @Test fun onlyAnEmptyPlayer_arms() {
-        fun key(code: Int) = Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, code))
-        assertTrue(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), mediaItemCount = 0))
-        // A paused, loaded title: PLAY just plays it, Media3 goes foreground itself.
-        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), mediaItemCount = 3))
-        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PAUSE), mediaItemCount = 0))
-    }
-
-    @Test fun alreadyInTheForeground_isNeverTakenOver() {
-        // API 29+: Media3 (or anyone) made the service foreground; settling would swap its notification id.
-        assertFalse(ForegroundStartGuard.maySettle(sdk = 35, foregroundServiceType = 2, ownPlaceholder = false))
-        assertTrue(ForegroundStartGuard.maySettle(sdk = 35, foregroundServiceType = 0, ownPlaceholder = false))
-        // Our own placeholder may of course be stopped again.
-        assertTrue(ForegroundStartGuard.maySettle(sdk = 35, foregroundServiceType = 2, ownPlaceholder = true))
-        // API 28 cannot tell; the arming rules above keep it away from a playing service.
-        assertTrue(ForegroundStartGuard.maySettle(sdk = 28, foregroundServiceType = 0, ownPlaceholder = false))
+class MediaNotificationIdTest {
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun theGuardAdoptsTheIdMedia3Posts() {
+        assertEquals(androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID, ForegroundStartGuard.MEDIA_NOTIFICATION_ID)
     }
 }
