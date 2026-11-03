@@ -56,7 +56,7 @@ Tests: `WhatsNewTest` (first install, update from 0.1.0, up to date, several ver
 |---|---|
 | Library | `androidx.compose.material3.adaptive:adaptive` + `adaptive-layout` 1.3.0 (latest stable, the version Compose BOM 2026.09.00 lists) in `libs.versions.toml`. |
 | Navigation | Width ≥ 600 dp (medium/expanded, incl. phones in landscape): `NavigationRail` on the start side with the same tabs; the mini player sits at the bottom of the content. Compact: today's bottom bar. |
-| Grids | Library, series, discover and entity grids keep `GridCells.Adaptive`; the minimum tile width grows a little on medium/expanded widths so covers do not shrink to stamps. |
+| Grids | Library, series, discover and entity grids keep `GridCells.Adaptive(120.dp)`, which already adapts the column count (see the notes). |
 | List–detail | `ListDetailPaneScaffold` used as the layout only, with a fixed value (list + detail expanded) when `calculatePaneScaffoldDirective(currentWindowAdaptiveInfo())` offers two horizontal partitions (expanded width; hinges of book-posture foldables are avoided by the directive). The detail pane hosts its own nested `NavHost` (empty hint → `ItemDetail` / `Browse` / `Collection`), so the existing routes and their `SavedStateHandle` ViewModels stay unchanged and the outer NavHost is not touched. Used for Library and Search. Opening a title from the list replaces the pane's stack, links inside the pane push. When the window shrinks to one pane (rotation, folding) the pane's current page moves onto the outer back stack. If this fights the NavHost, fallback: a plain `Row` two-pane layout (recorded below). |
 | Player | Wide windows (width ≥ 600 dp and wider than high): cover left (as large as the height allows), controls right (scrollable if needed). Tall windows: the fit layout of §1, centred with a maximum width; larger maximum cover on tablets. |
 | Readable width | Text pages (settings, details opened full screen, Verbindungsstatus, Server-Verwaltung, downloads, cleanup, setup) are centred with a maximum width on wide windows. |
@@ -70,3 +70,60 @@ Verification: emulator `wm size 2000x1200` + `wm density 240` (Galaxy Tab A7 cla
 Plan → UX findings → Optik → Navigation → Was ist neu (+ version 0.2.0 / 2) → Tablet/Foldable; one or more commits per
 task on `phase-4`. End: `timeout 900 ./gradlew testDebugUnitTest lintDebug assembleDebug -q`, `CarBrowseTest` on
 emulator-5554 with `leaveApksInstalledAfterRun`, debug APK reinstalled.
+
+## Implementation notes (2026-11-03)
+
+Decisions made or changed while building it:
+
+- **Player**: the cover/fit layout is a small custom `Layout` (`CoverFitColumn`): header and body are measured first,
+  the square cover gets what is left of the viewport (96 … 280 dp, 520 dp on tablet portrait); content taller than
+  the viewport scrolls. The source indicator moved into the top bar's free middle, the book time sits between the
+  chapter times, and the sleep button says „Timer“ (full name in the description). The full player now **hides the
+  bottom bar / rail** – it has its own close button, and on a 720×1280 phone the bar cost the second action row.
+  Wide windows: cover with the action area under it on the start side, title/progress/controls beside it (so a
+  phone in landscape needs no scrolling either). Robolectric's legacy text metrics are ~40 % taller than a device's,
+  so the unit tests check the logic at 360×640 dp and the exact 720×1280 @ 320 dpi fit was checked on the emulator.
+- **Font scale via the activity configuration, not `LocalDensity`**: Compose dialogs, sheets and popups get their
+  density from their own window, so a `LocalDensity` override leaves them at 100 %. `MainActivity.attachBaseContext`
+  applies `fontScale = system × setting`; `FontScaleBoot` (SharedPreferences, read synchronously) mirrors the
+  DataStore value, and a different value recreates the activity. **Platform quirk found on the API 35 emulator**:
+  after `recreate()` Android keeps ("preserves") the window and the freshly inflated content root pads itself by the
+  system bars (legacy `fitsSystemWindows`), i.e. white bars on top and bottom in a dark theme; a rotation does not do
+  this. `MainActivity` now turns `fitsSystemWindows` off on the content root (Compose handles all insets).
+- **Theme**: applied in Compose (`LauschigTheme(appearance)`) – instant, also in dialogs and sheets; status/navigation
+  bar icons follow via `enableEdgeToEdge(SystemBarStyle.auto { dark })`. The system splash and the window background
+  still follow the system's dark mode (no `UiModeManager.setApplicationNightMode`, which would recreate the activity
+  on every change). The Glance widget follows the system as before.
+- **Pure black**: background, surface, surfaceDim, surfaceContainerLowest = black; the other containers are blended
+  towards black (60/50/40/30 %), so they keep the scheme's tint and their order.
+- **Navigation**: up/down buttons swap with the neighbouring row of the settings list (hidden tabs included, what you
+  see is what moves); the start screen is a radio group over the visible tabs. Changes go through
+  `UiSettings.updateTabLayout` (read-modify-write in one DataStore transaction). The bar follows at once, the start
+  screen from the next cold start (the NavHost's start destination must not change while it lives).
+- **Media notification → player**: the session activity now carries `open=player`. It had request code 0 like the
+  cleanup notification's `MainActivity` intent; both differ only in extras, so `FLAG_UPDATE_CURRENT` made one
+  overwrite the other's target (pre-existing, became visible with the new extra). The session activity uses code 1.
+- **„Was ist neu“**: string arrays (`whatsnew_0_2_0`) in `values/` and `values-de/`; a test checks that the current
+  `versionCode` has notes in both languages. "Updated" = `lastUpdateTime > firstInstallTime`; without a stored
+  version an update counts as coming from 0.1.0. The sheet is stored as seen only when dismissed.
+- **Tag filter**: a chip after the kind chips (also shown when there is only one kind), session-only state in
+  `LibraryViewModel`; a chosen tag the current tab does not have is ignored (shown unselected) and comes back on a tab
+  that has it. Discover got a „Tags“ row (chips → tag page), like „Genres“.
+- **List–detail**: `ListDetailPaneScaffold` did not fight the NavHost once it is used as layout only: a fixed value
+  (both panes expanded) whenever the directive offers two partitions, and the detail pane hosts a nested `NavHost`
+  with the existing `ItemDetail` / `Browse` / `Collection` routes – their ViewModels read the route from their
+  `SavedStateHandle` unchanged and back presses are handled by the nested NavHost. No navigator, no drag handle
+  (pane widths: library list 45 %, search 40 %). The page shown in the pane is remembered (`PaneSelection`,
+  saveable) and moves onto the outer back stack when the window shrinks to one pane (tablet rotated to portrait,
+  foldable folded); verified on the emulator. Phones in landscape (914 dp) are "expanded" too and get rail + two
+  panes.
+- **Rail insets**: in rail mode the content and the rail use system bars + display cutout (not the IME) so search
+  fields keep handling the keyboard themselves; the mini player pads itself by the navigation bar.
+- **Readable width**: settings, navigation settings, Verbindungsstatus, Server-Verwaltung, downloads, cleanup, setup
+  and the full-screen item detail are centred at 840 dp at most.
+
+Not done / left for later: no tabletop-specific player layout (hinge-aware split) and no foldable posture testing
+(the emulator has no foldable AVD; the pane directive's hinge avoidance comes from the library); no pane drag handle;
+grids keep `GridCells.Adaptive(120.dp)` (they already adapt their column count – 4 columns in the tablet's list pane,
+5 on tablet portrait; the minimum tile width was not tuned further); the selected title is not highlighted in the
+list pane.
