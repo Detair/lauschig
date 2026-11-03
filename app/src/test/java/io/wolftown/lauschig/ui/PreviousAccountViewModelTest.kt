@@ -50,6 +50,17 @@ class PreviousAccountViewModelTest {
         assertEquals(emptyList<KeptAccount>(), kept.list.value) // its data is simply its data again
     }
 
+    @Test fun theSameAccount_signingOutAndInAgain_whileTheAppRuns_getsItsDataBack() {
+        runBlocking { kept.remove(a) }
+        signIn(a, "fabian")
+        val vm = vm()
+        // Sign-out with "keep", then the same account signs in again in the same process.
+        runBlocking { kept.put(KeptAccount(a, "fabian", "abs.example.org")); accounts.clear(true) }
+        signIn(a, "fabian")
+        assertNull(vm.question.value)
+        assertEquals(emptyList<KeptAccount>(), kept.list.value)
+    }
+
     @Test fun anotherAccount_isAskedOnce_withTheSize() {
         val vm = vm()
         signIn(b, "matthias")

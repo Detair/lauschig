@@ -58,7 +58,8 @@ class PreviousAccountViewModel(
 
     init {
         viewModelScope.launch {
-            accounts.account.filterNotNull().map { it.serverId }.distinctUntilChanged().collect { sid ->
+            // Every sign-in counts, also the same account again after a sign-out while the app ran.
+            accounts.account.map { it?.serverId }.distinctUntilChanged().filterNotNull().collect { sid ->
                 if (kept.accounts.first().any { it.serverId == sid }) kept.remove(sid)
             }
         }
@@ -99,7 +100,7 @@ class PreviousAccountViewModel(
 
 @Composable
 fun PreviousAccountDialog(question: PreviousAccountQuestion, deleting: Boolean, onDelete: () -> Unit, onKeep: () -> Unit) {
-    val size = Formatter.formatShortFileSize(LocalContext.current, question.bytes)
+    val size = Formatter.formatShortFileSize(LocalContext.current, question.bytes).replace(' ', '\u00A0')
     AlertDialog(
         // An answer is needed: asked once only.
         onDismissRequest = {},
