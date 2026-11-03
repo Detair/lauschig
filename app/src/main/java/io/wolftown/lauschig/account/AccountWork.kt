@@ -16,7 +16,10 @@ import javax.inject.Inject
 
 /** The WorkManager work of one account. Device folder scans and the cleanup reminder are no account work. */
 fun interface AccountWork {
-    /** Cancels it and waits (bounded) until it has stopped, so no download writes into a deleted directory. */
+    /**
+     * Cancels it and waits (bounded) until WorkManager reports every piece finished. The cancellation is recorded at
+     * once; a download that is just writing stops at its next chunk (it checks before every one).
+     */
     suspend fun cancel(serverId: String)
 }
 
@@ -39,7 +42,7 @@ class WorkManagerAccountWork(
         val tag = DefaultDownloadManager.serverTag(serverId)
         names.forEach { wm.cancelUniqueWork(it) }
         wm.cancelAllWorkByTag(tag)
-        // Cancelling is cooperative: a running download stops at its next chunk, a sync at its next suspension point.
+        // The cancel operations are asynchronous: wait until they are applied before the caller deletes anything.
         withTimeoutOrNull(waitMs) {
             names.forEach { name -> wm.getWorkInfosForUniqueWorkFlow(name).first { infos -> infos.all { it.state.isFinished } } }
             wm.getWorkInfosByTagFlow(tag).first { infos -> infos.all { it.state.isFinished } }

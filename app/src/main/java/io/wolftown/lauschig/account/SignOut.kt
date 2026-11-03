@@ -155,7 +155,7 @@ class SignOut(
             step("forget") { kept.remove(serverId) }
         }
         step("last played") { lastPlayed.forgetServerTitle() }
-        clearAccountState(serverId)
+        step("account state") { clearAccountState(serverId) }
         Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: ${loggedOut.await()})")
         accounts.clear(keepDownloads)
     }
