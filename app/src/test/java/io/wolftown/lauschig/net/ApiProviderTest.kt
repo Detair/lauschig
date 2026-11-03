@@ -55,4 +55,27 @@ class ApiProviderTest {
         runCurrent()
         assertEquals(ConnectionState.Offline, provider.connectionState.value)
     }
+
+    @Test
+    fun checking_untilTheFirstAnswer_andAgainAfterTheListenersLeft() = runTest {
+        val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val upstream = flow {
+            answer.await()
+            emit(ConnectionState.Offline)
+            awaitCancellation()
+        }
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        assertEquals(true, provider.checking.value)
+        val first = backgroundScope.launch { provider.connection.collect {} }
+        runCurrent()
+        // Offline is only the initial value here: the probe has not answered yet.
+        assertEquals(true, provider.checking.value)
+        answer.complete(Unit)
+        runCurrent()
+        assertEquals(false, provider.checking.value)
+        first.cancel()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(true, provider.checking.value)
+    }
 }

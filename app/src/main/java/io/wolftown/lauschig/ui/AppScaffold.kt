@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -49,29 +50,47 @@ enum class TopLevelTab(@StringRes val label: Int, val icon: ImageVector) {
 }
 
 /**
- * Offline must persist this long before the banner appears: the shared connection flow starts as
- * [ConnectionState.Offline] until the first probe resolves, which must not flash "offline" at cold start.
- * Going online hides it immediately.
+ * Not-online must persist this long before a banner appears: the shared connection flow starts as
+ * [ConnectionState.Offline] until the first probe resolves (and falls back to it when the app was in the background
+ * for a while), which must not flash "offline". Going online hides it immediately.
  */
-const val OFFLINE_BANNER_DELAY_MS = 2_000L
+const val OFFLINE_BANNER_DELAY_MS = 3_000L
+
+/** The connection hint on top of the app. */
+enum class ConnectionBanner { OFFLINE, CONNECTING }
 
 /**
- * True once [connection] has been [ConnectionState.Offline] for [OFFLINE_BANNER_DELAY_MS]; false immediately when
- * online. Shared by the banner and the tile dimming so both settle identically.
+ * The banner for [connection] once the app has not been online for [OFFLINE_BANNER_DELAY_MS]: [ConnectionBanner.OFFLINE]
+ * only when a probe answered "offline", [ConnectionBanner.CONNECTING] while the first check since the start is still
+ * running ([checking], see `ApiProvider.checking`); null when online (at once).
  */
 @Composable
-fun rememberSettledOffline(connection: ConnectionState): Boolean {
-    val isOffline = connection is ConnectionState.Offline
+fun rememberConnectionBanner(connection: ConnectionState, checking: Boolean): ConnectionBanner? {
+    val target = when {
+        connection is ConnectionState.Online -> null
+        checking -> ConnectionBanner.CONNECTING
+        else -> ConnectionBanner.OFFLINE
+    }
+    val notOnline = target != null
     var delayElapsed by remember { mutableStateOf(false) }
-    LaunchedEffect(isOffline) {
+    LaunchedEffect(notOnline) {
         delayElapsed = false
-        if (isOffline) {
+        if (notOnline) {
             delay(OFFLINE_BANNER_DELAY_MS)
             delayElapsed = true
         }
     }
-    return isOffline && delayElapsed
+    return if (notOnline && delayElapsed) target else null
 }
+
+/**
+ * True once [connection] has been answered [ConnectionState.Offline] and the app was not online for
+ * [OFFLINE_BANNER_DELAY_MS]; false immediately when online and while the first check runs ([checking]). Shared by the
+ * banner and the tile dimming so both settle identically.
+ */
+@Composable
+fun rememberSettledOffline(connection: ConnectionState, checking: Boolean = false): Boolean =
+    rememberConnectionBanner(connection, checking) == ConnectionBanner.OFFLINE
 
 /**
  * App frame: re-auth hint and offline banner on top, [content] in the middle, [miniPlayer] slot above the bottom bar.
@@ -87,12 +106,16 @@ fun AppScaffold(
     showOfflineBanner: Boolean = true,
     showReauthBanner: Boolean = false,
     onReauth: () -> Unit = {},
+    /** The first connection check since the start is still running (see [rememberConnectionBanner]). */
+    connectionChecking: Boolean = false,
+    /** Tapping the offline/connecting banner opens the Verbindungsstatus window. */
+    onOpenConnection: () -> Unit = {},
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable (PaddingValues) -> Unit,
 ) {
     // Derived, so going online hides the banner in the same composition (no effect round trip).
-    val showBanner = showOfflineBanner && rememberSettledOffline(connection)
+    val banner = rememberConnectionBanner(connection, connectionChecking).takeIf { showOfflineBanner }
 
     Scaffold(
         modifier = modifier,
@@ -115,21 +138,22 @@ fun AppScaffold(
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner)) {
             if (showReauthBanner) ReauthBanner(onReauth)
-            if (showBanner) OfflineBanner()
+            banner?.let { ConnectionHint(it, onOpenConnection) }
             Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
         }
     }
 }
 
 @Composable
-private fun OfflineBanner() {
+private fun ConnectionHint(banner: ConnectionBanner, onClick: () -> Unit) {
+    val offline = banner == ConnectionBanner.OFFLINE
     Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        modifier = Modifier.fillMaxWidth().testTag("offlineBanner"),
+        color = if (offline) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (offline) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).testTag(if (offline) "offlineBanner" else "connectingBanner"),
     ) {
         Text(
-            stringResource(R.string.offline_banner),
+            stringResource(if (offline) R.string.offline_banner else R.string.connecting_banner),
             style = MaterialTheme.typography.labelLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),

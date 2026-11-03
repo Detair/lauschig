@@ -19,3 +19,4 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 @Serializable data object Settings
 @Serializable data object Cleanup
 @Serializable data object Downloads
+@Serializable data object ConnectionStatus

@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.ui.nav.Cleanup
+import io.wolftown.lauschig.ui.nav.ConnectionStatus
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,6 +56,7 @@ fun AppRoot(
         }
     }
     val connection by viewModel.connection.collectAsStateWithLifecycle()
+    val checking by viewModel.checking.collectAsStateWithLifecycle()
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
     val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
@@ -65,7 +67,7 @@ fun AppRoot(
     val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
-    val dimOffline = rememberSettledOffline(connection)
+    val dimOffline = rememberSettledOffline(connection, checking)
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme {
             AppScaffold(
@@ -83,6 +85,8 @@ fun AppRoot(
                 showOfflineBanner = !onSetup,
                 showReauthBanner = needsReauth && !onSetup,
                 onReauth = { navController.navigate(Setup) { launchSingleTop = true } },
+                connectionChecking = checking,
+                onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } },
                 selectedTab = navController.currentTab(),
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,

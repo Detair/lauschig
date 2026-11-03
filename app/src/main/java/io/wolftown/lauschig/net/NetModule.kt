@@ -16,6 +16,7 @@ import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.DataStoreAccountStore
 import io.wolftown.lauschig.account.TokenCipher
 import io.wolftown.lauschig.connection.AddressResolver
+import io.wolftown.lauschig.connection.ConnectionLog
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.ReachabilityProbe
@@ -41,7 +42,7 @@ object NetModule {
     )
 
     @Provides @Singleton
-    fun addressResolver(probe: ReachabilityProbe, net: NetworkInfo) = AddressResolver(probe, net)
+    fun addressResolver(probe: ReachabilityProbe, net: NetworkInfo, log: ConnectionLog) = AddressResolver(probe, net, log = log)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Provides @Singleton

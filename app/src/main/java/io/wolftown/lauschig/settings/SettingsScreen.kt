@@ -127,7 +127,13 @@ class SettingsViewModel @Inject constructor(
 }
 
 @Composable
-fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, onOpenDownloads: () -> Unit = {}, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsRoute(
+    onBack: () -> Unit,
+    onOpenCleanup: () -> Unit,
+    onOpenDownloads: () -> Unit = {},
+    onOpenConnection: () -> Unit = {},
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
@@ -136,6 +142,7 @@ fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, onOpenDownloads
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
         onOpenDownloads = onOpenDownloads,
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
+        onOpenConnection = onOpenConnection,
     )
 }
 
@@ -159,6 +166,11 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit = {},
     /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
     localSection: @Composable () -> Unit = {},
+    onOpenConnection: () -> Unit = {},
+    /** Slot for the links hint (needs the system's link settings). */
+    linksSection: @Composable () -> Unit = {},
+    /** Slot for "Server-Verwaltung" (admins only; needs Hilt). */
+    adminSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,6 +206,15 @@ fun SettingsScreen(
 
         Section(R.string.settings_section_local)
         localSection()
+
+        Section(R.string.settings_section_connection)
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_connection_status)) },
+            supportingContent = { Text(stringResource(R.string.settings_connection_status_hint)) },
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenConnection).testTag("openConnection"),
+        )
+        linksSection()
+        adminSection()
     }
 }
 

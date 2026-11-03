@@ -8,6 +8,10 @@ import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -37,9 +41,18 @@ class ApiProvider(
     // Shared so that several API flows do not each run their own probe loop. When nobody has listened for 5 s the
     // value falls back to Offline: a process kept alive at home must not hand an old Online(LOCAL) to the next
     // listener (e.g. the car starting the playback service) before a fresh probe answered.
-    private val shared = connection.stateIn(
-        scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline,
-    )
+    private val firstCheck = MutableStateFlow(true)
+    private val shared = connection
+        .onStart { firstCheck.value = true }
+        .onEach { firstCheck.value = false }
+        .onCompletion { firstCheck.value = true }
+        .stateIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline)
+
+    /**
+     * True while the shared probe loop has not answered yet since it (re)started: its [ConnectionState.Offline] is
+     * then only the initial value, not a result. For the UI's offline indicator only; the state itself is unchanged.
+     */
+    val checking: StateFlow<Boolean> = firstCheck
 
     /** The shared connection state (one probe loop for everyone). */
     val connection: Flow<ConnectionState> get() = shared

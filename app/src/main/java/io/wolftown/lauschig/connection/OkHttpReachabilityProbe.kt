@@ -5,6 +5,7 @@ import io.wolftown.lauschig.absapi.auth.AuthApi
 import kotlinx.coroutines.CancellationException
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import retrofit2.HttpException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,11 +21,21 @@ class OkHttpReachabilityProbe @Inject constructor() : ReachabilityProbe {
         .connectTimeout(3, TimeUnit.SECONDS)
         .build()
 
-    override suspend fun isReachable(url: HttpUrl): Boolean = try {
-        AbsClientFactory.retrofit(url, client).create(AuthApi::class.java).ping().success
+    override suspend fun isReachable(url: HttpUrl): Boolean = check(url).ok
+
+    /** The failure as "<exception>: <message>" or "HTTP <code>"; the ping is unauthenticated, nothing secret in it. */
+    override suspend fun check(url: HttpUrl): ProbeOutcome = try {
+        if (AbsClientFactory.retrofit(url, client).create(AuthApi::class.java).ping().success) ProbeOutcome(true)
+        else ProbeOutcome(false, "ping: success=false")
     } catch (e: CancellationException) {
         throw e
-    } catch (_: Exception) {
-        false
+    } catch (e: HttpException) {
+        ProbeOutcome(false, "HTTP ${e.code()}")
+    } catch (e: Exception) {
+        ProbeOutcome(false, listOfNotNull(e.javaClass.simpleName, e.message?.take(MAX_ERROR)).joinToString(": "))
+    }
+
+    private companion object {
+        const val MAX_ERROR = 200
     }
 }
