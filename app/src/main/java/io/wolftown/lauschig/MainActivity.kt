@@ -1,7 +1,9 @@
 package io.wolftown.lauschig
 
+import android.app.SearchManager
 import android.content.Intent
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -10,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import io.wolftown.lauschig.auto.VoicePlayer
 import io.wolftown.lauschig.ui.AppRoot
 import io.wolftown.lauschig.ui.setup.OidcCallback
 import io.wolftown.lauschig.ui.setup.OidcCallbackBus
@@ -20,6 +23,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     @Inject lateinit var oidcCallbacks: OidcCallbackBus
+    @Inject lateinit var voicePlayer: VoicePlayer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Held only until the local account read finishes; this is the sole thing the start waits for.
@@ -48,6 +52,11 @@ class MainActivity : ComponentActivity() {
     private fun handleOpen(intent: Intent?, replay: Boolean = false) {
         intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
         intent?.removeExtra(EXTRA_OPEN)
+        // "Spiel X in Lauschig" (Assistant); a recreation must not start it again.
+        if (!replay && intent?.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
+            voicePlayer.playFromSearch(intent.getStringExtra(SearchManager.QUERY), intent.extras)
+            intent.action = null
+        }
         // SSO: lauschig://oauth?code=..&state=.. comes back from the Custom Tab.
         if (!replay) intent?.data?.takeIf(OidcCallback::isCallback)?.let {
             oidcCallbacks.post(OidcCallback.from(it))
