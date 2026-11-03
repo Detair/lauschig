@@ -19,6 +19,13 @@ object CarAccess {
         "com.android.systemui", // media controls and playback resumption
     )
 
+    /**
+     * System components that read the playing title's artwork from the platform media session without ever connecting
+     * to us (SystemUI's media controls, Bluetooth AVRCP cover art), plus the car hosts: they get the cover grant when
+     * the service starts.
+     */
+    val COVER_READERS = FULL_ACCESS + setOf("com.android.bluetooth", "com.google.android.bluetooth")
+
     fun levelFor(packageName: String, ownPackage: String, trusted: Boolean): Level =
         if (trusted || packageName == ownPackage || packageName in FULL_ACCESS) Level.FULL else Level.CONTROL
 

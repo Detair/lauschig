@@ -36,10 +36,16 @@ class CoverTest {
 
     private val fetched = mutableListOf<String>()
 
+    private var now = 0L
+
     private fun store(local: File? = null, online: Boolean = true, bytes: ByteArray? = byteArrayOf(1, 2, 3)) = CoverStore(
         localCover = { _, _ -> local },
         cacheDir = File(tmp, "cache"),
-        fetch = { serverId, itemId -> fetched += "$serverId/$itemId"; if (online) bytes else null },
+        fetch = { serverId, itemId ->
+            if (!online) CoverStore.Fetch.Unavailable
+            else { fetched += "$serverId/$itemId"; bytes?.let(CoverStore.Fetch::Found) ?: CoverStore.Fetch.Missing }
+        },
+        clock = { now },
     )
 
     @Test fun localCover_winsWithoutFetching() {
@@ -64,6 +70,16 @@ class CoverTest {
     @Test fun offlineOrMissing_hasNoCover_andDeviceTitlesAreNeverFetched() {
         assertNull(store(online = false).file(CoverRef(s, "b", 1)))
         assertNull(store().file(CoverRef("device", "local:0123456789abcdef01234567", 1)))
+        assertTrue(fetched.isEmpty())
+    }
+
+    @Test fun aTitleWithoutCover_isNotAskedForAgainForAWhile() {
+        // SystemUI and the notification reload the artwork on every metadata change.
+        val st = store(bytes = null)
+        repeat(5) { assertNull(st.file(CoverRef(s, "b", 1))) }
         assertEquals(listOf("$s/b"), fetched)
+        now += CoverStore.MISS_TTL_MS + 1
+        assertNull(st.file(CoverRef(s, "b", 1)))
+        assertEquals(2, fetched.size)
     }
 }

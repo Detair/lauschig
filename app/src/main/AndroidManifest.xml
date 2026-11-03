@@ -46,6 +46,8 @@
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 
+        <!-- Media3 session + legacy MediaBrowserService (Android Auto, SystemUI media resumption, Assistant).
+             Who may browse or control is decided per caller in auto/LibraryCallback (CarAccess). -->
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
@@ -55,6 +57,28 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!-- Bluetooth/car "play" with no process: starts the service, which resumes the last title (onPlaybackResumption).
+             Its presence also makes Media3 answer SystemUI's playback resumption (recent root). -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Covers for Android Auto and SystemUI (read-only; access only through prefix grants to allowed callers). -->
+        <provider
+            android:name=".auto.CoverProvider"
+            android:authorities="${applicationId}.covers"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <!-- Android Auto: a media app. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
 
         <activity
             android:name=".MainActivity"

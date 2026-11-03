@@ -23,6 +23,8 @@ suspend fun loadPlayable(items: ItemDao, episodes: EpisodeDao, serverId: String,
         title = episode.title,
         author = podcast.title,
         durationSec = episode.durationSec,
+        // The episode shows its podcast's cover; its version keeps cover URIs fresh.
+        coverUpdatedAt = podcast.coverUpdatedAt,
         detailsLoaded = true,
     )
     return ItemWithDetails(

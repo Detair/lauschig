@@ -9,6 +9,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -19,6 +20,21 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.MainActivity
+import io.wolftown.lauschig.auto.CarAccess
+import io.wolftown.lauschig.auto.CarButtons
+import io.wolftown.lauschig.auto.CarContext
+import io.wolftown.lauschig.auto.CarControls
+import io.wolftown.lauschig.auto.CarLibrary
+import io.wolftown.lauschig.auto.CarMediaItems
+import io.wolftown.lauschig.auto.CarNode
+import io.wolftown.lauschig.auto.CarSearch
+import io.wolftown.lauschig.auto.CarStarts
+import io.wolftown.lauschig.auto.ChapterTracker
+import io.wolftown.lauschig.auto.CoverUris
+import io.wolftown.lauschig.auto.LibraryCallback
+import io.wolftown.lauschig.auto.MediaIds
+import io.wolftown.lauschig.db.dao.CatalogDao
+import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
@@ -44,11 +60,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import javax.inject.Inject
 
@@ -75,15 +98,29 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var librarySync: LibrarySync
     @Inject lateinit var playDownloadStarter: PlayDownloadStarter
     @Inject lateinit var syncTrigger: SyncTrigger
+    @Inject lateinit var carLibrary: CarLibrary
+    @Inject lateinit var carSearch: CarSearch
+    @Inject lateinit var lastTitleStarter: LastTitleStarter
+    @Inject lateinit var playerController: PlayerController
+    @Inject lateinit var catalogDao: CatalogDao
+    @Inject lateinit var libraryDao: LibraryDao
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Library requests of cars and browsers; never the main thread (see [LibraryCallback]). */
+    private val carScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
     private var bridge: PlaybackProgressBridge? = null
     private var connectionJob: Job? = null
     private var monitorJob: Job? = null
     private var comfort: PlaybackComfort? = null
+    private var chapters: ChapterTracker? = null
+    private var carPlayer: CarSafePlayer? = null
+    private var carButtons: CarButtons? = null
+    private var buttonState: CarButtons.State? = null
+    /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
+    private val subscribed = LinkedHashSet<String>()
 
     /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
     @Volatile private var lastOnline: ConnectionState.Online? = null
@@ -159,15 +196,158 @@ class PlaybackService : MediaLibraryService() {
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaLibrarySession.Builder(this, exo, object : MediaLibrarySession.Callback {})
+        // The session player: "previous"/"next" from a steering wheel or headset move by 30 s, never to the book start.
+        val safe = CarSafePlayer(exo, CarButtons.SEEK_MS).also { carPlayer = it }
+        val buttons = CarButtons(resources).also { carButtons = it }
+        val chapterTracker = ChapterTracker(exo, { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) }, scope, onTitle = { updateButtons() })
+        chapters = chapterTracker
+        val built = MediaLibrarySession.Builder(this, safe, libraryCallback(buttons))
             .setSessionActivity(activity)
+            .setMediaButtonPreferences(buttons.buttons(currentButtonState()))
             .build()
+        session = built
+        chapterTracker.start()
+        exo.addListener(object : Player.Listener {
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) = updateButtons()
+
+            // A title the service started by itself (car, voice, resumption, queue) shows up in the app too; the app's
+            // own starts are left alone there.
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = playerController.adoptFromService()
+        })
+        scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
+        watchLibrary(built)
+        grantCoverReaders()
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
         setListener(object : Listener {
             override fun onForegroundServiceStartNotAllowedException() {
                 Log.w(TAG, "foreground start from the background was refused")
             }
         })
+    }
+
+    /**
+     * SystemUI and Bluetooth read the artwork URI of the playing title from the platform session without connecting to
+     * us, so they never pass [LibraryCallback]'s grant: grant them (and the car hosts) the cover prefix up front. Packages
+     * that are not installed are skipped.
+     */
+    private fun grantCoverReaders() {
+        val prefix = CoverUris.prefix(CoverUris.authority(packageName))
+        appScope.launch {
+            CarAccess.COVER_READERS.forEach { pkg ->
+                try {
+                    grantUriPermission(pkg, prefix, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                } catch (e: Exception) {
+                    // not installed
+                }
+            }
+        }
+    }
+
+    private fun currentButtonState() = CarButtons.State(
+        speed = Math.round((player?.playbackParameters?.speed ?: 1f) * 100) / 100f,
+        sleep = sleepTimer.state.value?.mode,
+        hasChapters = chapters?.hasChapters == true,
+    )
+
+    /** New media buttons only when what they show changed (speed, sleep timer, chapters). */
+    @OptIn(UnstableApi::class) // media button preferences
+    private fun updateButtons() {
+        val s = session ?: return
+        val buttons = carButtons ?: return
+        val state = currentButtonState()
+        if (state == buttonState) return
+        buttonState = state
+        s.setMediaButtonPreferences(buttons.buttons(state))
+    }
+
+    /** The car buttons; false if there was nothing to do (no title, no chapters). */
+    private fun onCarCommand(action: String): Boolean {
+        val exo = player ?: return false
+        if (exo.mediaItemCount == 0) return false
+        return when (action) {
+            CarButtons.SEEK_BACK -> { carPlayer?.step(forward = false); true }
+            CarButtons.SEEK_FORWARD -> { carPlayer?.step(forward = true); true }
+            CarButtons.SPEED -> { exo.setPlaybackSpeed(CarControls.nextSpeed(exo.playbackParameters.speed)); true }
+            CarButtons.SLEEP -> {
+                val next = CarControls.nextSleep(sleepTimer.state.value?.mode)
+                if (next == null) sleepTimer.cancel() else sleepTimer.start(next)
+                updateButtons()
+                true
+            }
+            CarButtons.CHAPTER_BACK -> chapters?.seekChapter(back = true) == true
+            CarButtons.CHAPTER_NEXT -> chapters?.seekChapter(back = false) == true
+            else -> false
+        }
+    }
+
+    /** The server for streams: the one online now, else whichever comes online within a few seconds (like the app). */
+    private suspend fun streamBase() = lastOnline?.baseUrl
+        ?: withTimeoutOrNull(ONLINE_WAIT_MS) { api.connection.filterIsInstance<ConnectionState.Online>().first() }?.baseUrl
+
+    private suspend fun carContext() = CarContext(accountStore.account.first()?.serverId, api.connectionState.value is ConnectionState.Online)
+
+    private suspend fun lastTitle(): CarNode.Title? = lastTitleStarter.last()?.let { CarNode.Title(it.serverId, it.itemId) }
+
+    private fun libraryCallback(buttons: CarButtons): LibraryCallback {
+        val starter = ServiceTitleStarter(
+            loadItem = { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) },
+            factory = mediaItemFactory,
+            baseUrl = ::streamBase,
+            loadDetails = librarySync::loadDetailsForPlayable,
+            io = Dispatchers.IO,
+            setQueue = { _, _, _ -> error("car starts go through the session") },
+            rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
+        )
+        val starts = CarStarts(
+            resolveTitle = starter::resolve,
+            searchTitle = { query, hints -> carSearch.resolve(query, hints, carContext(), ::lastTitle) },
+            lastTitle = ::lastTitle,
+            accountServer = { accountStore.account.first()?.serverId },
+        )
+        return LibraryCallback(
+            context = this,
+            scope = carScope,
+            library = carLibrary,
+            search = carSearch,
+            starts = starts,
+            mediaItems = CarMediaItems(CoverUris.authority(packageName)),
+            carContext = ::carContext,
+            lastTitle = ::lastTitle,
+            buttons = { buttons.buttons(currentButtonState()) },
+            onCommand = ::onCarCommand,
+            onStart = { out -> if (out.streaming) playDownloadStarter.start(out.title.serverId, out.title.key) },
+            onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
+        )
+    }
+
+    /**
+     * Browsers (Android Auto) cache what they showed: when the connection comes or goes, or the catalog, the downloads,
+     * the device titles or the set of titles in progress change, the subscribed folders are told to reload.
+     */
+    @OptIn(FlowPreview::class)
+    private fun watchLibrary(session: MediaLibrarySession) {
+        scope.launch {
+            accountStore.account.map { it?.serverId }.distinctUntilChanged().collectLatest { sid ->
+                val dev = DeviceLibrary.SERVER_ID
+                val parts: List<Flow<Any>> = listOf(
+                    api.connection.map { it is ConnectionState.Online },
+                    catalogDao.observeAll(dev).map { list -> list.map { it.id to it.coverUpdatedAt } },
+                    itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
+                ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
+                    libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
+                    catalogDao.observeAll(sid).map { list -> list.size to list.maxOfOrNull { it.updatedAt } },
+                    downloadDao.observeCompleteIds(sid),
+                    itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
+                )
+                combine(parts) { it.toList() }.distinctUntilChanged().debounce(LIBRARY_DEBOUNCE_MS).collect {
+                    val ids = LinkedHashSet<String>()
+                    ids += MediaIds.of(CarNode.Root)
+                    listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach { ids += MediaIds.of(it) }
+                    ids += subscribed
+                    ids.forEach { session.notifyChildrenChanged(it, Int.MAX_VALUE, null) }
+                }
+            }
+        }
     }
 
     /**
@@ -272,6 +452,8 @@ class PlaybackService : MediaLibraryService() {
         bridge?.let { player?.removeListener(it) }
         comfort?.release()
         comfort = null
+        chapters?.release()
+        chapters = null
         sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
         bridge?.shutdown(final, appScope)
@@ -280,6 +462,7 @@ class PlaybackService : MediaLibraryService() {
         session = null
         player = null
         scope.cancel()
+        carScope.cancel()
         super.onDestroy()
     }
 
@@ -291,6 +474,9 @@ class PlaybackService : MediaLibraryService() {
         const val REBUFFER_MS = 5_000
         const val MONITOR_INTERVAL_MS = 500L
         const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
+        const val ONLINE_WAIT_MS = 3_000L
+        const val LIBRARY_DEBOUNCE_MS = 1_500L
+        const val MAX_SUBSCRIBED = 32
         const val TAG = "PlaybackService"
     }
 }

@@ -406,4 +406,24 @@
     <string name="local_empty">No folders yet. Add a folder with audiobooks from this device – they play without a server.</string>
     <string name="local_empty_titles">No audiobooks found in the folders.</string>
     <string name="local_folder_scan_failed">Not everything could be read – the titles found before are kept</string>
+    <!-- Android Auto, voice, media controls (phase 4A) -->
+    <string name="car_continue">Continue listening</string>
+    <string name="car_downloads">Downloaded</string>
+    <string name="car_series">Series</string>
+    <string name="car_libraries">Libraries</string>
+    <string name="car_remaining">%1$s left</string>
+    <string name="car_duration_h_min">%1$d h %2$d min</string>
+    <string name="car_duration_min">%1$d min</string>
+    <string name="car_volume">Volume %1$s</string>
+    <string name="car_seek_back">Back 30 seconds</string>
+    <string name="car_seek_forward">Forward 30 seconds</string>
+    <string name="car_speed">Speed %1$s×</string>
+    <string name="car_sleep_off">Sleep timer off</string>
+    <string name="car_sleep_minutes">Sleep timer: %1$d min</string>
+    <string name="car_sleep_chapter">Sleep timer: end of chapter</string>
+    <string name="car_chapter_back">Chapter start</string>
+    <string name="car_chapter_next">Next chapter</string>
+    <string name="car_error_not_found">This title is no longer available.</string>
+    <string name="car_error_nothing_found">Nothing found in Lauschig.</string>
+    <string name="car_error_nothing_to_resume">Nothing to continue yet.</string>
 </resources>

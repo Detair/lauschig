@@ -406,4 +406,24 @@
     <string name="local_empty">Noch keine Ordner. Füge einen Ordner mit Hörbüchern von diesem Gerät hinzu – sie spielen ohne Server.</string>
     <string name="local_empty_titles">In den Ordnern wurden keine Hörbücher gefunden.</string>
     <string name="local_folder_scan_failed">Nicht alles konnte gelesen werden – die bisher gefundenen Titel bleiben</string>
+    <!-- Android Auto, Sprachsteuerung, Mediensteuerung (Phase 4A) -->
+    <string name="car_continue">Weiterhören</string>
+    <string name="car_downloads">Heruntergeladen</string>
+    <string name="car_series">Serien</string>
+    <string name="car_libraries">Bibliotheken</string>
+    <string name="car_remaining">noch %1$s</string>
+    <string name="car_duration_h_min">%1$d h %2$d min</string>
+    <string name="car_duration_min">%1$d min</string>
+    <string name="car_volume">Band %1$s</string>
+    <string name="car_seek_back">30 Sekunden zurück</string>
+    <string name="car_seek_forward">30 Sekunden vor</string>
+    <string name="car_speed">Tempo %1$s×</string>
+    <string name="car_sleep_off">Sleep-Timer aus</string>
+    <string name="car_sleep_minutes">Sleep-Timer: %1$d min</string>
+    <string name="car_sleep_chapter">Sleep-Timer: Kapitelende</string>
+    <string name="car_chapter_back">Kapitelanfang</string>
+    <string name="car_chapter_next">Nächstes Kapitel</string>
+    <string name="car_error_not_found">Dieser Titel ist nicht mehr verfügbar.</string>
+    <string name="car_error_nothing_found">Nichts in Lauschig gefunden.</string>
+    <string name="car_error_nothing_to_resume">Noch nichts zum Fortsetzen.</string>
 </resources>
