@@ -119,4 +119,23 @@ class LibraryCallbackTest {
         CarButtons.ACTIONS.forEach { assertTrue(it, r.availableSessionCommands.contains(SessionCommand(it, Bundle.EMPTY))) }
         assertTrue(r.availablePlayerCommands.contains(Player.COMMAND_SET_MEDIA_ITEM))
     }
+
+    @Test fun playbackResumption_reportsSuccessAndFailure() {
+        val answers = mutableListOf<Pair<Boolean, String?>>()
+        fun callbackWith(last: CarNode.Title?) = LibraryCallback(
+            context = context, scope = CoroutineScope(Dispatchers.Unconfined), library = library, search = CarSearch(library),
+            starts = CarStarts(
+                resolveTitle = { _, _, _ -> ServiceTitleStarter.Resolved.Ready(fileItems, 0, 0, streaming = false) },
+                searchTitle = { _, _ -> null }, lastTitle = { last }, accountServer = { s },
+            ),
+            mediaItems = CarMediaItems("$own.covers"), carContext = { CarContext(s, online = true) }, lastTitle = { last },
+            buttons = { emptyList() }, onCommand = { true }, onStart = {}, onPlayLoaded = {}, onSubscribed = {},
+            onResumption = { ok, message -> answers += ok to message },
+        )
+        callbackWith(CarNode.Title(s, "b")).onPlaybackResumption(session, app, true).get(5, TimeUnit.SECONDS)
+        assertEquals(listOf(true to null), answers)
+        // Nothing to resume: a failure with the message the play key's toast shows.
+        assertTrue(failed(callbackWith(null).onPlaybackResumption(session, app, true)))
+        assertEquals(false to context.getString(io.wolftown.lauschig.R.string.car_error_nothing_to_resume), answers[1])
+    }
 }

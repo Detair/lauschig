@@ -1,7 +1,14 @@
 package io.wolftown.lauschig.playback
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.widget.Toast
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import io.wolftown.lauschig.R
 import androidx.media3.common.AudioAttributes
 import android.util.Log
 import androidx.annotation.OptIn
@@ -130,6 +137,7 @@ class PlaybackService : MediaLibraryService() {
     private var carButtons: CarButtons? = null
     private var buttonState: CarButtons.State? = null
     private var widgets: WidgetPublisher? = null
+    private var startGuard: ForegroundStartGuard? = null
     /** Counts covers that arrived in the background; browsers reload their lists when it changes. */
     private val coverArrivals = MutableStateFlow(0)
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
@@ -229,6 +237,7 @@ class PlaybackService : MediaLibraryService() {
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
         watchLibrary(built)
+        startGuard = ForegroundStartGuard(scope, engaged = { isEngaged(exo) }, settle = ::settleForegroundStart)
         // The homescreen widget follows the player (also right now: a fresh process starts with an empty player).
         widgets = WidgetPublisher(exo, scope, appScope, widgetStore, widgetSource::refresh).also { it.start() }
         grantCoverReaders()
@@ -368,7 +377,48 @@ class PlaybackService : MediaLibraryService() {
             onStart = { out -> if (out.streaming) playDownloadStarter.start(out.title.serverId, out.title.key) },
             onPlayLoaded = { scope.launch { player?.play() } },
             onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
+            onResumption = { ok, message ->
+                scope.launch {
+                    // A play key that cannot start anything says why (Bluetooth, car, widget); the guard then lets go.
+                    if (!ok && startGuard?.armed == true && message != null) Toast.makeText(this@PlaybackService, message, Toast.LENGTH_LONG).show()
+                    startGuard?.resumption(ok)
+                }
+            },
         )
+    }
+
+    /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val exo = player
+        if (intent != null && ForegroundStartGuard.isPlayKey(intent) && exo != null && !isEngaged(exo)) startGuard?.arm()
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    /** Something plays or buffers to play: Media3 shows the notification and goes foreground itself. */
+    private fun isEngaged(exo: ExoPlayer): Boolean =
+        exo.mediaItemCount > 0 && exo.playWhenReady && (exo.playbackState == Player.STATE_READY || exo.playbackState == Player.STATE_BUFFERING)
+
+    /**
+     * Nothing started after a play key: go foreground for a moment and stop, so Android does not kill the app for a
+     * foreground start without `startForeground` (Media3 does the same in its own `stopSelfSafely`). If a controller
+     * (the app, a car) is still bound, the service stays alive without being in the foreground.
+     */
+    private fun settleForegroundStart() {
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(NotificationChannel(START_CHANNEL, getString(R.string.playback_start_channel), NotificationManager.IMPORTANCE_LOW))
+            val notification = NotificationCompat.Builder(this, START_CHANNEL)
+                .setSmallIcon(R.drawable.ic_widget_play)
+                .setContentTitle(getString(R.string.app_name))
+                .setSilent(true)
+                .build()
+            ServiceCompat.startForeground(this, START_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            Log.i(TAG, "play key started nothing: left the foreground start")
+        } catch (e: Exception) {
+            Log.w(TAG, "could not settle the foreground start", e)
+        }
+        stopSelf()
     }
 
     /**
@@ -511,6 +561,8 @@ class PlaybackService : MediaLibraryService() {
         player?.pause()
         widgets?.release()
         widgets = null
+        startGuard?.release()
+        startGuard = null
         bridge?.shutdown(final, appScope)
         session?.release()
         player?.release()
@@ -533,5 +585,8 @@ class PlaybackService : MediaLibraryService() {
         const val LIBRARY_DEBOUNCE_MS = 1_500L
         const val MAX_SUBSCRIBED = 32
         const val TAG = "PlaybackService"
+        const val START_CHANNEL = "playback_start"
+        /** Not Media3's notification id (1001) nor its shutdown id (20938). */
+        const val START_NOTIFICATION_ID = 4711
     }
 }

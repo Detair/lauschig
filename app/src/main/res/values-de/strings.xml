@@ -482,4 +482,5 @@
     <string name="settings_section_connection">Verbindung</string>
     <string name="settings_connection_status">Verbindungsstatus</string>
     <string name="settings_connection_status_hint">Lokal, öffentlich oder offline, Adressen, Netz, neu verbinden</string>
+    <string name="playback_start_channel">Wiedergabe starten</string>
 </resources>

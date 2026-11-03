@@ -58,6 +58,8 @@ class LibraryCallback(
     private val onPlayLoaded: () -> Unit,
     /** A browser subscribed to a folder; the service notifies it when the library changes. */
     private val onSubscribed: (parentId: String) -> Unit,
+    /** A playback resumption for playing answered: started (or already loaded), or failed with a message. */
+    private val onResumption: (ok: Boolean, message: String?) -> Unit = { _, _ -> },
 ) : MediaLibrarySession.Callback {
     private val own = context.packageName
     private val coverAuthority = CoverUris.authority(own)
@@ -174,7 +176,16 @@ class LibraryCallback(
             val entry = library.item(title, carContext()) ?: throw IllegalStateException("last title is gone")
             MediaSession.MediaItemsWithStartPosition(listOf(mediaItems.toMediaItem(entry)), 0, C.TIME_UNSET)
         } else {
-            ready(mediaSession, controller, starts.forResumption())
+            val out = try {
+                starts.forResumption()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onResumption(false, null)
+                throw e
+            }
+            onResumption(out !is CarStarts.Outcome.Failed, (out as? CarStarts.Outcome.Failed)?.let { context.getString(message(it.reason)) })
+            ready(mediaSession, controller, out)
         }
     }
 
