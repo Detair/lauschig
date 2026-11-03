@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.settings.Appearance
+import io.wolftown.lauschig.ui.adaptive.rememberNavigationRail
 import io.wolftown.lauschig.whatsnew.WhatsNewSheet
 import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
 import io.wolftown.lauschig.ui.nav.Cleanup
@@ -111,8 +112,9 @@ fun AppRoot(
                         )
                     }
                 },
-                // The full player uses the whole height on a phone (its buttons stay above the fold); it has its own close.
+                // The full player uses the whole window (its buttons stay above the fold); it has its own close.
                 showBottomBar = !onSetup && !onPlayer,
+                navigationRail = rememberNavigationRail(),
                 showOfflineBanner = !onSetup,
                 showReauthBanner = needsReauth && !onSetup,
                 onReauth = { navController.navigate(Setup) { launchSingleTop = true } },

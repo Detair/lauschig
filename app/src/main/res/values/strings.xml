@@ -594,4 +594,5 @@
         <item>More room on tablets and in landscape; every player button without scrolling</item>
         <item>Filter by tags in Library and Discover</item>
     </string-array>
+    <string name="pane_empty">Choose a title to see its details here.</string>
 </resources>

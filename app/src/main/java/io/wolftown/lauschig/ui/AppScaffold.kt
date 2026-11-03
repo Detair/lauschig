@@ -17,6 +17,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -104,7 +114,10 @@ fun AppScaffold(
     selectedTab: TopLevelTab? = TopLevelTab.Start,
     /** The visible tabs in their order (see `TabLayout`). */
     tabs: List<TopLevelTab> = TopLevelTab.entries,
+    /** Whether the tabs are shown at all (bottom bar or rail). */
     showBottomBar: Boolean = true,
+    /** Medium/expanded widths: the tabs in a navigation rail on the start side, the mini player at the bottom of the content. */
+    navigationRail: Boolean = false,
     showOfflineBanner: Boolean = true,
     showReauthBanner: Boolean = false,
     onReauth: () -> Unit = {},
@@ -119,6 +132,44 @@ fun AppScaffold(
     // Derived, so going online hides the banner in the same composition (no effect round trip).
     val banner = rememberConnectionBanner(connection, connectionChecking).takeIf { showOfflineBanner }
 
+    val body: @Composable (PaddingValues) -> Unit = { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            if (showReauthBanner) ReauthBanner(onReauth)
+            banner?.let { ConnectionHint(it, onOpenConnection) }
+            Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
+        }
+    }
+    if (navigationRail) {
+        // System bars and a display cutout (phones in landscape), not the keyboard: screens with a text field handle it.
+        val safe = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+        Row(modifier.fillMaxSize()) {
+            if (showBottomBar) {
+                NavigationRail(Modifier.testTag("navRail"), windowInsets = safe.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)) {
+                    // Centred on the side, easy to reach with a thumb holding a tablet.
+                    Spacer(Modifier.weight(1f))
+                    tabs.forEach { tab ->
+                        NavigationRailItem(
+                            selected = tab == selectedTab,
+                            onClick = { onTabSelected(tab) },
+                            icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.testTag("navIcon")) },
+                            label = { Text(stringResource(tab.label)) },
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+            val sides = if (showBottomBar) WindowInsetsSides.Vertical + WindowInsetsSides.End else WindowInsetsSides.Vertical + WindowInsetsSides.Horizontal
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                contentWindowInsets = safe.only(sides),
+                // Without a bottom bar the mini player keeps clear of the navigation bar itself.
+                bottomBar = { Column(Modifier.windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) { miniPlayer() } },
+                content = body,
+            )
+        }
+        return
+    }
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -137,13 +188,8 @@ fun AppScaffold(
                 }
             }
         },
-    ) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner)) {
-            if (showReauthBanner) ReauthBanner(onReauth)
-            banner?.let { ConnectionHint(it, onOpenConnection) }
-            Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
-        }
-    }
+        content = body,
+    )
 }
 
 @Composable

@@ -594,4 +594,5 @@
         <item>Mehr Platz auf Tablets und im Querformat; alle Player-Knöpfe ohne Scrollen</item>
         <item>Nach Tags filtern in Bibliothek und Entdecken</item>
     </string-array>
+    <string name="pane_empty">Wähle einen Titel, um hier seine Details zu sehen.</string>
 </resources>

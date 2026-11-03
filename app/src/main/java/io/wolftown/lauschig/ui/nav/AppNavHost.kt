@@ -14,6 +14,8 @@ import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.adaptive.ListDetailPane
+import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
 import io.wolftown.lauschig.admin.ServerAdminRoute
@@ -37,29 +39,36 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
-            SettingsRoute(
-                onBack = { navController.popBackStack() },
-                onOpenCleanup = { navController.navigate(Cleanup) },
-                onOpenDownloads = { navController.navigate(Downloads) },
-                onOpenConnection = { navController.navigate(ConnectionStatus) },
-                onOpenAdmin = { navController.navigate(ServerAdmin) },
-                onOpenNavigation = { navController.navigate(NavigationSettings) },
-            )
+            ReadableWidth {
+                SettingsRoute(
+                    onBack = { navController.popBackStack() },
+                    onOpenCleanup = { navController.navigate(Cleanup) },
+                    onOpenDownloads = { navController.navigate(Downloads) },
+                    onOpenConnection = { navController.navigate(ConnectionStatus) },
+                    onOpenAdmin = { navController.navigate(ServerAdmin) },
+                    onOpenNavigation = { navController.navigate(NavigationSettings) },
+                )
+            }
         }
-        composable<NavigationSettings> { NavigationSettingsRoute(onBack = { navController.popBackStack() }) }
-        composable<ConnectionStatus> { ConnectionStatusRoute(onBack = { navController.popBackStack() }) }
-        composable<ServerAdmin> { ServerAdminRoute(onBack = { navController.popBackStack() }) }
+        composable<NavigationSettings> { ReadableWidth { NavigationSettingsRoute(onBack = { navController.popBackStack() }) } }
+        composable<ConnectionStatus> { ReadableWidth { ConnectionStatusRoute(onBack = { navController.popBackStack() }) } }
+        composable<ServerAdmin> { ReadableWidth { ServerAdminRoute(onBack = { navController.popBackStack() }) } }
         composable<Downloads> {
             // An episode's details are its podcast's page.
-            DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })
+            ReadableWidth {
+                DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })
+            }
         }
-        composable<Cleanup> { CleanupRoute(onBack = { navController.popBackStack() }) }
+        composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
         composable<Library> {
-            LibraryRoute(
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenCollection = { navController.navigate(Collection(it)) },
-                onOpenDownloads = { navController.navigate(Downloads) { launchSingleTop = true } },
-            )
+            // Wide windows: the details of a title open beside the library (see ListDetailPane).
+            ListDetailPane(navController, listShare = 0.45f, list = { open ->
+                LibraryRoute(
+                    onOpenItem = open.openItem,
+                    onOpenCollection = open.openCollection,
+                    onOpenDownloads = { navController.navigate(Downloads) { launchSingleTop = true } },
+                )
+            })
         }
         composable<Collection> { CollectionRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Discover> {
@@ -69,17 +78,16 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             )
         }
         composable<Search> {
-            SearchRoute(
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
-            )
+            ListDetailPane(navController, listShare = 0.4f, list = { open -> SearchRoute(onOpenItem = open.openItem, onOpenBrowse = open.openBrowse) })
         }
         composable<ItemDetail> {
-            ItemDetailEntry(
-                onBack = { navController.popBackStack() },
-                onOpenItem = { navController.navigate(ItemDetail(it)) },
-                onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
-            )
+            ReadableWidth {
+                ItemDetailEntry(
+                    onBack = { navController.popBackStack() },
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+                )
+            }
         }
         composable<Browse> {
             BrowseRoute(
@@ -96,11 +104,13 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
             )
         }
         composable<Setup> {
-            SetupRoute(onDone = {
-                // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.
-                if (navController.previousBackStackEntry != null) navController.popBackStack()
-                else navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
-            })
+            ReadableWidth {
+                SetupRoute(onDone = {
+                    // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.
+                    if (navController.previousBackStackEntry != null) navController.popBackStack()
+                    else navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
+                })
+            }
         }
     }
 }

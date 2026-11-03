@@ -191,6 +191,8 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.layout)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)

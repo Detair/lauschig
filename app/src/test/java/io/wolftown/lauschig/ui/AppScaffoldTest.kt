@@ -78,6 +78,28 @@ class AppScaffoldTest {
     }
 
     @Test
+    fun rail_showsTheTabsOnTheSide_andTheMiniPlayer() {
+        val clicked = mutableListOf<TopLevelTab>()
+        rule.setContent {
+            LauschigTheme {
+                AppScaffold(ONLINE, miniPlayer = { Text("mini") }, navigationRail = true, onTabSelected = { clicked += it }) { Text("content") }
+            }
+        }
+        rule.onNodeWithTag("navRail").assertIsDisplayed()
+        rule.onAllNodesWithTag("navIcon", useUnmergedTree = true).assertCountEquals(4)
+        rule.onNodeWithText("mini").assertIsDisplayed()
+        rule.onNodeWithText("Library").performClick()
+        assertEquals(listOf(TopLevelTab.Library), clicked)
+    }
+
+    @Test
+    fun rail_hiddenWhereTheTabsAre() {
+        rule.setContent { LauschigTheme { AppScaffold(ONLINE, miniPlayer = {}, navigationRail = true, showBottomBar = false) { Text("content") } } }
+        rule.onNodeWithTag("navRail").assertDoesNotExist()
+        rule.onNodeWithText("content").assertIsDisplayed()
+    }
+
+    @Test
     fun offlineState_showsBanner_onlineHidesIt() {
         var state by mutableStateOf<ConnectionState>(ConnectionState.Offline)
         rule.mainClock.autoAdvance = false

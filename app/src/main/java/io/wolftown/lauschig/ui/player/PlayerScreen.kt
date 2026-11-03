@@ -371,7 +371,7 @@ fun PlayerScreen(
                 }
             }
         } else {
-            val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 420.dp else 280.dp
+            val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
             Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
                 CoverFitColumn(
                     viewport, MIN_COVER, maxCover,
