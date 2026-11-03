@@ -3,7 +3,6 @@ package io.wolftown.lauschig.ui
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
@@ -14,6 +13,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.core.graphics.drawable.toDrawable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -141,7 +141,7 @@ fun WindowBackground() {
     val color = MaterialTheme.colorScheme.background
     val view = LocalView.current
     DisposableEffect(color) {
-        view.context.findActivity()?.window?.setBackgroundDrawable(ColorDrawable(color.toArgb()))
+        view.context.findActivity()?.window?.setBackgroundDrawable(color.toArgb().toDrawable())
         onDispose {}
     }
 }
