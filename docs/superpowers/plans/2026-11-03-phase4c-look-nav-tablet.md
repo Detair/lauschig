@@ -127,3 +127,26 @@ Not done / left for later: no tabletop-specific player layout (hinge-aware split
 grids keep `GridCells.Adaptive(120.dp)` (they already adapt their column count – 4 columns in the tablet's list pane,
 5 on tablet portrait; the minimum tile width was not tuned further); the selected title is not highlighted in the
 list pane.
+
+## Fix round 1 (review, 2026-11-03)
+
+- **„Beim Start weiterspielen“ with another start screen**: `continueOnLauncherStart()` guarded with `!= Start`, which
+  since the start screen is the user's meant "never" for Library/Discover/Search starts; it now only skips `Setup`.
+- **No replay of `open=` from a restored task**: after a process death Recents restores the task with its original
+  intent and extras; `IncomingIntents.consume` ignores every one-shot request on a replay now, `open` included (still
+  stripped).
+- **Window background**: `WindowBackground()` (in `AppRoot`) paints the activity window in the color scheme's
+  background, and the night window theme starts black, so no grey frames after the splash, on rotation or
+  `recreate()` in pure black (checked frame by frame during a rotation on the emulator).
+- **First sign-in → chosen start screen**: `finishSetup(home)` replaces Setup with the start tab and makes it the
+  graph's start destination (tab switches pop up to it instead of piling up); re-auth still just goes back.
+- **Player labels at large text**: action labels and the top bar's source label stay on one line and shrink
+  (`TextAutoSize.StepBased`, down to 8 sp) instead of „Warteschla…“ / a two-line „Heruntergelad|en“; checked at
+  720×1280 @ 320 dpi with 130 % in German.
+- **Tests**: continue on start with a Library start screen, replayed open extra, window background color,
+  `finishSetup`, label overflow, the real breakpoints from Robolectric window sizes (`WindowLayoutTest`: rail from
+  600 dp, two panes from 840 dp) and the font-scale recreate guard (`FontScaleBoot.needsRecreate`).
+
+Unchanged (for Fabian's briefing): hiding the current start tab keeps the live NavHost start until the next cold start;
+the `lastUpdateTime > firstInstallTime` heuristic can show „Was ist neu“ once on a fresh install that receives late
+splits.
