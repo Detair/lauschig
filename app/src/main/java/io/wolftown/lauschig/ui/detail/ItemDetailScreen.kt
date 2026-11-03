@@ -117,7 +117,10 @@ fun ItemDetailRoute(
 /** Below this height the cover moves beside the texts (see [headerBesideCover]). */
 private val SHORT_WINDOW = 600.dp
 
-/** The row needs the page gutters (32 dp), a cover of at least [SIDE_COVER_MIN], the gap (16 dp) and about 200 dp for the texts. */
+/**
+ * The row needs this width: with the gutters (32 dp) and the gap (16 dp) the cover then gets 40 % of the content width
+ * (147 dp) and the texts about 205 dp; narrower, and the texts would be squeezed below 200 dp.
+ */
 private val ROW_MIN_WIDTH = 400.dp
 
 /** The cover beside the texts: smaller than above them, at most 40 % of the width and never taller than the window leaves room for. */

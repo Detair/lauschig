@@ -89,8 +89,9 @@ class ItemDetailLayoutTest {
         assertTrue("button not under the cover", primary.top >= cover.bottom)
     }
 
-    @Test fun sideCover_isSmallerThanTheColumnsCover_andFollowsTheRoom() {
+    @Test fun sideCover_followsTheRoom_within120And200dp() {
         assertEquals(200.dp, sideCoverSize(800.dp, 360.dp))
+        assertEquals(200.dp, sideCoverSize(2000.dp, 2000.dp))
         assertEquals(((455 - 32) * 0.4f).dp, sideCoverSize(455.dp, 470.dp))
         assertEquals("never below the minimum", 120.dp, sideCoverSize(400.dp, 150.dp))
     }
