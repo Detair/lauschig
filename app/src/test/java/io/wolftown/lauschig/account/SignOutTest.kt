@@ -146,8 +146,8 @@ class SignOutTest {
         assertEquals(emptySet<String>(), kept.pending.value)
         // Playback first, then the work (no sync rewrites rows after the purge), the data, and the credentials last
         // (nothing reacts to "signed out" before the data is final). The logout runs alongside, awaited before the end.
-        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "state:$a", "clear"), calls - "logout")
-        assertTrue(calls.indexOf("logout") in calls.indexOf("work") until calls.indexOf("clear"))
+        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "state:$a", "rowsAgain", "clear"), calls - "logout")
+        assertTrue(calls.indexOf("logout") in calls.indexOf("work") until calls.indexOf("rowsAgain"))
     }
 
     @Test fun keeping_keepsRowsAndFiles_pausesWaitingDownloads_andRemembersTheAccount() = runTest {
@@ -173,6 +173,20 @@ class SignOutTest {
         assertEquals(listOf(a), cancelled)
         assertEquals(listOf("refresh-1"), logouts)
         assertNull(lastPlayed.value) // a play key cannot start the old account's title
+    }
+
+    @Test fun aLateWriteAfterThePurge_isDeletedToo() = runTest {
+        seed(a)
+        // The stopping service's last progress save lands after the purge (it runs on the service's own scope).
+        val out = SignOut(
+            accounts, Recording(data), recordingKept, { calls += "work" }, lastPlayed,
+            pausePlayback = {}, stopPlayback = {}, pushes = emptyList(), awaitOnline = { true },
+            logout = { _, _ -> db.progressDao().saveLocal(a, "book1", 20.0, 100.0, false, 2); true },
+            clearAccountState = { db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("late", a, "book1", 0.0, 1.0, 1.0, 1, 2)) },
+        )
+        out.execute(keepDownloads = false)
+        assertEquals(List(6) { false }, rows(a))
+        assertFalse(db.accountDataDao().hasRows(a))
     }
 
     @Test fun theCallerGoingAway_midSignOut_stillFinishesIt() = runTest {

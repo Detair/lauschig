@@ -18,6 +18,17 @@ enum class QueueEntryState {
     MISSING,
 }
 
+/**
+ * Whose queue goes on after a title of [endedServerId] ended: the signed-in [account]'s (a device title plays inside
+ * it). Null when signed out or when the title belongs to another server (a sign-out or account switch in between): the
+ * service then never starts a title of a server that is not the current account.
+ */
+fun queueOwner(endedServerId: String, account: String?): String? = when {
+    account == null -> null
+    DeviceLibrary.isLocal(endedServerId) || endedServerId == account -> account
+    else -> null
+}
+
 object AdvancePolicy {
     fun classify(exists: Boolean, orphaned: Boolean, downloaded: Boolean, online: Boolean): QueueEntryState = when {
         !exists -> QueueEntryState.MISSING
@@ -57,6 +68,8 @@ class QueueAdvancer(
     private val sleepEndOfChapter: () -> Boolean,
     /** Loads and plays [key]; false if it could not be started. */
     private val start: suspend (serverId: String, key: String) -> Boolean,
+    /** False once [serverId] is no longer the signed-in account (a sign-out came in between): nothing more starts. */
+    private val stillOwner: suspend (serverId: String) -> Boolean = { true },
 ) {
     /** Returns the key that was started, or null. */
     suspend fun onEnded(serverId: String, endedKey: String): String? {
@@ -69,6 +82,7 @@ class QueueAdvancer(
                 QueueEntryState.MISSING -> remove(serverId, key)
                 QueueEntryState.UNAVAILABLE_NOW -> Unit
                 QueueEntryState.PLAYABLE -> {
+                    if (!stillOwner(serverId)) return null
                     remove(serverId, key)
                     if (start(serverId, key)) return key
                 }

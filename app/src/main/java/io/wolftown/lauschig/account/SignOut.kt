@@ -135,7 +135,11 @@ class SignOut(
         }
         step("last played") { lastPlayed.forgetServerTitle() }
         step("account state") { clearAccountState(serverId) }
-        Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: ${loggedOut.await()})")
+        val serverConfirmed = loggedOut.await()
+        // Late writes of the stopping service (its last progress save) or a worker: the rows once more, now that up to
+        // the logout's few seconds have passed. Idempotent.
+        if (!keepDownloads) step("rows again") { data.deleteRows(serverId) }
+        Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: $serverConfirmed)")
         accounts.clear(keepDownloads)
     }
 

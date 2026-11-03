@@ -56,6 +56,7 @@ import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.queue.QueueAdvancer
 import io.wolftown.lauschig.queue.queueEntryState
+import io.wolftown.lauschig.queue.queueOwner
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.widget.WidgetPublisher
@@ -542,6 +543,8 @@ class PlaybackService : MediaLibraryService() {
             sleepEndOfChapter = { sleepTimer.state.value?.mode == SleepMode.EndOfChapter },
             // The queue lives in the account's namespace with mixed keys; a device key starts the device title.
             start = { owner, key -> starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) },
+            // Checked again right before a start: a sign-out may have come in between.
+            stillOwner = { owner -> accountStore.account.first()?.serverId == owner },
         )
         return object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -551,8 +554,8 @@ class PlaybackService : MediaLibraryService() {
                 val key = extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return
                 scope.launch {
                     try {
-                        // A device title ended: the queue it may belong to is the signed-in account's.
-                        val owner = if (DeviceLibrary.isLocal(serverId)) accountStore.account.first()?.serverId ?: return@launch else serverId
+                        // A device title ended: the queue it may belong to is the signed-in account's. Never another server's.
+                        val owner = queueOwner(serverId, accountStore.account.first()?.serverId) ?: return@launch
                         advancer.onEnded(owner, key)?.let { Log.i(TAG, "queue: next title $it") }
                     } catch (e: CancellationException) {
                         throw e

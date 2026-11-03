@@ -23,6 +23,15 @@ import org.robolectric.RobolectricTestRunner
 class QueueAdvanceTest {
     private val s = "srv"
 
+    @Test fun queueOwner_onlyTheSignedInAccount() {
+        val a = "aaaaaaaaaaaaaaaa"
+        assertEquals(a, queueOwner(a, a))
+        assertEquals(a, queueOwner(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, a)) // a device title in a's queue
+        assertNull(queueOwner(a, null)) // signed out meanwhile
+        assertNull(queueOwner(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, null))
+        assertNull(queueOwner(a, "bbbbbbbbbbbbbbbb")) // another account now
+    }
+
     @Test fun classify() {
         assertEquals(MISSING, AdvancePolicy.classify(exists = false, orphaned = false, downloaded = true, online = true))
         assertEquals(MISSING, AdvancePolicy.classify(exists = true, orphaned = true, downloaded = false, online = true))
@@ -47,7 +56,7 @@ class QueueAdvanceTest {
         }
     }
 
-    private class Run(val queue: MutableList<String>, states: Map<String, QueueEntryState>, failing: Set<String> = emptySet(), sleep: Boolean = false) {
+    private class Run(val queue: MutableList<String>, states: Map<String, QueueEntryState>, failing: Set<String> = emptySet(), sleep: Boolean = false, owner: Boolean = true) {
         val started = mutableListOf<String>()
         val advancer = QueueAdvancer(
             entries = { queue.toList() },
@@ -55,6 +64,7 @@ class QueueAdvanceTest {
             check = { _, k -> states[k] ?: PLAYABLE },
             sleepEndOfChapter = { sleep },
             start = { _, k -> started += k; k !in failing },
+            stillOwner = { owner },
         )
     }
 
@@ -76,6 +86,13 @@ class QueueAdvanceTest {
         assertNull(r.advancer.onEnded(s, "a"))
         assertEquals(listOf("offline"), r.queue)
         assertTrue(r.started.isEmpty())
+    }
+
+    @Test fun signedOutMeanwhile_startsNothing_andKeepsTheQueue() = runTest {
+        val r = Run(mutableListOf("a", "b", "c"), emptyMap(), owner = false)
+        assertNull(r.advancer.onEnded(s, "a"))
+        assertTrue(r.started.isEmpty())
+        assertEquals(listOf("b", "c"), r.queue) // kept data stays as it was (only the ended title left)
     }
 
     @Test fun sleepTimerAtEndOfChapter_startsNothing() = runTest {
