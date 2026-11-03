@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.service.media.MediaBrowserService
+import android.view.KeyEvent
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
@@ -305,5 +306,34 @@ class CarBrowseTest {
         // At the saved position (about 21 s, minus the short-pause rewind), not at the start.
         assertTrue(main { browser.currentPosition } > 5_000)
         main { browser.pause() }
+    }
+
+    @Test fun f_nextOnAOneFileBook_movesThirtySeconds_fromTheCarAndAMediaKey() {
+        // The Testreihe volumes are one m4b each: ExoPlayer alone has no "next" there, Media3 would drop the request.
+        val volume = volumes()[0]
+        val key = (MediaIds.parse(volume.mediaId) as CarNode.Title).key
+        main { browser.setMediaItem(volume); browser.prepare(); browser.play() }
+        eventually { browser.currentMediaItem?.mediaMetadata?.extras?.getString(MediaItemFactory.EXTRA_ITEM_ID)?.takeIf { it == key } }
+        assertEquals(1, main { browser.mediaItemCount })
+        main { browser.seekTo(0, 10_000) }
+        eventually { browser.currentPosition.takeIf { it in 9_000..20_000 } }
+        val b = compatBrowser(Bundle())
+        try {
+            val controller = main { MediaControllerCompat(context, b.sessionToken) }
+            // Android Auto's / a steering wheel's "next" (legacy transport control).
+            val before = main { browser.currentPosition }
+            main { controller.transportControls.skipToNext() }
+            eventually { browser.currentPosition.takeIf { it - before >= 25_000 } }
+            // A Bluetooth headset's NEXT key.
+            val before2 = main { browser.currentPosition }
+            main {
+                controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
+                controller.dispatchMediaButtonEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT))
+            }
+            eventually { browser.currentPosition.takeIf { it - before2 >= 25_000 } }
+            assertEquals(0, main { browser.currentMediaItemIndex })
+        } finally {
+            main { browser.pause(); b.disconnect() }
+        }
     }
 }
