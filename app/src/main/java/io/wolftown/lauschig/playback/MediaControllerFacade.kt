@@ -19,12 +19,12 @@ import kotlin.coroutines.resumeWithException
 class MediaControllerFacade @Inject constructor(@ApplicationContext private val context: Context) : PlayerFacade {
     private var controller: MediaController? = null
     private var onChange: () -> Unit = {}
-    private var onError: () -> Unit = {}
+    private var onError: (Int) -> Unit = {}
     private var onDisconnected: () -> Unit = {}
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = onChange()
-        override fun onPlayerError(error: PlaybackException) = onError()
+        override fun onPlayerError(error: PlaybackException) = onError(error.errorCode)
     }
 
     private val controllerListener = object : MediaController.Listener {
@@ -81,7 +81,15 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
     }
 
     override fun hasMedia() = controller?.let { it.isConnected && it.mediaItemCount > 0 } == true
-    override fun setOnError(onError: () -> Unit) { this.onError = onError }
+    override fun setOnError(onError: (Int) -> Unit) { this.onError = onError }
+
+    override fun streamBase(): String? {
+        val c = controller ?: return null
+        for (i in 0 until c.mediaItemCount) {
+            c.getMediaItemAt(i).mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE)?.let { return it }
+        }
+        return null
+    }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { this.onDisconnected = onDisconnected }
 
     override fun setOnChange(onChange: () -> Unit) { this.onChange = onChange }

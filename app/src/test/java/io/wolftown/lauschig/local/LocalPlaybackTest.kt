@@ -87,7 +87,7 @@ class LocalPlaybackTest {
         override fun setSpeed(speed: Float) {}
         override fun snapshot() = snap
         override fun hasMedia() = items.isNotEmpty()
-        override fun setOnError(onError: () -> Unit) {}
+        override fun setOnError(onError: (Int) -> Unit) {}
         override fun setOnDisconnected(onDisconnected: () -> Unit) {}
         override fun setOnChange(onChange: () -> Unit) {}
     }

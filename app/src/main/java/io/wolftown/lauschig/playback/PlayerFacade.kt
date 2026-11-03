@@ -27,8 +27,11 @@ interface PlayerFacade {
     /** True while the (remote) player is connected and has a queue loaded. */
     fun hasMedia(): Boolean
 
-    /** Invoked on a playback error (e.g. a file vanished). */
-    fun setOnError(onError: () -> Unit)
+    /** Invoked on a playback error (e.g. a file vanished) with its `PlaybackException` error code. */
+    fun setOnError(onError: (errorCode: Int) -> Unit)
+
+    /** The server the queue's streamed files point at (`MediaItemFactory.EXTRA_STREAM_BASE`), null if nothing streams. */
+    fun streamBase(): String? = null
 
     /** Invoked when the service connection was lost (service stopped); the queue is gone. */
     fun setOnDisconnected(onDisconnected: () -> Unit)

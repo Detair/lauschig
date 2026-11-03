@@ -57,12 +57,13 @@ private class FakeFacade : PlayerFacade {
         e.getString(MediaItemFactory.EXTRA_SERVER_ID)!! to e.getString(MediaItemFactory.EXTRA_ITEM_ID)!!
     }
     override fun setOnChange(onChange: () -> Unit) { cb = onChange }
-    var errorCb: () -> Unit = {}
+    var errorCb: (Int) -> Unit = {}
     var disconnectedCb: () -> Unit = {}
     override fun hasMedia() = items.isNotEmpty()
     var connects = 0
     override suspend fun connect() { connects++ }
-    override fun setOnError(onError: () -> Unit) { errorCb = onError }
+    override fun setOnError(onError: (Int) -> Unit) { errorCb = onError }
+    override fun streamBase() = items.firstNotNullOfOrNull { it.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
     fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
@@ -164,6 +165,84 @@ class PlayerControllerTest {
         assertEquals("car", c.state.value.itemId)
     }
 
+    // ---- the server address changes under a streamed title (home LAN → public address in the car) ----
+
+    private val home = "http://192.168.1.10:13378/"
+    private val public = "https://abs.example.org/"
+    private fun streamedThree() = item(listOf(file(0, 600.0, null), file(1, 300.0, null), file(2, 900.0, null)))
+    private val ioError = androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString() }
+
+    @Test fun pausedStream_movesToTheNewAddress_rightAway_atItsPosition() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0) // second file, 100 s
+        c.pause()
+        online.value = public.toHttpUrl()
+        assertTrue(f.uris().toString(), f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 100_000L, f.started)
+        assertFalse(f.snap.isPlaying)
+        assertEquals(2, f.setCalls)
+    }
+
+    @Test fun playingStream_keepsPlayingFromTheBuffer_andMovesOnTheNextNetworkError() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0)
+        online.value = public.toHttpUrl()
+        assertEquals(1, f.setCalls) // no hiccup while the buffer plays
+        assertTrue(f.uris().all { it.startsWith(home) })
+        // The buffer ran out at the old address.
+        f.snap = f.snap.copy(isPlaying = false, positionMs = 130_000)
+        f.errorCb(ioError)
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 130_000L, f.started)
+        assertTrue("plays on", f.snap.isPlaying)
+    }
+
+    @Test fun aNetworkErrorBeforeTheNewAddressIsKnown_movesAndPlaysOnceItIs() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false)
+        f.errorCb(ioError)
+        assertEquals(1, f.setCalls)
+        online.value = null // offline for a moment: nothing to do
+        online.value = public.toHttpUrl()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertTrue(f.snap.isPlaying)
+    }
+
+    @Test fun aTitleTheServiceStarted_movesToo() = runTest {
+        // The car resumed the title at home; the app adopted it later, already knowing the new address.
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(public.toHttpUrl())
+        f.items = MediaItemFactory({ true }) { _, _ -> null }.build(streamedThree(), home.toHttpUrl())
+        f.key = s to "it"
+        f.snap = PlayerSnapshot(false, 2, 60_000, 1f)
+        val c = controller(f, { streamedThree() }, base = public, onlineBase = online)
+        c.adoptFromService()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(2 to 60_000L, f.started)
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun localFiles_neverMove() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(threeFiles) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        online.value = public.toHttpUrl()
+        f.errorCb(ioError)
+        assertEquals(1, f.setCalls)
+    }
+
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
         seedEpisode(withFile = true)
         val files = DownloadFiles(dlRoot, db.audioFileDao())
@@ -243,6 +322,7 @@ class PlayerControllerTest {
         downloadThrottled: Flow<Boolean> = emptyFlow(),
         rewindAfterPause: suspend (Long) -> Long = { 0 },
         clock: () -> Long = { 0 },
+        onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -258,6 +338,7 @@ class PlayerControllerTest {
         downloadThrottled = downloadThrottled,
         rewindAfterPause = rewindAfterPause,
         clock = clock,
+        onlineBase = onlineBase,
     )
 
     @Test fun play_savedProgress_rewindsByThePauseSinceTheLastSave() = runTest {
@@ -553,7 +634,7 @@ class PlayerControllerTest {
         val f = FakeFacade()
         val c = controller(f, item(threeFiles))
         c.play(s, "it")
-        f.errorCb()
+        f.errorCb(0)
         assertEquals(R.string.error_playback_failed, c.state.value.error)
         assertTrue(!c.state.value.isPlaying)
     }

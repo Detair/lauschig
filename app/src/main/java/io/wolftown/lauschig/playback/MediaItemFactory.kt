@@ -65,6 +65,7 @@ class MediaItemFactory(
             val uri: Uri = local[i]
                 ?: audioFileUrl(baseUrl ?: throw PlaybackUnavailableException(item.item.id), PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
             val extras = Bundle().apply {
+                if (local[i] == null) putString(EXTRA_STREAM_BASE, baseUrl.toString())
                 putString(EXTRA_SERVER_ID, item.item.serverId)
                 putString(EXTRA_ITEM_ID, item.item.id)
                 putInt(EXTRA_FILE_INDEX, f.index)
@@ -127,6 +128,8 @@ class MediaItemFactory(
         const val EXTRA_SERVER_ID = "serverId"
         const val EXTRA_ITEM_ID = "itemId"
         const val EXTRA_FILE_INDEX = "fileIndex"
+        /** The server a streamed file comes from (absent for local files): lets the app move a queue to a new address. */
+        const val EXTRA_STREAM_BASE = "streamBase"
         /** Length of this file; lets the service step back across file boundaries (resume rewind). */
         const val EXTRA_FILE_DURATION_MS = "fileDurationMs"
     }

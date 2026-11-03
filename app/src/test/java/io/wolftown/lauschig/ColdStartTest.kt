@@ -90,7 +90,7 @@ class RecordingFacade : PlayerFacade {
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
     override fun hasMedia() = queue.isNotEmpty()
-    override fun setOnError(onError: () -> Unit) {}
+    override fun setOnError(onError: (Int) -> Unit) {}
     override fun setOnDisconnected(onDisconnected: () -> Unit) {}
     override fun setOnChange(onChange: () -> Unit) { this.onChange = onChange }
 }
