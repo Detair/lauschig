@@ -37,13 +37,13 @@ class AccountDataTest {
     private lateinit var files: DownloadFiles
     private val stamps = InMemorySyncStamps()
     private val forgottenCovers = mutableListOf<String>()
-    private lateinit var data: AccountData
+    private lateinit var data: DeviceAccountData
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries().build()
         root = File(ctx.cacheDir, "account-data-${System.nanoTime()}/downloads").apply { mkdirs() }
         files = DownloadFiles(root, db.audioFileDao())
-        data = AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, forgottenCovers::add)
+        data = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, forgottenCovers::add)
     }
 
     @After fun tearDown() {
@@ -175,8 +175,37 @@ class AccountDataTest {
         val stamps = object : io.wolftown.lauschig.sync.SyncStamps by InMemorySyncStamps() {
             override suspend fun removeServer(serverId: String) { order += "stamps " + state() }
         }
-        AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, { order += "covers " + state() }).purge(a)
+        DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, { order += "covers " + state() }).purge(a)
         assertEquals(listOf("stamps rows=true files=true", "covers rows=false files=false"), order)
+    }
+
+    @Test fun purge_filesThatCannotBeDeleted_fail_insteadOfLookingDone() = runBlocking {
+        val dir = File(root, "$a/book1").apply { mkdirs() }
+        dir.resolve("0.mp3").writeBytes(ByteArray(1))
+        dir.setWritable(false) // its file cannot be removed
+        try {
+            val failure = runCatching { data.purge(a) }.exceptionOrNull()
+            assertTrue("$failure", failure is java.io.IOException)
+        } finally {
+            dir.setWritable(true)
+        }
+        // Retrying is safe: the rest is gone already, the files go now.
+        data.purge(a)
+        assertFalse(File(root, a).exists())
+    }
+
+    @Test fun deleteRows_isTheRowPartOnly_andHasRowsSeesEveryTable() = runBlocking {
+        val c = "cccccccccccccccc"
+        File(root, "$c/x").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(1))
+        tablesWithServerId().forEachIndexed { i, t ->
+            assertFalse(t, data.hasRows(c))
+            insertGeneric(t, c, 100 + i)
+            assertTrue(t, data.hasRows(c))
+            data.deleteRows(c)
+        }
+        assertFalse(data.hasRows(c))
+        assertTrue(File(root, "$c/x/0.mp3").isFile) // files are the purge's
+        assertEquals(listOf(c), files.serverIds())
     }
 
     @Test(expected = IllegalArgumentException::class)

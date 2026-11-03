@@ -47,6 +47,26 @@ abstract class AccountDataDao {
         collectionEntries(serverId)
     }
 
+    /** True if [serverId] has a row in any of [SERVER_TABLES]. */
+    @Query(
+        """SELECT EXISTS(SELECT 1 FROM libraries WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM items WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM chapters WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM audio_files WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM progress WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM local_sessions WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM downloads WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM episodes WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM external_series WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM title_audio WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM bookmarks WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM queue WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM history_sessions WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM collections WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM collection_entries WHERE serverId = :serverId)""",
+    )
+    abstract suspend fun hasRows(serverId: String): Boolean
+
     /** Waiting or running downloads become PAUSED: their work is cancelled, the user resumes them after signing in again. */
     @Query("UPDATE downloads SET state = 'PAUSED', error = NULL WHERE serverId = :serverId AND state IN ('QUEUED', 'RUNNING')")
     abstract suspend fun pauseActiveDownloads(serverId: String)

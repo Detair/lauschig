@@ -72,11 +72,17 @@ class DownloadFiles(
         return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
-    /** Deletes every download of [serverId] (sign-out), partial ones included; never anything outside its directory. Blocking. */
-    fun deleteServer(serverId: String) {
-        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return }
-        dir.deleteRecursively()
+    /**
+     * Deletes every download of [serverId] (sign-out), partial ones included; never anything outside its directory.
+     * False if something could not be deleted (an invalid id has no directory: true). Blocking.
+     */
+    fun deleteServer(serverId: String): Boolean {
+        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return true }
+        return dir.deleteRecursively()
     }
+
+    /** The server ids that have a download directory (only real ids; the device library has none). Blocking. */
+    fun serverIds(): List<String> = root.listFiles { f -> f.isDirectory && SERVER_ID.matches(f.name) }?.map { it.name }?.sorted().orEmpty()
 
     /** Never deletes outside the root; invalid ids have no directory, so there is nothing to delete. */
     fun deleteItem(serverId: String, itemId: String) {

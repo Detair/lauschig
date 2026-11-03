@@ -58,7 +58,7 @@ class SignOutTest {
         db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries()
             .setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
         root = File(ctx.cacheDir, "signout-${System.nanoTime()}/downloads").apply { mkdirs() }
-        data = AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), {})
+        data = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), {})
         accounts.acc.value = account
         accounts.access = "access-1"
         accounts.refresh = "refresh-1"
@@ -178,7 +178,7 @@ class SignOutTest {
     }
 
     @Test fun aFailingStep_stillClearsTheCredentials() = runTest {
-        val broken = AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), { error("disk") })
+        val broken = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), { error("disk") })
         seed(a)
         signOut(purgeData = broken).execute(keepDownloads = false)
         assertNull(accounts.acc.value)
