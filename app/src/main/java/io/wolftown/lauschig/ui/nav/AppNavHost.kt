@@ -4,7 +4,6 @@ import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -137,8 +136,7 @@ fun NavHostController.finishSetup(home: Any) {
  * the only page (a start without an account): nothing changes. The next sign-in leads to the start tab ([finishSetup]).
  */
 fun NavHostController.showSignIn() {
-    val pages = currentBackStack.value.filter { it.destination !is NavGraph }
-    if (pages.size == 1 && pages.single().destination.hasRoute<Setup>()) return
+    if (currentDestination?.hasRoute<Setup>() == true && previousBackStackEntry == null) return
     navigate(Setup) { popUpTo(graph.id) { inclusive = true } }
 }
 
