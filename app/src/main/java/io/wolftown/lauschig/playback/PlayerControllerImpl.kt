@@ -140,10 +140,10 @@ class PlayerControllerImpl(
     private var localJob: Job? = null
     /** Follows the online server's address for a streamed queue; see [onOnlineBase]. */
     private var baseJob: Job? = null
-    /** The address changed while playing: move the queue at the next network error, not mid-buffer. */
+    /** The address changed while playing: move the queue when it stops playing (network error, pause), not mid-buffer. */
     private var pendingBase: HttpUrl? = null
-    /** A streamed file failed with a network error: move and play on as soon as a (new) address is known. */
-    private var ioErrorPending = false
+    /** The player played at the last [refresh]; its stop applies a [pendingBase]. */
+    private var wasPlaying = false
     private var load: StreamLoad? = null
     private var throttled = false
 
@@ -152,12 +152,9 @@ class PlayerControllerImpl(
         facade.setOnError { code ->
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
-            // A stream that ran dry at an old address (home LAN, now in the car): move to the new one and play on.
-            if (code in IO_ERRORS && facade.streamBase() != null) {
-                val moveTo = pendingBase
-                val c = current
-                if (moveTo != null && c != null) scope.launch { rebase(c, moveTo, play = true) } else ioErrorPending = true
-            }
+            // A stream that ran dry at an old address (home LAN, now in the car): move to the new one. It plays on only
+            // because ExoPlayer still wants to (playWhenReady survives the error); nothing here ever starts playback.
+            if (code in IO_ERRORS && facade.streamBase() != null) applyPendingBase()
         }
         facade.setOnDisconnected {
             // The service is gone; forget the loaded item so the next play() rebuilds the queue.
@@ -260,7 +257,6 @@ class PlayerControllerImpl(
         localJob?.cancel(); localJob = null
         baseJob?.cancel(); baseJob = null
         pendingBase = null
-        ioErrorPending = false
         val key = c.item.item
         localJob = scope.launch {
             localCount(key.serverId, key.id).distinctUntilChanged().collect { syncSources() }
@@ -280,8 +276,9 @@ class PlayerControllerImpl(
     /**
      * The online server's address is [base] now (e.g. the home LAN address gave way to the public one in the car). A
      * queue that streams from another address moves there: right away while it does not play (current file reloaded at
-     * its position, the others swapped in place); while it plays it keeps playing from its buffer and moves at the next
-     * network error ([pendingBase]), so coming home causes no hiccup. Local files never move.
+     * its position, the others swapped in place); while it plays it keeps playing from its buffer and moves as soon as
+     * it stops – a network error or a pause ([pendingBase]) – so coming home causes no hiccup. Moving never changes
+     * whether it plays (playWhenReady is kept). Local files never move.
      */
     private suspend fun onOnlineBase(base: HttpUrl) {
         val c = current ?: return
@@ -294,14 +291,21 @@ class PlayerControllerImpl(
             pendingBase = base
             return
         }
-        rebase(c, base, play = ioErrorPending)
+        rebase(c, base)
     }
 
-    private suspend fun rebase(c: Current, base: HttpUrl, play: Boolean) {
+    /** The player stopped playing (network error, pause): an address that changed meanwhile applies now. */
+    private fun applyPendingBase() {
+        val base = pendingBase ?: return
+        val c = current ?: return
         pendingBase = null
-        ioErrorPending = false
+        scope.launch { rebase(c, base) }
+    }
+
+    private suspend fun rebase(c: Current, base: HttpUrl) {
+        pendingBase = null
         Log.i(TAG, "moving the streamed queue to $base")
-        if (syncSources(newBase = base, force = true) && play) facade.play()
+        syncSources(newBase = base, force = true)
         refresh()
     }
 
@@ -462,11 +466,15 @@ class PlayerControllerImpl(
     private fun refresh() {
         val c = current
         if (c == null) {
+            wasPlaying = false
             // Nothing loaded here, but the service may be playing a title it started itself (car, resumption).
             if (!starting) facade.currentKey()?.let { (serverId, itemId) -> adopt(serverId, itemId) }
             return
         }
         val snap = facade.snapshot()
+        val stopped = wasPlaying && !snap.isPlaying
+        wasPlaying = snap.isPlaying
+        if (stopped) applyPendingBase()
         if (snap.isPlaying) starting = false
         val playing = facade.currentKey()
         if (playing != null && !starting && playing.second != c.item.item.id) {

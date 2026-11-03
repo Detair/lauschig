@@ -46,8 +46,11 @@ private class FakeFacade : PlayerFacade {
     var setCalls = 0
     val replaced = mutableListOf<Int>()
     override fun replaceMediaItem(index: Int, item: MediaItem) { items = items.toMutableList().also { it[index] = item }; replaced += index }
-    override fun play() { snap = snap.copy(isPlaying = true) }
-    override fun pause() { snap = snap.copy(isPlaying = false) }
+    /** ExoPlayer's intent to play; kept across errors and queue swaps, so a rebuilt queue plays on only if it was true. */
+    var playWhenReady = false
+    var playCalls = 0
+    override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
+    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
@@ -196,15 +199,16 @@ class PlayerControllerTest {
         online.value = public.toHttpUrl()
         assertEquals(1, f.setCalls) // no hiccup while the buffer plays
         assertTrue(f.uris().all { it.startsWith(home) })
-        // The buffer ran out at the old address.
+        // The buffer ran out at the old address: ExoPlayer stops with an error but keeps wanting to play.
         f.snap = f.snap.copy(isPlaying = false, positionMs = 130_000)
         f.errorCb(ioError)
         assertTrue(f.uris().all { it.startsWith(public) })
         assertEquals(1 to 130_000L, f.started)
-        assertTrue("plays on", f.snap.isPlaying)
+        assertTrue("plays on by itself (playWhenReady kept)", f.playWhenReady)
+        assertEquals("never forced to play", 1, f.playCalls)
     }
 
-    @Test fun aNetworkErrorBeforeTheNewAddressIsKnown_movesAndPlaysOnceItIs() = runTest {
+    @Test fun aNetworkErrorBeforeTheNewAddressIsKnown_movesOnceItIs_andPlaysOnOnlyIfStillWanted() = runTest {
         val f = FakeFacade()
         val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
         val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
@@ -215,7 +219,46 @@ class PlayerControllerTest {
         online.value = null // offline for a moment: nothing to do
         online.value = public.toHttpUrl()
         assertTrue(f.uris().all { it.startsWith(public) })
-        assertTrue(f.snap.isPlaying)
+        assertTrue(f.playWhenReady)
+        assertEquals(1, f.playCalls)
+    }
+
+    @Test fun anOldNetworkError_neverStartsPlaybackLater() = runTest {
+        // A tunnel: network error. Playback recovers, the user pauses, and at home the Wi-Fi address appears.
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(public.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = public, onlineBase = online)
+        c.play(s, "it")
+        f.snap = f.snap.copy(isPlaying = false)
+        f.errorCb(ioError)
+        f.snap = f.snap.copy(isPlaying = true) // recovered
+        f.change()
+        c.pause()
+        online.value = home.toHttpUrl()
+        assertTrue(f.uris().all { it.startsWith(home) }) // moved
+        assertFalse(f.snap.isPlaying)
+        assertFalse("stays paused", f.playWhenReady)
+        assertEquals(1, f.playCalls)
+    }
+
+    @Test fun pausingWithAPendingAddress_movesTheQueueRightThen() = runTest {
+        val f = FakeFacade()
+        val online = MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { streamedThree() }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.seekTo(700.0)
+        online.value = public.toHttpUrl() // while playing: waits
+        assertEquals(1, f.setCalls)
+        c.pause()
+        assertTrue(f.uris().all { it.startsWith(public) })
+        assertEquals(1 to 100_000L, f.started)
+        assertFalse(f.playWhenReady)
+        // A pause from elsewhere (notification, car) counts the same way.
+        online.value = home.toHttpUrl()
+        f.play(); f.change()
+        online.value = public.toHttpUrl()
+        f.pause(); f.change()
+        assertTrue(f.uris().all { it.startsWith(public) })
     }
 
     @Test fun aTitleTheServiceStarted_movesToo() = runTest {
