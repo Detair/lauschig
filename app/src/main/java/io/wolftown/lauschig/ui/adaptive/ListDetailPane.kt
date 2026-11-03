@@ -23,8 +23,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,12 +31,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraphBuilder
@@ -58,7 +52,6 @@ import io.wolftown.lauschig.ui.nav.ItemDetail
 import io.wolftown.lauschig.ui.nav.Library
 import io.wolftown.lauschig.ui.nav.Search
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 
 /** The detail pane before anything was chosen. */
@@ -71,7 +64,7 @@ class PaneOpener(
     val openCollection: (id: String) -> Unit,
 )
 
-/** The page shown in the detail pane, kept across recreation so it can move onto the outer back stack. */
+/** A page of the detail pane, as a value that fits a `SavedStateHandle` ([toSaved] / [fromSaved]) and names its route. */
 data class PaneSelection(val kind: String, val a: String, val b: String = "") {
     fun route(): Any = when (kind) {
         KIND_BROWSE -> Browse(BrowseKind.valueOf(a), b)
@@ -79,15 +72,14 @@ data class PaneSelection(val kind: String, val a: String, val b: String = "") {
         else -> ItemDetail(a)
     }
 
+    fun toSaved(): ArrayList<String> = arrayListOf(kind, a, b)
+
     companion object {
         const val KIND_ITEM = "item"
         const val KIND_BROWSE = "browse"
         const val KIND_COLLECTION = "collection"
 
-        val Saver = listSaver<PaneSelection?, String>(
-            save = { s -> if (s == null) emptyList() else listOf(s.kind, s.a, s.b) },
-            restore = { l -> if (l.size == 3) PaneSelection(l[0], l[1], l[2]) else null },
-        )
+        fun fromSaved(saved: List<String>?): PaneSelection? = saved?.takeIf { it.size == 3 }?.let { PaneSelection(it[0], it[1], it[2]) }
 
         fun of(entry: NavBackStackEntry?): PaneSelection? {
             val dest = entry?.destination ?: return null
@@ -101,6 +93,19 @@ data class PaneSelection(val kind: String, val a: String, val b: String = "") {
     }
 }
 
+/** The routes whose composable is a [ListDetailPane] host (see `AppNavHost`: keep the two in step). */
+fun NavDestination.isPaneHost(): Boolean = hasRoute<Library>() || hasRoute<Search>()
+
+/*
+ * What the host keeps in its back stack entry (`SavedStateHandle`) and not with `rememberSaveable`: that one is keyed by
+ * the composition position, which `AppScaffold` changes when the navigation rail appears or disappears with a rotation
+ * (a large phone: bottom bar in portrait, rail and two panes in landscape), so the page would be lost on the way.
+ */
+/** The page shown in the detail pane, so it can move onto the outer stack when the window shrinks. */
+private const val SELECTION = "listDetailPane.selection"
+/** A page the outer stack hands to the pane ([AdoptOuterPageIntoPane]); the pane takes it and clears it. */
+private const val HANDOFF = "listDetailPane.handoff"
+
 /**
  * Library and search on wide windows: the list on the start side, the details of what was tapped beside it.
  *
@@ -108,13 +113,18 @@ data class PaneSelection(val kind: String, val a: String, val b: String = "") {
  * partitions; the detail pane hosts its own nested `NavHost` with the app's `ItemDetail` / `Browse` / `Collection`
  * routes, so their ViewModels (which read the route from their `SavedStateHandle`) work unchanged and the outer
  * navigation is not touched. Opening from the list replaces the pane's pages, links inside the pane push onto it,
- * "back" pops it. On one pane the list opens pages on [outer] as before; when the window shrinks to one pane (rotation,
- * folding) the page that was shown in the pane moves onto [outer]; the way back is [AdoptOuterPageOnGrow].
+ * "back" pops it. On one pane the list opens pages on [outer] as before.
+ *
+ * The page the pane shows and the page on [outer] are two homes of the same thing, and the window decides which one
+ * is used: when it shrinks to one pane (rotation, folding) the pane's page moves onto [outer] (here); while it offers
+ * two panes, an outer page directly above this host moves into the pane ([AdoptOuterPageIntoPane]). [host] is the
+ * back stack entry of this composable.
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun ListDetailPane(
     outer: NavHostController,
+    host: NavBackStackEntry,
     list: @Composable (PaneOpener) -> Unit,
     modifier: Modifier = Modifier,
     /** Share of the width the list takes beside the details. */
@@ -123,20 +133,16 @@ fun ListDetailPane(
     twoPane: Boolean = directive.isTwoPane,
     paneGraph: NavGraphBuilder.(NavHostController) -> Unit = { appPaneGraph(it) },
 ) {
-    var selection by rememberSaveable(stateSaver = PaneSelection.Saver) { mutableStateOf<PaneSelection?>(null) }
+    val saved = host.savedStateHandle
     // A new nested controller after the pane's page moved to the outer stack, so a later wide window starts empty.
     var generation by rememberSaveable { mutableIntStateOf(0) }
-    // A page the outer stack handed over while this host was not composed (see AdoptOuterPageOnGrow).
-    val handoff: PaneHandoff = viewModel(factory = PaneHandoff.Factory)
-    val handed by handoff.pending.collectAsState()
     if (!twoPane) {
         LaunchedEffect(Unit) {
-            // A page handed over just before the window shrank again goes straight back onto the outer stack.
-            val page = handoff.pending.value ?: selection
-            handoff.pending.value = null
+            // The pane's page, or one handed over just before the window shrank again, goes onto the outer stack.
+            val page = PaneSelection.fromSaved(saved.remove<ArrayList<String>>(HANDOFF) ?: saved[SELECTION])
+            saved[SELECTION] = null
             page?.let {
                 outer.navigate(it.route())
-                selection = null
                 generation++
             }
         }
@@ -149,18 +155,19 @@ fun ListDetailPane(
         )
         return
     }
+    val handed by saved.getStateFlow<ArrayList<String>?>(HANDOFF, null).collectAsState()
     key(generation) {
         val inner = rememberNavController()
         val top by inner.currentBackStackEntryAsState()
-        LaunchedEffect(top) { if (top != null) selection = PaneSelection.of(top) }
+        LaunchedEffect(top) { if (top != null) saved[SELECTION] = PaneSelection.of(top)?.toSaved() }
         // From the list: the pane shows just that page (its own back stack starts fresh).
         fun replace(route: Any) = inner.navigate(route) { popUpTo<PaneEmpty>() }
         // Once the nested graph is up (top != null), the handed-over page takes the pane.
         LaunchedEffect(handed, top) {
-            val page = handed
+            val page = PaneSelection.fromSaved(handed)
             if (page != null && top != null) {
                 replace(page.route())
-                handoff.pending.value = null
+                saved[HANDOFF] = null
             }
         }
         val opener = PaneOpener(
@@ -185,45 +192,27 @@ fun ListDetailPane(
     }
 }
 
-/** What the outer stack hands to a [ListDetailPane] host's detail pane; one per back stack entry, gone with it. */
-class PaneHandoff : ViewModel() {
-    val pending = MutableStateFlow<PaneSelection?>(null)
-
-    companion object {
-        val Factory: ViewModelProvider.Factory = viewModelFactory { initializer { PaneHandoff() } }
-    }
-}
-
 /**
- * The reverse of the shrink move: when the window grows from one pane to two (rotation, unfolding) while a page that a
- * list opened sits on [outer] directly above its [ListDetailPane] host ([isHost]: library and search), that page is
- * popped and the host shows it in its detail pane instead – the visible page moves, the title stays. Pages from elsewhere
- * (Start, Downloads, a link) are not above a host and stay as they are, as does anything opened while the window is
- * already wide, because only the change to two panes triggers the move.
+ * While the window offers two panes ([twoPane]), the page on top of [outer] – an `ItemDetail`, `Browse` or `Collection` –
+ * that sits directly above a [ListDetailPane] host ([isPaneHost]) is popped and shown in that host's detail pane
+ * instead: the page does not move away from where it is seen, it only changes home. This is a state, not an event, so
+ * it holds however it comes about: a rotation or unfolding (also with the activity recreated, whatever the navigation
+ * rail does), the player that covered the page being closed, a tab restored with its page, a link, a notification or
+ * the player's "Details anzeigen" while the window is already wide.
  *
- * The last state is saved: a rotation recreates the activity, so the change is only visible against what the previous
- * instance saw. Place it beside the NavHost of [outer]; the move happens once the controller has a graph.
+ * Pages above anything else (Start, Downloads, Settings, …) never move, and neither does a page deeper in a chain
+ * ([Library, A, B]: B stays, A follows when B is gone). Place it beside the NavHost of [outer]. The window cannot be
+ * two panes and one at once, so this and the shrink move of [ListDetailPane] never answer each other.
  */
 @Composable
-fun AdoptOuterPageOnGrow(
-    outer: NavHostController,
-    twoPane: Boolean = rememberPaneDirective().isTwoPane,
-    isHost: (NavDestination) -> Boolean = { it.hasRoute<Library>() || it.hasRoute<Search>() },
-) {
-    var wasTwoPane by rememberSaveable { mutableStateOf(twoPane) }
-    val ready = outer.currentBackStackEntryAsState().value != null
-    LaunchedEffect(twoPane, ready) {
-        if (!ready) return@LaunchedEffect
-        if (twoPane && !wasTwoPane) outer.movePageIntoHostPane(isHost)
-        wasTwoPane = twoPane
+fun AdoptOuterPageIntoPane(outer: NavHostController, twoPane: Boolean = rememberPaneDirective().isTwoPane) {
+    val top by outer.currentBackStackEntryAsState()
+    LaunchedEffect(twoPane, top) {
+        val page = top?.takeIf { twoPane && outer.currentBackStackEntry == it }?.let { PaneSelection.of(it) } ?: return@LaunchedEffect
+        val host = outer.previousBackStackEntry?.takeIf { it.destination.isPaneHost() && it.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED) } ?: return@LaunchedEffect
+        host.savedStateHandle[HANDOFF] = page.toSaved()
+        outer.popBackStack()
     }
-}
-
-private fun NavHostController.movePageIntoHostPane(isHost: (NavDestination) -> Boolean) {
-    val page = PaneSelection.of(currentBackStackEntry) ?: return
-    val host = previousBackStackEntry?.takeIf { isHost(it.destination) } ?: return
-    ViewModelProvider.create(host, PaneHandoff.Factory)[PaneHandoff::class.java].pending.value = page
-    popBackStack()
 }
 
 /** The app's pages inside the detail pane; everything they open stays in the pane. */

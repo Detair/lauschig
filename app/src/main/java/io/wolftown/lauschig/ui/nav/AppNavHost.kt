@@ -14,7 +14,7 @@ import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
-import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageOnGrow
+import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
@@ -43,8 +43,8 @@ fun AppNavHost(
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
     homeRoute: Any = Start,
 ) {
-    // Rotating to a wide window with a title open: it moves into the library's (or search's) detail pane.
-    AdoptOuterPageOnGrow(navController)
+    // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
+    AdoptOuterPageIntoPane(navController)
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
@@ -69,9 +69,10 @@ fun AppNavHost(
             }
         }
         composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
-        composable<Library> {
+        // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
+        composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).
-            ListDetailPane(navController, listShare = 0.45f, list = { open ->
+            ListDetailPane(navController, host, listShare = 0.45f, list = { open ->
                 LibraryRoute(
                     onOpenItem = open.openItem,
                     onOpenCollection = open.openCollection,
@@ -86,8 +87,8 @@ fun AppNavHost(
                 onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
             )
         }
-        composable<Search> {
-            ListDetailPane(navController, listShare = 0.4f, list = { open -> SearchRoute(onOpenItem = open.openItem, onOpenBrowse = open.openBrowse) })
+        composable<Search> { host ->
+            ListDetailPane(navController, host, listShare = 0.4f, list = { open -> SearchRoute(onOpenItem = open.openItem, onOpenBrowse = open.openBrowse) })
         }
         composable<ItemDetail> {
             ReadableWidth {
