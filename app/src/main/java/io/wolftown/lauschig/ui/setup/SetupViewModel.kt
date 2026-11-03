@@ -7,6 +7,7 @@ import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.LoginResponse
 import io.wolftown.lauschig.absapi.auth.StatusResponse
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.account.AccountSignOut
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.NetworkInfo
@@ -64,6 +65,7 @@ class SetupViewModel @Inject constructor(
     private val sync: SyncTrigger,
     private val oidc: OidcSignIn,
     private val callbacks: OidcCallbackBus,
+    private val signOut: AccountSignOut,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SetupUiState())
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
@@ -326,7 +328,12 @@ class SetupViewModel @Inject constructor(
             allowCleartext = listOfNotNull(local, public).filter { !it.isHttps }.map { it.cleartextKey() }.toSet(),
         )
         try {
-            accounts.save(account, access, refresh)
+            // A re-auth with another account or another public address is another server id: the old one is signed
+            // out keeping its data (it then shows under „Downloads früherer Konten“), so none of its work keeps running
+            // and nothing of it is left unreachable – and replaced in the same step, so the app never shows "no account".
+            val previous = accounts.account.first()
+            if (previous != null && previous.serverId != account.serverId) signOut.switchTo(account, access, refresh)
+            else accounts.save(account, access, refresh)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
