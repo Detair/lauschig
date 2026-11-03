@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -18,14 +19,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** Gap between the player's action buttons, horizontally and between their rows. */
 val PlayerActionSpacing = 8.dp
 
 /**
  * One button of the player's compact action area: icon over a short label, sharing its row equally with its
- * neighbours. [active] highlights a running feature (e.g. the sleep timer). The label is ellipsized, never wrapped,
- * so a row keeps its height with large fonts; its full text stays in the semantics.
+ * neighbours. [active] highlights a running feature (e.g. the sleep timer). The label stays on one line and shrinks
+ * with large fonts, so a row keeps its height; its full text stays in the semantics.
  */
 @Composable
 fun RowScope.PlayerAction(
@@ -56,9 +58,13 @@ fun RowScope.PlayerAction(
             verticalArrangement = Arrangement.Center,
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+            val style = MaterialTheme.typography.labelMedium
             Text(
                 label,
-                style = MaterialTheme.typography.labelMedium,
+                style = style,
+                // One line that shrinks with large text ("Warteschlange" at 130 % on a 360 dp phone) so the row keeps its
+                // height; only below the smallest step it is ellipsized.
+                autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize, stepSize = 0.5.sp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
