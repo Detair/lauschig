@@ -62,7 +62,7 @@ class AccountSectionTest {
         show(SignOutStep.Confirm(unsynced = 3, downloadBytes = 1_500_000_000))
         rule.onNodeWithText("Sign out?").assertExists()
         rule.onNodeWithTag("keepDownloads").assertIsOn()
-        rule.onNodeWithText("Keep downloads on this device (1.5 GB)").assertExists()
+        rule.onNodeWithText("Keep downloads on this device (1.5\u00A0GB)").assertExists()
         rule.onNodeWithText("3 changes are not on the server yet. They are uploaded when you sign in with this account again.").assertExists()
         rule.onNodeWithTag("keepDownloads").performClick()
         rule.onNodeWithTag("confirmSignOut").performClick()

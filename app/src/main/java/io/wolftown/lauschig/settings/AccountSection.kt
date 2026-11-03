@@ -178,7 +178,8 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                 is SignOutStep.Confirm -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.sign_out_message, host))
                     if (step.hasDownloads) {
-                        val size = Formatter.formatShortFileSize(LocalContext.current, step.downloadBytes)
+                        // "22 MB" never breaks between number and unit.
+                        val size = Formatter.formatShortFileSize(LocalContext.current, step.downloadBytes).replace(' ', '\u00A0')
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
