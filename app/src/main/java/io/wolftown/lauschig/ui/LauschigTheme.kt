@@ -1,5 +1,9 @@
 package io.wolftown.lauschig.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
@@ -9,8 +13,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
 import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.ThemeMode
@@ -123,4 +130,24 @@ fun LauschigTheme(
         },
     )
     MaterialTheme(colorScheme = colors, content = content)
+}
+
+/**
+ * Paints the activity window in the theme's background, so frames without Compose content (after the splash, on
+ * rotation, `recreate()`, transitions) match the app – black in pure-black mode instead of the platform theme's grey.
+ */
+@Composable
+fun WindowBackground() {
+    val color = MaterialTheme.colorScheme.background
+    val view = LocalView.current
+    DisposableEffect(color) {
+        view.context.findActivity()?.window?.setBackgroundDrawable(ColorDrawable(color.toArgb()))
+        onDispose {}
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

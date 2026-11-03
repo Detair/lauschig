@@ -101,6 +101,7 @@ fun AppRoot(
     val dimOffline = rememberSettledOffline(connection, checking)
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme(appearance) {
+            WindowBackground()
             AppScaffold(
                 connection = connection,
                 miniPlayer = {
