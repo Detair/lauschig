@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.net
 
 import io.wolftown.lauschig.absapi.AbsClientFactory
+import io.wolftown.lauschig.absapi.admin.AdminApi
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
@@ -70,6 +71,7 @@ class ApiProvider(
     val authApi: Flow<AuthApi?> = retrofit.map { it?.create(AuthApi::class.java) }
     val libraryApi: Flow<LibraryApi?> = retrofit.map { it?.create(LibraryApi::class.java) }
     val meApi: Flow<MeApi?> = retrofit.map { it?.create(MeApi::class.java) }
+    val adminApi: Flow<AdminApi?> = retrofit.map { it?.create(AdminApi::class.java) }
 
     /** Guarded client without credentials, for requests while no server is online (they fail fast). */
     fun unauthenticatedClient(): OkHttpClient = okHttp

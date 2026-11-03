@@ -15,6 +15,7 @@ import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
+import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.playback.PlayableKey
@@ -40,9 +41,11 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
                 onOpenCleanup = { navController.navigate(Cleanup) },
                 onOpenDownloads = { navController.navigate(Downloads) },
                 onOpenConnection = { navController.navigate(ConnectionStatus) },
+                onOpenAdmin = { navController.navigate(ServerAdmin) },
             )
         }
         composable<ConnectionStatus> { ConnectionStatusRoute(onBack = { navController.popBackStack() }) }
+        composable<ServerAdmin> { ServerAdminRoute(onBack = { navController.popBackStack() }) }
         composable<Downloads> {
             // An episode's details are its podcast's page.
             DownloadsRoute(onBack = { navController.popBackStack() }, onOpenItem = { key -> navController.navigate(ItemDetail(PlayableKey.parse(key).libraryItemId)) })

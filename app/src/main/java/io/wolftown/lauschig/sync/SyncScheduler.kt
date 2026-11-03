@@ -70,6 +70,13 @@ class SyncScheduler @Inject constructor(
 
     override fun syncProgress() = enqueueProgressSync(WorkManager.getInstance(context))
 
+    override fun syncLibrarySoon() {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            AFTER_SCAN, ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<SyncWorker>().setInitialDelay(AFTER_SCAN_DELAY_MS, TimeUnit.MILLISECONDS).setConstraints(constraints).build(),
+        )
+    }
+
     companion object {
         const val PROGRESS = "sync-progress"
         /** A pause right after another one (skip, resume, pause) only moves the run, so a burst syncs once. */
@@ -86,6 +93,9 @@ class SyncScheduler @Inject constructor(
         }
 
         const val BOOKMARKS = "sync-bookmarks"
+        const val AFTER_SCAN = "sync-after-scan"
+        /** A library scan of a few hundred titles usually finishes within a minute. */
+        const val AFTER_SCAN_DELAY_MS = 60_000L
         const val NOW = "sync-now"
         const val PERIODIC = "sync-periodic"
         const val ON_ONLINE = "sync-on-online"

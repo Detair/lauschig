@@ -132,6 +132,7 @@ fun SettingsRoute(
     onOpenCleanup: () -> Unit,
     onOpenDownloads: () -> Unit = {},
     onOpenConnection: () -> Unit = {},
+    onOpenAdmin: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -144,6 +145,7 @@ fun SettingsRoute(
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
         onOpenConnection = onOpenConnection,
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
+        adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
     )
 }
 
