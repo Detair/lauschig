@@ -62,8 +62,10 @@ class PreviousAccountViewModel(
     init {
         viewModelScope.launch {
             // Every sign-in counts, also the same account again after a sign-out while the app ran.
+            // Its data is live again: neither kept nor to be purged.
             accounts.account.map { it?.serverId }.distinctUntilChanged().filterNotNull().collect { sid ->
                 if (kept.accounts.first().any { it.serverId == sid }) kept.remove(sid)
+                if (sid in kept.pendingPurges.first()) kept.removePendingPurge(sid)
             }
         }
     }

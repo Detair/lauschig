@@ -73,6 +73,13 @@ class PreviousAccountViewModelTest {
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
     }
 
+    @Test fun aSignIn_clearsAPendingPurgeOfThatAccount() {
+        runBlocking { kept.addPendingPurge(b); kept.addPendingPurge(c) }
+        vm()
+        signIn(b, "matthias")
+        assertEquals(setOf(c), kept.pending.value) // its data is live again; another account's stays pending
+    }
+
     @Test fun anotherAccount_isAskedOnce_withTheSize() {
         val vm = vm()
         signIn(b, "matthias")

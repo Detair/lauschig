@@ -29,8 +29,10 @@ class AccountDataJanitor(
 
     suspend fun run() {
         val current = accounts.account.first()?.serverId
+        val keptIds = kept.accounts.first().map { it.serverId }.toSet()
         for (sid in kept.pendingPurges.first()) {
-            if (sid == current) {
+            // Signed in again, or kept by a later sign-out: the data is wanted, the old purge is void.
+            if (sid == current || sid in keptIds) {
                 kept.removePendingPurge(sid)
                 continue
             }

@@ -52,6 +52,14 @@ class AccountDataJanitorTest {
         assertEquals(listOf(orphan), deletedDirs)
     }
 
+    @Test fun aPendingPurgeOfAKeptAccount_isNeverRun_theKeepWins() = runTest {
+        kept.pending.value = setOf(keptId, failed)
+        janitor().run()
+        assertEquals(listOf(failed), purged)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        assertEquals(listOf(keptId), kept.list.value.map { it.serverId })
+    }
+
     @Test fun theSameAccountSignedInAgain_isNotPurged() = runTest {
         kept.pending.value = setOf(current)
         janitor().run()

@@ -203,6 +203,25 @@ class SignOutTest {
         assertNull(accounts.acc.value)
     }
 
+    @Test fun aFailedPurge_thenTheSameAccountKeepsItsData_theNextStartKeepsEverything() = runTest {
+        // 1. Sign-out without keeping, the purge fails: a pending purge is recorded.
+        seed(a)
+        val failing = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), stamps, { error("disk") })
+        signOut(purgeData = failing).execute(keepDownloads = false)
+        assertEquals(setOf(a), kept.pending.value)
+        // 2. The same account signs in again (same process) and downloads again.
+        accounts.save(account, "access-2", "refresh-2")
+        seed(a)
+        // 3. It signs out with the default "Downloads behalten".
+        signOut().execute(keepDownloads = true)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        // 4. The next start (signed out) keeps everything the user chose to keep.
+        AccountDataJanitor(accounts, kept, data, { DownloadFiles(root, db.audioFileDao()).serverIds() }, { DownloadFiles(root, db.audioFileDao()).deleteServer(it) }).run()
+        assertEquals(List(6) { true }, rows(a))
+        assertTrue(File(root, "$a/book1/0.mp3").isFile)
+        assertEquals(listOf(a), kept.list.value.map { it.serverId })
+    }
+
     @Test fun aLateWriteAfterThePurge_isDeletedToo() = runTest {
         seed(a)
         // The stopping service's last progress save lands after the purge (it runs on the service's own scope).
