@@ -239,6 +239,11 @@ class PlaybackService : MediaLibraryService() {
             // A title the service started by itself (car, voice, resumption, queue) shows up in the app too; the app's
             // own starts are left alone there.
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = playerController.adoptFromService()
+
+            // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (isEngaged(exo)) startGuard?.onEngaged()
+            }
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
         watchLibrary(built)
@@ -395,7 +400,7 @@ class PlaybackService : MediaLibraryService() {
     /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val exo = player
-        if (intent != null && ForegroundStartGuard.isPlayKey(intent) && exo != null && !isEngaged(exo)) startGuard?.arm()
+        if (intent != null && exo != null && ForegroundStartGuard.shouldArm(intent, exo.mediaItemCount)) startGuard?.arm()
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -409,6 +414,11 @@ class PlaybackService : MediaLibraryService() {
      * (the app, a car) is still bound, the service stays alive without being in the foreground.
      */
     private fun settleForegroundStart() {
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) foregroundServiceType else 0
+        if (!ForegroundStartGuard.maySettle(Build.VERSION.SDK_INT, type)) {
+            Log.i(TAG, "play key: already in the foreground, nothing to settle")
+            return
+        }
         try {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(NotificationChannel(START_CHANNEL, getString(R.string.playback_start_channel), NotificationManager.IMPORTANCE_LOW))

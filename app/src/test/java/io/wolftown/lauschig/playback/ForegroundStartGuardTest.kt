@@ -75,4 +75,37 @@ class ForegroundStartGuardTest {
         assertFalse(ForegroundStartGuard.isPlayKey(key(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.ACTION_UP)))
         assertFalse(ForegroundStartGuard.isPlayKey(Intent("other")))
     }
+
+    // --- fix round 1 (#1): never with a loaded title, never once something played ---
+
+    @Test fun engagedBeforeTheTimeout_disarmsForGood() = runTest {
+        val g = ForegroundStartGuard(backgroundScope, { engaged }, { settled++ })
+        g.arm()
+        engaged = true
+        g.onEngaged()
+        // The user pauses within the timeout: still nothing to settle (Media3 owns the notification now).
+        engaged = false
+        advanceTimeBy(ForegroundStartGuard.TIMEOUT_MS * 2)
+        runCurrent()
+        assertEquals(0, settled)
+        assertFalse(g.armed)
+        g.resumption(ok = false)
+        assertEquals(0, settled)
+    }
+
+    @Test fun onlyAnEmptyPlayer_arms() {
+        fun key(code: Int) = Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, code))
+        assertTrue(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), mediaItemCount = 0))
+        // A paused, loaded title: PLAY just plays it, Media3 goes foreground itself.
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PLAY), mediaItemCount = 3))
+        assertFalse(ForegroundStartGuard.shouldArm(key(KeyEvent.KEYCODE_MEDIA_PAUSE), mediaItemCount = 0))
+    }
+
+    @Test fun alreadyInTheForeground_isNeverTakenOver() {
+        // API 29+: Media3 (or anyone) made the service foreground; settling would swap its notification id.
+        assertFalse(ForegroundStartGuard.maySettle(sdk = 35, foregroundServiceType = 2))
+        assertTrue(ForegroundStartGuard.maySettle(sdk = 35, foregroundServiceType = 0))
+        // API 28 cannot tell; the arming rules above keep it away from a playing service.
+        assertTrue(ForegroundStartGuard.maySettle(sdk = 28, foregroundServiceType = 0))
+    }
 }

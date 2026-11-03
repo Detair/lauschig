@@ -36,6 +36,12 @@ class ForegroundStartGuard(
         }
     }
 
+    /** Something plays (player listener): Media3 owns the foreground from here; this arming is over for good. */
+    fun onEngaged() {
+        job?.cancel()
+        job = null
+    }
+
     /** The playback resumption answered: on success Media3 takes over; a failure settles at once. */
     fun resumption(ok: Boolean) {
         if (!armed) return
@@ -52,6 +58,19 @@ class ForegroundStartGuard(
     companion object {
         /** Below Android's 10 s deadline for `startForeground` (API 26–33; newer versions allow more). */
         const val TIMEOUT_MS = 8_000L
+
+        /**
+         * Arm only for a play key while the player holds nothing: with a loaded (paused) title PLAY just plays it and
+         * Media3 goes foreground itself – settling there would take over its notification.
+         */
+        fun shouldArm(intent: Intent, mediaItemCount: Int): Boolean = mediaItemCount == 0 && isPlayKey(intent)
+
+        /**
+         * Settling calls `startForeground` with its own notification id, which makes Android cancel the notification of
+         * whoever is in the foreground now (Media3's media notification). On API 29+ a service already in the foreground
+         * ([foregroundServiceType] != 0) is left alone; API 28 cannot tell.
+         */
+        fun maySettle(sdk: Int, foregroundServiceType: Int): Boolean = sdk < 29 || foregroundServiceType == 0
 
         /** A media-button intent that may start playback (the keys Media3's MediaButtonReceiver forwards, and PLAY_PAUSE). */
         fun isPlayKey(intent: Intent): Boolean {
