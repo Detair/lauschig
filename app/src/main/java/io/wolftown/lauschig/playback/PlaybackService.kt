@@ -493,11 +493,11 @@ class PlaybackService : MediaLibraryService() {
                 val parts: List<Flow<Any>> = listOf(
                     api.connection.map { it is ConnectionState.Online },
                     coverArrivals,
-                    catalogDao.observeAll(dev).map { list -> list.map { it.id to it.coverUpdatedAt } },
+                    catalogDao.observeVersion(dev),
                     itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
                 ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
                     libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
-                    catalogDao.observeAll(sid).map { list -> list.size to list.maxOfOrNull { it.updatedAt } },
+                    catalogDao.observeVersion(sid),
                     downloadDao.observeCompleteIds(sid),
                     itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
                 )
