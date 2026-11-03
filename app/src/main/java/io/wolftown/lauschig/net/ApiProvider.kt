@@ -28,7 +28,8 @@ import retrofit2.Retrofit
  * [TokenAuthenticator] whose refresh call uses [okHttp] itself (no authenticator, no recursion, no redirects).
  */
 class ApiProvider(
-    connection: Flow<ConnectionState>,
+    /** The account server's connection; `null` = a new server, reset to Offline and checking (see `accountConnection`). */
+    connection: Flow<ConnectionState?>,
     okHttp: OkHttpClient,
     private val store: AccountStore,
     scope: CoroutineScope,
@@ -45,13 +46,14 @@ class ApiProvider(
     private val firstCheck = MutableStateFlow(true)
     private val shared = connection
         .onStart { firstCheck.value = true }
-        .onEach { firstCheck.value = false }
+        .onEach { firstCheck.value = it == null }
+        .map { it ?: ConnectionState.Offline }
         .onCompletion { firstCheck.value = true }
         .stateIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline)
 
     /**
-     * True while the shared probe loop has not answered yet since it (re)started: its [ConnectionState.Offline] is
-     * then only the initial value, not a result. For the UI's offline indicator only; the state itself is unchanged.
+     * True while the shared probe loop has not answered yet since it (re)started or the server changed: its
+     * [ConnectionState.Offline] is then only the initial value, not a result. For the UI's offline indicator only; the state itself is unchanged.
      */
     val checking: StateFlow<Boolean> = firstCheck
 

@@ -78,4 +78,30 @@ class ApiProviderTest {
         runCurrent()
         assertEquals(true, provider.checking.value)
     }
+
+    @Test
+    fun aReset_meansOfflineAndChecking_untilTheNewServerAnswers() = runTest {
+        // Account switch A → B: B's token must never go to A's host while B's first probe runs.
+        val a = ConnectionState.Online("https://a.example/".toHttpUrl(), ConnectionState.Via.PUBLIC)
+        val b = ConnectionState.Online("https://b.example/".toHttpUrl(), ConnectionState.Via.PUBLIC)
+        val upstream = flow<ConnectionState?> {
+            emit(a)
+            kotlinx.coroutines.delay(1_000)
+            emit(null) // the reset of a new server
+            kotlinx.coroutines.delay(1_000)
+            emit(b)
+            awaitCancellation()
+        }
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        backgroundScope.launch { provider.connection.collect {} }
+        runCurrent()
+        assertEquals(a, provider.connectionState.value)
+        assertEquals(false, provider.checking.value)
+        advanceTimeBy(1_001)
+        assertEquals(ConnectionState.Offline, provider.connectionState.value)
+        assertEquals(true, provider.checking.value)
+        advanceTimeBy(1_000)
+        assertEquals(b, provider.connectionState.value)
+        assertEquals(false, provider.checking.value)
+    }
 }
