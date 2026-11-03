@@ -49,6 +49,18 @@ class CoverTest {
         clock = { now },
     ).apply { onFetched = { serverId, itemId -> arrived += "$serverId/$itemId" } }
 
+    @Test fun forgetServer_dropsOnlyThatServersCachedCovers() {
+        val other = "fedcba9876543210"
+        val st = store()
+        st.file(CoverRef(s, "b", 1)); st.file(CoverRef(other, "c", 1)); runQueued()
+        assertTrue(st.file(CoverRef(s, "b", 1))!!.isFile)
+        st.forgetServer(s)
+        st.forgetServer("../cache") // never anything but a server's own folder
+        assertFalse(File(tmp, "cache/$s").exists())
+        assertTrue(st.file(CoverRef(other, "c", 1))!!.isFile)
+        assertTrue(File(tmp, "cache").isDirectory)
+    }
+
     @Test fun localCover_winsWithoutFetching() {
         val local = File(tmp, "cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(9)) }
         assertEquals(local, store(local).file(CoverRef(s, "b", 1)))

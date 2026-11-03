@@ -68,6 +68,14 @@ class CoverStore(
         return null
     }
 
+    /** Sign-out: drops every cached server cover of [serverId] (a title's own downloaded cover is not in this cache). Blocking. */
+    fun forgetServer(serverId: String) {
+        if (!SERVER_ID.matches(serverId)) return
+        val dir = File(cacheDir, serverId)
+        misses.keys.removeAll { it.startsWith(dir.path + File.separator) }
+        dir.deleteRecursively()
+    }
+
     private fun load(serverId: String, itemId: String, dir: File, target: File) {
         val result = try {
             fetch(serverId, itemId)
@@ -112,5 +120,6 @@ class CoverStore(
         /** After a failed request the cover is asked for again after this long. */
         const val ERROR_TTL_MS = 2 * 60_000L
         private const val TAG = "CoverStore"
+        private val SERVER_ID = Regex("[0-9a-f]{16}")
     }
 }
