@@ -39,6 +39,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -98,6 +99,7 @@ class DownloadsViewModelTest {
     private val signedIn = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
     private val earlier = KeptAccount("cccccccccccccccc", "lukas", "nas")
     private val other = KeptAccount("dddddddddddddddd", "fabian", "abs")
+    private val third = KeptAccount("eeeeeeeeeeeeeeee", "gast", "abs")
 
     private fun vmWithKept(kept: FakeKeptAccounts, bytes: suspend (String) -> Long, scope: kotlinx.coroutines.CoroutineScope): DownloadsViewModel {
         val accounts = FakeAccountStore().apply { acc.value = signedIn }
@@ -157,14 +159,15 @@ class DownloadsViewModelTest {
     @Test fun aFailingWalk_countsZeroForThatAccount_andNeverEndsTheFigure() = runTest {
         oneDownloadOf100Bytes()
         val kept = FakeKeptAccounts(listOf(earlier, other))
-        var failing = true
-        val vm = vmWithKept(kept, { sid -> if (sid == earlier.serverId && failing) throw java.io.IOException("unreadable") else 2_000_000L }, backgroundScope)
+        // Read on the walk's thread, set on the test's.
+        val failing = AtomicBoolean(true)
+        val vm = vmWithKept(kept, { sid -> if (sid == earlier.serverId && failing.get()) throw java.io.IOException("unreadable") else 2_000_000L }, backgroundScope)
         // The other account's size is there although the first walk failed ...
         assertEquals(2_000_000L, vm.await { it.loaded && it.keptBytes > 0 }.keptBytes)
-        // ... and the figure still follows: the failing directory reads fine now and a change makes it count.
-        failing = false
-        kept.remove(other.serverId)
-        kept.put(other)
-        assertEquals(4_000_000L, vm.await { it.keptBytes == 4_000_000L }.keptBytes)
+        // ... and the figure still follows: the failing directory reads fine now and a change makes it count. The change
+        // is a real one: a remove and put back of the same account can merge into "no change" in the state flow.
+        failing.set(false)
+        kept.put(third)
+        assertEquals(6_000_000L, vm.await { it.keptBytes == 6_000_000L }.keptBytes)
     }
 }
