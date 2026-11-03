@@ -41,6 +41,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.AccountSignOut
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.account.SignOutResult
 import io.wolftown.lauschig.account.displayHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -114,14 +115,16 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
         val question = _step.value as? SignOutStep.Confirm ?: return
         _step.value = SignOutStep.SigningOut
         viewModelScope.launch {
-            try {
-                signOut.execute(keepDownloads = question.keeps)
+            val result = try {
+                signOut.execute(keepDownloads = question.keeps, shownUnsynced = question.unsynced)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "sign-out failed", e)
+                null
             }
-            _step.value = null
+            // More changes than shown (playback was resumed meanwhile): ask again with the new count and the same choice.
+            _step.value = (result as? SignOutResult.Changed)?.check?.let { question.copy(unsynced = it.unsynced, downloadBytes = it.downloadBytes) }
         }
     }
 

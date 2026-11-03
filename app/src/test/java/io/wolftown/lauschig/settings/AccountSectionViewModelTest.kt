@@ -4,6 +4,7 @@ import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.AccountSignOut
 import io.wolftown.lauschig.account.SignOutCheck
+import io.wolftown.lauschig.account.SignOutResult
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.CompletableDeferred
@@ -40,11 +41,16 @@ class AccountSectionViewModelTest {
         var checks = 0
         val executed = mutableListOf<Boolean>()
         var gate: CompletableDeferred<Unit>? = null
+        var changed: SignOutCheck? = null
+        val shown = mutableListOf<Int?>()
         override suspend fun check(): SignOutCheck? { checks++; return answer.await() }
-        override suspend fun execute(keepDownloads: Boolean) {
+        override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult {
             executed += keepDownloads
+            shown += shownUnsynced
             gate?.await()
+            changed?.let { changed = null; return SignOutResult.Changed(it) }
             accounts.clear(keepDownloads)
+            return SignOutResult.Done
         }
     }
 
@@ -80,6 +86,21 @@ class AccountSectionViewModelTest {
         assertEquals(listOf(false), signOut.executed)
         assertNull(vm.step.value)
         assertNull(accounts.acc.value) // the app turns to the sign-in (MainViewModel.signedIn)
+    }
+
+    @Test fun moreChangesThanShown_asksAgain_withTheSameChoice() {
+        val vm = vm()
+        vm.startSignOut()
+        vm.setKeepDownloads(false)
+        signOut.changed = SignOutCheck(unsynced = 5, downloadBytes = 3_000_000_000)
+        vm.confirm()
+        assertEquals(listOf<Int?>(2), signOut.shown) // what the dialog showed
+        assertEquals(SignOutStep.Confirm(unsynced = 5, downloadBytes = 3_000_000_000, keepDownloads = false), vm.step.value)
+        assertEquals("fabian", accounts.acc.value?.username) // still signed in
+        vm.confirm()
+        assertEquals(listOf<Int?>(2, 5), signOut.shown)
+        assertNull(vm.step.value)
+        assertNull(accounts.acc.value)
     }
 
     @Test fun confirm_keeping_showsProgress_andCannotBeCancelledMeanwhile() {

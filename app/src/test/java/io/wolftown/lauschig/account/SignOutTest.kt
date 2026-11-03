@@ -175,6 +175,34 @@ class SignOutTest {
         assertNull(lastPlayed.value) // a play key cannot start the old account's title
     }
 
+    @Test fun moreChangesAfterStopping_thanShown_abortWithoutDeleting() = runTest {
+        seed(a) // 2 unsynced: the dirty progress row and the pending bookmark
+        val out = SignOut(
+            accounts, Recording(data), recordingKept, { calls += "work" }, lastPlayed,
+            pausePlayback = {},
+            // Playback was resumed while the dialog was open: stopping it saves one more listening session.
+            stopPlayback = { calls += "stop"; db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("s", a, "book1", 0.0, 9.0, 9.0, 1, 2)) },
+            pushes = emptyList(), awaitOnline = { true }, logout = { _, _ -> calls += "logout"; true }, clearAccountState = {},
+        )
+        val result = out.execute(keepDownloads = false, shownUnsynced = 2)
+        assertEquals(SignOutResult.Changed(SignOutCheck(3, 100)), result)
+        assertEquals(listOf("stop"), calls) // nothing cancelled, deleted or cleared
+        assertEquals(List(6) { true }, rows(a))
+        assertEquals(account, accounts.acc.value)
+        // Asked again with 3: it goes through.
+        assertEquals(SignOutResult.Done, out.execute(keepDownloads = false, shownUnsynced = 3))
+        assertNull(accounts.acc.value)
+        assertEquals(List(6) { false }, rows(a))
+    }
+
+    @Test fun keepingOrAnUnknownCount_neverAborts() = runTest {
+        seed(a)
+        assertEquals(SignOutResult.Done, signOut().execute(keepDownloads = true, shownUnsynced = 0))
+        accounts.acc.value = account; accounts.refresh = "r"
+        assertEquals(SignOutResult.Done, signOut().execute(keepDownloads = false, shownUnsynced = null))
+        assertNull(accounts.acc.value)
+    }
+
     @Test fun aLateWriteAfterThePurge_isDeletedToo() = runTest {
         seed(a)
         // The stopping service's last progress save lands after the purge (it runs on the service's own scope).

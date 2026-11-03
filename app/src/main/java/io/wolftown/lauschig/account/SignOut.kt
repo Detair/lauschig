@@ -32,6 +32,16 @@ data class SignOutCheck(
     val downloadBytes: Long,
 )
 
+sealed interface SignOutResult {
+    data object Done : SignOutResult
+
+    /**
+     * Not signed out: without keeping, more changes were found after playback stopped than the dialog showed (it was
+     * resumed meanwhile, e.g. with a headset key). The dialog asks again with [check].
+     */
+    data class Changed(val check: SignOutCheck) : SignOutResult
+}
+
 interface AccountSignOut {
     /**
      * Pauses playback (its position is saved), pushes what the syncs would upload – at most [SignOut.PUSH_TIMEOUT_MS],
@@ -39,8 +49,12 @@ interface AccountSignOut {
      */
     suspend fun check(): SignOutCheck?
 
-    /** Signs out (see [SignOut]); [keepDownloads] keeps this account's downloads and rows for its next sign-in. */
-    suspend fun execute(keepDownloads: Boolean)
+    /**
+     * Signs out (see [SignOut]); [keepDownloads] keeps this account's downloads and rows for its next sign-in.
+     * [shownUnsynced] is the count the dialog showed (null: unknown); without keeping, a larger count after playback
+     * stopped aborts with [SignOutResult.Changed] instead of deleting changes the user was not warned about.
+     */
+    suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int? = null): SignOutResult
 }
 
 /**
@@ -115,11 +129,18 @@ class SignOut(
         return SignOutCheck(data.unsynced(serverId), data.downloadBytes(serverId))
     }
 
-    override suspend fun execute(keepDownloads: Boolean) = withContext(NonCancellable) {
-        val account = accounts.account.first() ?: return@withContext
+    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult = withContext(NonCancellable) {
+        val account = accounts.account.first() ?: return@withContext SignOutResult.Done
         val serverId = account.serverId
         val refresh = try { accounts.refreshToken() } catch (e: Exception) { null }
         step("stop playback") { stopPlayback() }
+        if (!keepDownloads && shownUnsynced != null) {
+            val now = step("recount") { data.unsynced(serverId) }
+            if (now != null && now > shownUnsynced) {
+                Log.i(TAG, "more unsynced changes than shown ($now > $shownUnsynced): asking again")
+                return@withContext SignOutResult.Changed(SignOutCheck(now, step("size") { data.downloadBytes(serverId) } ?: 0))
+            }
+        }
         step("cancel work") { work.cancel(serverId) }
         val loggedOut = async {
             if (refresh == null) false
@@ -141,6 +162,7 @@ class SignOut(
         if (!keepDownloads) step("rows again") { data.deleteRows(serverId) }
         Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: $serverConfirmed)")
         accounts.clear(keepDownloads)
+        SignOutResult.Done
     }
 
     companion object {
