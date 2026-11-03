@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -96,5 +97,17 @@ class LastTitleStarterTest {
         player.state.value = PlayerUiState(itemId = "x", isPlaying = true)
         assertFalse(starter().resumeLast(now = 2_000))
         assertEquals(emptyList<String>(), plays)
+    }
+
+    @Test fun signedOut_aDeviceTitleStillResumes_aServerTitleDoesNot() = runTest {
+        val local = "local:0123456789abcdef01234567"
+        db.itemDao().upsertFromList(listOf(io.wolftown.lauschig.db.entities.ItemEntity(DeviceLibrary.SERVER_ID, local, DeviceLibrary.LIBRARY_ID, "Lokal")))
+        db.progressDao().saveLocal(DeviceLibrary.SERVER_ID, local, 30.0, 600.0, false, 1)
+        accounts.acc.value = null
+        store.value = LastPlayed(DeviceLibrary.SERVER_ID, local, 5_000)
+        assertEquals(LastTitleStarter.Last(DeviceLibrary.SERVER_ID, local, 5_000), starter().last())
+        book("srv")
+        store.value = LastPlayed(s, "srv", 5_000)
+        assertNull(starter().last())
     }
 }
