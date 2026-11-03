@@ -60,6 +60,13 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
         c.prepare()
     }
 
+    override suspend fun stop() {
+        // A service started without the app (car, play key, widget) is reached by connecting; none running: nothing to stop.
+        val c = controller ?: if (PlaybackService.running) controller() else return
+        c.stop()
+        c.clearMediaItems()
+    }
+
     override fun replaceMediaItem(index: Int, item: MediaItem) { controller?.replaceMediaItem(index, item) }
     override fun play() { controller?.play() }
     override fun pause() { controller?.pause() }

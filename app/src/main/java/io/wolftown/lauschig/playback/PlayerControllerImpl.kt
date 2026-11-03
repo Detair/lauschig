@@ -122,6 +122,9 @@ class PlayerControllerImpl(
         val chapterEnds: List<Double> = item.chapters.map { it.endSec }
     }
 
+    /** The scope's dispatcher (main in the app): [stop] runs there like every other call. */
+    private val mainContext = scope.coroutineContext.minusKey(Job)
+
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
@@ -457,6 +460,26 @@ class PlayerControllerImpl(
         }
     }
 
+    override suspend fun stop() = withContext(mainContext) {
+        playJob?.cancel(); playJob = null
+        adoptJob?.cancel(); adoptJob = null; adopting = null
+        // Paused first and given a moment: the service's tracker saves the position before the queue is emptied.
+        if (facade.snapshot().isPlaying) {
+            facade.pause()
+            delay(STOP_SETTLE_MS)
+        }
+        pollJob?.cancel(); pollJob = null
+        localJob?.cancel(); localJob = null
+        baseJob?.cancel(); baseJob = null
+        current = null
+        last = null
+        starting = false
+        pendingBase = null
+        wasPlaying = false
+        facade.stop()
+        _state.value = PlayerUiState(downloadThrottled = throttled)
+    }
+
     private fun seekGlobal(c: Current, globalSec: Double) {
         val (i, ms) = c.mapper.toFile(globalSec)
         facade.seekTo(i, ms)
@@ -554,6 +577,8 @@ class PlayerControllerImpl(
 
     private companion object {
         const val TAG = "PlayerController"
+        /** How long [stop] waits after pausing a playing title before it empties the queue. */
+        const val STOP_SETTLE_MS = 300L
         /** `PlaybackException.ERROR_CODE_IO_*`: the source could not be read (network gone, address unreachable, 4xx/5xx). */
         val IO_ERRORS = 2000..2999
     }

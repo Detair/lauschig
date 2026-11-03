@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.wolftown.lauschig.local.DeviceLibrary
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,6 +19,13 @@ data class LastPlayed(val serverId: String, val itemId: String, val pausedAt: Lo
 interface LastPlayedStore {
     suspend fun get(): LastPlayed?
     suspend fun set(last: LastPlayed)
+    suspend fun clear()
+}
+
+/** Sign-out: a server title is forgotten (play keys, resumption and the car cannot start it); a device title stays. */
+suspend fun LastPlayedStore.forgetServerTitle() {
+    val last = get() ?: return
+    if (!DeviceLibrary.isLocal(last.serverId)) clear()
 }
 
 @Singleton
@@ -35,6 +43,10 @@ class DataStoreLastPlayedStore @Inject constructor(@ApplicationContext context: 
             it[ITEM] = last.itemId
             it[AT] = last.pausedAt
         }
+    }
+
+    override suspend fun clear() {
+        store.edit { it.clear() }
     }
 
     private companion object {

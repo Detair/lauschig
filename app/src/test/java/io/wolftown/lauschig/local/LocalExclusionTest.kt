@@ -322,6 +322,7 @@ class LocalExclusionTest {
         val store = object : LastPlayedStore {
             override suspend fun get() = LastPlayed(dev, local, 7)
             override suspend fun set(last: LastPlayed) {}
+            override suspend fun clear() {}
         }
         val player = object : PlayerController {
             override val state = MutableStateFlow(PlayerUiState())

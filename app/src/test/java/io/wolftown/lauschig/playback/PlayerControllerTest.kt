@@ -68,6 +68,8 @@ private class FakeFacade : PlayerFacade {
     override fun setOnError(onError: (Int) -> Unit) { errorCb = onError }
     override fun streamBase() = items.firstNotNullOfOrNull { it.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
+    var stops = 0
+    override suspend fun stop() { stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
     fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
@@ -730,6 +732,53 @@ class PlayerControllerTest {
         assertEquals(3, f.items.size)
         assertEquals(1 to 100_000L, f.started)
         assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun stop_pausesFirst_thenEmptiesTheQueue_andForgetsTheTitle() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.play(s, "it")
+        assertTrue(f.snap.isPlaying)
+        val stopJob = launch { c.stop() }
+        testScheduler.runCurrent()
+        // The pause comes first and is given a moment, so the service saves the position before the queue goes.
+        assertFalse(f.snap.isPlaying)
+        assertEquals(0, f.stops)
+        testScheduler.advanceUntilIdle()
+        stopJob.join()
+        assertEquals(1, f.stops)
+        assertTrue(f.items.isEmpty())
+        assertEquals(PlayerUiState(), c.state.value)
+        // Sign-out: play/pause can never bring the old account's title back.
+        c.togglePlayPause()
+        assertTrue(f.items.isEmpty())
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun stop_whilePaused_doesNotWait_andAfterADisconnectStillForgets() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        c.pause()
+        f.disconnect()
+        c.stop()
+        assertEquals(1, f.stops)
+        assertEquals(null, c.state.value.itemId)
+        c.togglePlayPause()
+        assertTrue(f.items.isEmpty())
+    }
+
+    @Test fun stop_cancelsAStartInProgress() = runTest {
+        val f = FakeFacade()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val c = controller(f, { item(threeFiles) }, loadDetails = { _, _ -> gate.await() }, base = "http://h/", loadById = { _, _ -> item(emptyList()) })
+        c.play(s, "it")
+        assertTrue(c.state.value.isLoading)
+        c.stop()
+        gate.complete(Unit)
+        testScheduler.advanceUntilIdle()
+        assertTrue(f.items.isEmpty())
+        assertEquals(PlayerUiState(), c.state.value)
     }
 
     @Test fun togglePlayPause_withNothingEverPlayed_doesNothing() = runTest {

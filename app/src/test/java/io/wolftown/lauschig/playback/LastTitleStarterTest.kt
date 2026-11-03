@@ -42,6 +42,7 @@ class LastTitleStarterTest {
         var value: LastPlayed? = null
         override suspend fun get() = value
         override suspend fun set(last: LastPlayed) { value = last }
+        override suspend fun clear() { value = null }
     }
 
     private fun starter() = LastTitleStarter(accounts, store, db.progressDao(), db.itemDao(), db.episodeDao(), player)
@@ -109,5 +110,15 @@ class LastTitleStarterTest {
         book("srv")
         store.value = LastPlayed(s, "srv", 5_000)
         assertNull(starter().last())
+    }
+
+    @Test fun forgetServerTitle_forgetsAServerTitle_keepsADeviceTitle() = runTest {
+        store.set(LastPlayed(s, "it", 1))
+        store.forgetServerTitle()
+        assertEquals(null, store.get())
+        val device = LastPlayed(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:0123456789abcdef01234567", 1)
+        store.set(device)
+        store.forgetServerTitle()
+        assertEquals(device, store.get())
     }
 }

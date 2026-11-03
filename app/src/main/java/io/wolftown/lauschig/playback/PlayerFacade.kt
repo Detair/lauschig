@@ -24,6 +24,9 @@ interface PlayerFacade {
     /** Connects to the service if not connected yet (a title may already be playing there). */
     suspend fun connect() {}
 
+    /** Stops and empties the queue (sign-out); reaches a running service even if this facade was not connected yet. */
+    suspend fun stop() {}
+
     /** True while the (remote) player is connected and has a queue loaded. */
     fun hasMedia(): Boolean
 

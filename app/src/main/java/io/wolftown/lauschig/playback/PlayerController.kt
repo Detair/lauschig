@@ -63,4 +63,10 @@ interface PlayerController {
 
     /** The service started a title by itself (car, resumption, queue): show it. */
     fun adoptFromService() {}
+
+    /**
+     * Sign-out: stops playback entirely (a device title too) and empties the queue; the loaded and the last title are
+     * forgotten, so play/pause cannot start them again. Returns once the player is empty.
+     */
+    suspend fun stop() {}
 }
