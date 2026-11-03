@@ -154,11 +154,16 @@ class AccountSectionViewModelTest {
         assertEquals("fabian", accounts.acc.value?.username)
     }
 
-    @Test fun aFailingCheck_closesTheDialog() {
+    @Test fun aFailingCheck_stillAsks_withAnUnknownCount_keepingByDefault() {
         signOut.answer = CompletableDeferred<SignOutCheck>().apply { completeExceptionally(IllegalStateException("db")) }
         val vm = vm()
         vm.startSignOut()
-        assertNull(vm.step.value)
+        val confirm = vm.step.value as SignOutStep.Confirm
+        assertEquals(SignOutStep.Confirm(unsynced = null, downloadBytes = 0), confirm)
+        assertTrue(confirm.canKeep)
         assertEquals("fabian", accounts.acc.value?.username)
+        vm.confirm()
+        assertEquals(listOf(true), signOut.executed)
+        assertEquals(listOf<Int?>(null), signOut.shown)
     }
 }

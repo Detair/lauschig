@@ -622,4 +622,5 @@
     <string name="kept_delete_failed">Es ließ sich nicht alles löschen. Bitte später noch einmal versuchen.</string>
     <string name="sign_out_keep_data">Daten auf diesem Gerät behalten</string>
     <string name="previous_account_message_data">Auf dem Gerät liegen noch Daten von %1$s (%2$s). Löschen?</string>
+    <string name="sign_out_unsynced_unknown">Ob noch Änderungen fehlen, ließ sich nicht prüfen.</string>
 </resources>

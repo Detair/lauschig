@@ -64,15 +64,18 @@ sealed interface SignOutStep {
     /** Pending changes are being pushed („Fortschritt wird übertragen …“). */
     data object Checking : SignOutStep
 
-    /** The question; [keepDownloads] is the checkbox (default on: no data loss by default). */
-    data class Confirm(val unsynced: Int, val downloadBytes: Long, val keepDownloads: Boolean = true) : SignOutStep {
+    /**
+     * The question; [keepDownloads] is the checkbox (default on: no data loss by default). [unsynced] null: the check
+     * failed, so whether changes are missing on the server is unknown (keeping is offered, said in a line).
+     */
+    data class Confirm(val unsynced: Int?, val downloadBytes: Long, val keepDownloads: Boolean = true) : SignOutStep {
         val hasDownloads: Boolean get() = downloadBytes > 0
 
         /**
          * Something to keep: downloads, or changes not on the server yet (then the checkbox keeps the account's data).
          * Neither: no checkbox, everything of the account goes.
          */
-        val canKeep: Boolean get() = hasDownloads || unsynced > 0
+        val canKeep: Boolean get() = hasDownloads || unsynced != 0
         val keeps: Boolean get() = canKeep && keepDownloads
     }
 
@@ -95,16 +98,23 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
         if (_step.value != null) return
         _step.value = SignOutStep.Checking
         checkJob = viewModelScope.launch {
+            var failed = false
             val check = try {
                 signOut.check()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "sign-out check failed", e)
+                failed = true
                 null
             }
-            // No account any more (or the check failed): nothing to ask.
-            _step.value = check?.let { SignOutStep.Confirm(it.unsynced, it.downloadBytes) }
+            _step.value = when {
+                check != null -> SignOutStep.Confirm(check.unsynced, check.downloadBytes)
+                // The check failed: still ask, with "unknown" instead of a count.
+                failed -> SignOutStep.Confirm(unsynced = null, downloadBytes = 0)
+                // No account any more: nothing to ask.
+                else -> null
+            }
         }
     }
 
@@ -202,11 +212,11 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                             Text(label, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
-                    if (step.unsynced > 0) {
+                    val unsynced = step.unsynced
+                    if (unsynced == null || unsynced > 0) {
                         Text(
-                            pluralStringResource(
-                                if (step.keeps) R.plurals.sign_out_unsynced_kept else R.plurals.sign_out_unsynced_lost, step.unsynced, step.unsynced,
-                            ),
+                            if (unsynced == null) stringResource(R.string.sign_out_unsynced_unknown)
+                            else pluralStringResource(if (step.keeps) R.plurals.sign_out_unsynced_kept else R.plurals.sign_out_unsynced_lost, unsynced, unsynced),
                             color = if (step.keeps) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                             modifier = Modifier.testTag("unsyncedWarning"),
                         )

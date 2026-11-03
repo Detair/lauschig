@@ -82,6 +82,12 @@ class AccountSectionTest {
         rule.onNodeWithText("3 changes are not on the server yet. They are uploaded when you sign in with this account again.").assertExists()
     }
 
+    @Test fun question_unknownCount_saysSo_andOffersToKeep() {
+        show(SignOutStep.Confirm(unsynced = null, downloadBytes = 0))
+        rule.onNodeWithText("Whether changes are still missing on the server could not be checked.").assertExists()
+        rule.onNodeWithTag("keepDownloads").assertIsOn()
+    }
+
     @Test fun question_withoutDownloads_hasNoCheckbox_andNothingPending_noWarning() {
         show(SignOutStep.Confirm(unsynced = 0, downloadBytes = 0))
         rule.onNodeWithTag("keepDownloads").assertDoesNotExist()
