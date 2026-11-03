@@ -42,22 +42,30 @@ class CoverStore(
         class Here(val file: File) : Answer
         /** Nothing will come now: a device title without a cover, or one the server did not deliver a moment ago. */
         data object None : Answer
-        /** Being fetched: the request's `deliver` is called once, with the file or null, unless [cancel]led first. */
+        /** Being fetched: the request's `deliver` is called once, with the file or null, unless it gave up ([cancel]). */
         class Later(val cancel: () -> Unit) : Answer
     }
 
     /**
-     * A cover was fetched and cached (called on the [executor] thread); [delivered]: a [request] waiting for it got it.
+     * A cover was fetched and cached (called on the [executor] thread). [delivered]: requests were waiting for it, each
+     * took it, and none gave up on it before – nobody who asked is left with a failed load.
      */
     @Volatile var onFetched: ((serverId: String, libraryItemId: String, delivered: Boolean) -> Unit)? = null
 
-    /** Guards [waiters] and every change of [inFlight] that [request] must see together with them. */
+    /** Guards [waiting] and every change of [inFlight] that [request] must see together with it. */
     private val lock = Any()
     private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
     /** Requests waiting for a cover being fetched, by its cache file. */
-    private val waiters = HashMap<String, MutableList<Waiter>>()
+    private val waiting = HashMap<String, Waiting>()
 
-    private class Waiter(val deliver: (File?) -> Unit)
+    private class Waiting {
+        val waiters = mutableListOf<Waiter>()
+        /** A request gave up on this cover before it came (its reader got nothing). */
+        var gaveUp = false
+    }
+
+    /** [deliver]: false if the request no longer takes the answer (it gave up at the same moment). */
+    private class Waiter(val deliver: (File?) -> Boolean)
     /** Covers the server did not deliver, until when not to ask again (SystemUI reloads artwork on every change). */
     private val misses = ConcurrentHashMap<String, Long>()
 
@@ -89,38 +97,46 @@ class CoverStore(
     }
 
     /**
-     * Like [file], but a cover being fetched is [Answer.Later] delivered to [deliver] (on the [executor] thread, or at
-     * once if the fetch ended in between): the file, or null if none came (no cover, failure, offline).
+     * Like [file], but a cover being fetched is [Answer.Later] delivered to [deliver] (on the [executor] thread): the
+     * file, or null if none came (no cover, failure, offline). [deliver] returns whether it took the answer.
      */
-    fun request(ref: CoverRef, deliver: (File?) -> Unit): Answer {
+    fun request(ref: CoverRef, deliver: (File?) -> Boolean): Answer {
         file(ref)?.let { return Answer.Here(it) } // a miss starts the fetch
         if (DeviceLibrary.isLocal(ref.serverId, ref.key)) return Answer.None
         val target = cached(ref)
         val waiter = Waiter(deliver)
         synchronized(lock) {
             if (target.path in inFlight) {
-                waiters.getOrPut(target.path) { mutableListOf() } += waiter
-                return Answer.Later { synchronized(lock) { waiters[target.path]?.remove(waiter) } }
+                waiting.getOrPut(target.path) { Waiting() }.waiters += waiter
+                return Answer.Later {
+                    synchronized(lock) { waiting[target.path]?.let { w -> if (w.waiters.remove(waiter)) w.gaveUp = true } }
+                }
             }
         }
         // Not being fetched: the server did not deliver it a moment ago, or it arrived just now.
         return target.takeIf { it.isUsable() }?.let { Answer.Here(it) } ?: Answer.None
     }
 
-    /** The fetch for [path] ended with [file] (null: none): every waiting request is answered; true if one got it. */
+    /** Whether a fetch of [ref]'s cover is running (it was asked for and may still come). */
+    fun pending(ref: CoverRef): Boolean = !DeviceLibrary.isLocal(ref.serverId, ref.key) && cached(ref).path in inFlight
+
+    /** The fetch for [path] ended with [file] (null: none): every waiting request is answered; see [onFetched]. */
     private fun finish(path: String, file: File?): Boolean {
-        val waiting = synchronized(lock) {
+        val w = synchronized(lock) {
             inFlight.remove(path)
-            waiters.remove(path).orEmpty()
-        }
-        waiting.forEach { w ->
-            try {
-                w.deliver(file)
+            waiting.remove(path)
+        } ?: return false
+        var allTook = true
+        w.waiters.forEach { waiter ->
+            val took = try {
+                waiter.deliver(file)
             } catch (e: Exception) {
                 Log.w(TAG, "a cover request could not take its answer", e)
+                false
             }
+            if (!took) allTook = false
         }
-        return file != null && waiting.isNotEmpty()
+        return file != null && w.waiters.isNotEmpty() && allTook && !w.gaveUp
     }
 
     /** Whether [file] would answer with a file right now; never fetches (the car's lists are built with it). */

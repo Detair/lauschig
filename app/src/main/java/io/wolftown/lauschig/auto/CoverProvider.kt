@@ -5,16 +5,18 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Binder
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.provider.OpenableColumns
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import io.wolftown.lauschig.local.DeviceLibrary
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
@@ -47,8 +49,21 @@ class CoverProvider : ContentProvider() {
         if (mode != "r") throw SecurityException("covers are read-only")
         val ref = CoverUris.parse(uri, authority) ?: throw FileNotFoundException("not a cover")
         store.file(ref)?.let { return open(it) }
-        return CoverPipe.open(store, ref, writer, { task -> timer.schedule(task, WAIT_MS, TimeUnit.MILLISECONDS) })
-            ?: throw FileNotFoundException("no cover")
+        // Our own process (Media3's notification artwork, one shared loader thread) is not made to wait: it gets the
+        // playing title's artwork under a fresh URI once the cover arrived (see PlaybackService.coverArrived).
+        if (Binder.getCallingUid() == Process.myUid()) throw FileNotFoundException("no cover yet")
+        val sink = try {
+            PipeSink.create()
+        } catch (e: IOException) {
+            throw FileNotFoundException("no pipe: ${e.message}")
+        }
+        return try {
+            CoverPipe.open(store, ref, writer, { task -> timer.schedule(task, WAIT_MS, TimeUnit.MILLISECONDS) }, sink)?.read
+                ?: throw FileNotFoundException("no cover")
+        } catch (e: RuntimeException) {
+            sink.discard()
+            throw e
+        }
     }
 
     private fun open(file: File) = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -59,7 +74,7 @@ class CoverProvider : ContentProvider() {
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
         val ref = CoverUris.parse(uri, authority) ?: return null
         val file = store.file(ref)
-        if (file == null && DeviceLibrary.isLocal(ref.serverId, ref.key)) return null
+        if (file == null && !store.pending(ref)) return null // nothing will come
         val columns = projection?.filter { it == OpenableColumns.DISPLAY_NAME || it == OpenableColumns.SIZE }?.toTypedArray()
             ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
         return MatrixCursor(columns, 1).apply {
@@ -81,45 +96,80 @@ class CoverProvider : ContentProvider() {
     }
 }
 
+/** Where a cover on its way is written to: the pipe in the app, a recording fake in tests. */
+internal interface CoverSink {
+    /** Hands [file] to the reader and closes; a failure fails the reader. */
+    fun send(file: File)
+
+    /** Closes with an error: the reader gets no picture. */
+    fun fail(message: String)
+
+    /** Never handed out (nothing will come): closes every end. */
+    fun discard()
+}
+
 /** The pipe for a cover on its way, see [CoverProvider]. */
 internal object CoverPipe {
     /**
-     * The read end, or null if nothing will come (the caller answers "not found"). [giveUpLater] runs its task once the
-     * pipe has waited long enough.
+     * [sink], answered exactly once – with the cover, or failed when none comes or [giveUpLater] ran its task first –
+     * or null (and [sink] discarded) if nothing will come; the caller then answers "not found".
      */
-    fun open(store: CoverStore, ref: CoverRef, writer: Executor, giveUpLater: (Runnable) -> Unit): ParcelFileDescriptor? {
-        val (read, write) = ParcelFileDescriptor.createReliablePipe()
+    fun <S : CoverSink> open(store: CoverStore, ref: CoverRef, writer: Executor, giveUpLater: (Runnable) -> Unit, sink: S): S? {
         val answered = AtomicBoolean(false)
-        val answer = store.request(ref) { file -> if (answered.compareAndSet(false, true)) writer.execute { send(file, write) } }
+        val answer = store.request(ref) { file ->
+            if (!answered.compareAndSet(false, true)) return@request false
+            writer.execute { if (file != null) sink.send(file) else sink.fail("no cover") }
+            true
+        }
         when (answer) {
-            is CoverStore.Answer.Here -> { answered.set(true); writer.execute { send(answer.file, write) } }
-            CoverStore.Answer.None -> { read.close(); write.close(); return null }
+            is CoverStore.Answer.Here -> if (answered.compareAndSet(false, true)) writer.execute { sink.send(answer.file) }
+            CoverStore.Answer.None -> {
+                sink.discard()
+                return null
+            }
             is CoverStore.Answer.Later -> giveUpLater {
                 if (answered.compareAndSet(false, true)) {
                     answer.cancel()
-                    fail(write, "timed out")
+                    sink.fail("timed out")
                 }
             }
         }
-        return read
+        return sink
     }
+}
 
-    /** Fills the pipe with [file] and closes it; no file (none came) closes it with an error, so the reader fails. */
-    private fun send(file: File?, write: ParcelFileDescriptor) {
-        if (file == null) return fail(write, "no cover")
+/** A reliable pipe: [read] goes to the caller, the cover is written to the other end. */
+internal class PipeSink private constructor(val read: ParcelFileDescriptor, private val write: ParcelFileDescriptor) : CoverSink {
+    override fun send(file: File) {
         try {
-            FileInputStream(file).use { input -> ParcelFileDescriptor.AutoCloseOutputStream(write).use { input.copyTo(it) } }
+            // Not closed through the stream: only a complete copy closes the pipe as a success.
+            FileInputStream(file).use { input -> input.copyTo(FileOutputStream(write.fileDescriptor)) }
+            write.close()
         } catch (e: IOException) {
-            // The reader went away (the car scrolled on) or the file vanished (sign-out): nothing to tell anyone.
-            fail(write, "write failed")
+            // The reader went away (the car scrolled on) or the file vanished (sign-out).
+            fail("write failed")
         }
     }
 
-    private fun fail(write: ParcelFileDescriptor, message: String) {
+    override fun fail(message: String) {
         try {
             write.closeWithError(message)
         } catch (e: IOException) {
             // Already closed.
         }
+    }
+
+    override fun discard() {
+        listOf(read, write).forEach { end ->
+            try {
+                end.close()
+            } catch (e: IOException) {
+                // Already closed.
+            }
+        }
+    }
+
+    companion object {
+        fun create(): PipeSink = ParcelFileDescriptor.createReliablePipe().let { (read, write) -> PipeSink(read, write) }
     }
 }

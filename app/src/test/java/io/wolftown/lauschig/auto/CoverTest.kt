@@ -153,9 +153,9 @@ class CoverTest {
         assertTrue(queued.isEmpty())
     }
 
-    private class Answers {
+    private class Answers(private val takes: Boolean = true) {
         val got = mutableListOf<File?>()
-        val deliver: (File?) -> Unit = { got += it }
+        val deliver: (File?) -> Boolean = { got += it; takes }
     }
 
     @Test fun aRequest_forACoverBeingFetched_isAnsweredOnceItArrives_andThatArrivalIsNotLate() {
@@ -201,35 +201,74 @@ class CoverTest {
         assertTrue(queued.isEmpty())
     }
 
-    /**
-     * All of the pipe. A failed pipe ends empty (on a device `checkError` also reports the writer's error; Robolectric's
-     * pipe does not model it): an image loader gets no picture, as with "not found".
-     */
-    private fun drain(read: android.os.ParcelFileDescriptor): ByteArray =
-        java.io.FileInputStream(read.fileDescriptor).readBytes().also { read.close() }
+    /** What a pipe end was told, in order. */
+    private class FakeSink : CoverSink {
+        val events = mutableListOf<String>()
+        override fun send(file: File) { events += "send " + file.readBytes().joinToString(",") }
+        override fun fail(message: String) { events += "fail $message" }
+        override fun discard() { events += "discard" }
+    }
 
-    @Test fun thePipe_isFilledOnceTheCoverArrives_failsWhenNoneComes_andGivesUpAfterItsTime() {
-        val direct = java.util.concurrent.Executor { it.run() }
-        val giveUps = mutableListOf<Runnable>()
-        val read = CoverPipe.open(store(), CoverRef(s, "b", 1), direct, giveUps::add)!!
+    private val direct = java.util.concurrent.Executor { it.run() }
+    private val giveUps = mutableListOf<Runnable>()
+
+    private fun pipe(st: CoverStore, ref: CoverRef, sink: FakeSink = FakeSink()) = CoverPipe.open(st, ref, direct, giveUps::add, sink)
+
+    @Test fun thePipe_isFilledOnce_whenTheCoverArrives() {
+        val sink = pipe(store(), CoverRef(s, "b", 1))!!
+        assertTrue(sink.events.isEmpty())
         runQueued()
-        assertArrayEquals(byteArrayOf(1, 2, 3), drain(read))
         giveUps.forEach { it.run() } // too late to matter: the pipe was answered
+        assertEquals(listOf("send 1,2,3"), sink.events)
         assertTrue(late.isEmpty())
+    }
 
-        val none = CoverPipe.open(store { CoverStore.Fetch.Missing }, CoverRef(s, "c", 1), direct, giveUps::add)!!
-        runQueued()
-        assertEquals(0, drain(none).size)
+    @Test fun thePipe_fails_whenNoCoverComes() {
+        listOf(CoverStore.Fetch.Missing, CoverStore.Fetch.Failed, CoverStore.Fetch.Unavailable).forEach { result ->
+            val sink = pipe(store { result }, CoverRef(s, "c", 1))!!
+            runQueued()
+            assertEquals(result.toString(), listOf("fail no cover"), sink.events)
+        }
+    }
 
-        // Nothing within its time: the pipe fails, and the cover arriving later is one nobody received.
-        giveUps.clear()
-        val slow = CoverPipe.open(store(), CoverRef(s, "d", 1), direct, giveUps::add)!!
+    @Test fun thePipe_givesUpAfterItsTime_andTheLateArrivalMakesTheCarAskAgain() {
+        val sink = pipe(store(), CoverRef(s, "d", 1))!!
         giveUps.single().run()
-        assertEquals(0, drain(slow).size)
         runQueued()
+        assertEquals(listOf("fail timed out"), sink.events)
         assertEquals(listOf("$s/d"), late)
+    }
 
-        assertNull(CoverPipe.open(store(), CoverRef("device", "local:0123456789abcdef01234567", 1), direct, giveUps::add))
+    @Test fun thePipe_isFilledAtOnce_whenTheCoverIsHere_andDiscarded_whenNoneCanCome() {
+        val local = File(tmp, "cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(9)) }
+        assertEquals(listOf("send 9"), pipe(store(local), CoverRef(s, "b", 1))!!.events)
+        val none = FakeSink()
+        assertNull(pipe(store(), CoverRef("device", "local:0123456789abcdef01234567", 1), none))
+        assertEquals(listOf("discard"), none.events)
+        assertTrue(giveUps.isEmpty())
+    }
+
+    @Test fun anArrival_isLate_whenAnyoneGaveUpOnIt_orDidNotTakeIt() {
+        // The car's pipe gave up; SystemUI asked later and got it: the car still holds a failed load.
+        val st = store()
+        pipe(st, CoverRef(s, "b", 1))
+        giveUps.single().run()
+        val systemUi = Answers()
+        st.request(CoverRef(s, "b", 1), systemUi.deliver)
+        runQueued()
+        assertEquals(1, systemUi.got.size)
+        // A request that no longer takes the answer (it gave up at that very moment).
+        st.request(CoverRef(s, "c", 1), Answers(takes = false).deliver)
+        runQueued()
+        assertEquals(listOf("$s/b", "$s/c"), late)
+    }
+
+    @Test fun thePipeEnd_handsTheCoverToItsReader() {
+        // Robolectric's pipe is a file: what was sent can be read back (an error close it does not model).
+        val sink = PipeSink.create()
+        sink.send(File(tmp, "cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(4, 5, 6)) })
+        assertArrayEquals(byteArrayOf(4, 5, 6), java.io.FileInputStream(sink.read.fileDescriptor).readBytes())
+        sink.read.close()
     }
 
     @Test fun anArrival_isLate_whenNobodyWaitsForItAnyMore() {
