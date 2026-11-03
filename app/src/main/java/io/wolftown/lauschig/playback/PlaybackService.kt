@@ -260,7 +260,7 @@ class PlaybackService : MediaLibraryService() {
         widgets = WidgetPublisher({ WidgetPublisher.snapshot(exo) }, { exo.mediaItemCount > 0 }, scope, appScope, widgetStore, widgetSource::refresh)
             .also { exo.addListener(it); it.start() }
         grantCoverReaders()
-        coverStore.onFetched = { serverId, itemId -> scope.launch { coverArrived(serverId, itemId) } }
+        coverStore.onFetched = { serverId, itemId, delivered -> scope.launch { coverArrived(serverId, itemId, delivered) } }
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
         setListener(object : Listener {
             override fun onForegroundServiceStartNotAllowedException() {
@@ -288,12 +288,14 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * A cover the car or the notification asked for arrived in the background. Browsers reload their lists (debounced,
-     * see [watchLibrary]); for the playing title the artwork URIs get a fresh query, because Media3, AA and SystemUI
-     * remember a failed load per URI. Same media URIs, so ExoPlayer updates the items in place.
+     * A cover the car or the notification asked for arrived in the background. If no waiting request ([delivered], the
+     * car's pipes) got it, browsers reload their lists (debounced, see [watchLibrary]; the reload throws the car back to
+     * the top of a grid, so only then) and find it under a `ready` URI. For the playing title the artwork URIs get a fresh
+     * query, because Media3, AA and SystemUI remember a failed load per URI. Same media URIs, so ExoPlayer updates the
+     * items in place.
      */
-    private fun coverArrived(serverId: String, itemId: String) {
-        coverArrivals.value++
+    private fun coverArrived(serverId: String, itemId: String, delivered: Boolean) {
+        if (!delivered) coverArrivals.value++
         appScope.launch { widgetSource.coverArrived(serverId, itemId) }
         val exo = player ?: return
         val (sid, key) = currentKey(exo) ?: return
@@ -394,7 +396,7 @@ class PlaybackService : MediaLibraryService() {
             library = carLibrary,
             search = carSearch,
             starts = starts,
-            mediaItems = CarMediaItems(CoverUris.authority(packageName)),
+            mediaItems = CarMediaItems(CoverUris.authority(packageName), coverStore::present),
             carContext = ::carContext,
             lastTitle = ::lastTitle,
             buttons = { buttons.buttons(currentButtonState()) },

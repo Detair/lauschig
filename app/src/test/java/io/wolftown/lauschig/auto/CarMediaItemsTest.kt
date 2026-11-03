@@ -38,6 +38,15 @@ class CarMediaItemsTest {
         assertEquals(MediaConstants.EXTRAS_VALUE_STATUS_DOWNLOADED, extras.getLong(MediaConstants.EXTRAS_KEY_DOWNLOAD_STATUS))
     }
 
+    @Test fun aCoverAlreadyOnTheDevice_getsANewUri_soTheCarLoadsItAfterAnEarlierMiss() {
+        // Android Auto remembers a failed load per URI: the list built before the cover arrived and the one after differ.
+        val entry = CarEntry(CarNode.Title(s, "b"), "Band 2", CarEntry.Type.BOOK, cover = CoverRef(s, "b", 3))
+        val missing = CarMediaItems("io.wolftown.lauschig.covers") { false }.toMediaItem(entry)
+        val present = CarMediaItems("io.wolftown.lauschig.covers") { it == CoverRef(s, "b", 3) }.toMediaItem(entry)
+        assertEquals("content://io.wolftown.lauschig.covers/cover/$s/b/3", missing.mediaMetadata.artworkUri.toString())
+        assertEquals("content://io.wolftown.lauschig.covers/cover/$s/b/3?ready=1", present.mediaMetadata.artworkUri.toString())
+    }
+
     @Test fun folder_statesHowItsChildrenAreShown() {
         val m = items.toMediaItem(CarEntry(CarNode.Library("l"), "Hörspiele", CarEntry.Type.LIBRARY, childStyle = CarEntry.Style.GRID))
         assertTrue(m.mediaMetadata.isBrowsable!!)
