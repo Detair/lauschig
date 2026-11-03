@@ -104,7 +104,8 @@ fun AppRoot(
                         )
                     }
                 },
-                showBottomBar = !onSetup,
+                // The full player uses the whole height on a phone (its buttons stay above the fold); it has its own close.
+                showBottomBar = !onSetup && !onPlayer,
                 showOfflineBanner = !onSetup,
                 showReauthBanner = needsReauth && !onSetup,
                 onReauth = { navController.navigate(Setup) { launchSingleTop = true } },

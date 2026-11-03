@@ -23,7 +23,7 @@ class ComfortRowTest {
 
     @Test fun runningTimer_showsCountdown_andShakeHint() {
         val state = ComfortUiState(sleep = SleepTimerUi(SleepMode.Minutes(30), remainingMs = 754_200, shakeToExtend = false))
-        rule.setContent { LauschigTheme { ComfortRow(state, {}, {}, {}, {}) } }
+        rule.setContent { LauschigTheme { ComfortRowForTest(state, {}, {}, {}, {}) } }
         rule.onNodeWithText("12:35").assertExists()
         rule.onNodeWithContentDescription("Sleep timer: 12:35 left").assertExists()
         rule.onNodeWithTag("shakeHint").assertDoesNotExist()
@@ -31,7 +31,7 @@ class ComfortRowTest {
 
     @Test fun lastMinute_showsShakeHint() {
         val state = ComfortUiState(sleep = SleepTimerUi(SleepMode.EndOfChapter, remainingMs = 30_000, shakeToExtend = true))
-        rule.setContent { LauschigTheme { ComfortRow(state, {}, {}, {}, {}) } }
+        rule.setContent { LauschigTheme { ComfortRowForTest(state, {}, {}, {}, {}) } }
         rule.onNodeWithContentDescription("Sleep timer: end of chapter, 00:30 left").assertExists()
         rule.onNodeWithTag("shakeHint").assertExists()
     }
@@ -41,7 +41,7 @@ class ComfortRowTest {
         var cancels = 0
         rule.setContent {
             LauschigTheme {
-                ComfortRow(ComfortUiState(sleep = SleepTimerUi(SleepMode.Minutes(15), 60_000_0, false)), { modes += it }, { cancels++ }, {}, {})
+                ComfortRowForTest(ComfortUiState(sleep = SleepTimerUi(SleepMode.Minutes(15), 60_000_0, false)), { modes += it }, { cancels++ }, {}, {})
             }
         }
         rule.onNodeWithTag("sleepButton").performClick()
@@ -55,8 +55,9 @@ class ComfortRowTest {
     @Test fun audioSheet_skipSilenceAndBoost() {
         val skips = mutableListOf<Boolean>()
         val boosts = mutableListOf<Int?>()
-        rule.setContent { LauschigTheme { ComfortRow(ComfortUiState(skipSilence = false, titleBoostDb = 6, defaultBoostDb = 3), {}, {}, { skips += it }, { boosts += it }) } }
-        rule.onNodeWithText("Sleep timer").assertExists() // no timer: the button shows its name
+        rule.setContent { LauschigTheme { ComfortRowForTest(ComfortUiState(skipSilence = false, titleBoostDb = 6, defaultBoostDb = 3), {}, {}, { skips += it }, { boosts += it }) } }
+        rule.onNodeWithText("Timer").assertExists() // no timer: the button shows its short name …
+        rule.onNodeWithContentDescription("Sleep timer").assertExists() // … and is described with the full one
         rule.onNodeWithTag("audioButton").performClick()
         rule.onNodeWithTag("skipSilence").performClick()
         rule.onNodeWithText("Default (+3 dB)").assertExists()
@@ -64,5 +65,13 @@ class ComfortRowTest {
         rule.onNodeWithTag("boost:default").performClick()
         assertEquals(listOf(true), skips)
         assertEquals(listOf<Int?>(9, null), boosts)
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun ComfortRowForTest(
+        state: ComfortUiState, onStart: (SleepMode) -> Unit, onCancel: () -> Unit, onSkip: (Boolean) -> Unit, onBoost: (Int?) -> Unit,
+    ) = androidx.compose.foundation.layout.Column {
+        androidx.compose.foundation.layout.Row { ComfortButtons(state, onStart, onCancel, onSkip, onBoost) }
+        ShakeHint(state)
     }
 }

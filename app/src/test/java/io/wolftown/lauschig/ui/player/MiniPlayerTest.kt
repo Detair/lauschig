@@ -79,4 +79,15 @@ class MiniPlayerTest {
         rule.onNodeWithText("Chapter 2").assertExists()
         rule.onNodeWithText("Download slow – stream has priority").assertDoesNotExist()
     }
+
+    @Test fun miniPlayer_deviceTitle_saysOnThisDevice_notDownloaded() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(itemId = "local:f1"), {}, {}) } }
+        rule.onNodeWithContentDescription("On this device").assertExists()
+        rule.onNodeWithContentDescription("Downloaded").assertDoesNotExist()
+    }
+
+    @Test fun miniPlayer_downloadedServerTitle_staysDownloaded() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded, {}, {}) } }
+        rule.onNodeWithContentDescription("Downloaded").assertExists()
+    }
 }

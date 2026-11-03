@@ -10,7 +10,7 @@ import io.wolftown.lauschig.db.entities.BookmarkEntity
 import io.wolftown.lauschig.history.History
 import io.wolftown.lauschig.history.HistoryEntry
 import io.wolftown.lauschig.ui.LauschigTheme
-import io.wolftown.lauschig.ui.player.PlayerExtrasRow
+import io.wolftown.lauschig.ui.player.PlayerExtraButtons
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -55,9 +55,9 @@ class TitleExtrasUiTest {
         assertEquals(true, all)
     }
 
-    @Test fun playerExtrasRow_buttons() {
+    @Test fun playerExtraButtons_buttons() {
         val calls = mutableListOf<String>()
-        rule.setContent { LauschigTheme { PlayerExtrasRow({ calls += "b" }, { calls += "q" }, { calls += "h" }) } }
+        rule.setContent { LauschigTheme { androidx.compose.foundation.layout.Row { PlayerExtraButtons({ calls += "b" }, { calls += "q" }, { calls += "h" }) } } }
         rule.onNodeWithText("Bookmarks").performClick()
         rule.onNodeWithText("Queue").performClick()
         rule.onNodeWithText("History").performClick()

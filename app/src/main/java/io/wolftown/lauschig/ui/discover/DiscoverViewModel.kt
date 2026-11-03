@@ -53,6 +53,7 @@ data class DiscoverUiState(
     val recent: List<ItemSummary> = emptyList(),
     val series: List<SeriesTile> = emptyList(),
     val genres: List<Facet> = emptyList(),
+    val tags: List<Facet> = emptyList(),
     val authors: List<AuthorTile> = emptyList(),
     val all: List<ItemSummary> = emptyList(),
 )
@@ -126,6 +127,7 @@ class DiscoverViewModel(
                 recent = s.recent.map { it.summary() },
                 series = s.series.map { (facet, cover) -> SeriesTile(facet.name, facet.count, cover?.summary()) },
                 genres = s.genres,
+                tags = s.tags,
                 authors = s.authors.map { AuthorTile(it.name, it.count, images[AuthorInfoCache.key(sid, it.name)]) },
                 all = s.all.map { it.summary() },
             )
@@ -138,6 +140,7 @@ class DiscoverViewModel(
         val recent: List<ItemEntity>,
         val series: List<Pair<Facet, ItemEntity?>>,
         val genres: List<Facet>,
+        val tags: List<Facet>,
         val authors: List<Facet>,
         val all: List<ItemEntity>,
     )
@@ -151,6 +154,7 @@ class DiscoverViewModel(
             filter, sort, recent,
             series = facets.series.take(ROW_LIMIT).map { it to it.coverItemId?.let(byId::get) },
             genres = facets.genres,
+            tags = facets.tags,
             authors = facets.authors.take(ROW_LIMIT),
             all = sorted(visible, sort),
         )

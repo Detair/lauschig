@@ -7,6 +7,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertIsDisplayed
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -119,5 +121,74 @@ class PlayerScreenTest {
         rule.setContent { LauschigTheme { PlayerScreen(state, {}) } }
         rule.onNodeWithTag("streamLoad").assertDoesNotExist()
         rule.onNodeWithTag("downloadThrottled").assertDoesNotExist()
+    }
+
+    @Test fun deviceTitle_saysOnThisDevice() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(itemId = "local:f1"), {}) } }
+        rule.onNodeWithTag("sourceDevice").assertExists()
+        rule.onNodeWithText("On this device").assertExists()
+        rule.onNodeWithTag("sourceLocal").assertDoesNotExist()
+    }
+
+    /** The whole player with its real action buttons, as the route builds it. */
+    @androidx.compose.runtime.Composable
+    private fun FullPlayer(s: PlayerScreenState = state) = PlayerScreen(
+        s, {},
+        comfort = { ComfortButtons(ComfortUiState(), {}, {}, {}, {}) },
+        extras = { PlayerExtraButtons({}, {}, {}) },
+    )
+
+    private fun assertAllActionsOnScreen() {
+        val root = rule.onRoot().getUnclippedBoundsInRoot()
+        for (tag in listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")) {
+            val b = rule.onNodeWithTag(tag).getUnclippedBoundsInRoot()
+            assertTrue("$tag below the fold: ${b.bottom} > ${root.bottom}", b.bottom <= root.bottom)
+            assertTrue("$tag clipped sideways", b.left >= 0.dp && b.right <= root.right)
+        }
+        for (d in listOf("Play", "Back 30 seconds", "Forward 30 seconds")) {
+            assertTrue("$d below the fold", rule.onNodeWithContentDescription(d).getUnclippedBoundsInRoot().bottom <= root.bottom)
+        }
+    }
+
+    // A small phone (720×1280 @ 320 dpi is 360×640 dp; the exact fit without the system bars is checked on the emulator,
+    // Robolectric's legacy text metrics are taller than a device's): the cover shrinks so nothing needs scrolling.
+    @Config(qualifiers = "w360dp-h640dp")
+    @Test fun smallPhone_allActionsVisibleWithoutScrolling() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        assertAllActionsOnScreen()
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        assertTrue("cover did not shrink", cover.right - cover.left < 280.dp)
+    }
+
+    // 1080×2400 @ 420 dpi without the system bars.
+    @Config(qualifiers = "w411dp-h840dp")
+    @Test fun commonPhone_allActionsVisible_andCoverStaysLarge() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        assertAllActionsOnScreen()
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        assertTrue("cover shrank: ${cover.right - cover.left}", cover.right - cover.left >= 240.dp)
+    }
+
+    @Config(qualifiers = "w360dp-h568dp")
+    @Test fun smallPhone_hugeFont_stillReachesEverythingByScrolling() {
+        rule.setContent {
+            val d = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 2f),
+            ) { LauschigTheme { FullPlayer() } }
+        }
+        rule.onNodeWithTag("historyButton").performScrollTo().assertIsDisplayed()
+    }
+
+    // A phone in landscape: cover on the start side, controls next to it.
+    @Config(qualifiers = "w800dp-h360dp")
+    @Test fun landscape_coverBesideControls() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        val cover = rule.onNodeWithTag("playerCover").getUnclippedBoundsInRoot()
+        val play = rule.onNodeWithContentDescription("Play").getUnclippedBoundsInRoot()
+        assertTrue("controls not beside the cover", play.left >= cover.right)
+        val root = rule.onRoot().getUnclippedBoundsInRoot()
+        assertTrue("cover cut off", cover.bottom <= root.bottom && cover.top >= 0.dp)
+        assertTrue("play below the fold", play.bottom <= root.bottom)
     }
 }

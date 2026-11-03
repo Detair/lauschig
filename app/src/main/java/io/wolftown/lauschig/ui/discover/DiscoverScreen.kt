@@ -73,7 +73,7 @@ fun DiscoverRoute(
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
 
-/** Kind filter, then the rows (recent, series, genres, authors) and the sortable grid of all titles. */
+/** Kind filter, then the rows (recent, series, genres, tags, authors) and the sortable grid of all titles. */
 @Composable
 fun DiscoverScreen(
     state: DiscoverUiState,
@@ -93,7 +93,7 @@ fun DiscoverScreen(
         modifier = modifier.fillMaxSize(),
     ) {
         full("kinds") { KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(horizontal = 0.dp)) }
-        if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() &&
+        if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
             state.authors.isEmpty() && state.all.isEmpty()
         ) {
             full("empty") {
@@ -129,6 +129,14 @@ fun DiscoverScreen(
             full("genres") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     state.genres.forEach { g -> AssistChip(onClick = { onOpenBrowse(BrowseKind.GENRE, g.name) }, label = { Text(g.name) }) }
+                }
+            }
+        }
+        if (state.tags.isNotEmpty()) {
+            header("tagsHeader", R.string.discover_tags)
+            full("tags") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.tags.forEach { t -> AssistChip(onClick = { onOpenBrowse(BrowseKind.TAG, t.name) }, label = { Text(t.name) }) }
                 }
             }
         }

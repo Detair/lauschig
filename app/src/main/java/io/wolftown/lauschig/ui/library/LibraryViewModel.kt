@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.catalog.Catalog
+import io.wolftown.lauschig.catalog.Facet
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.LibraryDao
@@ -52,6 +54,10 @@ data class LibraryUiState(
     val series: List<SeriesGroup> = emptyList(),
     /** False until the first Room emission, so the empty hint does not flash. */
     val loaded: Boolean = false,
+    /** Tags of the tab's titles (after the kind filter), most titles first. */
+    val availableTags: List<Facet> = emptyList(),
+    /** The tag filter, null for all; a chosen tag the tab does not have counts as null. */
+    val selectedTag: String? = null,
 )
 
 /** Library data straight from Room; the connection state only decides dimming/cover source in the UI. */
@@ -65,8 +71,10 @@ class LibraryViewModel @Inject constructor(
     private val covers: CoverPathCache,
     private val prefs: FilterPreferences,
     private val downloadDao: DownloadDao,
+    private val catalog: Catalog = Catalog(),
 ) : ViewModel() {
     private val tab = MutableStateFlow(LibraryTab.InProgress)
+    private val tag = MutableStateFlow<String?>(null)
 
     val state: StateFlow<LibraryUiState> = accountStore.account
         .map { it?.serverId }
@@ -76,6 +84,11 @@ class LibraryViewModel @Inject constructor(
 
     fun selectTab(t: LibraryTab) {
         tab.value = t
+    }
+
+    /** Session-only (not stored): a forgotten tag filter must not make the library look empty next time. */
+    fun selectTag(t: String?) {
+        tag.value = t?.trim()?.takeIf(String::isNotEmpty)
     }
 
     fun setKinds(kinds: Set<LibraryKind>) {
@@ -103,21 +116,32 @@ class LibraryViewModel @Inject constructor(
                 LibraryTab.Series -> itemDao.observeByLibraryKinds(sid, f.effective.toList())
                 LibraryTab.Collections, LibraryTab.Playlists, LibraryTab.Device -> flowOf(emptyList())
             }
-            combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid)) { items, progress, downloaded, active ->
+            val rows = combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Rows)
+            combine(rows, tag) { (items, progress, downloaded, active), wanted ->
                 val byId = progress.associateBy { it.itemId }
                 val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
                 covers.sync(downloadedIds)
-                val visible = if (t == LibraryTab.Series) items else items.filter { it.libraryId in f.libraryIds }
+                val inTab = if (t == LibraryTab.Series) items.filter { !it.seriesName.isNullOrBlank() } else items.filter { it.libraryId in f.libraryIds }
+                val tags = catalog.tags(inTab)
+                val selected = wanted?.let { w -> tags.firstOrNull { it.name.equals(w, ignoreCase = true) } }?.let { wanted }
+                val visible = if (selected == null) inTab else inTab.filter { i -> i.tags.any { it.trim().equals(selected, ignoreCase = true) } }
                 val activeIds = active.toHashSet()
                 fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
                 if (t == LibraryTab.Series) {
-                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true)
+                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true, tags, selected)
                 } else {
-                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true)
+                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true, tags, selected)
                 }
             }.flowOn(Dispatchers.Default).distinctUntilChanged()
         }
     }
+
+    private data class Rows(
+        val items: List<ItemEntity>,
+        val progress: List<io.wolftown.lauschig.db.entities.ProgressEntity>,
+        val downloaded: List<ItemEntity>,
+        val active: List<String>,
+    )
 
     private data class Filter(
         val available: Set<LibraryKind>,

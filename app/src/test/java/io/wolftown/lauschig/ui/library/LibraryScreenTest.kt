@@ -54,4 +54,31 @@ class LibraryScreenTest {
         rule.onNodeWithText("Nothing here yet").assertDoesNotExist()
         assertEquals(listOf(io.wolftown.lauschig.db.entities.CollectionKind.PLAYLIST), shown.distinct())
     }
+
+    @Test fun tagChip_opensMenuWithCounts_andSelects() {
+        val tags = mutableListOf<String?>()
+        val state = LibraryUiState(
+            availableKinds = setOf(LibraryKind.AUDIOBOOK), items = listOf(book("a")), loaded = true,
+            availableTags = listOf(io.wolftown.lauschig.catalog.Facet("Krimi", 2, null), io.wolftown.lauschig.catalog.Facet("Kinder", 1, null)),
+        )
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}, onTag = { tags += it }) } }
+        rule.onNodeWithText("Audiobooks").assertDoesNotExist() // one kind: no kind chips, the tag chip still shows
+        rule.onNodeWithText("Tags").performClick()
+        rule.onNodeWithText("Krimi (2)").performClick()
+        rule.onNodeWithText("Tags").performClick()
+        rule.onNodeWithText("All tags").performClick()
+        assertEquals(listOf("Krimi", null), tags)
+    }
+
+    @Test fun selectedTag_isShownOnTheChip_noTags_noChip() {
+        val state = LibraryUiState(items = listOf(book("a")), loaded = true, availableTags = listOf(io.wolftown.lauschig.catalog.Facet("Krimi", 1, null)), selectedTag = "Krimi")
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
+        rule.onNodeWithText("Krimi").assertIsDisplayed()
+        rule.onNodeWithText("Tags").assertDoesNotExist()
+    }
+
+    @Test fun noTags_noTagChip() {
+        rule.setContent { LauschigTheme { LibraryScreen(LibraryUiState(items = listOf(book("a")), loaded = true), {}, {}, {}) } }
+        rule.onNodeWithText("Tags").assertDoesNotExist()
+    }
 }

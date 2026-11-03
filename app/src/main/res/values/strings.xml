@@ -53,6 +53,9 @@
     <string name="filter_all">All</string>
     <string name="filter_audiobooks">Audiobooks</string>
     <string name="filter_radio_plays">Radio plays</string>
+    <string name="filter_tags">Tags</string>
+    <string name="filter_tags_all">All tags</string>
+    <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Book %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
     <string name="cover_offline_available">Available offline</string>
@@ -108,6 +111,7 @@
     <string name="player_open_details">Show details</string>
     <string name="source_streaming">Streaming</string>
     <string name="source_local">Downloaded</string>
+    <string name="source_device">On this device</string>
     <string name="cover_actions">Open menu</string>
     <string name="player_loading">Loading…</string>
     <string name="progress_menu">More actions</string>
@@ -169,6 +173,7 @@
     <string name="discover_recent">Recently added</string>
     <string name="discover_series">Series</string>
     <string name="discover_genres">Genres</string>
+    <string name="discover_tags">Tags</string>
     <string name="discover_authors">Authors</string>
     <string name="discover_all">All titles</string>
     <string name="discover_sort">Sort: %s</string>
@@ -281,6 +286,7 @@
     <string name="settings_metered_wifi">Wi-Fi only</string>
     <string name="progress_mark_unfinished_keep">Mark as not finished (keep position)</string>
     <string name="player_sleep_timer">Sleep timer</string>
+    <string name="player_sleep_short">Timer</string>
     <string name="player_sleep_active">Sleep timer: %1$s left</string>
     <string name="player_sleep_chapter_active">Sleep timer: end of chapter, %1$s left</string>
     <string name="sleep_minutes">%1$d min</string>
