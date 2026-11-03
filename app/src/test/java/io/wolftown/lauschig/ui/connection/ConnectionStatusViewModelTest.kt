@@ -6,6 +6,7 @@ import io.wolftown.lauschig.connection.ConnectionLogState
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.LinkState
 import io.wolftown.lauschig.connection.NetworkDescription
+import io.wolftown.lauschig.connection.ProbeRecord
 import io.wolftown.lauschig.connection.ReconnectState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.SyncInfo
@@ -35,6 +36,7 @@ class ConnectionStatusViewModelTest {
     private val checking = MutableStateFlow(true)
     private val log = MutableStateFlow(ConnectionLogState())
     private val reconnected = mutableListOf<ServerAddresses>()
+    private var probesOk = true
     private var online = CompletableDeferred<Boolean>()
     private var syncCalls = 0
 
@@ -47,7 +49,7 @@ class ConnectionStatusViewModelTest {
             network = { NetworkDescription(setOf(NetworkDescription.Transport.CELLULAR), metered = true, validated = true) },
             ssid = { null },
             syncInfo = { syncCalls++; SyncInfo(5_000, 3, 0) },
-            reconnectAll = { reconnected += it },
+            reconnectAll = { reconnected += it; listOf(ProbeRecord(public, probesOk, 10, 0)) },
             waitOnline = { online.await() },
         ),
     )
@@ -96,5 +98,17 @@ class ConnectionStatusViewModelTest {
         vm.reconnect()
         assertTrue(reconnected.isEmpty())
         assertEquals(null, vm.state.value.reconnect)
+    }
+
+    @Test fun reconnect_everyProbeFailed_isNotConnected_evenIfTheStateStillSaysOnline() = runTest {
+        // An old Online (the shared state keeps it until the confirmation probes ran) must not read as "Verbunden".
+        connection.value = ConnectionState.Online(public, ConnectionState.Via.PUBLIC)
+        checking.value = false
+        probesOk = false
+        online = CompletableDeferred(true)
+        val vm = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        vm.reconnect()
+        assertEquals(ReconnectState.Done(online = false), vm.state.value.reconnect)
     }
 }

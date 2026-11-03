@@ -14,6 +14,7 @@ import io.wolftown.lauschig.connection.ConnectionStatusMapper
 import io.wolftown.lauschig.connection.ConnectionStatusUi
 import io.wolftown.lauschig.connection.NetworkDescription
 import io.wolftown.lauschig.connection.NetworkInfo
+import io.wolftown.lauschig.connection.ProbeRecord
 import io.wolftown.lauschig.connection.ReconnectState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.SyncInfo
@@ -52,8 +53,8 @@ class ConnectionStatusViewModel(
     private val network: () -> NetworkDescription?,
     private val ssid: suspend () -> String?,
     private val syncInfo: suspend (serverId: String) -> SyncInfo,
-    /** Probes every address and restarts the shared probe loop ([AddressResolver.reconnect]). */
-    private val reconnectAll: suspend (ServerAddresses) -> Unit,
+    /** Probes every address and restarts the shared probe loop ([AddressResolver.reconnect]); the probes' results. */
+    private val reconnectAll: suspend (ServerAddresses) -> List<ProbeRecord>,
     /** True once the shared state is online within the given ms. */
     private val waitOnline: suspend (Long) -> Boolean,
 ) : ViewModel() {
@@ -114,8 +115,8 @@ class ConnectionStatusViewModel(
             val addresses = account.first()?.addresses ?: return@launch
             reconnect.value = ReconnectState.Running
             val online = try {
-                reconnectAll(addresses)
-                waitOnline(RECONNECT_WAIT_MS)
+                // Connected only if an address answered just now: the shared state may still hold an old Online.
+                reconnectAll(addresses).any { it.ok } && waitOnline(RECONNECT_WAIT_MS)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
