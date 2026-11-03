@@ -14,6 +14,7 @@ import io.wolftown.lauschig.cleanup.CleanupRoute
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageOnGrow
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
@@ -42,6 +43,8 @@ fun AppNavHost(
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
     homeRoute: Any = Start,
 ) {
+    // Rotating to a wide window with a title open: it moves into the library's (or search's) detail pane.
+    AdoptOuterPageOnGrow(navController)
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
