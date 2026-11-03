@@ -202,6 +202,7 @@ dependencies {
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.layout)
+    implementation(libs.androidx.palette)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)
