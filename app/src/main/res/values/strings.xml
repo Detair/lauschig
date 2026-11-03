@@ -624,4 +624,11 @@
     <string name="previous_account_message_data">Data of %1$s (%2$s) is still on this device. Delete it?</string>
     <string name="sign_out_unsynced_unknown">Whether changes are still missing on the server could not be checked.</string>
     <string name="car_sign_in">Sign in to Lauschig on your phone</string>
+    <string name="downloads_previous_accounts">Downloads of earlier accounts</string>
+    <string name="downloads_previous_entry">%1$s (%2$s)</string>
+    <string name="downloads_previous_data">Data, no downloads</string>
+    <string name="downloads_previous_delete">Delete the data of %1$s</string>
+    <string name="downloads_previous_confirm_title">Delete the data of %1$s?</string>
+    <string name="downloads_previous_confirm_message">The downloads (%1$s) and changes of this account that are not on the server yet are deleted from this device.</string>
+    <string name="downloads_previous_confirm_message_data">The changes of this account that are not on the server yet are deleted from this device.</string>
 </resources>

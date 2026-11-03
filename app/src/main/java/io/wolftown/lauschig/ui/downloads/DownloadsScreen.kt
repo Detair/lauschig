@@ -58,6 +58,7 @@ fun DownloadsRoute(onBack: () -> Unit, onOpenItem: (key: String) -> Unit, viewMo
     DownloadsScreen(
         state, onBack, onOpenItem,
         DownloadsActions(viewModel::setSort, viewModel::setQuery, viewModel::pause, viewModel::resume, viewModel::remove, viewModel::deleteFinished),
+        keptSection = { KeptDownloadsSection() },
     )
 }
 
@@ -79,6 +80,8 @@ fun DownloadsScreen(
     onOpenItem: (key: String) -> Unit,
     actions: DownloadsActions,
     modifier: Modifier = Modifier,
+    /** Slot for the data of earlier accounts (needs Hilt). */
+    keptSection: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes)
@@ -95,6 +98,7 @@ fun DownloadsScreen(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsStorage"),
         )
+        keptSection()
         if (state.total > 0) {
             OutlinedTextField(
                 value = state.query,

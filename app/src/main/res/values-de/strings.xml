@@ -624,4 +624,11 @@
     <string name="previous_account_message_data">Auf dem Gerät liegen noch Daten von %1$s (%2$s). Löschen?</string>
     <string name="sign_out_unsynced_unknown">Ob noch Änderungen fehlen, ließ sich nicht prüfen.</string>
     <string name="car_sign_in">In Lauschig auf dem Handy anmelden</string>
+    <string name="downloads_previous_accounts">Downloads früherer Konten</string>
+    <string name="downloads_previous_entry">%1$s (%2$s)</string>
+    <string name="downloads_previous_data">Daten, keine Downloads</string>
+    <string name="downloads_previous_delete">Daten von %1$s löschen</string>
+    <string name="downloads_previous_confirm_title">Daten von %1$s löschen?</string>
+    <string name="downloads_previous_confirm_message">Die Downloads (%1$s) und noch nicht übertragene Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
+    <string name="downloads_previous_confirm_message_data">Die noch nicht übertragenen Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
 </resources>

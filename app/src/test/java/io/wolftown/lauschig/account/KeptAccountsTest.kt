@@ -48,6 +48,13 @@ class KeptAccountsTest {
         assertEquals(setOf("b"), DataStoreKeptAccounts(store).pendingPurges.first())
     }
 
+    @Test fun anEntryWrittenBeforeTheUserId_stillReads() = runTest {
+        store.edit { it[stringPreferencesKey("accounts_json")] = """[{"serverId":"a","username":"fabian","host":"h","asked":true}]""" }
+        assertEquals(listOf(KeptAccount("a", "fabian", "h", asked = true, userId = "")), kept.accounts.first())
+        kept.put(KeptAccount("b", "lukas", "h", userId = "u-2"))
+        assertEquals("u-2", DataStoreKeptAccounts(store).accounts.first().last().userId)
+    }
+
     @Test fun unreadableValue_isEmpty_notACrash() = runTest {
         store.edit { it[stringPreferencesKey("accounts_json")] = "{not json" }
         assertEquals(emptyList<KeptAccount>(), kept.accounts.first())

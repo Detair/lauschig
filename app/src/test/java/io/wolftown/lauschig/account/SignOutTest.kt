@@ -162,7 +162,7 @@ class SignOutTest {
         assertTrue(File(root, "$a/book1/0.mp3").isFile)
         assertEquals(DownloadState.PAUSED, db.downloadDao().get(a, "book2")!!.state)
         assertEquals(DownloadState.COMPLETE, db.downloadDao().get(a, "book1")!!.state)
-        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org")), kept.list.value)
+        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org", userId = "u1")), kept.list.value)
         assertNull(accounts.acc.value)
         assertNull(accounts.refresh)
         assertEquals(true, accounts.clearedKeeping)

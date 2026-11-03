@@ -28,10 +28,12 @@ private val Context.keptAccountsDataStore by preferencesDataStore(
 
 /**
  * A signed-out account whose downloads and rows stayed on the device (sign-out with "Downloads behalten"). Only what the
- * question to the next account needs, no credentials. [asked]: that question was answered with "Behalten" – never again.
+ * question to the next account and the Downloads page need, no credentials. [asked]: that question was answered with
+ * "Behalten" – never asked again, but the Downloads page still offers to delete it. [userId]: the ABS user (empty in
+ * entries written before it was stored).
  */
 @Serializable
-data class KeptAccount(val serverId: String, val username: String, val host: String, val asked: Boolean = false)
+data class KeptAccount(val serverId: String, val username: String, val host: String, val asked: Boolean = false, val userId: String = "")
 
 interface KeptAccountStore {
     val accounts: Flow<List<KeptAccount>>
