@@ -91,6 +91,18 @@ class AccountDataTest {
     private fun count(table: String, serverId: String): Int =
         sql().query("SELECT COUNT(*) FROM `$table` WHERE serverId = ?", arrayOf(serverId)).use { c -> c.moveToFirst(); c.getInt(0) }
 
+    @Test fun noOtherServerColumn_slipsThrough() {
+        // An account table keyed `server_id`, `ownerServerId` or the like would not be purged by serverId: flag it.
+        val tables = mutableListOf<String>()
+        sql().query("SELECT name FROM sqlite_master WHERE type = 'table'").use { c -> while (c.moveToNext()) tables += c.getString(0) }
+        val serverColumns = tables.filterNot { it.startsWith("sqlite_") || it == "room_master_table" || it == "android_metadata" }
+            .flatMap { t -> columns(t).filter { it.name.contains("server", ignoreCase = true) }.map { t to it.name } }
+        // Known columns that only mention the server but key nothing ("the server has this bookmark").
+        val notAKey = setOf("bookmarks" to "onServer")
+        val unhandled = serverColumns.filterNot { (t, c) -> (c == "serverId" && t in AccountDataDao.SERVER_TABLES) || (t to c) in notAKey }
+        assertEquals(emptyList<Pair<String, String>>(), unhandled)
+    }
+
     @Test fun everyTableWithAServerId_isPurged_andTheListMatchesTheSchema() {
         // A new entity with a serverId column fails here until AccountDataDao deletes it (or it is listed as not account data).
         assertEquals(tablesWithServerId(), AccountDataDao.SERVER_TABLES.toSet())
