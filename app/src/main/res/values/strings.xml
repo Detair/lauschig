@@ -593,6 +593,30 @@
         <item>Reorder or hide tabs and choose the start screen</item>
         <item>More room on tablets and in landscape; every player button without scrolling</item>
         <item>Filter by tags in Library and Discover</item>
+        <item>Sign out in the settings – your downloads can stay on the device</item>
     </string-array>
     <string name="pane_empty">Choose a title to see its details here.</string>
+    <string name="settings_section_account">Account</string>
+    <string name="account_admin">Admin</string>
+    <string name="sign_out">Sign out</string>
+    <string name="sign_out_hint">Your downloads can stay on this device</string>
+    <string name="sign_out_title">Sign out?</string>
+    <string name="sign_out_message">This device will be signed out of %1$s.</string>
+    <string name="sign_out_syncing">Uploading your progress …</string>
+    <string name="sign_out_keep_downloads">Keep downloads on this device (%1$s)</string>
+    <string name="sign_out_confirm">Sign out</string>
+    <string name="sign_out_cancel">Cancel</string>
+    <string name="sign_out_running">Signing out …</string>
+    <plurals name="sign_out_unsynced_lost">
+        <item quantity="one">%1$d change is not on the server yet and will be lost when you sign out.</item>
+        <item quantity="other">%1$d changes are not on the server yet and will be lost when you sign out.</item>
+    </plurals>
+    <plurals name="sign_out_unsynced_kept">
+        <item quantity="one">%1$d change is not on the server yet. It is uploaded when you sign in with this account again.</item>
+        <item quantity="other">%1$d changes are not on the server yet. They are uploaded when you sign in with this account again.</item>
+    </plurals>
+    <string name="previous_account_title">Downloads of another account</string>
+    <string name="previous_account_message">Downloads of %1$s (%2$s, %3$s) are still on this device. Delete them?</string>
+    <string name="previous_account_delete">Delete</string>
+    <string name="previous_account_keep">Keep</string>
 </resources>

@@ -159,6 +159,7 @@ fun SettingsRoute(
         onOpenConnection = onOpenConnection,
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
         adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
+        accountSection = { AccountSection() },
     )
 }
 
@@ -189,12 +190,15 @@ fun SettingsScreen(
     linksSection: @Composable () -> Unit = {},
     /** Slot for "Server-Verwaltung" (admins only; needs Hilt). */
     adminSection: @Composable () -> Unit = {},
+    /** Slot for "Konto" with "Abmelden" (needs Hilt); the first section. */
+    accountSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
         }
+        accountSection()
         PlaybackSection(state.playback, playbackActions)
         AppearanceSection(state.appearance, appearanceActions) {
             ListItem(
