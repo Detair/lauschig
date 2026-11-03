@@ -15,6 +15,50 @@ plugins {
 fun signingValue(name: String): String? =
     (System.getenv(name) ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
 
+// Web links of the Audiobookshelf UI (`/item/<id>`) open in Lauschig for these hosts (comma-separated Gradle property
+// `lauschig.linkHosts`). Manifests cannot list hosts at run time; without assetlinks on the server there is no
+// autoVerify either: the user allows them once under Android's "Open by default" (see links/LinkSettings).
+val linkHosts: List<String> = (providers.gradleProperty("lauschig.linkHosts").orNull ?: "audiobookshelf.wolftown.io")
+    .split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
+    .onEach { require(Regex("[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*").matches(it)) { "lauschig.linkHosts: not a host name: $it" } }
+
+/** Writes the VIEW intent filter for [hosts] into a manifest overlay that is merged into MainActivity. */
+abstract class LinkManifestTask : DefaultTask() {
+    @get:Input abstract val hosts: ListProperty<String>
+    @get:OutputFile abstract val manifest: RegularFileProperty
+
+    @TaskAction
+    fun write() {
+        val list = hosts.get()
+        val filter = if (list.isEmpty()) "" else buildString {
+            appendLine("            <intent-filter>")
+            appendLine("                <action android:name=\"android.intent.action.VIEW\" />")
+            appendLine("                <category android:name=\"android.intent.category.DEFAULT\" />")
+            appendLine("                <category android:name=\"android.intent.category.BROWSABLE\" />")
+            appendLine("                <data android:scheme=\"https\" />")
+            appendLine("                <data android:scheme=\"http\" />")
+            list.forEach { appendLine("                <data android:host=\"$it\" />") }
+            listOf("/item/.*", "/.*/item/.*", "/library/.*/series/.*", "/.*/library/.*/series/.*").forEach {
+                appendLine("                <data android:pathPattern=\"$it\" />")
+            }
+            appendLine("            </intent-filter>")
+        }
+        manifest.get().asFile.apply { parentFile.mkdirs() }.writeText(
+            """
+            |<?xml version="1.0" encoding="utf-8"?>
+            |<!-- Generated from the Gradle property lauschig.linkHosts (app/build.gradle.kts). -->
+            |<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            |    xmlns:tools="http://schemas.android.com/tools">
+            |    <application>
+            |        <activity android:name="io.wolftown.lauschig.MainActivity" tools:node="merge">
+            |$filter        </activity>
+            |    </application>
+            |</manifest>
+            |""".trimMargin(),
+        )
+    }
+}
+
 val keystorePath = signingValue("LAUSCHIG_KEYSTORE")
 val hasReleaseSigning = keystorePath != null &&
     signingValue("LAUSCHIG_KEYSTORE_PASSWORD") != null &&
@@ -33,6 +77,7 @@ android {
         versionName = "0.1.0"
         // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "LINK_HOSTS", "\"${linkHosts.joinToString(",")}\"")
     }
 
     if (hasReleaseSigning) {
@@ -75,6 +120,16 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+androidComponents {
+    onVariants { variant ->
+        val task = tasks.register<LinkManifestTask>("generate${variant.name.replaceFirstChar { it.uppercase() }}LinkManifest") {
+            hosts.set(linkHosts)
+            manifest.set(layout.buildDirectory.file("generated/linkManifest/${variant.name}/AndroidManifest.xml"))
+        }
+        variant.sources.manifests.addGeneratedManifestFile(task, LinkManifestTask::manifest)
+    }
 }
 
 // Warn whenever a release artifact is built without complete signing config (any of the four values missing).

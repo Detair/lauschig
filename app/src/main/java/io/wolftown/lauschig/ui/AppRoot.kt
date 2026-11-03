@@ -24,6 +24,14 @@ import io.wolftown.lauschig.ui.nav.isOnPlayer
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.nav.navigateToTab
+import io.wolftown.lauschig.links.LinkTarget
+import io.wolftown.lauschig.links.LinkViewModel
+import io.wolftown.lauschig.ui.nav.Browse
+import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.nav.ItemDetail
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.navigation.NavDestination.Companion.hasRoute
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,8 +46,13 @@ fun AppRoot(
     viewModel: AppViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
+    linkRequest: String? = null,
+    onLinkHandled: () -> Unit = {},
+    links: LinkViewModel = hiltViewModel(),
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     LaunchedEffect(openRequest) {
         when (openRequest) {
             MainActivity.OPEN_CLEANUP -> {
@@ -60,6 +73,16 @@ fun AppRoot(
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
     val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
+    LaunchedEffect(linkRequest) {
+        val url = linkRequest ?: return@LaunchedEffect
+        when (val target = links.open(url)) {
+            is LinkTarget.Item -> navController.navigate(ItemDetail(target.itemId)) { launchSingleTop = true }
+            is LinkTarget.Series -> navController.navigate(Browse(BrowseKind.SERIES, target.name)) { launchSingleTop = true }
+            // Outside this effect: clearing the request restarts it, which would dismiss the snackbar at once.
+            is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(context.getString(target.text)) }
+        }
+        onLinkHandled()
+    }
 
     val onSetup = navController.isOnSetup()
     val onPlayer = navController.isOnPlayer()

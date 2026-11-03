@@ -483,4 +483,18 @@
     <string name="settings_connection_status">Verbindungsstatus</string>
     <string name="settings_connection_status_hint">Lokal, öffentlich oder offline, Adressen, Netz, neu verbinden</string>
     <string name="playback_start_channel">Wiedergabe starten</string>
+    <!-- Links (Phase 4B) -->
+    <string name="link_no_server">Link gehört zu keinem eingerichteten Server</string>
+    <string name="link_unsupported">Diesen Link kann Lauschig nicht öffnen</string>
+    <string name="link_offline">Titel nicht offline verfügbar</string>
+    <string name="link_not_found">Titel nicht auf dem Server gefunden</string>
+    <string name="link_failed">Der Titel konnte nicht geladen werden</string>
+    <string name="link_series_unknown">Serie noch nicht bekannt – öffne zuerst einen ihrer Titel</string>
+    <string name="settings_links_title">Links öffnen</string>
+    <string name="settings_links_hint">Links zu Titeln in der Audiobookshelf-Weboberfläche (%1$s) öffnen sich in Lauschig, sobald du die Adressen unter „Standardmäßig öffnen“ hinzufügst.</string>
+    <string name="settings_links_enabled">Erlaubt: %1$s</string>
+    <string name="settings_links_not_enabled">Noch nicht erlaubt</string>
+    <string name="settings_links_other_server">Dein Server (%1$s) gehört nicht dazu – teile seine Links stattdessen mit Lauschig.</string>
+    <string name="settings_links_none">Keine Link-Adressen eingebaut – teile Links stattdessen mit Lauschig.</string>
+    <string name="settings_links_open">Standardmäßig öffnen …</string>
 </resources>

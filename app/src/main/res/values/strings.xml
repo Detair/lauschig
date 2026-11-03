@@ -483,4 +483,18 @@
     <string name="settings_connection_status">Connection status</string>
     <string name="settings_connection_status_hint">Local, public or offline, addresses, network, reconnect</string>
     <string name="playback_start_channel">Starting playback</string>
+    <!-- Links (phase 4B) -->
+    <string name="link_no_server">This link belongs to no server set up in Lauschig</string>
+    <string name="link_unsupported">Lauschig cannot open this link</string>
+    <string name="link_offline">Title not available offline</string>
+    <string name="link_not_found">Title not found on the server</string>
+    <string name="link_failed">The title could not be loaded</string>
+    <string name="link_series_unknown">Series not known yet – open one of its titles first</string>
+    <string name="settings_links_title">Open links</string>
+    <string name="settings_links_hint">Links to titles in the Audiobookshelf web app (%1$s) open in Lauschig once you add these addresses under “Open by default”.</string>
+    <string name="settings_links_enabled">Allowed: %1$s</string>
+    <string name="settings_links_not_enabled">Not allowed yet</string>
+    <string name="settings_links_other_server">Your server (%1$s) is not one of them – share its links with Lauschig instead.</string>
+    <string name="settings_links_none">No link addresses built in – share links with Lauschig instead.</string>
+    <string name="settings_links_open">Open by default …</string>
 </resources>

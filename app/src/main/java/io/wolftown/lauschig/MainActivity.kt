@@ -13,6 +13,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.auto.VoicePlayer
+import io.wolftown.lauschig.links.IncomingIntents
 import io.wolftown.lauschig.ui.AppRoot
 import io.wolftown.lauschig.ui.setup.OidcCallback
 import io.wolftown.lauschig.ui.setup.OidcCallbackBus
@@ -37,7 +38,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             val start by viewModel.startDestination.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
-            start?.let { AppRoot(startDestination = it, openRequest = open, onOpenHandled = { openRequest.value = null }) }
+            val link by linkRequest.collectAsStateWithLifecycle()
+            start?.let {
+                AppRoot(
+                    startDestination = it, openRequest = open, onOpenHandled = { openRequest.value = null },
+                    linkRequest = link, onLinkHandled = { linkRequest.value = null },
+                )
+            }
         }
     }
 
@@ -49,6 +56,9 @@ class MainActivity : ComponentActivity() {
     /** A notification asked for a screen (e.g. "Clean up"); AppRoot navigates once and clears it. */
     private val openRequest = MutableStateFlow<String?>(null)
 
+    /** An Audiobookshelf web link (opened or shared); AppRoot opens its title once and clears it. */
+    private val linkRequest = MutableStateFlow<String?>(null)
+
     private fun handleOpen(intent: Intent?, replay: Boolean = false) {
         intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
         intent?.removeExtra(EXTRA_OPEN)
@@ -56,6 +66,13 @@ class MainActivity : ComponentActivity() {
         if (!replay && intent?.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             voicePlayer.playFromSearch(intent.getStringExtra(SearchManager.QUERY), intent.extras)
             intent.action = null
+        }
+        // A web link of the server (VIEW) or a shared one (SEND); a recreation must not open it again.
+        if (!replay) IncomingIntents.link(intent)?.let { url ->
+            linkRequest.value = url
+            intent?.action = null
+            intent?.data = null
+            intent?.removeExtra(Intent.EXTRA_TEXT)
         }
         // SSO: lauschig://oauth?code=..&state=.. comes back from the Custom Tab.
         if (!replay) intent?.data?.takeIf(OidcCallback::isCallback)?.let {

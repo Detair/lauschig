@@ -143,6 +143,7 @@ fun SettingsRoute(
         onOpenDownloads = onOpenDownloads,
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
         onOpenConnection = onOpenConnection,
+        linksSection = { io.wolftown.lauschig.links.LinksSection() },
     )
 }
 
