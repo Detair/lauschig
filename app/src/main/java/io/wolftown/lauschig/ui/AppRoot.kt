@@ -148,7 +148,8 @@ fun AppRoot(
             // Another account kept its downloads here: asked once after the sign-in.
             val previous by previousAccount.question.collectAsStateWithLifecycle()
             val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
-            previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep) }
+            val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
+            previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
         }
     }
 }

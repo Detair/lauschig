@@ -19,8 +19,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class) // Log
 class PreviousAccountViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
     private val viewModels = TestViewModels()
@@ -35,9 +38,18 @@ class PreviousAccountViewModelTest {
     private val kept = FakeKeptAccounts(listOf(KeptAccount(a, "fabian", "abs.example.org")))
     private val purged = mutableListOf<String>()
     private var purgeGate: CompletableDeferred<Unit>? = null
+    private var purgeFails = false
+    private val data = object : io.wolftown.lauschig.account.AccountData {
+        override suspend fun unsynced(serverId: String) = 0
+        override suspend fun downloadBytes(serverId: String) = if (serverId == a) 2_000_000_000L else 5L
+        override suspend fun pauseDownloads(serverId: String) {}
+        override suspend fun purge(serverId: String) { purgeGate?.await(); if (purgeFails) throw java.io.IOException("disk full"); purged += serverId }
+        override suspend fun deleteRows(serverId: String) {}
+        override suspend fun hasRows(serverId: String) = false
+    }
 
     private fun vm() = viewModels.own(
-        PreviousAccountViewModel(accounts, kept, bytes = { sid -> if (sid == a) 2_000_000_000 else 5 }, purge = { sid -> purgeGate?.await(); purged += sid }),
+        PreviousAccountViewModel(accounts, kept, data::downloadBytes, io.wolftown.lauschig.account.KeptAccountDeletion(data, kept)::delete),
     )
 
     private fun signIn(sid: String, name: String) = runBlocking { accounts.save(account(sid, name), "x", "y") }
@@ -90,6 +102,22 @@ class PreviousAccountViewModelTest {
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
         assertNull(vm.question.value)
         assertEquals(false, vm.deleting.value)
+    }
+
+    @Test fun aFailingDelete_neverCrashes_keepsTheQuestionWithAMessage_andCanBeRetried() {
+        purgeFails = true
+        val vm = vm()
+        signIn(b, "matthias")
+        vm.delete()
+        assertTrue(vm.deleteFailed.value)
+        assertEquals(false, vm.deleting.value)
+        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org")), kept.list.value) // still reachable
+        assertEquals(a, vm.question.value!!.account.serverId)
+        purgeFails = false
+        vm.delete()
+        assertEquals(false, vm.deleteFailed.value)
+        assertEquals(listOf(a), purged)
+        assertNull(vm.question.value)
     }
 
     @Test fun severalKeptAccounts_oneQuestionAfterTheOther() {

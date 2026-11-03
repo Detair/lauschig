@@ -619,4 +619,5 @@
     <string name="previous_account_message">Downloads of %1$s (%2$s, %3$s) are still on this device. Delete them?</string>
     <string name="previous_account_delete">Delete</string>
     <string name="previous_account_keep">Keep</string>
+    <string name="kept_delete_failed">Not everything could be deleted. Please try again later.</string>
 </resources>
