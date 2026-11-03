@@ -49,7 +49,7 @@ class PreviousAccountViewModelTest {
     }
 
     private fun vm() = viewModels.own(
-        PreviousAccountViewModel(accounts, kept, data::downloadBytes, io.wolftown.lauschig.account.KeptAccountDeletion(data, kept)::delete),
+        PreviousAccountViewModel(accounts, kept, data::downloadBytes, io.wolftown.lauschig.account.KeptAccountDeletion(accounts, data, kept)::delete),
     )
 
     private fun signIn(sid: String, name: String) = runBlocking { accounts.save(account(sid, name), "x", "y") }
