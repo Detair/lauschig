@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.StubMeApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -32,7 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.IOException
 
-private class FakeMe : MeApi {
+private class FakeMe : StubMeApi() {
     var server: List<MediaProgressDto> = emptyList()
     val patches = mutableListOf<Pair<String, ProgressUpdate>>()
     val uploads = mutableListOf<LocalSessionsBody>()
@@ -138,6 +140,16 @@ class ProgressSyncTest {
         assertTrue(db.progressDao().get(s, "b")!!.hideFromContinue)
     }
 
+    @Test fun finishedRow_withAKeptPosition_isPushedAsFullProgress() = runTest {
+        db.progressDao().saveLocal(s, "a", 30.0, 100.0, true, 9_000)
+        me.server = listOf(srv("a", 10.0, 5_000))
+        sync().sync(s)
+        val u = me.patches.single().second
+        assertEquals(1.0, u.progress, 0.0)
+        assertEquals(30.0, u.currentTime, 0.0)
+        assertTrue(u.isFinished)
+    }
+
     @Test fun newerLocalProgress_isPushed_andNotOverwritten() = runTest {
         db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
         db.progressDao().saveLocal(s, "b", 20.0, 100.0, false, 1_000) // server newer: not pushed
@@ -169,7 +181,8 @@ class ProgressSyncTest {
         assertEquals(device, body.sessions.first().deviceInfo)
         assertEquals("Titel", body.sessions.first().displayTitle)
         assertTrue(db.sessionDao().unsynced(s).isEmpty())
-        assertEquals("sessions", me.events.first()) // before me()
+        // Dirty progress first (so an uploaded session cannot overwrite it), then the sessions, then the newest server state.
+        assertEquals(listOf("me", "sessions", "me"), me.events.take(3))
     }
 
     @Test fun session_failedOnServer_staysUnsynced() = runTest {
@@ -196,7 +209,8 @@ class ProgressSyncTest {
 
         assertTrue(db.progressDao().get(s, "a")!!.dirty)
         assertEquals(50.0, db.progressDao().get(s, "a")!!.currentTimeSec, 0.0)
-        assertTrue(db.sessionDao().unsynced(s).isEmpty()) // session upload had succeeded before
+        // The sessions go after the progress push: they wait for the next run, nothing is lost.
+        assertEquals(listOf("s1"), db.sessionDao().unsynced(s).map { it.id })
     }
 
     @Test fun offline_isNoOp() = runTest {

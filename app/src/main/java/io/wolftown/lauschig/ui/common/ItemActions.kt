@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.common
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DoneAll
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RemoveDone
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -56,6 +59,7 @@ import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadProgress
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.playback.PlayerController
@@ -106,38 +110,52 @@ class ItemActionsViewModel @Inject constructor(
     private val player: PlayerController,
     private val progressActions: ProgressActions,
     private val items: ItemDao,
+    private val queue: QueueDao,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
+    private fun serverOf(itemId: String): Flow<String?> = if (DeviceLibrary.isLocalKey(itemId)) flowOf(DeviceLibrary.SERVER_ID) else serverId
+
+    /** A device title has no download (it is on the device already). */
     fun downloadState(itemId: String?): Flow<QuickDownload> =
-        if (itemId == null) flowOf(QuickDownload.None)
+        if (itemId == null || DeviceLibrary.isLocalKey(itemId)) flowOf(QuickDownload.None)
         else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else downloads.observe(sid, itemId) }.map { it.toQuick() }
 
-    fun play(itemId: String) = withServer { player.play(it, itemId) }
-    fun download(itemId: String) = withServer { downloads.enqueue(it, itemId) }
+    fun play(itemId: String) = withServer(itemId) { player.play(it, itemId) }
+    /** "Play next": appends the playable key to the device's queue (no duplicates); the queue is the account's, for every key. */
+    fun enqueue(itemId: String) = withServer { queue.add(it, itemId, System.currentTimeMillis()) }
+    fun download(itemId: String) = withServer(itemId) { downloads.enqueue(it, itemId) }
     /** Cancels a running download or deletes a finished one, including files; progress is kept. */
-    fun deleteDownload(itemId: String) = withServer { downloads.cancel(it, itemId, deleteFiles = true) }
+    fun deleteDownload(itemId: String) = withServer(itemId) { downloads.cancel(it, itemId, deleteFiles = true) }
 
     /** Listening state for the progress actions (finished / in progress / hidden). */
     fun progressState(itemId: String?): Flow<ProgressEntity?> =
         if (itemId == null) flowOf(null)
-        else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else items.observeProgress(sid, itemId) }
+        else serverOf(itemId).flatMapLatest { sid -> if (sid == null) flowOf(null) else items.observeProgress(sid, itemId) }
 
     /** The next volume of the title's series, if there is one in the library. */
     fun nextVolume(itemId: String?): Flow<ItemEntity?> =
         if (itemId == null) flowOf(null)
-        else serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else flow { emit(nextVolume(items, sid, itemId)) } }
+        else serverOf(itemId).flatMapLatest { sid -> if (sid == null) flowOf(null) else flow { emit(nextVolume(items, sid, itemId)) } }
 
-    fun markFinished(itemId: String) = withServer { progressActions.markFinished(it, itemId) }
-    fun startOver(itemId: String) = withServer { progressActions.startOver(it, itemId) }
-    fun hideFromContinue(itemId: String) = withServer { progressActions.hideFromContinue(it, itemId) }
+    fun markFinished(itemId: String) = withServer(itemId) { progressActions.markFinished(it, itemId) }
+    fun startOver(itemId: String) = withServer(itemId) { progressActions.startOver(it, itemId) }
+    fun markNotFinishedKeepPosition(itemId: String) = withServer(itemId) { progressActions.markNotFinishedKeepPosition(it, itemId) }
+    fun hideFromContinue(itemId: String) = withServer(itemId) { progressActions.hideFromContinue(it, itemId) }
 
     /** Result (true = taken from the server) goes to [onResult] on the main thread. */
-    fun pullFromServer(itemId: String, onResult: (Boolean) -> Unit) = withServer { onResult(progressActions.pullFromServer(it, itemId)) }
+    fun pullFromServer(itemId: String, onResult: (Boolean) -> Unit) = withServer(itemId) { onResult(progressActions.pullFromServer(it, itemId)) }
 
+    /** The account's server (queue namespace). */
     private fun withServer(block: suspend (String) -> Unit) {
         viewModelScope.launch { block(serverId.filterNotNull().first()) }
+    }
+
+    /** The server of [itemId] (see [serverOf]). */
+    private fun withServer(itemId: String, block: suspend (String) -> Unit) {
+        viewModelScope.launch { block(serverOf(itemId).filterNotNull().first()) }
     }
 }
 
@@ -168,10 +186,17 @@ fun ItemActionsSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
             ActionRow(Icons.Rounded.Info, stringResource(R.string.actions_details)) { onDismiss(); onOpenDetails(item.id) }
+            val local = DeviceLibrary.isLocalKey(item.id)
             if (item.isDownloaded || !offline) {
                 ActionRow(Icons.Rounded.PlayArrow, stringResource(R.string.player_play)) { onDismiss(); viewModel.play(item.id) }
             }
-            when (val d = download) {
+            val context = LocalContext.current
+            ActionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.queue_add)) {
+                viewModel.enqueue(item.id)
+                Toast.makeText(context, R.string.queue_added, Toast.LENGTH_SHORT).show()
+                onDismiss()
+            }
+            if (!local) when (val d = download) {
                 QuickDownload.None, QuickDownload.Paused, QuickDownload.Failed -> if (!offline) {
                     val label = if (d == QuickDownload.None) R.string.detail_download else R.string.actions_download_resume
                     ActionRow(Icons.Rounded.Download, stringResource(label)) { viewModel.download(item.id); askNotifications(); onDismiss() }
@@ -181,7 +206,7 @@ fun ItemActionsSheet(
                 }
                 QuickDownload.Complete -> ActionRow(Icons.Rounded.Delete, stringResource(R.string.detail_download_delete)) { confirmDelete = true }
             }
-            progressEntries(progress, offline).forEach { entry ->
+            progressEntries(progress, offline, local).forEach { entry ->
                 ActionRow(entry.icon, stringResource(entry.label(progress))) { runProgress(entry); if (!entry.keepsSheetOpen(download)) onDismiss() }
             }
         }
@@ -195,6 +220,7 @@ fun ItemActionsSheet(
 /** Progress actions, shown in the long-press menu, the detail screen and the player menu. */
 enum class ProgressEntry(val icon: ImageVector) {
     MarkFinished(Icons.Rounded.DoneAll),
+    MarkNotFinishedKeep(Icons.Rounded.RemoveDone),
     StartOver(Icons.Rounded.Replay),
     HideFromContinue(Icons.Rounded.VisibilityOff),
     PullFromServer(Icons.Rounded.CloudDownload);
@@ -202,7 +228,9 @@ enum class ProgressEntry(val icon: ImageVector) {
     @StringRes
     fun label(p: ProgressEntity?): Int = when (this) {
         MarkFinished -> R.string.progress_mark_finished
-        StartOver -> if (p?.isFinished == true) R.string.progress_mark_unfinished else R.string.progress_start_over
+        MarkNotFinishedKeep -> R.string.progress_mark_unfinished_keep
+        // Next to "keep position" this one is plainly "start over"; alone it is the only way back from finished.
+        StartOver -> if (p?.isFinished == true && !canKeepPosition(p)) R.string.progress_mark_unfinished else R.string.progress_start_over
         HideFromContinue -> R.string.progress_hide
         PullFromServer -> R.string.progress_pull
     }
@@ -211,14 +239,24 @@ enum class ProgressEntry(val icon: ImageVector) {
     fun keepsSheetOpen(download: QuickDownload) = this == MarkFinished && download == QuickDownload.Complete
 }
 
-/** Which progress actions make sense for this state. */
-fun progressEntries(p: ProgressEntity?, offline: Boolean): List<ProgressEntry> = buildList {
+/**
+ * A finished title whose saved position lies inside it can be unmarked without losing the position. Within the
+ * last 5 s ABS marks it finished again, so there it would mean nothing.
+ */
+fun canKeepPosition(p: ProgressEntity?): Boolean =
+    p != null && p.isFinished && p.currentTimeSec > 0 && (p.durationSec <= 0 || p.currentTimeSec < p.durationSec - KEEP_POSITION_END_SEC)
+
+private const val KEEP_POSITION_END_SEC = 5.0
+
+/** Which progress actions make sense for this state; [local]: a device title (no server to fetch from). */
+fun progressEntries(p: ProgressEntity?, offline: Boolean, local: Boolean = false): List<ProgressEntry> = buildList {
     val finished = p?.isFinished == true
     val started = (p?.currentTimeSec ?: 0.0) > 0
     if (!finished) add(ProgressEntry.MarkFinished)
+    if (canKeepPosition(p)) add(ProgressEntry.MarkNotFinishedKeep)
     if (finished || started) add(ProgressEntry.StartOver)
     if (!finished && started && p?.hideFromContinue != true) add(ProgressEntry.HideFromContinue)
-    if (!offline) add(ProgressEntry.PullFromServer)
+    if (!offline && !local) add(ProgressEntry.PullFromServer)
 }
 
 /**
@@ -236,6 +274,7 @@ class ProgressActionHost internal constructor(
     fun run(entry: ProgressEntry) {
         when (entry) {
             ProgressEntry.MarkFinished -> { viewModel.markFinished(itemId); if (download() == QuickDownload.Complete) askDelete = true }
+            ProgressEntry.MarkNotFinishedKeep -> viewModel.markNotFinishedKeepPosition(itemId)
             ProgressEntry.StartOver -> viewModel.startOver(itemId)
             ProgressEntry.HideFromContinue -> viewModel.hideFromContinue(itemId)
             ProgressEntry.PullFromServer -> viewModel.pullFromServer(itemId) { ok ->
@@ -272,7 +311,7 @@ fun rememberProgressActionHost(itemId: String, viewModel: ItemActionsViewModel, 
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(label) },
         leadingContent = { Icon(icon, contentDescription = null) },

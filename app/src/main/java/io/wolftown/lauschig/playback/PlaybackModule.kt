@@ -10,4 +10,5 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 abstract class PlaybackModule {
     @Binds @Singleton abstract fun playerController(impl: PlayerControllerImpl): PlayerController
+    @Binds @Singleton abstract fun lastPlayed(impl: DataStoreLastPlayedStore): LastPlayedStore
 }

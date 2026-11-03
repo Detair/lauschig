@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui.library
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
+import io.wolftown.lauschig.local.DeviceTab
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.db.entities.CollectionKind
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.ui.collections.CollectionListTab
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
@@ -40,18 +48,28 @@ private fun LibraryTab.label(): Int = when (this) {
     LibraryTab.Finished -> R.string.library_tab_finished
     LibraryTab.Downloaded -> R.string.library_tab_downloaded
     LibraryTab.Series -> R.string.library_tab_series
+    LibraryTab.Collections -> R.string.library_tab_collections
+    LibraryTab.Playlists -> R.string.library_tab_playlists
+    LibraryTab.Device -> R.string.library_tab_device
 }
 
 @Composable
 fun LibraryRoute(
     onOpenItem: (itemId: String) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenCollection: (id: String) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
-    LibraryScreen(state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it })
+    LibraryScreen(
+        state, viewModel::selectTab, viewModel::setKinds, onOpenItem, modifier, onPlay = actions::play, onMenu = { menuFor = it },
+        collections = { kind -> CollectionListTab(kind, onOpenCollection) },
+        device = { DeviceTab(onOpenItem, onPlay = actions::play, onMenu = { menuFor = it }) },
+        onOpenDownloads = onOpenDownloads,
+    )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
 
@@ -64,6 +82,11 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onPlay: (itemId: String) -> Unit = {},
     onMenu: (ItemSummary) -> Unit = {},
+    /** Content of the collections / playlists tabs. */
+    collections: @Composable (CollectionKind) -> Unit = {},
+    /** Content of the "on this device" tab. */
+    device: @Composable () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val tile: @Composable (ItemSummary) -> Unit = { item ->
         CoverTile(item, onClick = { onOpenItem(item.id) }, onLongClick = { onMenu(item) }, onPlay = { onPlay(item.id) })
@@ -74,7 +97,26 @@ fun LibraryScreen(
                 Tab(selected = t == state.tab, onClick = { onTab(t) }, text = { Text(stringResource(t.label())) })
             }
         }
+        val listKind = when (state.tab) {
+            LibraryTab.Collections -> CollectionKind.COLLECTION
+            LibraryTab.Playlists -> CollectionKind.PLAYLIST
+            else -> null
+        }
+        if (listKind != null) {
+            collections(listKind)
+            return@Column
+        }
+        if (state.tab == LibraryTab.Device) {
+            device()
+            return@Column
+        }
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(top = 8.dp))
+        if (state.tab == LibraryTab.Downloaded) {
+            TextButton(onClick = onOpenDownloads, modifier = Modifier.padding(horizontal = 8.dp).testTag("openDownloads")) {
+                Icon(Icons.Rounded.Downloading, contentDescription = null)
+                Text(stringResource(R.string.downloads_manage), Modifier.padding(start = 8.dp))
+            }
+        }
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()
         if (empty && state.loaded) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

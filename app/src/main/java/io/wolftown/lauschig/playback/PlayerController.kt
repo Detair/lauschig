@@ -22,6 +22,8 @@ data class PlayerUiState(
     val chapterTitle: String? = null,
     val chapterStartSec: Double = 0.0,
     val chapterEndSec: Double = 0.0,
+    /** Book-wide end of every chapter, in chapter order (for the sleep timer). */
+    val chapterEndsSec: List<Double> = emptyList(),
     val speed: Float = 1f,
     /** True while at least one file of the loaded title comes from the server instead of the device. */
     val isStreaming: Boolean = false,
@@ -47,6 +49,15 @@ interface PlayerController {
 
     /** Seeks to the absolute book-wide position [globalSec] (clamped to the book). */
     fun seekTo(globalSec: Double)
+
+    /** Seeks the loaded title to [globalSec] and plays from there (history and bookmark taps). */
+    fun seekToAndPlay(globalSec: Double) = seekTo(globalSec)
     fun seekToChapter(index: Int)
     fun setSpeed(speed: Float)
+
+    /** Player volume 0..1 (sleep timer fade); not a setting, the service starts at 1. */
+    fun setVolume(volume: Float) {}
+
+    /** Re-reads the player right now instead of waiting for the next poll (sleep timer near its end). */
+    fun refreshNow() {}
 }

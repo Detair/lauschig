@@ -10,7 +10,9 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.download.PlayDownloadStarter
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.sync.LibrarySync
 import io.wolftown.lauschig.sync.ProgressSync
 import kotlinx.coroutines.CancellationException
@@ -61,6 +63,12 @@ class PlayerControllerImpl(
     /** The service's stream; shown as [PlayerUiState.streamLoad] while a streamed title loads. */
     private val streamStats: Flow<StreamStats> = emptyFlow(),
     private val downloadThrottled: Flow<Boolean> = emptyFlow(),
+    /**
+     * Ms to jump back when a title is loaded at its saved position after a pause of the given length (the service
+     * may have been stopped meanwhile, so its own resume rewind cannot see that pause); see [rewindMs].
+     */
+    private val rewindAfterPause: suspend (pauseMs: Long) -> Long = { 0 },
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : PlayerController {
 
     @Inject constructor(
@@ -74,6 +82,7 @@ class PlayerControllerImpl(
         librarySync: LibrarySync,
         starter: PlayDownloadStarter,
         monitor: StreamMonitor,
+        playbackSettings: PlaybackSettings,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -89,6 +98,7 @@ class PlayerControllerImpl(
         onStreamStarted = starter::start,
         streamStats = monitor.state,
         downloadThrottled = monitor.downloadThrottled,
+        rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -99,10 +109,16 @@ class PlayerControllerImpl(
         val streaming: Boolean,
         val base: HttpUrl?,
         val items: List<MediaItem>,
-    )
+    ) {
+        val chapterEnds: List<Double> = item.chapters.map { it.endSec }
+    }
 
     private val _state = MutableStateFlow(PlayerUiState())
     override val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+
+    /** Adopts a title the service started by itself (next in the queue); see [adopt]. */
+    private var adoptJob: Job? = null
+    private var adopting: String? = null
 
     private var current: Current? = null
     /** The last loaded title; survives a service stop so play/pause can start it again. */
@@ -161,7 +177,13 @@ class PlayerControllerImpl(
                 if (previous == null) _state.update { it.copy(isLoading = false, error = error) }
                 else { refresh(); watchDownloads(previous); _state.update { it.copy(error = error) } }
             }
+            // A device title never touches a server: no base URL, no details, no download on play.
+            val deviceTitle = DeviceLibrary.isLocal(serverId, itemId)
             val allLocal = withContext(io) { factory.isFullyLocal(item) }
+            if (deviceTitle && !allLocal) {
+                fail(R.string.error_local_unavailable)
+                return@launch
+            }
             val base = if (allLocal) null else onlineBaseUrl()
             if (item.audioFiles.isEmpty()) {
                 // The library list carries no audio files; they arrive with the details, which may not be loaded yet.
@@ -185,11 +207,15 @@ class PlayerControllerImpl(
             val items = try {
                 withContext(io) { factory.build(item, base) }
             } catch (e: PlaybackUnavailableException) {
-                fail(R.string.error_not_downloaded_offline)
+                // A device title can only get here if its documents vanished since the check above.
+                fail(if (deviceTitle) R.string.error_local_unavailable else R.string.error_not_downloaded_offline)
                 return@launch
             }
             val mapper = TimelineMapper(item.audioFiles)
-            val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.currentTimeSec ?: 0.0
+            val start = startSec ?: item.progress?.takeUnless { it.isFinished }?.let { p ->
+                if (p.currentTimeSec <= 0) 0.0
+                else (p.currentTimeSec - rewindAfterPause(clock() - p.lastUpdate) / 1000.0).coerceAtLeast(0.0)
+            } ?: 0.0
             val (index, offsetMs) = mapper.toFile(start)
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
             val started = Current(item, mapper, coverPath, streaming = !allLocal, base, items)
@@ -199,7 +225,7 @@ class PlayerControllerImpl(
             facade.play()
             refresh()
             watchDownloads(started)
-            if (!allLocal) onStreamStarted(serverId, itemId)
+            if (!allLocal && !deviceTitle) onStreamStarted(serverId, itemId)
         }
     }
 
@@ -223,13 +249,14 @@ class PlayerControllerImpl(
         val fresh = loadItem(c.item.item.serverId, c.item.item.id) ?: return
         if (current !== c || fresh.audioFiles.map { it.index } != c.item.audioFiles.map { it.index }) return
         val allLocal = withContext(io) { factory.isFullyLocal(fresh) }
-        val base = if (allLocal) null else c.base ?: onlineBaseUrl()
+        val base = if (allLocal || DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) null else c.base ?: onlineBaseUrl()
         val items = try {
             withContext(io) { factory.build(fresh, base) }
         } catch (e: PlaybackUnavailableException) {
             if (current === c && facade.hasMedia()) {
                 facade.pause(); refresh()
-                _state.update { it.copy(error = R.string.error_not_downloaded_offline) }
+                val error = if (DeviceLibrary.isLocal(fresh.item.serverId, fresh.item.id)) R.string.error_local_unavailable else R.string.error_not_downloaded_offline
+                _state.update { it.copy(error = error) }
             }
             return
         }
@@ -312,6 +339,14 @@ class PlayerControllerImpl(
         seekGlobal(c, globalSec)
     }
 
+    override fun seekToAndPlay(globalSec: Double) {
+        val c = current ?: return
+        playJob?.cancel()
+        seekGlobal(c, globalSec)
+        facade.play()
+        refresh()
+    }
+
     override fun seekToChapter(index: Int) {
         val c = current ?: return
         val chapter = c.item.chapters.getOrNull(index) ?: return
@@ -323,6 +358,10 @@ class PlayerControllerImpl(
         refresh()
     }
 
+    override fun setVolume(volume: Float) = facade.setVolume(volume)
+
+    override fun refreshNow() = refresh()
+
     private fun seekGlobal(c: Current, globalSec: Double) {
         val (i, ms) = c.mapper.toFile(globalSec)
         facade.seekTo(i, ms)
@@ -333,6 +372,11 @@ class PlayerControllerImpl(
         val c = current ?: return
         val snap = facade.snapshot()
         if (snap.isPlaying) starting = false
+        val playing = facade.currentKey()
+        if (playing != null && !starting && playing.second != c.item.item.id) {
+            adopt(playing.first, playing.second)
+            return
+        }
         val pos = c.mapper.toGlobal(snap.mediaIndex, snap.positionMs)
         val duration = c.mapper.totalSec.takeIf { it > 0 } ?: c.item.item.durationSec
         val chapters = c.item.chapters
@@ -351,6 +395,7 @@ class PlayerControllerImpl(
                 chapterTitle = chapter?.title,
                 chapterStartSec = chapter?.startSec ?: 0.0,
                 chapterEndSec = chapter?.endSec ?: duration,
+                chapterEndsSec = c.chapterEnds,
                 speed = snap.speed,
                 isStreaming = c.streaming,
                 isLoading = loading,
@@ -359,6 +404,35 @@ class PlayerControllerImpl(
             )
         }
         if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
+    }
+
+    /**
+     * The service switched to another title on its own (the next queued one when a title ended): load that title as
+     * the current one, without touching the player's queue.
+     */
+    private fun adopt(serverId: String, itemId: String) {
+        if (adoptJob?.isActive == true && adopting == itemId) return
+        adopting = itemId
+        adoptJob = scope.launch {
+            val item = loadItem(serverId, itemId) ?: return@launch
+            if (facade.currentKey()?.second != itemId) return@launch
+            localJob?.cancel(); localJob = null
+            val allLocal = withContext(io) { factory.isFullyLocal(item) }
+            val base = if (allLocal || DeviceLibrary.isLocal(serverId, itemId)) null else onlineBaseUrl()
+            val items = try {
+                withContext(io) { factory.build(item, base) }
+            } catch (e: PlaybackUnavailableException) {
+                emptyList()
+            }
+            val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
+            if (facade.currentKey()?.second != itemId) return@launch
+            last = serverId to itemId
+            val adopted = Current(item, TimelineMapper(item.audioFiles), coverPath, streaming = !allLocal, base, items)
+            current = adopted
+            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, downloadThrottled = throttled)
+            refresh()
+            if (items.isNotEmpty()) watchDownloads(adopted)
+        }
     }
 
     /** Null unless the stream is actually loading (a local file of a partly downloaded title can buffer too). */

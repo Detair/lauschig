@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.Assert.assertFalse
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -50,12 +51,18 @@ private class FakeFacade : PlayerFacade {
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
+    /** The title of the playing queue entry, as the service's player reports it. */
+    var key: Pair<String, String>? = null
+    override fun currentKey() = key ?: items.getOrNull(snap.mediaIndex)?.mediaMetadata?.extras?.let { e ->
+        e.getString(MediaItemFactory.EXTRA_SERVER_ID)!! to e.getString(MediaItemFactory.EXTRA_ITEM_ID)!!
+    }
     override fun setOnChange(onChange: () -> Unit) { cb = onChange }
     var errorCb: () -> Unit = {}
     var disconnectedCb: () -> Unit = {}
     override fun hasMedia() = items.isNotEmpty()
     override fun setOnError(onError: () -> Unit) { errorCb = onError }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
+    fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
 
@@ -100,6 +107,33 @@ class PlayerControllerTest {
             loadDetails = loadDetails,
             loadById = { sid, id -> loadPlayable(db.itemDao(), db.episodeDao(), sid, id) },
         )
+
+    @Test fun seekToAndPlay_seeksAndResumesAPausedTitle() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(listOf(file(0, 1800.0))))
+        c.play(s, "it")
+        c.pause()
+        c.seekToAndPlay(1000.0)
+        assertTrue(f.snap.isPlaying)
+        assertEquals(1_000_000L, f.snap.positionMs)
+        assertEquals(1000.0, c.state.value.positionSec, 0.0)
+    }
+
+    @Test fun titleStartedByTheService_isAdopted() = runTest {
+        val f = FakeFacade()
+        val second = ItemWithDetails(ItemEntity(s, "it2", "lib", "Second", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "it2", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val first = item(listOf(file(0, 1800.0)))
+        val c = controller(f, { first }, loadById = { _, id -> if (id == "it2") second else first })
+        c.play(s, "it")
+        // The service ended "it" and loaded the next queued title itself.
+        f.key = s to "it2"
+        f.snap = PlayerSnapshot(true, 0, 30_000, 1f)
+        f.change()
+        assertEquals("it2", c.state.value.itemId)
+        assertEquals("Second", c.state.value.title)
+        assertEquals(600.0, c.state.value.durationSec, 0.0)
+        assertEquals(30.0, c.state.value.positionSec, 0.0)
+    }
 
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {
         seedEpisode(withFile = true)
@@ -178,6 +212,8 @@ class PlayerControllerTest {
         onStreamStarted: (String, String) -> Unit = { _, _ -> },
         streamStats: Flow<StreamStats> = emptyFlow(),
         downloadThrottled: Flow<Boolean> = emptyFlow(),
+        rewindAfterPause: suspend (Long) -> Long = { 0 },
+        clock: () -> Long = { 0 },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -191,7 +227,26 @@ class PlayerControllerTest {
         onStreamStarted = onStreamStarted,
         streamStats = streamStats,
         downloadThrottled = downloadThrottled,
+        rewindAfterPause = rewindAfterPause,
+        clock = clock,
     )
+
+    @Test fun play_savedProgress_rewindsByThePauseSinceTheLastSave() = runTest {
+        val pauses = mutableListOf<Long>()
+        val f = FakeFacade()
+        val c = controller(f, { item(threeFiles, ProgressEntity(s, "it", 950.0, 1800.0, false, 1_000)) }, rewindAfterPause = { pauses += it; 10_000 }, clock = { 61_000 })
+        c.play(s, "it")
+        assertEquals(listOf(60_000L), pauses)
+        assertEquals(2 to 40_000L, f.started)
+        // An explicit start (chapter, bookmark, "back to") is never moved.
+        val f2 = FakeFacade()
+        controller(f2, { item(threeFiles) }, rewindAfterPause = { 10_000 }, clock = { 61_000 }).play(s, "it", 950.0)
+        assertEquals(2 to 50_000L, f2.started)
+        // Never before the start of the title.
+        val f3 = FakeFacade()
+        controller(f3, { item(threeFiles, ProgressEntity(s, "it", 4.0, 1800.0, false, 1_000)) }, rewindAfterPause = { 10_000 }, clock = { 61_000 }).play(s, "it")
+        assertEquals(0 to 0L, f3.started)
+    }
 
     @Test fun play_withExplicitStart_seeksIntoRightFile() = runTest {
         val f = FakeFacade()

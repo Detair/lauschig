@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.download
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log
@@ -78,6 +79,7 @@ class PlayDownloadStarter(
     }
 
     suspend fun onStreamStarted(serverId: String, itemId: String) {
+        if (DeviceLibrary.isLocal(serverId, itemId)) return
         if (!enabled.first()) return
         val existing = row(serverId, itemId)
         val restart = when {

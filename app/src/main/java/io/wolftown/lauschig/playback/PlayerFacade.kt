@@ -15,7 +15,11 @@ interface PlayerFacade {
     fun pause()
     fun seekTo(mediaIndex: Int, positionMs: Long)
     fun setSpeed(speed: Float)
+    fun setVolume(volume: Float) {}
     fun snapshot(): PlayerSnapshot
+
+    /** (serverId, playable key) of the playing queue entry; the service may have loaded another title by itself. */
+    fun currentKey(): Pair<String, String>? = null
 
     /** True while the (remote) player is connected and has a queue loaded. */
     fun hasMedia(): Boolean

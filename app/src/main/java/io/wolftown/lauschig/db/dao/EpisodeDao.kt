@@ -13,6 +13,10 @@ abstract class EpisodeDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsert(episodes: List<EpisodeEntity>)
 
+    /** Adds episodes not stored yet (e.g. from a playlist); existing rows are left alone. Returns -1 per skipped row. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertIgnore(episodes: List<EpisodeEntity>): List<Long>
+
     /** Removes episodes of one item that have neither a download nor progress (keyed `itemId~id`). */
     @Query(
         """DELETE FROM episodes WHERE serverId = :serverId AND itemId = :itemId

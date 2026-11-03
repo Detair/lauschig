@@ -222,6 +222,12 @@ class ItemDetailViewModelTest {
         assertTrue(v.await { it.chapters[1].isCurrent }.chapters[1].isCurrent)
     }
 
+    @Test fun finishedTitle_highlightsNoChapter_evenWithAKeptPosition() = runTest {
+        seed(progress = prog(130.0, fin = true))
+        val s = vm().await { it.found && it.primary == PrimaryAction.ListenAgain }
+        assertEquals(-1, s.chapters.indexOfFirst { it.isCurrent })
+    }
+
     @Test fun downloadStateMapping_andErrors() = runTest {
         seed(download = DownloadEntity(sid, "b1", DownloadState.FAILED, 1, "storage_full"))
         val d = object : DownloadManager by downloads {

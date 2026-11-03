@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.download
 
+import io.wolftown.lauschig.StubLibraryApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -325,7 +327,7 @@ class DownloadWorkerTest {
     }
 
     /** Serves fresh item details whose files have the current inos (ino0/ino1). */
-    private inner class DetailsApi : LibraryApi {
+    private inner class DetailsApi : StubLibraryApi() {
         var calls = 0
         override suspend fun libraries() = LibrariesResponse(emptyList())
         override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()

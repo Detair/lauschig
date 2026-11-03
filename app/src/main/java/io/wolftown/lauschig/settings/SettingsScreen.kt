@@ -60,13 +60,42 @@ data class SettingsUiState(
     val autoDownload: AutoDownloadMode = AutoDownloadMode.OFF,
     val downloadOnPlay: Boolean = true,
     val meteredOnPlay: MeteredDownload = MeteredDownload.ASK,
+    val playback: PlaybackPrefs = PlaybackPrefs(),
+)
+
+@Immutable
+data class PlaybackPrefs(
+    val rewindSec: Int = PlaybackSettings.DEFAULT_REWIND,
+    val defaultSpeed: Float = 1f,
+    val skipSilence: Boolean = false,
+    val defaultBoostDb: Int = 0,
+    val autoResume: Boolean = false,
+    val continueOnStart: Boolean = false,
+)
+
+/** Callbacks of the playback section. */
+class PlaybackPrefsActions(
+    val onRewind: (Int) -> Unit = {},
+    val onDefaultSpeed: (Float) -> Unit = {},
+    val onSkipSilence: (Boolean) -> Unit = {},
+    val onDefaultBoost: (Int) -> Unit = {},
+    val onAutoResume: (Boolean) -> Unit = {},
+    val onContinueOnStart: (Boolean) -> Unit = {},
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val app: AppSettings,
     private val download: DownloadSettings,
+    private val playbackSettings: PlaybackSettings,
 ) : ViewModel() {
+    private val playback = combine(
+        combine(playbackSettings.rewindOnResumeSec, playbackSettings.defaultSpeed, playbackSettings.skipSilence) { r, sp, sk -> Triple(r, sp, sk) },
+        playbackSettings.defaultBoostDb,
+        playbackSettings.autoResumeOnConnect,
+        playbackSettings.continueOnStart,
+    ) { (r, sp, sk), boost, auto, cont -> PlaybackPrefs(r, sp, sk, boost, auto, cont) }
+
     val state: StateFlow<SettingsUiState> = combine(
         combine(app.nextVolumeMode, download.wifiOnly, app.cleanupReminder, app.missingVolumesEnabled, app.audibleRegion) { next, wifi, reminder, missing, region ->
             SettingsUiState(next, wifi, reminder, missing, region)
@@ -74,7 +103,8 @@ class SettingsViewModel @Inject constructor(
         app.autoDownload,
         download.downloadOnPlay,
         download.meteredOnPlay,
-    ) { base, auto, onPlay, metered -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered) }
+        playback,
+    ) { base, auto, onPlay, metered, pb -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered, playback = pb) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -85,15 +115,27 @@ class SettingsViewModel @Inject constructor(
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }
     fun setMeteredOnPlay(mode: MeteredDownload) { viewModelScope.launch { download.setMeteredOnPlay(mode) } }
+
+    val playbackActions = PlaybackPrefsActions(
+        onRewind = { viewModelScope.launch { playbackSettings.setRewindOnResumeSec(it) } },
+        onDefaultSpeed = { viewModelScope.launch { playbackSettings.setDefaultSpeed(it) } },
+        onSkipSilence = { viewModelScope.launch { playbackSettings.setSkipSilence(it) } },
+        onDefaultBoost = { viewModelScope.launch { playbackSettings.setDefaultBoostDb(it) } },
+        onAutoResume = { viewModelScope.launch { playbackSettings.setAutoResumeOnConnect(it) } },
+        onContinueOnStart = { viewModelScope.launch { playbackSettings.setContinueOnStart(it) } },
+    )
 }
 
 @Composable
-fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsRoute(onBack: () -> Unit, onOpenCleanup: () -> Unit, onOpenDownloads: () -> Unit = {}, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
+        playbackActions = viewModel.playbackActions,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
+        onOpenDownloads = onOpenDownloads,
+        localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
     )
 }
 
@@ -110,15 +152,21 @@ fun SettingsScreen(
     onAutoDownload: (AutoDownloadMode) -> Unit = {},
     onDownloadOnPlay: (Boolean) -> Unit = {},
     onMeteredOnPlay: (MeteredDownload) -> Unit = {},
+    playbackActions: PlaybackPrefsActions = PlaybackPrefsActions(),
     modifier: Modifier = Modifier,
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
+    /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
+    localSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
         }
+        PlaybackSection(state.playback, playbackActions)
+
         Section(R.string.settings_section_series)
         ModeRow(NextVolumeMode.SUGGEST, state.nextVolume, R.string.settings_next_suggest, R.string.settings_next_suggest_hint, onNextVolume)
         ModeRow(NextVolumeMode.PREFETCH, state.nextVolume, R.string.settings_next_prefetch, R.string.settings_next_prefetch_hint, onNextVolume)
@@ -128,6 +176,11 @@ fun SettingsScreen(
         rmabSection()
 
         Section(R.string.settings_section_downloads)
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.downloads_manage)) },
+            supportingContent = { Text(stringResource(R.string.downloads_manage_hint)) },
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenDownloads).testTag("openDownloads"),
+        )
         SwitchRow(R.string.settings_wifi_only, R.string.settings_wifi_only_hint, state.wifiOnly, onWifiOnly)
         SwitchRow(R.string.settings_download_on_play, R.string.settings_download_on_play_hint, state.downloadOnPlay, onDownloadOnPlay, Modifier.testTag("downloadOnPlay"))
         MeteredRow(state.meteredOnPlay, state.downloadOnPlay, onMeteredOnPlay)
@@ -138,6 +191,9 @@ fun SettingsScreen(
             supportingContent = { Text(stringResource(R.string.settings_cleanup_open_hint)) },
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCleanup).testTag("openCleanup"),
         )
+
+        Section(R.string.settings_section_local)
+        localSection()
     }
 }
 
@@ -238,6 +294,42 @@ private fun MeteredRow(current: MeteredDownload, enabled: Boolean, onSelect: (Me
         DropdownMenu(open, onDismissRequest = { open = false }) {
             MeteredDownload.entries.forEach { mode ->
                 DropdownMenuItem(text = { Text(meteredLabel(mode)) }, onClick = { open = false; onSelect(mode) }, modifier = Modifier.testTag("meteredOnPlay:$mode"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackSection(p: PlaybackPrefs, a: PlaybackPrefsActions) {
+    Section(R.string.settings_section_playback)
+    ChoiceRow(
+        R.string.settings_rewind, R.string.settings_rewind_hint, "rewind", PlaybackSettings.REWIND_CHOICES, p.rewindSec, a.onRewind,
+    ) { if (it == 0) stringResource(R.string.settings_rewind_off) else stringResource(R.string.settings_rewind_sec, it) }
+    ChoiceRow(
+        R.string.settings_default_speed, R.string.settings_default_speed_hint, "defaultSpeed", PlaybackSettings.SPEED_CHOICES, p.defaultSpeed, a.onDefaultSpeed,
+    ) { io.wolftown.lauschig.ui.player.formatSpeed(it) }
+    SwitchRow(R.string.audio_skip_silence, R.string.audio_skip_silence_hint, p.skipSilence, a.onSkipSilence, Modifier.testTag("settingsSkipSilence"))
+    ChoiceRow(
+        R.string.settings_default_boost, R.string.settings_default_boost_hint, "defaultBoost", PlaybackSettings.BOOST_CHOICES, p.defaultBoostDb, a.onDefaultBoost,
+    ) { io.wolftown.lauschig.ui.player.boostLabel(it) }
+    SwitchRow(R.string.settings_auto_resume, R.string.settings_auto_resume_hint, p.autoResume, a.onAutoResume, Modifier.testTag("autoResume"))
+    SwitchRow(R.string.settings_continue_on_start, R.string.settings_continue_on_start_hint, p.continueOnStart, a.onContinueOnStart, Modifier.testTag("continueOnStart"))
+}
+
+/** A setting with a few values in a dropdown; [label] renders a value. */
+@Composable
+private fun <T> ChoiceRow(title: Int, hint: Int, tag: String, choices: List<T>, current: T, onSelect: (T) -> Unit, label: @Composable (T) -> String) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ListItem(
+            headlineContent = { Text(stringResource(title)) },
+            supportingContent = { Text(stringResource(hint)) },
+            trailingContent = { Text(label(current)) },
+            modifier = Modifier.fillMaxWidth().clickable { open = true }.testTag(tag),
+        )
+        DropdownMenu(open, onDismissRequest = { open = false }) {
+            choices.forEach { v ->
+                DropdownMenuItem(text = { Text(label(v)) }, onClick = { open = false; onSelect(v) }, modifier = Modifier.testTag("$tag:$v"))
             }
         }
     }

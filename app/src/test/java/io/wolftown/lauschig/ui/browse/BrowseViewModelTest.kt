@@ -25,10 +25,14 @@ import io.wolftown.lauschig.ui.nav.BrowseKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import java.util.Collections
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -59,6 +63,9 @@ class BrowseViewModelTest {
     private val scope = CoroutineScope(Dispatchers.Unconfined)
     private val viewModels = TestViewModels()
 
+    /** The open screens: one collector per ViewModel that stays subscribed for the whole test, see [vm]. */
+    private val screens = CoroutineScope(Dispatchers.Default + Job())
+
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
@@ -66,6 +73,7 @@ class BrowseViewModelTest {
     }
 
     @After fun tearDown() {
+        runBlocking { screens.coroutineContext[Job]!!.cancelAndJoin() }
         viewModels.clear()
         if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
@@ -87,7 +95,11 @@ class BrowseViewModelTest {
                 BrowseViewModel(kind, name, store, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers, prefs, Catalog(), info, missing)
             }
         }
-        return viewModels.get(factory, BrowseViewModel::class)
+        // Like the real screen, keep one collector on `state` for the whole test. With only the short-lived subscription
+        // of each await(), the stateIn(WhileSubscribed(5_000)) pipeline stops whenever the last one ends: runTest
+        // fast-forwards virtual time while the body waits on another thread, so that 5 s timeout fires at once and the
+        // next await restarts the whole pipeline (a second, identical Audible lookup).
+        return viewModels.get(factory, BrowseViewModel::class).also { screens.launch { it.state.collect { } } }
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, author: String? = null, series: String? = null, key: Double? = null) =
@@ -119,7 +131,7 @@ class BrowseViewModelTest {
     @Test fun authorPage_bioAppearsOnceCached() = runTest {
         libs()
         db.itemDao().upsertFromList(listOf(item("a", author = "Ann")))
-        val api = object : LibraryApi {
+        val api = object : io.wolftown.lauschig.StubLibraryApi() {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String) = AuthorsResponse(listOf(AuthorDto("a1", "ANN", "Bio", "/x.jpg")))
@@ -131,7 +143,7 @@ class BrowseViewModelTest {
     }
 
     @Test fun authorInfo_failureLeavesCacheEmpty_neverThrows() = runTest {
-        val api = object : LibraryApi {
+        val api = object : io.wolftown.lauschig.StubLibraryApi() {
             override suspend fun libraries() = error("unused")
             override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = error("unused")
             override suspend fun authors(id: String): AuthorsResponse = throw java.io.IOException("down")

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -61,7 +62,7 @@ class PlayerViewModel(
 
     @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao) :
         this(player, { itemId ->
-            accountStore.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
+            accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
                 if (sid == null) flowOf(emptyList())
                 else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
             }

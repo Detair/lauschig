@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.foundation.layout.FlowRow
+import io.wolftown.lauschig.ui.extras.BookmarksSheet
+import io.wolftown.lauschig.ui.extras.HistorySheet
+import io.wolftown.lauschig.ui.extras.QueueSheet
 import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -84,11 +92,14 @@ fun PlayerRoute(
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
+    comfortViewModel: ComfortViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val comfort by comfortViewModel.state.collectAsStateWithLifecycle()
     val itemId = state.itemId
     val download by remember(itemId) { actions.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val askNotifications = rememberNotificationPermissionOnce()
+    var sheet by rememberSaveable { mutableStateOf<PlayerSheet?>(null) }
     PlayerScreen(
         state, onClose, modifier,
         // The player's id is the playable key; details open on the library item (the podcast for an episode).
@@ -105,7 +116,48 @@ fun PlayerRoute(
         onNext = viewModel::nextChapter,
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
+        extras = {
+            PlayerExtrasRow(onBookmarks = { sheet = PlayerSheet.Bookmarks }, onQueue = { sheet = PlayerSheet.Queue }, onHistory = { sheet = PlayerSheet.History })
+        },
+        comfort = {
+            ComfortRow(
+                comfort,
+                onStartSleep = comfortViewModel::startSleep,
+                onCancelSleep = comfortViewModel::cancelSleep,
+                onSkipSilence = comfortViewModel::setSkipSilence,
+                onBoost = comfortViewModel::setBoost,
+                modifier = Modifier.padding(bottom = 16.dp),
+            )
+        },
     )
+    val close = { sheet = null }
+    when (sheet) {
+        PlayerSheet.Bookmarks -> itemId?.let { BookmarksSheet(it, state.chapterStartSec + state.chapterPositionSec, close) }
+        PlayerSheet.History -> itemId?.let { HistorySheet(it, close) }
+        PlayerSheet.Queue -> QueueSheet(close)
+        null -> Unit
+    }
+}
+
+enum class PlayerSheet { Bookmarks, Queue, History }
+
+/** Bookmarks, queue and listening history of the player. */
+@Composable
+fun PlayerExtrasRow(onBookmarks: () -> Unit, onQueue: () -> Unit, onHistory: () -> Unit, modifier: Modifier = Modifier) {
+    FlowRow(modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+        OutlinedButton(onClick = onBookmarks, modifier = Modifier.testTag("bookmarksButton")) {
+            Icon(Icons.Rounded.Bookmarks, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_bookmarks), Modifier.padding(start = 8.dp))
+        }
+        OutlinedButton(onClick = onQueue, modifier = Modifier.testTag("queueButton")) {
+            Icon(Icons.AutoMirrored.Rounded.QueueMusic, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_queue), Modifier.padding(start = 8.dp))
+        }
+        OutlinedButton(onClick = onHistory, modifier = Modifier.testTag("historyButton")) {
+            Icon(Icons.Rounded.History, null, Modifier.size(18.dp))
+            Text(stringResource(R.string.player_history), Modifier.padding(start = 8.dp))
+        }
+    }
 }
 
 /** "1,25×" in the user's locale. */
@@ -137,6 +189,10 @@ fun PlayerScreen(
     onDeleteDownload: () -> Unit = {},
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
+    /** Sleep timer and audio options ([ComfortRow]); shown only while a title is loaded. */
+    comfort: @Composable () -> Unit = {},
+    /** Bookmarks, queue, history ([PlayerExtrasRow]); shown only while a title is loaded. */
+    extras: @Composable () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var showChapters by rememberSaveable { mutableStateOf(false) }
@@ -156,7 +212,7 @@ fun PlayerScreen(
             IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
             Spacer(Modifier.weight(1f))
             if (state.itemId != null) {
-                DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
+                if (!DeviceLibrary.isLocalKey(state.itemId)) DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
                 IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
                 topActions()
             }
@@ -266,6 +322,8 @@ fun PlayerScreen(
                 Text(stringResource(R.string.player_chapters), Modifier.padding(start = 8.dp))
             }
         }
+        if (state.itemId != null) comfort()
+        if (state.itemId != null) extras()
     }
 
     if (showSpeed) {

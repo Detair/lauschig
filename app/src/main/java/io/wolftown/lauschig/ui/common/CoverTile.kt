@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.absapi.library.coverUrl
+import io.wolftown.lauschig.local.DeviceLibrary
 import java.io.File
 
 /**
@@ -164,9 +165,10 @@ internal fun Initials(title: String) {
     }
 }
 
-/** Local file first, else the server URL (only while [base] is non-null, i.e. online), else null. */
+/** Local file first, else the server URL (only while [base] is non-null, i.e. online; never for a device title), else null. */
 fun coverModel(base: okhttp3.HttpUrl?, itemId: String, coverPath: String?, coverVersion: Long): Any? = when {
     coverPath != null -> File(coverPath)
+    DeviceLibrary.isLocalKey(itemId) -> null
     base != null -> coverUrl(base, PlayableKey.parse(itemId).libraryItemId).newBuilder()
         .apply { if (coverVersion > 0) addQueryParameter("ts", coverVersion.toString()) }
         .build().toString()

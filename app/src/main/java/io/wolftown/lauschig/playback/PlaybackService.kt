@@ -20,10 +20,21 @@ import androidx.media3.session.MediaSession
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
+import io.wolftown.lauschig.db.dao.QueueDao
+import io.wolftown.lauschig.download.PlayDownloadStarter
+import io.wolftown.lauschig.local.DeviceLibrary
+import io.wolftown.lauschig.queue.QueueAdvancer
+import io.wolftown.lauschig.queue.queueEntryState
+import io.wolftown.lauschig.sync.LibrarySync
+import io.wolftown.lauschig.sync.SyncTrigger
+import kotlinx.coroutines.CancellationException
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
+import io.wolftown.lauschig.db.dao.TitleAudioDao
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.net.sameOrigin
@@ -54,6 +65,16 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var progressDao: ProgressDao
     @Inject lateinit var sessionDao: SessionDao
     @Inject lateinit var streamMonitor: StreamMonitor
+    @Inject lateinit var titleAudioDao: TitleAudioDao
+    @Inject lateinit var playbackSettings: PlaybackSettings
+    @Inject lateinit var lastPlayed: LastPlayedStore
+    @Inject lateinit var sleepTimer: SleepTimer
+    @Inject lateinit var queueDao: QueueDao
+    @Inject lateinit var downloadDao: DownloadDao
+    @Inject lateinit var mediaItemFactory: MediaItemFactory
+    @Inject lateinit var librarySync: LibrarySync
+    @Inject lateinit var playDownloadStarter: PlayDownloadStarter
+    @Inject lateinit var syncTrigger: SyncTrigger
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -62,6 +83,7 @@ class PlaybackService : MediaLibraryService() {
     private var bridge: PlaybackProgressBridge? = null
     private var connectionJob: Job? = null
     private var monitorJob: Job? = null
+    private var comfort: PlaybackComfort? = null
 
     /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
     @Volatile private var lastOnline: ConnectionState.Online? = null
@@ -121,10 +143,18 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         player = exo
+        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope, appScope, onTitleActivity = { serverId, itemId ->
+            val at = System.currentTimeMillis()
+            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
+        }).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
         bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
             .also { exo.addListener(it) }
+        // After the bridge, so the ended title is saved as finished before the next one replaces the queue.
+        exo.addListener(queueAdvanceListener(exo))
+        // The position reaches the server soon after a pause or the end of a title, not only with the periodic sync.
+        exo.addListener(ProgressSyncOnPause({ currentKey(exo) }, syncTrigger::syncProgress))
 
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -132,6 +162,66 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, exo, object : MediaLibrarySession.Callback {})
             .setSessionActivity(activity)
             .build()
+        // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
+        setListener(object : Listener {
+            override fun onForegroundServiceStartNotAllowedException() {
+                Log.w(TAG, "foreground start from the background was refused")
+            }
+        })
+    }
+
+    /**
+     * The next queued title starts right here when one ends, on the service's own player: the service keeps running
+     * and never depends on the app's MediaController. Media3 1.11.1 keeps the service in the foreground for
+     * `DEFAULT_FOREGROUND_SERVICE_TIMEOUT_MS` (10 min) after the player stops being "engaged" (ENDED is not), so the
+     * few database reads in between do not drop the foreground (see the phase-3B report).
+     */
+    private fun queueAdvanceListener(exo: ExoPlayer): Player.Listener {
+        val starter = ServiceTitleStarter(
+            loadItem = { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) },
+            factory = mediaItemFactory,
+            baseUrl = { lastOnline?.baseUrl },
+            loadDetails = librarySync::loadDetailsForPlayable,
+            io = Dispatchers.IO,
+            setQueue = { items, index, offsetMs ->
+                exo.setMediaItems(items, index, offsetMs)
+                exo.prepare()
+                exo.play()
+            },
+            onStreamStarted = playDownloadStarter::start,
+        )
+        val advancer = QueueAdvancer(
+            entries = { serverId -> queueDao.entries(serverId).map { it.itemKey } },
+            remove = queueDao::remove,
+            check = { serverId, key -> queueEntryState(itemDao, episodeDao, downloadDao, api.connectionState.value is ConnectionState.Online, serverId, key) },
+            sleepEndOfChapter = { sleepTimer.state.value?.mode == SleepMode.EndOfChapter },
+            // The queue lives in the account's namespace with mixed keys; a device key starts the device title.
+            start = { owner, key -> starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) },
+        )
+        return object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState != Player.STATE_ENDED) return
+                val extras = exo.currentMediaItem?.mediaMetadata?.extras ?: return
+                val serverId = extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return
+                val key = extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return
+                scope.launch {
+                    try {
+                        // A device title ended: the queue it may belong to is the signed-in account's.
+                        val owner = if (DeviceLibrary.isLocal(serverId)) accountStore.account.first()?.serverId ?: return@launch else serverId
+                        advancer.onEnded(owner, key)?.let { Log.i(TAG, "queue: next title $it") }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "queue advance failed", e)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun currentKey(exo: ExoPlayer): Pair<String, String>? {
+        val extras = exo.currentMediaItem?.mediaMetadata?.extras ?: return null
+        return (extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return null) to (extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return null)
     }
 
     /** Polls the player for [StreamMonitor] while it wants to play; reports the stream inactive once, then stops. */
@@ -180,6 +270,9 @@ class PlaybackService : MediaLibraryService() {
         // Capture the position and detach the listener before release; the final save outlives the service scope.
         val final = bridge?.currentGlobalSec()
         bridge?.let { player?.removeListener(it) }
+        comfort?.release()
+        comfort = null
+        sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
         bridge?.shutdown(final, appScope)
         session?.release()

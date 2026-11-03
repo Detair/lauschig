@@ -136,6 +136,14 @@ object ColdStartTestModule {
     @Provides fun episodeDao(db: LauschigDatabase) = db.episodeDao()
     @Provides fun catalogDao(db: LauschigDatabase) = db.catalogDao()
     @Provides fun externalSeriesDao(db: LauschigDatabase) = db.externalSeriesDao()
+    @Provides fun titleAudioDao(db: LauschigDatabase) = db.titleAudioDao()
+    @Provides fun bookmarkDao(db: LauschigDatabase) = db.bookmarkDao()
+    @Provides fun queueDao(db: LauschigDatabase) = db.queueDao()
+    @Provides fun historyDao(db: LauschigDatabase) = db.historyDao()
+    @Provides fun collectionDao(db: LauschigDatabase) = db.collectionDao()
+    @Provides fun localLibraryDao(db: LauschigDatabase) = db.localLibraryDao()
+    @Provides @Singleton fun lastPlayed(@ApplicationContext context: Context): io.wolftown.lauschig.playback.LastPlayedStore =
+        io.wolftown.lauschig.playback.DataStoreLastPlayedStore(context)
 
     @Provides @Singleton fun facade(): RecordingFacade = RecordingFacade()
 

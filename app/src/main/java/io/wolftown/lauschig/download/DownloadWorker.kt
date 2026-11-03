@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.download
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -98,6 +99,7 @@ class DownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         serverId = inputData.getString(KEY_SERVER) ?: return Result.failure()
         itemId = inputData.getString(KEY_ITEM) ?: return Result.failure()
+        if (DeviceLibrary.isLocal(serverId, itemId)) return Result.failure() // never queued by the manager; refuse anyway
         val parsed = PlayableKey.parse(itemId)
         libraryItemId = parsed.libraryItemId
         val row = downloads.get(serverId, itemId)

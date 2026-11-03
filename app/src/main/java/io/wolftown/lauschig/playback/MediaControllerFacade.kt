@@ -61,6 +61,7 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
     override fun pause() { controller?.pause() }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { controller?.seekTo(mediaIndex, positionMs) }
     override fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }
+    override fun setVolume(volume: Float) { controller?.volume = volume.coerceIn(0f, 1f) }
 
     override fun snapshot(): PlayerSnapshot {
         val c = controller ?: return PlayerSnapshot(false, 0, 0, 1f)
@@ -68,6 +69,11 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
             c.isPlaying, c.currentMediaItemIndex, c.currentPosition.coerceAtLeast(0), c.playbackParameters.speed,
             isBuffering = c.playWhenReady && c.playbackState == Player.STATE_BUFFERING,
         )
+    }
+
+    override fun currentKey(): Pair<String, String>? {
+        val extras = controller?.currentMediaItem?.mediaMetadata?.extras ?: return null
+        return (extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return null) to (extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return null)
     }
 
     override fun hasMedia() = controller?.let { it.isConnected && it.mediaItemCount > 0 } == true

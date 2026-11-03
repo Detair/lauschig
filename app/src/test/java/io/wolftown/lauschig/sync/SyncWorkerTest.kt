@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.StubLibraryApi
+import io.wolftown.lauschig.StubMeApi
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -52,15 +55,17 @@ class SyncWorkerTest {
 
     @After fun tearDown() = db.close()
 
-    private val lib = object : LibraryApi {
+    private val lib = object : StubLibraryApi() {
         override suspend fun libraries(): LibrariesResponse { calls.incrementAndGet(); return LibrariesResponse(emptyList()) }
         override suspend fun items(libraryId: String, limit: Int, page: Int, minified: Int) = LibraryItemsPage(emptyList(), 0, limit, page)
         override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
         override suspend fun item(id: String, expanded: Int): LibraryItemDto = error("unused")
         override suspend fun authors(id: String): io.wolftown.lauschig.absapi.library.AuthorsResponse = throw UnsupportedOperationException()
+        override suspend fun playlists() = io.wolftown.lauschig.absapi.library.PlaylistsResponse(emptyList())
     }
-    private val me = object : MeApi {
+    private val me = object : StubMeApi() {
         override suspend fun me() = AbsUser("u", "n", "user")
+        override suspend fun bookmarks() = io.wolftown.lauschig.absapi.me.BookmarksResponse(emptyList())
         override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) = error("unused")
         override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {}
         override suspend fun syncLocalSessions(body: LocalSessionsBody) = LocalSessionsResult(emptyList())
@@ -82,6 +87,8 @@ class SyncWorkerTest {
                 ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
                 PositionJumpBus(), gate,
                 EpisodeAutoDownloader(flowOf(AutoDownloadMode.OFF), db.episodeDao(), db.progressDao(), db.downloadDao(), noDownloads, { emptySet() }, {}),
+                BookmarkSync(flowOf(me), db.bookmarkDao()),
+                CollectionSync(flowOf(lib), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() },
             )
         }
         return TestListenableWorkerBuilder<SyncWorker>(ctx).setWorkerFactory(factory).build().doWork()

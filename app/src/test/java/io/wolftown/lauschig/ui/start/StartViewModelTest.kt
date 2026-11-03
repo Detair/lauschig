@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -218,5 +219,20 @@ class StartViewModelTest {
         progress("p1", last = 9)   // progress under the podcast's own id must not make the podcast a "continue" tile
         val s = vm().await { it.continueItems.isNotEmpty() }
         assertEquals(listOf("b1"), s.continueItems.map { it.id })
+    }
+    @Test fun start_continueRow_includesDeviceTitles_byLastListened() = runTest {
+        val dev = io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID
+        val local = io.wolftown.lauschig.local.DeviceLibrary.titleId("content://tree/x", "dir:a")
+        db.itemDao().upsertFromList(listOf(item("i1"), item("i2")))
+        progress("i1", last = 10)
+        progress("i2", last = 30)
+        db.itemDao().upsertDetails(ItemEntity(dev, local, io.wolftown.lauschig.local.DeviceLibrary.LIBRARY_ID, "Momo", durationSec = 100.0))
+        db.progressDao().saveLocal(dev, local, 50.0, 100.0, false, 20)
+        val s = vm().await { it.continueItems.size == 3 }
+        assertEquals(listOf("i2", local, "i1"), s.continueItems.map { it.id })
+        val tile = s.continueItems[1]
+        assertEquals(dev, tile.serverId)
+        assertTrue(tile.isDownloaded)
+        assertEquals(0.5f, tile.progress, 0.001f)
     }
 }

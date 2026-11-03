@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.library.EpisodeDto
 import io.wolftown.lauschig.absapi.library.LibraryItemDto
@@ -57,6 +58,7 @@ class LibrarySync(
      * from a library whose pages were all fetched and add up to the reported total.
      */
     suspend fun syncAll(serverId: String) {
+        if (DeviceLibrary.isLocal(serverId)) return
         val api = api.first() ?: return
         val remote = api.libraries().libraries
         libraries.upsertFromServer(
@@ -135,6 +137,8 @@ class LibrarySync(
 
     /** Fetches the expanded item and stores details, chapters and audio files. */
     suspend fun loadDetails(serverId: String, itemId: String) {
+        // A device title has no server details (the scan wrote everything); never ask the server for its id.
+        if (DeviceLibrary.isLocal(serverId, itemId)) return
         val api = api.first() ?: return
         val dto = api.item(itemId, 1)
         val meta = dto.media.metadata
@@ -180,21 +184,6 @@ class LibrarySync(
         chapters.replaceFromServer(serverId, key, ep.chapters.mapIndexed { i, c -> ChapterEntity(serverId, key, i, c.start, c.end, c.title) })
     }
 
-    private fun EpisodeDto.toEntity(serverId: String, itemId: String, recent: Boolean = false) = EpisodeEntity(
-        serverId = serverId,
-        itemId = itemId,
-        id = id,
-        title = title,
-        subtitle = subtitle,
-        description = description,
-        season = season?.takeIf { it.isNotBlank() },
-        episode = episode?.takeIf { it.isNotBlank() },
-        publishedAt = publishedAt ?: 0,
-        durationSec = duration ?: audioFile?.duration ?: 0.0,
-        sizeBytes = size ?: audioFile?.metadata?.size ?: 0,
-        recent = recent,
-    )
-
     private fun LibraryItemDto.toListEntity(serverId: String): ItemEntity {
         val m = media.metadata
         val series = parseMinifiedSeries(m.seriesName)
@@ -228,3 +217,19 @@ class LibrarySync(
         const val RECENT_LIMIT = 30
     }
 }
+
+/** Episode row from a server episode (expanded item, recent episodes, playlist entries). */
+internal fun EpisodeDto.toEntity(serverId: String, itemId: String, recent: Boolean = false) = EpisodeEntity(
+    serverId = serverId,
+    itemId = itemId,
+    id = id,
+    title = title,
+    subtitle = subtitle,
+    description = description,
+    season = season?.takeIf { it.isNotBlank() },
+    episode = episode?.takeIf { it.isNotBlank() },
+    publishedAt = publishedAt ?: 0,
+    durationSec = duration ?: audioFile?.duration ?: 0.0,
+    sizeBytes = size ?: audioFile?.metadata?.size ?: 0,
+    recent = recent,
+)

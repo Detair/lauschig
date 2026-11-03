@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
@@ -33,10 +34,19 @@ class ProgressActions(
     @Inject constructor(progress: ProgressDao, items: ItemDao, episodes: EpisodeDao, player: PlayerController, api: ApiProvider, sync: SyncTrigger) :
         this(progress, items, episodes, player, api.meApi, sync)
 
+    /** Finished; a position already heard stays (for "mark not finished, keep position"), an unstarted title goes to its end. */
     suspend fun markFinished(serverId: String, itemId: String) {
         val duration = duration(serverId, itemId)
         stopIfLoaded(itemId)
-        write(serverId, itemId) { it.copy(currentTimeSec = duration, durationSec = duration, isFinished = true) }
+        write(serverId, itemId) { it.copy(currentTimeSec = it.currentTimeSec.takeIf { t -> t > 0 } ?: duration, durationSec = duration, isFinished = true) }
+    }
+
+    /** Not finished any more, the saved position stays (spec 2.7b). A loaded, paused title jumps there. */
+    suspend fun markNotFinishedKeepPosition(serverId: String, itemId: String) {
+        val row = progress.get(serverId, itemId) ?: return
+        val loaded = stopIfLoaded(itemId)
+        write(serverId, itemId) { it.copy(isFinished = false) }
+        if (loaded) player.seekTo(row.currentTimeSec)
     }
 
     /** Not finished, back to the start (ABS resets the position when a title is unmarked anyway). */
@@ -51,7 +61,7 @@ class ProgressActions(
     suspend fun hideFromContinue(serverId: String, itemId: String) {
         val row = progress.get(serverId, itemId) ?: return
         progress.saveUserAction(row.copy(hideFromContinue = true, lastUpdate = clock()))
-        sync.syncNow()
+        syncIfServer(serverId, itemId)
     }
 
     /**
@@ -59,6 +69,7 @@ class ProgressActions(
      * is not reachable or has no progress for it. A loaded, paused title jumps there.
      */
     suspend fun pullFromServer(serverId: String, itemId: String): Boolean {
+        if (DeviceLibrary.isLocal(serverId, itemId)) return false // no server knows a device title
         val api = meApi.first() ?: return false
         val key = PlayableKey.parse(itemId)
         val dto = try {
@@ -98,6 +109,11 @@ class ProgressActions(
     private suspend fun write(serverId: String, itemId: String, change: (ProgressEntity) -> ProgressEntity) {
         val base = progress.get(serverId, itemId) ?: ProgressEntity(serverId, itemId, 0.0, 0.0, false, 0)
         progress.saveUserAction(change(base).copy(lastUpdate = clock(), hideFromContinue = false))
-        sync.syncNow()
+        syncIfServer(serverId, itemId)
+    }
+
+    /** A device title's progress stays on the device; only a server title starts a sync. */
+    private fun syncIfServer(serverId: String, itemId: String) {
+        if (!DeviceLibrary.isLocal(serverId, itemId)) sync.syncNow()
     }
 }

@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.absapi.auth
 
 import io.wolftown.lauschig.absapi.LenientMediaProgressListSerializer
+import io.wolftown.lauschig.absapi.me.BookmarkDto
+import io.wolftown.lauschig.absapi.me.LenientBookmarkListSerializer
 import io.wolftown.lauschig.absapi.me.MediaProgressDto
 import kotlinx.serialization.Serializable
 
@@ -28,6 +30,12 @@ data class AbsUser(
     val refreshToken: String? = null,
     @Serializable(with = LenientMediaProgressListSerializer::class)
     val mediaProgress: List<MediaProgressDto> = emptyList(),
+    /**
+     * `toOldJSONForBrowser` (login, `GET /api/me`); see [BookmarkDto]. Null when the field is absent, so a missing
+     * field is never mistaken for "every bookmark was deleted".
+     */
+    @Serializable(with = LenientBookmarkListSerializer::class)
+    val bookmarks: List<BookmarkDto>? = null,
 )
 
 /** Subset of `ServerSettings.toJSONForBrowser()`. */

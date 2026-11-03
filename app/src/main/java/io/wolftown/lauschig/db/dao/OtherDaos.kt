@@ -13,6 +13,7 @@ import io.wolftown.lauschig.db.entities.LibraryEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
+import io.wolftown.lauschig.db.entities.TitleAudioEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -185,6 +186,32 @@ abstract class ProgressDao {
 
     @Query("SELECT * FROM progress WHERE serverId = :serverId")
     abstract fun observeAll(serverId: String): kotlinx.coroutines.flow.Flow<List<ProgressEntity>>
+
+    /** The most recently heard (or synced) title that is not finished: "the last title" for auto-resume and start. */
+    @Query("SELECT * FROM progress WHERE serverId = :serverId AND isFinished = 0 ORDER BY lastUpdate DESC LIMIT 1")
+    abstract suspend fun newestUnfinished(serverId: String): ProgressEntity?
+}
+
+@Dao
+abstract class TitleAudioDao {
+    @Query("SELECT * FROM title_audio WHERE serverId = :serverId AND itemId = :itemId")
+    abstract suspend fun get(serverId: String, itemId: String): TitleAudioEntity?
+
+    @Query("SELECT * FROM title_audio WHERE serverId = :serverId AND itemId = :itemId")
+    abstract fun observe(serverId: String, itemId: String): Flow<TitleAudioEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun put(row: TitleAudioEntity)
+
+    @Transaction
+    open suspend fun setSpeed(serverId: String, itemId: String, speed: Float) {
+        put((get(serverId, itemId) ?: TitleAudioEntity(serverId, itemId)).copy(speed = speed))
+    }
+
+    @Transaction
+    open suspend fun setBoost(serverId: String, itemId: String, boostDb: Int?) {
+        put((get(serverId, itemId) ?: TitleAudioEntity(serverId, itemId)).copy(boostDb = boostDb))
+    }
 }
 
 @Dao
@@ -197,10 +224,50 @@ interface SessionDao {
 
     @Query("UPDATE local_sessions SET synced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
+
+    /** Every session of one playable recorded on this device (synced or not), for the history. */
+    @Query("SELECT * FROM local_sessions WHERE serverId = :serverId AND itemId = :itemKey")
+    fun observeForKey(serverId: String, itemKey: String): Flow<List<LocalSessionEntity>>
 }
+
+/**
+ * One row of the download management page: the download, its title (book, or episode with the podcast as [subtitle]),
+ * the bytes on disk ([bytesDone], includes a partial file) of [bytesTotal], and the listening state of the title.
+ */
+data class DownloadEntryRow(
+    val itemKey: String,
+    val state: DownloadState,
+    val error: String?,
+    val requestedAt: Long,
+    val title: String?,
+    val subtitle: String?,
+    val bytesDone: Long,
+    val bytesTotal: Long,
+    val lastPlayedAt: Long?,
+    val isFinished: Boolean,
+)
 
 @Dao
 interface DownloadDao {
+    /** Every download of [serverId] (books and episodes) for the download management page. */
+    @Query(
+        """SELECT d.itemId AS itemKey, d.state AS state, d.error AS error, d.requestedAt AS requestedAt,
+             COALESCE(e.title, i.title) AS title,
+             CASE WHEN e.id IS NOT NULL THEN pi.title ELSE i.author END AS subtitle,
+             COALESCE((SELECT SUM(a.completedBytes) FROM audio_files a WHERE a.serverId = d.serverId AND a.itemId = d.itemId), 0) AS bytesDone,
+             COALESCE((SELECT SUM(a.sizeBytes) FROM audio_files a WHERE a.serverId = d.serverId AND a.itemId = d.itemId), 0) AS bytesTotal,
+             p.lastUpdate AS lastPlayedAt,
+             COALESCE(p.isFinished, 0) AS isFinished
+           FROM downloads d
+           LEFT JOIN items i ON i.serverId = d.serverId AND i.id = d.itemId
+           LEFT JOIN episodes e ON e.serverId = d.serverId AND instr(d.itemId, '~') > 0
+             AND e.itemId = substr(d.itemId, 1, instr(d.itemId, '~') - 1) AND e.id = substr(d.itemId, instr(d.itemId, '~') + 1)
+           LEFT JOIN items pi ON pi.serverId = d.serverId AND pi.id = e.itemId
+           LEFT JOIN progress p ON p.serverId = d.serverId AND p.itemId = d.itemId
+           WHERE d.serverId = :serverId""",
+    )
+    fun observeEntries(serverId: String): Flow<List<DownloadEntryRow>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(download: DownloadEntity)
 

@@ -8,7 +8,9 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
+import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.playback.AutoResumer
 import io.wolftown.lauschig.playback.NextVolumePrefetcher
 import io.wolftown.lauschig.sync.SyncScheduler
 import io.wolftown.lauschig.ui.common.newCoverImageLoader
@@ -24,6 +26,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var syncScheduler: SyncScheduler
     @Inject lateinit var apiProvider: ApiProvider
     @Inject lateinit var prefetcher: NextVolumePrefetcher
+    @Inject lateinit var autoResumer: AutoResumer
+    @Inject lateinit var localFolders: LocalFolders
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -36,8 +40,12 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Off the main thread; nothing here awaits network I/O.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch { syncScheduler.start(scope) }
+        // Picks up files added to the device folders meanwhile (throttled; a WorkManager job, nothing waits for it).
+        scope.launch { localFolders.scanIfDue() }
         // The player state is main-thread bound; the prefetcher only reads it.
         prefetcher.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
+        // Registers its audio-device callback only while the setting is on.
+        autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
     }
 }
