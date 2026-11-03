@@ -56,6 +56,7 @@ import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.PlaybackService
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Homescreen widget: cover, play/pause and ±30 s. Two layouts ([SMALL]: cover with play/pause; [WIDE]: cover, title,
@@ -94,10 +95,18 @@ object WidgetIntents {
     const val TAG_FORWARD = "widgetForward"
     const val TAG_OPEN = "widgetOpen"
 
-    fun mediaButton(context: Context, keyCode: Int): Intent = Intent(Intent.ACTION_MEDIA_BUTTON)
-        .setComponent(ComponentName(context, PlaybackService::class.java))
-        .setData("lauschig://widget/key/$keyCode".toUri())
-        .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+    private val mediaButtons = ConcurrentHashMap<Int, Intent>()
+
+    /**
+     * One intent per key, built once and never changed (Glance leaves an intent with data alone): the same instance on
+     * every render, which also lets tests compare the widget's actions with it.
+     */
+    fun mediaButton(context: Context, keyCode: Int): Intent = mediaButtons.getOrPut(keyCode) {
+        Intent(Intent.ACTION_MEDIA_BUTTON)
+            .setComponent(ComponentName(context.packageName, PlaybackService::class.java.name))
+            .setData("lauschig://widget/key/$keyCode".toUri())
+            .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+    }
 
     /** The app; with [player] it opens the player when a title is loaded. */
     fun openApp(context: Context, player: Boolean): Intent = Intent(context, MainActivity::class.java)

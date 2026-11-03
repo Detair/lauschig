@@ -1,10 +1,8 @@
 package io.wolftown.lauschig
 
-import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.provider.MediaStore
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -113,26 +111,16 @@ class MainActivity : ComponentActivity() {
     /** An Audiobookshelf web link (opened or shared); AppRoot opens its title once and clears it. */
     private val linkRequest = MutableStateFlow<String?>(null)
 
+    /** Routing in [IncomingIntents.consume]; a recreation must not repeat voice, links or the SSO redirect. */
     private fun handleOpen(intent: Intent?, replay: Boolean = false) {
-        intent?.getStringExtra(EXTRA_OPEN)?.let { openRequest.value = it }
-        intent?.removeExtra(EXTRA_OPEN)
-        // "Spiel X in Lauschig" (Assistant); a recreation must not start it again.
-        if (!replay && intent?.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
-            voicePlayer.playFromSearch(intent.getStringExtra(SearchManager.QUERY), intent.extras)
-            intent.action = null
-        }
-        // A web link of the server (VIEW) or a shared one (SEND); a recreation must not open it again.
-        if (!replay) IncomingIntents.link(intent)?.let { url ->
-            linkRequest.value = url
-            intent?.action = null
-            intent?.data = null
-            intent?.removeExtra(Intent.EXTRA_TEXT)
-        }
+        val incoming = IncomingIntents.consume(intent, replay)
+        incoming.open?.let { openRequest.value = it }
+        // "Spiel X in Lauschig" (Assistant).
+        incoming.voice?.let { voicePlayer.playFromSearch(it.query, it.extras) }
+        // A web link of the server (VIEW) or a shared one (SEND).
+        incoming.link?.let { linkRequest.value = it }
         // SSO: lauschig://oauth?code=..&state=.. comes back from the Custom Tab.
-        if (!replay) intent?.data?.takeIf(OidcCallback::isCallback)?.let {
-            oidcCallbacks.post(OidcCallback.from(it))
-            intent?.data = null // a recreation must not replay it
-        }
+        incoming.oidc?.let { oidcCallbacks.post(OidcCallback.from(it)) }
     }
 
     companion object {

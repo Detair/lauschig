@@ -254,7 +254,8 @@ class PlaybackService : MediaLibraryService() {
         watchLibrary(built)
         startGuard = ForegroundStartGuard(scope, engaged = { isEngaged(exo) }, settle = ::settleForegroundStart)
         // The homescreen widget follows the player (also right now: a fresh process starts with an empty player).
-        widgets = WidgetPublisher(exo, scope, appScope, widgetStore, widgetSource::refresh).also { it.start() }
+        widgets = WidgetPublisher({ WidgetPublisher.snapshot(exo) }, { exo.mediaItemCount > 0 }, scope, appScope, widgetStore, widgetSource::refresh)
+            .also { exo.addListener(it); it.start() }
         grantCoverReaders()
         coverStore.onFetched = { serverId, itemId -> scope.launch { coverArrived(serverId, itemId) } }
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
@@ -590,7 +591,7 @@ class PlaybackService : MediaLibraryService() {
         coverStore.onFetched = null
         sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
-        widgets?.release()
+        widgets?.let { player?.removeListener(it); it.release() }
         widgets = null
         startGuard?.release()
         startGuard = null

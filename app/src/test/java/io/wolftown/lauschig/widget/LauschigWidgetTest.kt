@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.testing.unit.assertHasStartActivityClickAction
+import androidx.glance.appwidget.testing.unit.assertHasStartServiceClickAction
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
 import androidx.glance.testing.unit.assertHasClickAction
 import androidx.glance.testing.unit.hasContentDescription
@@ -48,7 +49,13 @@ class LauschigWidgetTest {
         onNode(hasTestTag(WidgetIntents.TAG_BACK)).assertExists().assertHasClickAction()
         onNode(hasTestTag(WidgetIntents.TAG_FORWARD)).assertExists().assertHasClickAction()
         onNode(hasContentDescription("Play")).assertExists()
-        onNode(hasTestTag(WidgetIntents.TAG_PLAY)).assertHasClickAction()
+        // PLAY may start the service from a dead process: a foreground start with the PLAY key.
+        onNode(hasTestTag(WidgetIntents.TAG_PLAY))
+            .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_PLAY), isForegroundService = true)
+        onNode(hasTestTag(WidgetIntents.TAG_BACK))
+            .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_REWIND), isForegroundService = false)
+        onNode(hasTestTag(WidgetIntents.TAG_FORWARD))
+            .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD), isForegroundService = false)
         onNode(hasContentDescription("Back 30 seconds")).assertExists()
         onNode(hasContentDescription("Forward 30 seconds")).assertExists()
         onNode(hasContentDescription("Open Die drei ??? in Lauschig")).assertExists()
@@ -60,6 +67,9 @@ class LauschigWidgetTest {
         provideComposable { WidgetContent(WidgetView(title.copy(playing = true), null, canResume = true)) }
         onNode(hasContentDescription("Pause")).assertExists()
         onNode(hasContentDescription("Play")).assertDoesNotExist()
+        // PAUSE only makes sense for the running service: never a foreground start.
+        onNode(hasTestTag(WidgetIntents.TAG_PLAY))
+            .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_PAUSE), isForegroundService = false)
     }
 
     @Test fun small_showsCoverAndPlayPauseOnly() = runGlanceAppWidgetUnitTest {

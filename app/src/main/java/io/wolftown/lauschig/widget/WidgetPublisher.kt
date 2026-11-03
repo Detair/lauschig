@@ -19,7 +19,9 @@ import kotlinx.coroutines.launch
  * burst of player events costs one DataStore write and one widget redraw.
  */
 class WidgetPublisher(
-    private val player: Player,
+    /** The service's player as the widget needs it ([snapshot] of the player); read on the main thread. */
+    private val snapshot: () -> WidgetPlayerSnapshot,
+    private val hasItems: () -> Boolean,
     private val scope: CoroutineScope,
     /** Outlives [scope]: the last "paused" state is written after the service scope is gone. */
     private val io: CoroutineScope,
@@ -33,8 +35,8 @@ class WidgetPublisher(
     private val pending = MutableStateFlow<WidgetState?>(null)
     private var writer: Job? = null
 
+    /** Starts writing; the service adds this as a listener of its player. */
     fun start() {
-        player.addListener(this)
         writer = io.launch {
             pending.filterNotNull().collect { write(it) }
         }
@@ -50,12 +52,14 @@ class WidgetPublisher(
                 Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED,
                 Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_TIMELINE_CHANGED,
             )
-        ) publish()
+        ) changed()
     }
 
-    /** Main thread. */
+    /** The player changed (main thread). */
+    fun changed() = publish()
+
     private fun publish() {
-        val next = WidgetMapping.map(snapshot(player), last)
+        val next = WidgetMapping.map(snapshot(), last)
         if (throttle.offer(next, clock())) {
             last = next
             pending.value = next
@@ -91,17 +95,16 @@ class WidgetPublisher(
 
     /** The service ends: the widget keeps the title, paused (main thread, before the player is released). */
     fun release() {
-        player.removeListener(this)
         ticker?.cancel()
         writer?.cancel()
         val final = (last ?: return).copy(playing = false).let { s ->
-            if (player.mediaItemCount > 0) WidgetMapping.map(snapshot(player), last).copy(playing = false) else s
+            if (hasItems()) WidgetMapping.map(snapshot(), last).copy(playing = false) else s
         }
         io.launch { write(final) }
     }
 
-    private companion object {
-        const val TAG = "WidgetPublisher"
+    companion object {
+        private const val TAG = "WidgetPublisher"
 
         fun snapshot(p: Player): WidgetPlayerSnapshot {
             val item = p.currentMediaItem
