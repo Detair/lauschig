@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,16 @@ class MainViewModel(
      */
     val appearance: StateFlow<Appearance?> = appearanceSource
         .catch { e -> if (e is CancellationException) throw e else emit(Appearance()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * An account is signed in (null until the first read; an unreadable store counts as signed out). Turns false when
+     * the user signs out while the app runs: the UI then shows the sign-in with a fresh back stack.
+     */
+    val signedIn: StateFlow<Boolean?> = accounts.account
+        .map { it != null }
+        .catch { e -> if (e is CancellationException) throw e else emit(false) }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _startDestination = MutableStateFlow<Any?>(null)

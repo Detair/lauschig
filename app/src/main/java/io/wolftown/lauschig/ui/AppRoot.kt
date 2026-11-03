@@ -29,6 +29,7 @@ import io.wolftown.lauschig.ui.nav.isOnPlayer
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.nav.navigateToTab
+import io.wolftown.lauschig.ui.nav.showSignIn
 import io.wolftown.lauschig.links.LinkTarget
 import io.wolftown.lauschig.links.LinkViewModel
 import io.wolftown.lauschig.ui.nav.Browse
@@ -60,8 +61,13 @@ fun AppRoot(
     onLinkHandled: () -> Unit = {},
     links: LinkViewModel = hiltViewModel(),
     whatsNew: WhatsNewViewModel = hiltViewModel(),
+    /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
+    signedIn: Boolean? = null,
 ) {
     val navController = rememberNavController()
+    LaunchedEffect(signedIn) {
+        if (signedIn == false) navController.showSignIn()
+    }
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(openRequest) {

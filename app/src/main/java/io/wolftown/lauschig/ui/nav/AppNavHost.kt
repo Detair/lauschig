@@ -4,6 +4,7 @@ import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavGraph
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -129,6 +130,16 @@ fun NavHostController.finishSetup(home: Any) {
     }
     graph.setStartDestination(home)
     navigate(home) { popUpTo<Setup> { inclusive = true } }
+}
+
+/**
+ * Signed out while the app runs: only [Setup] is left, so "back" never returns to the old account's pages. Already
+ * the only page (a start without an account): nothing changes. The next sign-in leads to the start tab ([finishSetup]).
+ */
+fun NavHostController.showSignIn() {
+    val pages = currentBackStack.value.filter { it.destination !is NavGraph }
+    if (pages.size == 1 && pages.single().destination.hasRoute<Setup>()) return
+    navigate(Setup) { popUpTo(graph.id) { inclusive = true } }
 }
 
 @Composable

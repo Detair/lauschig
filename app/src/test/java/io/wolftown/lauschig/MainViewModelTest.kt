@@ -104,4 +104,22 @@ class MainViewModelTest {
         vm.continueOnLauncherStart()
         assertEquals(1, runs)
     }
+
+    @Test fun signedIn_followsTheAccount_aSignOutWhileRunningTurnsItFalse() {
+        val store = signedIn()
+        val vm = viewModels.own(MainViewModel(store))
+        assertEquals(true, vm.signedIn.value)
+        kotlinx.coroutines.runBlocking { store.clear(keepDownloads = true) }
+        assertEquals(false, vm.signedIn.value)
+        assertEquals(Start, vm.startDestination.value) // the UI resets the back stack itself (showSignIn)
+        kotlinx.coroutines.runBlocking { store.save(store.acc.value ?: Account("s2", "u", "n", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()), "a", "r") }
+        assertEquals(true, vm.signedIn.value)
+    }
+
+    @Test fun signedIn_unreadableStore_isFalse() {
+        val store = object : io.wolftown.lauschig.account.AccountStore by FakeAccountStore() {
+            override val account: Flow<Account?> = flow { throw IOException("corrupt") }
+        }
+        assertEquals(false, viewModels.own(MainViewModel(store)).signedIn.value)
+    }
 }

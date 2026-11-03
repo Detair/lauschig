@@ -76,10 +76,11 @@ class MainActivity : ComponentActivity() {
             val tabs by viewModel.tabLayout.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
             val link by linkRequest.collectAsStateWithLifecycle()
+            val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
             start?.let {
                 AppRoot(
                     startDestination = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
-                    linkRequest = link, onLinkHandled = { linkRequest.value = null },
+                    linkRequest = link, onLinkHandled = { linkRequest.value = null }, signedIn = signedIn,
                 )
             }
         }
