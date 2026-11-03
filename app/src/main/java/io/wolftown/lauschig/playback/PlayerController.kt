@@ -60,4 +60,7 @@ interface PlayerController {
 
     /** Re-reads the player right now instead of waiting for the next poll (sleep timer near its end). */
     fun refreshNow() {}
+
+    /** The service started a title by itself (car, resumption, queue): show it. */
+    fun adoptFromService() {}
 }

@@ -21,6 +21,9 @@ interface PlayerFacade {
     /** (serverId, playable key) of the playing queue entry; the service may have loaded another title by itself. */
     fun currentKey(): Pair<String, String>? = null
 
+    /** Connects to the service if not connected yet (a title may already be playing there). */
+    suspend fun connect() {}
+
     /** True while the (remote) player is connected and has a queue loaded. */
     fun hasMedia(): Boolean
 

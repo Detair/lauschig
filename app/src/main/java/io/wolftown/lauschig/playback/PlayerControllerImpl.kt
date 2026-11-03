@@ -362,6 +362,24 @@ class PlayerControllerImpl(
 
     override fun refreshNow() = refresh()
 
+    /**
+     * The service started a title by itself (Android Auto, voice, playback resumption) and the app may not even be
+     * connected: connect and show it. Idempotent; a title the app started itself is left alone.
+     */
+    override fun adoptFromService() {
+        scope.launch {
+            try {
+                facade.connect()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "connecting to the playback service failed", e)
+                return@launch
+            }
+            refresh()
+        }
+    }
+
     private fun seekGlobal(c: Current, globalSec: Double) {
         val (i, ms) = c.mapper.toFile(globalSec)
         facade.seekTo(i, ms)
@@ -369,7 +387,12 @@ class PlayerControllerImpl(
     }
 
     private fun refresh() {
-        val c = current ?: return
+        val c = current
+        if (c == null) {
+            // Nothing loaded here, but the service may be playing a title it started itself (car, resumption).
+            if (!starting) facade.currentKey()?.let { (serverId, itemId) -> adopt(serverId, itemId) }
+            return
+        }
         val snap = facade.snapshot()
         if (snap.isPlaying) starting = false
         val playing = facade.currentKey()
@@ -407,8 +430,8 @@ class PlayerControllerImpl(
     }
 
     /**
-     * The service switched to another title on its own (the next queued one when a title ended): load that title as
-     * the current one, without touching the player's queue.
+     * The service switched to another title on its own (the next queued one when a title ended, a title started from
+     * the car or by playback resumption): load that title as the current one, without touching the player's queue.
      */
     private fun adopt(serverId: String, itemId: String) {
         if (adoptJob?.isActive == true && adopting == itemId) return

@@ -60,6 +60,8 @@ private class FakeFacade : PlayerFacade {
     var errorCb: () -> Unit = {}
     var disconnectedCb: () -> Unit = {}
     override fun hasMedia() = items.isNotEmpty()
+    var connects = 0
+    override suspend fun connect() { connects++ }
     override fun setOnError(onError: () -> Unit) { errorCb = onError }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
     fun change() = cb()
@@ -133,6 +135,33 @@ class PlayerControllerTest {
         assertEquals("Second", c.state.value.title)
         assertEquals(600.0, c.state.value.durationSec, 0.0)
         assertEquals(30.0, c.state.value.positionSec, 0.0)
+    }
+
+    @Test fun titleStartedByTheCar_withNothingLoadedInTheApp_isAdopted() = runTest {
+        val f = FakeFacade()
+        val carTitle = ItemWithDetails(ItemEntity(s, "car", "lib", "Vom Auto", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "car", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val c = controller(f, { null }, loadById = { _, id -> if (id == "car") carTitle else null })
+        // Android Auto started "car" inside the service; the app never played anything and was not connected.
+        f.key = s to "car"
+        f.snap = PlayerSnapshot(true, 0, 30_000, 1f)
+        c.adoptFromService()
+        assertEquals(1, f.connects)
+        assertEquals("car", c.state.value.itemId)
+        assertEquals("Vom Auto", c.state.value.title)
+        assertEquals(30.0, c.state.value.positionSec, 0.0)
+        assertTrue(c.state.value.isPlaying)
+        // A later play/pause from the app acts on the adopted title.
+        c.togglePlayPause()
+        assertFalse(f.snap.isPlaying)
+    }
+
+    @Test fun playerEvent_withNothingLoaded_adoptsTheServiceTitle() = runTest {
+        val f = FakeFacade()
+        val carTitle = ItemWithDetails(ItemEntity(s, "car", "lib", "Vom Auto", durationSec = 600.0), emptyList(), listOf(AudioFileEntity(s, "car", 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null)
+        val c = controller(f, { null }, loadById = { _, id -> if (id == "car") carTitle else null })
+        f.key = s to "car"
+        f.change()
+        assertEquals("car", c.state.value.itemId)
     }
 
     @Test fun episode_playsWithEpisodeTitleAndParentCover() = runTest {

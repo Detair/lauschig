@@ -35,7 +35,11 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
         }
     }
 
-    private suspend fun connect(): MediaController {
+    override suspend fun connect() {
+        controller()
+    }
+
+    private suspend fun controller(): MediaController {
         controller?.let { return it }
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val future = MediaController.Builder(context, token).setListener(controllerListener).buildAsync()
@@ -51,7 +55,7 @@ class MediaControllerFacade @Inject constructor(@ApplicationContext private val 
     }
 
     override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
-        val c = connect()
+        val c = controller()
         c.setMediaItems(items, startIndex, startPositionMs)
         c.prepare()
     }
