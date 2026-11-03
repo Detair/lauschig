@@ -30,6 +30,7 @@ import io.wolftown.lauschig.auto.CarNode
 import io.wolftown.lauschig.auto.CarSearch
 import io.wolftown.lauschig.auto.CarStarts
 import io.wolftown.lauschig.auto.ChapterTracker
+import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
@@ -63,6 +64,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -106,6 +108,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var playerController: PlayerController
     @Inject lateinit var catalogDao: CatalogDao
     @Inject lateinit var libraryDao: LibraryDao
+    @Inject lateinit var coverStore: CoverStore
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -121,6 +124,8 @@ class PlaybackService : MediaLibraryService() {
     private var carPlayer: CarSafePlayer? = null
     private var carButtons: CarButtons? = null
     private var buttonState: CarButtons.State? = null
+    /** Counts covers that arrived in the background; browsers reload their lists when it changes. */
+    private val coverArrivals = MutableStateFlow(0)
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
     private val subscribed = LinkedHashSet<String>()
 
@@ -219,6 +224,7 @@ class PlaybackService : MediaLibraryService() {
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
         watchLibrary(built)
         grantCoverReaders()
+        coverStore.onFetched = { serverId, itemId -> scope.launch { coverArrived(serverId, itemId) } }
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
         setListener(object : Listener {
             override fun onForegroundServiceStartNotAllowedException() {
@@ -243,6 +249,26 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         }
+    }
+
+    /**
+     * A cover the car or the notification asked for arrived in the background. Browsers reload their lists (debounced,
+     * see [watchLibrary]); for the playing title the artwork URIs get a fresh query, because Media3, AA and SystemUI
+     * remember a failed load per URI. Same media URIs, so ExoPlayer updates the items in place.
+     */
+    private fun coverArrived(serverId: String, itemId: String) {
+        coverArrivals.value++
+        val exo = player ?: return
+        val (sid, key) = currentKey(exo) ?: return
+        if (sid != serverId || PlayableKey.parse(key).libraryItemId != itemId) return
+        val stamp = System.currentTimeMillis().toString()
+        val items = (0 until exo.mediaItemCount).map { i ->
+            val item = exo.getMediaItemAt(i)
+            val art = item.mediaMetadata.artworkUri ?: return@map item
+            val fresh = art.buildUpon().clearQuery().appendQueryParameter("ready", stamp).build()
+            item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(fresh).build()).build()
+        }
+        if (items.isNotEmpty()) exo.replaceMediaItems(0, items.size, items)
     }
 
     private fun currentButtonState() = CarButtons.State(
@@ -347,6 +373,7 @@ class PlaybackService : MediaLibraryService() {
                 val dev = DeviceLibrary.SERVER_ID
                 val parts: List<Flow<Any>> = listOf(
                     api.connection.map { it is ConnectionState.Online },
+                    coverArrivals,
                     catalogDao.observeAll(dev).map { list -> list.map { it.id to it.coverUpdatedAt } },
                     itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
                 ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
@@ -470,6 +497,7 @@ class PlaybackService : MediaLibraryService() {
         comfort = null
         chapters?.release()
         chapters = null
+        coverStore.onFetched = null
         sleepTimer.cancel() // nothing left to put to sleep
         player?.pause()
         bridge?.shutdown(final, appScope)

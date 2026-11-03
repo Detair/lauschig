@@ -15,8 +15,9 @@ import java.io.FileNotFoundException
 
 /**
  * Covers for other apps (Android Auto, SystemUI's media controls and resumption card): they can neither read app
- * storage nor send the server token. Read-only, never exported; callers get a prefix grant on connect (see
- * [CarAccess]). Only [CoverUris] of well-formed ids resolve, through [CoverStore]; anything else is "not found".
+ * storage nor send the server token. Read-only, never exported; callers get a prefix grant (see [CarAccess]). Only
+ * [CoverUris] of well-formed ids resolve, through [CoverStore], which never waits for the network: a cover that is
+ * not here yet is "not found" now and announced once it arrived (the service then makes the car ask again).
  */
 class CoverProvider : ContentProvider() {
     @EntryPoint

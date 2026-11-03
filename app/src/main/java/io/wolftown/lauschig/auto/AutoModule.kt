@@ -21,8 +21,11 @@ import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.ApiProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -46,26 +49,51 @@ object AutoModule {
         localCover = { serverId, key -> try { files.playableCover(serverId, key) } catch (e: Exception) { null } },
         cacheDir = File(context.cacheDir, CoverStore.DIR),
         fetch = { serverId, itemId -> fetchCover(api, accounts, serverId, itemId) },
+        executor = Executors.newFixedThreadPool(CoverStore.MAX_FETCHES) { r ->
+            Thread(r, "car-covers").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+        },
     )
 
     /**
-     * The server cover through the signed-in account's authenticated client, only while that server is online right
-     * now (the playback service keeps the connection state current while a car browses). Runs on a binder thread.
+     * The server cover, resized for cars and notifications, through the signed-in account's authenticated client;
+     * only while that server is online right now (the playback service keeps the state current while a car browses).
+     * Runs on the cover pool, never on a binder thread.
      */
     private fun fetchCover(api: ApiProvider, accounts: AccountStore, serverId: String, itemId: String): CoverStore.Fetch {
         val online = api.connectionState.value as? ConnectionState.Online ?: return CoverStore.Fetch.Unavailable
         if (runBlocking { accounts.account.first()?.serverId } != serverId) return CoverStore.Fetch.Unavailable
-        val client = api.clientFor(online.baseUrl).newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
-        return client.newCall(Request.Builder().url(coverUrl(online.baseUrl, itemId)).build()).execute().use { resp ->
+        val client = api.clientFor(online.baseUrl).newBuilder().callTimeout(15, TimeUnit.SECONDS).build()
+        val raw = coverUrl(online.baseUrl, itemId)
+        val resized = raw.newBuilder()
+            .addQueryParameter("width", CoverStore.WIDTH_PX.toString())
+            .addQueryParameter("format", "jpeg")
+            .build()
+        val first = get(client, resized)
+        // A server that does not resize (a 4xx other than "no cover"): take the original once.
+        return if (first is HttpError && first.code in 400..499 && first.code != 404) get(client, raw).toFetch() else first.toFetch()
+    }
+
+    private sealed interface Answer
+    private class Bytes(val bytes: ByteArray) : Answer
+    private class HttpError(val code: Int) : Answer
+    private data object TooLarge : Answer
+
+    private fun Answer.toFetch(): CoverStore.Fetch = when (this) {
+        is Bytes -> CoverStore.Fetch.Found(bytes)
+        is HttpError -> if (code == 404) CoverStore.Fetch.Missing else CoverStore.Fetch.Failed
+        TooLarge -> CoverStore.Fetch.Missing
+    }
+
+    private fun get(client: OkHttpClient, url: HttpUrl): Answer =
+        client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             if (!resp.isSuccessful) {
                 if (resp.code != 404) Log.w(TAG, "cover http ${resp.code}")
-                return CoverStore.Fetch.Missing
+                return HttpError(resp.code)
             }
-            if (resp.body.contentLength() > CoverStore.MAX_BYTES) return CoverStore.Fetch.Missing
+            if (resp.body.contentLength() > CoverStore.MAX_BYTES) return TooLarge
             val bytes = resp.body.byteStream().use { it.readNBytesCompat(CoverStore.MAX_BYTES + 1) }
-            if (bytes.size > CoverStore.MAX_BYTES) CoverStore.Fetch.Missing else CoverStore.Fetch.Found(bytes)
+            if (bytes.size > CoverStore.MAX_BYTES) TooLarge else Bytes(bytes)
         }
-    }
 
     /** Reads at most [limit] bytes (InputStream.readNBytes needs API 33). */
     private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {

@@ -35,51 +35,79 @@ class CoverTest {
     @After fun cleanUp() { tmp.deleteRecursively() }
 
     private val fetched = mutableListOf<String>()
-
+    private val arrived = mutableListOf<String>()
+    private val queued = ArrayDeque<Runnable>()
     private var now = 0L
 
-    private fun store(local: File? = null, online: Boolean = true, bytes: ByteArray? = byteArrayOf(1, 2, 3)) = CoverStore(
+    private fun runQueued() { while (queued.isNotEmpty()) queued.removeFirst().run() }
+
+    private fun store(local: File? = null, answer: () -> CoverStore.Fetch = { CoverStore.Fetch.Found(byteArrayOf(1, 2, 3)) }) = CoverStore(
         localCover = { _, _ -> local },
         cacheDir = File(tmp, "cache"),
-        fetch = { serverId, itemId ->
-            if (!online) CoverStore.Fetch.Unavailable
-            else { fetched += "$serverId/$itemId"; bytes?.let(CoverStore.Fetch::Found) ?: CoverStore.Fetch.Missing }
-        },
+        fetch = { serverId, itemId -> fetched += "$serverId/$itemId"; answer() },
+        executor = { queued.addLast(it) },
         clock = { now },
-    )
+    ).apply { onFetched = { serverId, itemId -> arrived += "$serverId/$itemId" } }
 
     @Test fun localCover_winsWithoutFetching() {
         val local = File(tmp, "cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(9)) }
         assertEquals(local, store(local).file(CoverRef(s, "b", 1)))
-        assertTrue(fetched.isEmpty())
+        assertTrue(queued.isEmpty())
     }
 
-    @Test fun serverCover_fetchedOnce_perVersion_episodesUseThePodcast() {
+    @Test fun aMiss_neverWaitsForTheNetwork_fetchesOnceInTheBackground_andAnnouncesIt() {
         val st = store()
+        // The provider's call returns at once ("not found" for now) and queues one fetch, however often it is asked.
+        assertNull(st.file(CoverRef(s, "pod~ep1", 3)))
+        assertNull(st.file(CoverRef(s, "pod~ep2", 3)))
+        assertTrue(fetched.isEmpty())
+        assertEquals(1, queued.size)
+        runQueued()
+        assertEquals(listOf("$s/pod"), fetched)
+        assertEquals(listOf("$s/pod"), arrived)
+        // Episodes show their podcast's cover.
         val f = st.file(CoverRef(s, "pod~ep1", 3))!!
         assertArrayEquals(byteArrayOf(1, 2, 3), f.readBytes())
         assertEquals(f, st.file(CoverRef(s, "pod~ep2", 3)))
-        assertEquals(listOf("$s/pod"), fetched)
         // A new cover version replaces the cached file.
-        val g = st.file(CoverRef(s, "pod", 4))!!
+        assertNull(st.file(CoverRef(s, "pod", 4)))
+        runQueued()
         assertFalse(f.exists())
-        assertTrue(g.exists())
+        assertTrue(st.file(CoverRef(s, "pod", 4))!!.exists())
         assertEquals(2, fetched.size)
     }
 
-    @Test fun offlineOrMissing_hasNoCover_andDeviceTitlesAreNeverFetched() {
-        assertNull(store(online = false).file(CoverRef(s, "b", 1)))
-        assertNull(store().file(CoverRef("device", "local:0123456789abcdef01234567", 1)))
-        assertTrue(fetched.isEmpty())
+    @Test fun offline_isNotRemembered_andDeviceTitlesAreNeverFetched() {
+        val st = store { CoverStore.Fetch.Unavailable }
+        assertNull(st.file(CoverRef(s, "b", 1))); runQueued()
+        assertNull(st.file(CoverRef(s, "b", 1))); runQueued()
+        assertEquals(2, fetched.size)
+        assertTrue(arrived.isEmpty())
+        assertNull(st.file(CoverRef("device", "local:0123456789abcdef01234567", 1)))
+        assertTrue(queued.isEmpty())
     }
 
-    @Test fun aTitleWithoutCover_isNotAskedForAgainForAWhile() {
+    @Test fun noCoverOnTheServer_isNotAskedForAgainForHalfAnHour() {
         // SystemUI and the notification reload the artwork on every metadata change.
-        val st = store(bytes = null)
-        repeat(5) { assertNull(st.file(CoverRef(s, "b", 1))) }
-        assertEquals(listOf("$s/b"), fetched)
+        val st = store { CoverStore.Fetch.Missing }
+        repeat(5) { assertNull(st.file(CoverRef(s, "b", 1))); runQueued() }
+        assertEquals(1, fetched.size)
         now += CoverStore.MISS_TTL_MS + 1
-        assertNull(st.file(CoverRef(s, "b", 1)))
+        assertNull(st.file(CoverRef(s, "b", 1))); runQueued()
         assertEquals(2, fetched.size)
+    }
+
+    @Test fun aFailedRequest_isRetriedAfterTwoMinutes() {
+        val st = store { CoverStore.Fetch.Failed }
+        repeat(3) { assertNull(st.file(CoverRef(s, "b", 1))); runQueued() }
+        assertEquals(1, fetched.size)
+        now += CoverStore.ERROR_TTL_MS + 1
+        assertNull(st.file(CoverRef(s, "b", 1))); runQueued()
+        assertEquals(2, fetched.size)
+        // An exception counts as a failed request.
+        val throwing = store { error("boom") }
+        assertNull(throwing.file(CoverRef(s, "c", 1))); runQueued()
+        assertNull(throwing.file(CoverRef(s, "c", 1)))
+        assertTrue(queued.isEmpty())
     }
 }
