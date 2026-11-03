@@ -91,6 +91,9 @@ interface OidcSignIn {
     /** Cheap check: is [callback] the answer to the attempt we have pending? Foreign links are silent no-ops. */
     suspend fun matchesPending(callback: OidcCallback): Boolean
     suspend fun finish(callback: OidcCallback): OidcResult
+
+    /** Forgets a pending attempt (verifier, state, session cookies); sign-out. */
+    suspend fun clearPending()
 }
 
 private val Context.oidcPendingDataStore by preferencesDataStore(
@@ -192,7 +195,7 @@ class OidcLogin(
     override suspend fun matchesPending(callback: OidcCallback): Boolean =
         loadPending()?.let { stateMatches(callback.state, it.state) } == true
 
-    private suspend fun clearPending() { store.edit { it.clear() } }
+    override suspend fun clearPending() { store.edit { it.clear() } }
 
     private fun stateMatches(received: String?, expected: String): Boolean =
         !received.isNullOrEmpty() && MessageDigest.isEqual(received.toByteArray(), expected.toByteArray())

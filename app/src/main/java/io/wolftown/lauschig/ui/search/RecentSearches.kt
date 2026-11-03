@@ -30,6 +30,11 @@ class RecentSearches(private val store: DataStore<Preferences>) {
         }
     }
 
+    /** Sign-out: the next account does not see this user's searches. */
+    suspend fun clear() {
+        store.edit { it.remove(KEY) }
+    }
+
     private fun decode(raw: String?): List<String> = raw.orEmpty().split(SEPARATOR).filter { it.isNotBlank() }
 
     companion object {

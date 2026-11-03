@@ -45,6 +45,7 @@ private class FakeLogin(var behaviour: (HttpUrl) -> LoginResponse) : LoginClient
 }
 
 private class FakeOidc : OidcSignIn {
+    override suspend fun clearPending() {}
     var start: OidcStart = OidcStart.Launch("https://idp.example/login")
     var finishResult: () -> OidcResult = { throw OidcException(OidcException.Reason.NO_PENDING) }
     val started = mutableListOf<HttpUrl>()

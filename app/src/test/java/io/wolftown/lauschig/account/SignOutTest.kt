@@ -1,0 +1,230 @@
+package io.wolftown.lauschig.account
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.connection.ServerAddresses
+import io.wolftown.lauschig.db.LauschigDatabase
+import io.wolftown.lauschig.db.entities.DownloadEntity
+import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.local.DeviceLibrary
+import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.playback.LastPlayed
+import io.wolftown.lauschig.playback.LastPlayedStore
+import io.wolftown.lauschig.sync.InMemorySyncStamps
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+class SignOutTest {
+    private val a = "aaaaaaaaaaaaaaaa"
+    private val b = "bbbbbbbbbbbbbbbb"
+    private val dev = DeviceLibrary.SERVER_ID
+    private val localKey = "${DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+    private val ctx get() = ApplicationProvider.getApplicationContext<Context>()
+    private lateinit var db: LauschigDatabase
+    private lateinit var root: File
+    private lateinit var data: AccountData
+    private val account = Account(a, "u1", "fabian", false, ServerAddresses("http://10.0.2.2:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl()), emptySet())
+    private val accounts = FakeAccountStore()
+    private val kept = FakeKeptAccounts()
+    private val calls = mutableListOf<String>()
+    private val cancelled = mutableListOf<String>()
+    private val logouts = mutableListOf<String>()
+    private val lastPlayed = object : LastPlayedStore {
+        var value: LastPlayed? = null
+        override suspend fun get() = value
+        override suspend fun set(last: LastPlayed) { value = last }
+        override suspend fun clear() { value = null; calls += "lastPlayed" }
+    }
+
+    @Before fun setUp() {
+        // Synchronous: the timeouts run on virtual time, a real query thread would let them fire early.
+        db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries()
+            .setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
+        root = File(ctx.cacheDir, "signout-${System.nanoTime()}/downloads").apply { mkdirs() }
+        data = AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), {})
+        accounts.acc.value = account
+        accounts.access = "access-1"
+        accounts.refresh = "refresh-1"
+    }
+
+    @After fun tearDown() {
+        db.close()
+        root.parentFile!!.deleteRecursively()
+    }
+
+    private fun signOut(
+        logout: suspend (Account, String) -> Boolean = { _, token -> logouts += token; calls += "logout"; true },
+        online: suspend () -> Boolean = { true },
+        pushes: List<suspend (String) -> Unit> = emptyList(),
+        purgeData: AccountData = data,
+    ) = SignOut(
+        accounts = accounts,
+        data = purgeData,
+        kept = kept,
+        work = { sid -> cancelled += sid; calls += "work" },
+        lastPlayed = lastPlayed,
+        pausePlayback = { calls += "pause" },
+        stopPlayback = { calls += "stop" },
+        pushes = pushes,
+        awaitOnline = online,
+        logout = logout,
+        clearAccountState = { sid -> calls += "state:$sid" },
+    )
+
+    /** One title of [server] with progress, a complete download with its file, a bookmark, a queue entry and audio settings. */
+    private suspend fun seed(server: String, id: String = "book1") {
+        db.itemDao().upsertFromList(listOf(ItemEntity(server, id, "lib", "Title $id")))
+        db.progressDao().saveLocal(server, id, 10.0, 100.0, false, 1)
+        db.downloadDao().upsert(DownloadEntity(server, id, DownloadState.COMPLETE, 1))
+        db.bookmarkDao().add(server, id, 5.0, "n", 1)
+        db.queueDao().add(server, id, 1)
+        db.titleAudioDao().setSpeed(server, id, 1.5f)
+        if (server != dev) File(root, "$server/$id").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(100))
+    }
+
+    private suspend fun rows(server: String, id: String = "book1") = listOf(
+        db.itemDao().get(server, id) != null,
+        db.progressDao().get(server, id) != null,
+        db.downloadDao().get(server, id) != null,
+        db.bookmarkDao().all(server).isNotEmpty(),
+        db.queueDao().entries(server).isNotEmpty(),
+        db.titleAudioDao().get(server, id) != null,
+    )
+
+    @Test fun withoutKeeping_deletesOnlyThisAccount_andSignsOut() = runTest {
+        seed(a); seed(b); seed(dev, localKey)
+        lastPlayed.value = LastPlayed(a, "book1", 1)
+
+        signOut().execute(keepDownloads = false)
+
+        assertEquals(List(6) { false }, rows(a))
+        assertFalse(File(root, a).exists())
+        assertEquals(List(6) { true }, rows(b))
+        assertTrue(File(root, "$b/book1/0.mp3").isFile)
+        assertEquals(List(6) { true }, rows(dev, localKey))
+        assertNull(accounts.acc.value)
+        assertNull(accounts.access)
+        assertNull(accounts.refresh)
+        assertEquals(false, accounts.clearedKeeping)
+        assertEquals(listOf(a), cancelled)
+        assertEquals(listOf("refresh-1"), logouts)
+        assertNull(lastPlayed.value)
+        assertEquals(emptyList<KeptAccount>(), kept.list.value)
+        // Playback first, the credentials last (nothing reacts to "signed out" before the data is final).
+        assertEquals("stop", calls.first())
+        assertTrue(calls.indexOf("work") < calls.indexOf("state:$a"))
+        assertTrue("state:$a" in calls && "lastPlayed" in calls && "logout" in calls)
+    }
+
+    @Test fun keeping_keepsRowsAndFiles_pausesWaitingDownloads_andRemembersTheAccount() = runTest {
+        seed(a)
+        db.downloadDao().upsert(DownloadEntity(a, "book2", DownloadState.QUEUED, 1))
+        lastPlayed.value = LastPlayed(a, "book1", 1)
+
+        signOut().execute(keepDownloads = true)
+
+        assertEquals(List(6) { true }, rows(a))
+        assertTrue(File(root, "$a/book1/0.mp3").isFile)
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(a, "book2")!!.state)
+        assertEquals(DownloadState.COMPLETE, db.downloadDao().get(a, "book1")!!.state)
+        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org")), kept.list.value)
+        assertNull(accounts.acc.value)
+        assertNull(accounts.refresh)
+        assertEquals(true, accounts.clearedKeeping)
+        assertEquals(listOf(a), cancelled)
+        assertEquals(listOf("refresh-1"), logouts)
+        assertNull(lastPlayed.value) // a play key cannot start the old account's title
+    }
+
+    @Test fun aDeviceTitleLastPlayed_isKept() = runTest {
+        val device = LastPlayed(dev, localKey, 1)
+        lastPlayed.value = device
+        signOut().execute(keepDownloads = false)
+        assertEquals(device, lastPlayed.value)
+    }
+
+    @Test fun logoutFailure_orTimeout_neverBlocksTheSignOut() = runTest {
+        signOut(logout = { _, _ -> error("connection reset") }).execute(keepDownloads = false)
+        assertNull(accounts.acc.value)
+
+        accounts.acc.value = account; accounts.refresh = "refresh-2"
+        signOut(logout = { _, _ -> awaitCancellation() }).execute(keepDownloads = false)
+        assertNull(accounts.acc.value)
+        assertTrue(testScheduler.currentTime <= SignOut.LOGOUT_TIMEOUT_MS)
+    }
+
+    @Test fun noRefreshToken_noLogoutCall() = runTest {
+        accounts.refresh = null
+        signOut().execute(keepDownloads = false)
+        assertEquals(emptyList<String>(), logouts)
+        assertNull(accounts.acc.value)
+    }
+
+    @Test fun aFailingStep_stillClearsTheCredentials() = runTest {
+        val broken = AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), { error("disk") })
+        seed(a)
+        signOut(purgeData = broken).execute(keepDownloads = false)
+        assertNull(accounts.acc.value)
+        assertNull(accounts.refresh)
+    }
+
+    @Test fun withoutAccount_nothingHappens() = runTest {
+        accounts.acc.value = null
+        signOut().execute(keepDownloads = false)
+        assertNull(signOut().check())
+        assertEquals(emptyList<String>(), calls)
+        assertNull(accounts.clearedKeeping)
+    }
+
+    @Test fun check_pausesThenPushesPendingChanges_andReportsWhatIsLeft() = runTest {
+        seed(a) // dirty progress + a pending bookmark
+        val pushed = mutableListOf<String>()
+        val check = signOut(pushes = listOf(
+            { sid -> calls += "push"; pushed += sid; db.progressDao().markSynced(sid, "book1", 1) },
+            { sid -> pushed += "bookmarks:$sid" },
+        )).check()
+
+        assertEquals(listOf("pause", "push"), calls)
+        assertEquals(listOf(a, "bookmarks:$a"), pushed)
+        assertNotNull(check)
+        assertEquals(1, check!!.unsynced) // the bookmark is still pending
+        assertEquals(100L, check.downloadBytes)
+    }
+
+    @Test fun check_nothingPending_pushesNothing() = runTest {
+        var pushes = 0
+        val check = signOut(pushes = listOf({ _ -> pushes++ })).check()!!
+        assertEquals(0, pushes)
+        assertEquals(SignOutCheck(0, 0), check)
+    }
+
+    @Test fun check_offline_orFailing_orHanging_stillAnswers() = runTest {
+        seed(a)
+        var pushes = 0
+        assertEquals(2, signOut(online = { false }, pushes = listOf({ _ -> pushes++ })).check()!!.unsynced)
+        assertEquals(0, pushes)
+        assertEquals(2, signOut(pushes = listOf({ _ -> error("500") }, { _ -> pushes++ })).check()!!.unsynced)
+        assertEquals(1, pushes) // one failing sync does not stop the other
+        val started = testScheduler.currentTime
+        assertEquals(2, signOut(pushes = listOf({ _ -> awaitCancellation() })).check()!!.unsynced)
+        assertTrue(testScheduler.currentTime - started <= SignOut.PUSH_TIMEOUT_MS)
+        assertEquals(account, accounts.account.first()) // checking never signs out
+    }
+}

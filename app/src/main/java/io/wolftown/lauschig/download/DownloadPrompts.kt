@@ -41,4 +41,7 @@ class DownloadPrompts @Inject constructor() {
 
     /** Closes [prompt] if it is still the open one. */
     fun clear(prompt: DownloadPrompt) { _prompt.update { if (it == prompt) null else it } }
+
+    /** Sign-out: an open question about a download of [serverId] goes. */
+    fun clearFor(serverId: String) { _prompt.update { if (it?.serverId == serverId) null else it } }
 }
