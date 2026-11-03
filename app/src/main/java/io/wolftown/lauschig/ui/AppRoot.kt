@@ -61,6 +61,7 @@ fun AppRoot(
     onLinkHandled: () -> Unit = {},
     links: LinkViewModel = hiltViewModel(),
     whatsNew: WhatsNewViewModel = hiltViewModel(),
+    previousAccount: PreviousAccountViewModel = hiltViewModel(),
     /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
     signedIn: Boolean? = null,
 ) {
@@ -144,6 +145,10 @@ fun AppRoot(
             // Once after an update (never on a first install or over the sign-in).
             val news by whatsNew.pending.collectAsStateWithLifecycle()
             if (news.isNotEmpty() && !onSetup) WhatsNewSheet(news, whatsNew::dismiss)
+            // Another account kept its downloads here: asked once after the sign-in.
+            val previous by previousAccount.question.collectAsStateWithLifecycle()
+            val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
+            previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep) }
         }
     }
 }
