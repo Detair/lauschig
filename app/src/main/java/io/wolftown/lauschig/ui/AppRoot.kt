@@ -21,6 +21,7 @@ import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
 import io.wolftown.lauschig.ui.nav.AppNavHost
+import io.wolftown.lauschig.ui.nav.route
 import io.wolftown.lauschig.ui.nav.currentTab
 import io.wolftown.lauschig.ui.nav.Player
 import io.wolftown.lauschig.ui.nav.Setup
@@ -50,6 +51,8 @@ fun AppRoot(
     appearance: Appearance = Appearance(),
     /** The visible tabs in their order. */
     tabs: List<TopLevelTab> = TopLevelTab.entries,
+    /** The chosen start screen (where the first sign-in leads). */
+    startTab: TopLevelTab = TopLevelTab.Start,
     viewModel: AppViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
@@ -126,7 +129,7 @@ fun AppRoot(
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,
             ) {
-                AppNavHost(navController, startDestination)
+                AppNavHost(navController, startDestination, homeRoute = startTab.route())
             }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {

@@ -31,11 +31,17 @@ import io.wolftown.lauschig.ui.start.StartRoute
 
 /**
  * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
- * stores, never from the network). After a successful login [Setup] is removed from the back stack.
+ * stores, never from the network); the first sign-in then leads to [homeRoute] (see [finishSetup]). After a successful login [Setup] is removed from the back stack.
  * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
-fun AppNavHost(navController: NavHostController, startDestination: Any, modifier: Modifier = Modifier) {
+fun AppNavHost(
+    navController: NavHostController,
+    startDestination: Any,
+    modifier: Modifier = Modifier,
+    /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
+    homeRoute: Any = Start,
+) {
     NavHost(navController, startDestination = startDestination, modifier = modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
@@ -105,14 +111,24 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
         }
         composable<Setup> {
             ReadableWidth {
-                SetupRoute(onDone = {
-                    // Re-auth (opened on top of the app): just go back. First setup: replace Setup with Start.
-                    if (navController.previousBackStackEntry != null) navController.popBackStack()
-                    else navController.navigate(Start) { popUpTo<Setup> { inclusive = true } }
-                })
+                SetupRoute(onDone = { navController.finishSetup(homeRoute) })
             }
         }
     }
+}
+
+/**
+ * After a sign-in. Re-auth (opened on top of the app): just go back. First setup: Setup is replaced by the user's start
+ * screen [home], which also becomes the graph's start destination, so "back" from another tab returns to it and the
+ * tab switches pop up to it instead of piling up.
+ */
+fun NavHostController.finishSetup(home: Any) {
+    if (previousBackStackEntry != null) {
+        popBackStack()
+        return
+    }
+    graph.setStartDestination(home)
+    navigate(home) { popUpTo<Setup> { inclusive = true } }
 }
 
 @Composable

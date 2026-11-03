@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
             val link by linkRequest.collectAsStateWithLifecycle()
             start?.let {
                 AppRoot(
-                    startDestination = it, appearance = appearance, tabs = tabs.visible, openRequest = open, onOpenHandled = { openRequest.value = null },
+                    startDestination = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
                     linkRequest = link, onLinkHandled = { linkRequest.value = null },
                 )
             }
