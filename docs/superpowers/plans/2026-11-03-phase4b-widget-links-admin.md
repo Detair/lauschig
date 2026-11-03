@@ -190,3 +190,15 @@ not) and twice more with the app's controller bound → placeholder shown and le
 no placeholder left behind. New instrumented `PlayKeyGuardTest`: a held PLAY key (Media3 ignores repeats) and two
 headset presses delivered with `startForegroundService` on a paused title survive the deadline; the held key went
 through the "adopt the media notification" path.
+
+## Final whole-branch review fixes (2026-11-03)
+
+- **Intents from Recents are replays**: `IncomingIntents.isReplay` also treats `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` as a
+  replay (Android 9–11: Back + reopen from Recents hands the old voice/link/player intent to a new activity without
+  saved state).
+- **Play-key guard and Recents**: `onTaskRemoved` never stops the service while the guard is armed
+  (`PlaybackService.stopsOnTaskRemoved`); the guard settles and stops an empty service itself.
+- **Server switch**: `accountConnection()` starts every server with a reset (Offline + `checking`), so the shared state
+  never keeps the previous server's Online while the new one is probed (no token to the old host); the probe loop
+  restarts only when the server or its addresses change. The 10 s first-probe wait (`awaitOnlineAnswer`) is now shared
+  with the car, voice and player starts.

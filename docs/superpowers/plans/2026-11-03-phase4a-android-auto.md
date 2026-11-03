@@ -230,3 +230,19 @@ revokes the grants; SystemUI cannot open covers until the service starts again a
 
 Verification: `testDebugUnitTest` 789 tests, 0 failures; `lintDebug` 0 errors; `assembleDebug` ok; `CarBrowseTest`
 6/6 on emulator-5554; SystemUI resumption still connects; debug APK reinstalled, login kept.
+
+## Final whole-branch review fixes (2026-11-03)
+
+- **Starts wait for the first probe's answer** (`awaitOnlineAnswer`, at most 10 s, `CONNECTION_ANSWER_WAIT_MS`): car
+  browse starts and resumption (`streamBase`), car and phone voice, and `PlayerControllerImpl.onlineBaseUrl`. A check
+  that already answered "offline" does not wait. The play-key guard keeps its placeholder while a resumption is pending
+  (60 s cap), so a 10 s wait fits; the waits run in the library callback's background scope.
+- **A streamed queue follows the server's address** (home LAN → public in the car): streamed items carry
+  `EXTRA_STREAM_BASE`; `PlayerControllerImpl` follows the online address of the loaded title, whoever started it
+  (adopted service titles included, also adopted offline). Not playing → moved right away (current file reloaded at its
+  position, others swapped in place); playing → plays on from the buffer and moves at the next network error
+  (`ERROR_CODE_IO_*`), then plays on; an error before the new address is known moves and plays once it is. Local files
+  never move. The emulator's test account has only one address (public `10.0.2.2`), so this is covered by unit tests
+  (`PlayerControllerTest`, 5 cases) only.
+- **watchLibrary** observes `CatalogDao.observeVersion` (count, newest update, cover and added sums) instead of every title.
+- R8 (`./gradlew :app:assembleRelease`, no signing variables set): build successful, only the planned "release signing incomplete … UNSIGNED" warning; `minifyReleaseWithR8` printed no warnings and wrote no `missing_rules.txt`; manifest components, Media3 `MediaButtonReceiver`, the cover provider and 70 kotlinx.serialization `$$serializer` classes are kept (mapping checked). Output `app-release-unsigned.apk` (8.9 MB), not installed; no keystore created.
