@@ -39,8 +39,17 @@ abstract class LinkManifestTask : DefaultTask() {
             appendLine("                <data android:scheme=\"https\" />")
             appendLine("                <data android:scheme=\"http\" />")
             list.forEach { appendLine("                <data android:host=\"$it\" />") }
-            listOf("/item/.*", "/.*/item/.*", "/library/.*/series/.*", "/.*/library/.*/series/.*").forEach {
-                appendLine("                <data android:pathPattern=\"$it\" />")
+            // Android's globs do not backtrack: ".*" stops at the next "/", so every prefix depth needs its own pattern.
+            // pathPattern (all versions): up to 2 prefix segments ("/audiobookshelf/item/<id>");
+            // pathAdvancedPattern (Android 12+): 3 and 4 prefix segments.
+            val routes = listOf("/item/.*", "/library/.*/series/.*")
+            routes.forEach { route ->
+                listOf("", "/.*", "/.*/.*").forEach { appendLine("                <data android:pathPattern=\"$it$route\" />") }
+            }
+            listOf("/item/.*", "/library/[^/]+/series/.*").forEach { route ->
+                listOf("/[^/]+/[^/]+/[^/]+", "/[^/]+/[^/]+/[^/]+/[^/]+").forEach {
+                    appendLine("                <data android:pathAdvancedPattern=\"$it$route\" tools:targetApi=\"s\" />")
+                }
             }
             appendLine("            </intent-filter>")
         }
