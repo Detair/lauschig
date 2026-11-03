@@ -36,14 +36,17 @@ class CarSearch(private val library: CarLibrary) {
     }
 
     /**
-     * The one title a voice query means (see the phase-4A plan): empty → the last title on this device ([last]) if it
-     * plays now, else the first to continue; a series (optionally with a volume number) → that volume or the one to
+     * The one title a voice query means (see the phase-4A plan): empty → the last title on this device ([last]), else
+     * the first to continue; a series (optionally with a volume number) → that volume or the one to
      * listen to now; else the best title match (title over author/series words, in progress first). Null: nothing.
+     * [ctx] should come after the connection check ([awaitOnline]), else streamed titles are not found.
      */
     suspend fun resolve(query: String, hints: SearchHints, ctx: CarContext, last: suspend () -> CarNode.Title?): CarNode.Title? {
         val q = query.trim().ifEmpty { listOfNotNull(hints.title ?: hints.album, hints.artist).joinToString(" ") }
         if (q.isBlank()) {
-            last()?.let { t -> library.item(t, ctx)?.takeIf { it.downloaded || ctx.online }?.let { return t } }
+            // The last title, even if it cannot stream right now: the start then says so ("not downloaded") instead of
+            // silently playing another book.
+            last()?.let { return it }
             return library.children(CarNode.Continue, ctx)?.firstOrNull()?.node as? CarNode.Title
         }
         val tokens = words(q)

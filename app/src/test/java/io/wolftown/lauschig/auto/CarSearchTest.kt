@@ -72,6 +72,13 @@ class CarSearchTest {
         assertEquals(CarNode.Title(DEV, LOCAL_A), play(""))
     }
 
+    @Test fun emptyQuery_offline_stillMeansTheLastTitle_notAnotherDownloadedBook() = runTest {
+        // A voice request right after the car started the service: the connection check has not answered yet. The
+        // start reports "not downloaded" if it really cannot stream; it never silently plays something else.
+        last = CarNode.Title(S, "v2") // streamed, not downloaded
+        assertEquals(CarNode.Title(S, "v2"), play("", offline))
+    }
+
     @Test fun seriesName_playsTheVolumeToListenToNow() = runTest {
         assertEquals(CarNode.Title(S, "v2"), play("Testreihe")) // in progress
         assertEquals(CarNode.Title(S, "a2"), play("alpha")) // first unfinished

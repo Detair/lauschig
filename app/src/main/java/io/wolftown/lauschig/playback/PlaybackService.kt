@@ -33,6 +33,7 @@ import io.wolftown.lauschig.auto.ChapterTracker
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
+import io.wolftown.lauschig.auto.awaitOnline
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.connection.ConnectionState
@@ -300,7 +301,11 @@ class PlaybackService : MediaLibraryService() {
         )
         val starts = CarStarts(
             resolveTitle = starter::resolve,
-            searchTitle = { query, hints -> carSearch.resolve(query, hints, carContext(), ::lastTitle) },
+            // After the connection check: right after a cold start the state is still Offline (see awaitOnline).
+            searchTitle = { query, hints ->
+                val ctx = CarContext(accountStore.account.first()?.serverId, awaitOnline(api.connection, ONLINE_WAIT_MS))
+                carSearch.resolve(query, hints, ctx, ::lastTitle)
+            },
             lastTitle = ::lastTitle,
             accountServer = { accountStore.account.first()?.serverId },
         )
