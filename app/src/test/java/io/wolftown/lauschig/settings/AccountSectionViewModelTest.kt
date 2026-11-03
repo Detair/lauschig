@@ -44,6 +44,8 @@ class AccountSectionViewModelTest {
         var changed: SignOutCheck? = null
         val shown = mutableListOf<Int?>()
         override suspend fun check(): SignOutCheck? { checks++; return answer.await() }
+        var bytesOnDisk = 0L
+        override suspend fun downloadBytes(): Long = bytesOnDisk
         override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult {
             executed += keepDownloads
             shown += shownUnsynced
@@ -152,6 +154,16 @@ class AccountSectionViewModelTest {
         assertNull(vm.step.value)
         assertEquals(emptyList<Boolean>(), signOut.executed)
         assertEquals("fabian", accounts.acc.value?.username)
+    }
+
+    @Test fun aFailingCheck_stillNamesTheDownloads_withTheirSizeOnDisk() {
+        signOut.answer = CompletableDeferred<SignOutCheck>().apply { completeExceptionally(IllegalStateException("db")) }
+        signOut.bytesOnDisk = 2_000_000_000
+        val vm = vm()
+        vm.startSignOut()
+        val confirm = vm.step.value as SignOutStep.Confirm
+        assertEquals(SignOutStep.Confirm(unsynced = null, downloadBytes = 2_000_000_000), confirm)
+        assertTrue(confirm.hasDownloads)
     }
 
     @Test fun aFailingCheck_stillAsks_withAnUnknownCount_keepingByDefault() {

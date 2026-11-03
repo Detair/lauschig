@@ -222,6 +222,16 @@ class SignOutTest {
         assertEquals(listOf(a), kept.list.value.map { it.serverId })
     }
 
+    @Test fun downloadBytes_isAFileWalk_thatWorksWhenRoomDoesNot() = runTest {
+        seed(a)
+        db.close() // the database is gone: the check fails ...
+        assertTrue(runCatching { signOut().check() }.isFailure)
+        // ... but the downloads on disk are still named with their size.
+        assertEquals(100L, signOut().downloadBytes())
+        accounts.acc.value = null
+        assertEquals(0L, signOut().downloadBytes())
+    }
+
     @Test fun aLateWriteAfterThePurge_isDeletedToo() = runTest {
         seed(a)
         // The stopping service's last progress save lands after the purge (it runs on the service's own scope).

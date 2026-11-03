@@ -32,7 +32,10 @@ interface AccountData {
      */
     suspend fun unsynced(serverId: String): Int
 
-    /** Bytes on disk of the server's downloads (complete and partial files, covers); 0 for none or an invalid id. */
+    /**
+     * Bytes on disk of the server's downloads (complete and partial files, covers); 0 for none or an invalid id. A walk
+     * of its download directory, never Room, so it still answers when the database does not.
+     */
     suspend fun downloadBytes(serverId: String): Long
 
     /** Keeps everything, but waiting and running downloads become PAUSED (their work is gone after sign-out). */

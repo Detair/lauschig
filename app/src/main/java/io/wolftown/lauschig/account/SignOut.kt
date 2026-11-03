@@ -50,6 +50,12 @@ interface AccountSignOut {
     suspend fun check(): SignOutCheck?
 
     /**
+     * Bytes of the account's downloads on disk, from a walk of its download directory only (no Room): what the dialog
+     * still names after a failed [check]. 0 without an account or when it cannot be read.
+     */
+    suspend fun downloadBytes(): Long
+
+    /**
      * Signs out (see [SignOut]); [keepDownloads] keeps this account's downloads and rows for its next sign-in.
      * [shownUnsynced] is the count the dialog showed (null: unknown); without keeping, a larger count after playback
      * stopped aborts with [SignOutResult.Changed] instead of deleting changes the user was not warned about.
@@ -127,6 +133,15 @@ class SignOut(
             }
         }
         return SignOutCheck(data.unsynced(serverId), data.downloadBytes(serverId))
+    }
+
+    override suspend fun downloadBytes(): Long = try {
+        accounts.account.first()?.serverId?.let { data.downloadBytes(it) } ?: 0
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "download size unreadable", e)
+        0
     }
 
     override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult = withContext(NonCancellable) {

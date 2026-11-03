@@ -110,12 +110,21 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
             }
             _step.value = when {
                 check != null -> SignOutStep.Confirm(check.unsynced, check.downloadBytes)
-                // The check failed: still ask, with "unknown" instead of a count.
-                failed -> SignOutStep.Confirm(unsynced = null, downloadBytes = 0)
+                // The check failed: still ask, with "unknown" instead of a count, and the downloads still named with
+                // their size (a file walk, independent of what failed).
+                failed -> SignOutStep.Confirm(unsynced = null, downloadBytes = bytesOnDisk())
                 // No account any more: nothing to ask.
                 else -> null
             }
         }
+    }
+
+    private suspend fun bytesOnDisk(): Long = try {
+        signOut.downloadBytes()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        0
     }
 
     fun setKeepDownloads(keep: Boolean) = _step.update { (it as? SignOutStep.Confirm)?.copy(keepDownloads = keep) ?: it }
