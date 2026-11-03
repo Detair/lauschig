@@ -17,6 +17,7 @@ object TestCarTexts : CarTexts {
     override val series = "Serien"
     override val libraries = "Bibliotheken"
     override val device = "Auf dem Gerät"
+    override val signIn = "In Lauschig auf dem Handy anmelden"
     override fun remaining(sec: Double) = "noch ${(sec / 60).toInt()} min"
     override fun volume(sequence: String) = "Band $sequence"
     override fun volumes(count: Int) = "$count Titel"

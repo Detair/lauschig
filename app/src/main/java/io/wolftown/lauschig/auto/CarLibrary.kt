@@ -27,6 +27,8 @@ interface CarTexts {
     val series: String
     val libraries: String
     val device: String
+    /** Signed out: "In Lauschig auf dem Handy anmelden". */
+    val signIn: String
     /** "noch 2 h 5 min" for [sec] seconds left. */
     fun remaining(sec: Double): String
     /** "Band 3". */
@@ -53,12 +55,13 @@ data class CarEntry(
     /** Plays without the server (complete download or device title). */
     val downloaded: Boolean = false,
 ) {
-    enum class Type { FOLDER, BOOK, EPISODE, PODCAST, SERIES, LIBRARY }
+    /** [HINT]: a line of text (signed out), neither playable nor browsable. */
+    enum class Type { FOLDER, BOOK, EPISODE, PODCAST, SERIES, LIBRARY, HINT }
     enum class Style { LIST, GRID }
 
     val id: String get() = MediaIds.of(node)
     val playable: Boolean get() = type == Type.BOOK || type == Type.EPISODE
-    val browsable: Boolean get() = !playable
+    val browsable: Boolean get() = !playable && type != Type.HINT
 }
 
 /**
@@ -78,8 +81,11 @@ class CarLibrary(
 ) {
     private val dev = DeviceLibrary.SERVER_ID
 
-    /** Children of [node]; null if [node] is unknown here or not a folder. */
-    suspend fun children(node: CarNode, ctx: CarContext): List<CarEntry>? = when (node) {
+    /**
+     * Children of [node]; null if [node] is unknown here or not a folder. Signed out the root holds only the sign-in hint
+     * and every folder is empty: nothing plays from the car without an account on the phone (device titles neither).
+     */
+    suspend fun children(node: CarNode, ctx: CarContext): List<CarEntry>? = if (ctx.account == null) signedOutChildren(node) else when (node) {
         CarNode.Root -> rootEntries()
         CarNode.Continue -> continueListening(ctx)
         CarNode.Downloads -> downloaded(ctx)
@@ -88,12 +94,27 @@ class CarLibrary(
         CarNode.Libraries -> libraryList(ctx)
         is CarNode.Library -> libraryTitles(node.libraryId, ctx)
         is CarNode.Podcast -> podcastEpisodes(node.itemId, ctx)
-        CarNode.Recent, is CarNode.Title -> null
+        CarNode.Recent, CarNode.SignIn, is CarNode.Title -> null
     }
 
-    /** The entry of [node] itself; null if unknown (or a title of another account). */
-    suspend fun item(node: CarNode, ctx: CarContext): CarEntry? = when (node) {
+    private fun signedOutChildren(node: CarNode): List<CarEntry>? = when (node) {
+        CarNode.Root -> listOf(signInHint())
+        CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries, is CarNode.Series, is CarNode.Library, is CarNode.Podcast -> emptyList()
+        CarNode.Recent, CarNode.SignIn, is CarNode.Title -> null
+    }
+
+    private fun signInHint() = CarEntry(CarNode.SignIn, texts.signIn, CarEntry.Type.HINT)
+
+    /** The entry of [node] itself; null if unknown (or a title of another account, or anything but the hint signed out). */
+    suspend fun item(node: CarNode, ctx: CarContext): CarEntry? = if (ctx.account == null) {
+        when (node) {
+            CarNode.Root -> CarEntry(CarNode.Root, "", CarEntry.Type.FOLDER)
+            CarNode.SignIn -> signInHint()
+            else -> null
+        }
+    } else when (node) {
         CarNode.Root -> CarEntry(CarNode.Root, "", CarEntry.Type.FOLDER)
+        CarNode.SignIn -> null
         CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries -> rootEntries().first { it.node == node }
         is CarNode.Series -> snapshot(ctx).let { snap -> seriesFacets(snap).firstOrNull { same(it.name, node.name) }?.let { seriesEntry(it, snap) } }
         is CarNode.Library -> libraryList(ctx).firstOrNull { it.node == node }

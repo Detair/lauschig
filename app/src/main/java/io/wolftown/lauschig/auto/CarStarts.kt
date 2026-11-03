@@ -30,7 +30,8 @@ class CarStarts(
         data class AlreadyLoaded(val title: CarNode.Title) : Outcome
     }
 
-    enum class Reason { NOTHING_FOUND, NOT_FOUND, OFFLINE, LOCAL_UNAVAILABLE, NOT_PLAYABLE, NOTHING_TO_RESUME }
+    /** [SIGNED_OUT]: no account on the phone; nothing starts (the car shows the sign-in hint). */
+    enum class Reason { NOTHING_FOUND, NOT_FOUND, OFFLINE, LOCAL_UNAVAILABLE, NOT_PLAYABLE, NOTHING_TO_RESUME, SIGNED_OUT }
 
     /** False when every item has a URI (the app's own queue, its in-place replacements): pass them through. */
     fun needsResolution(items: List<MediaItem>): Boolean = items.any { it.localConfiguration == null }
@@ -41,6 +42,7 @@ class CarStarts(
      * already is not reloaded ([Outcome.AlreadyLoaded]): reloading would rebuffer and jump back.
      */
     suspend fun forRequest(items: List<MediaItem>, startIndex: Int): Outcome {
+        if (accountServer() == null) return Outcome.Failed(Reason.SIGNED_OUT)
         val item = items.getOrNull(if (startIndex == C.INDEX_UNSET) 0 else startIndex) ?: items.firstOrNull()
             ?: return Outcome.Failed(Reason.NOT_FOUND)
         val query = item.requestMetadata.searchQuery
@@ -53,7 +55,10 @@ class CarStarts(
         return start(title)
     }
 
-    suspend fun forResumption(): Outcome = start(lastTitle() ?: return Outcome.Failed(Reason.NOTHING_TO_RESUME))
+    suspend fun forResumption(): Outcome {
+        if (accountServer() == null) return Outcome.Failed(Reason.SIGNED_OUT)
+        return start(lastTitle() ?: return Outcome.Failed(Reason.NOTHING_TO_RESUME))
+    }
 
     /** A title of the signed-in account's server or of this device; ids of another (earlier) account never play. */
     private suspend fun allowed(t: CarNode.Title): Boolean = DeviceLibrary.isLocal(t.serverId) || t.serverId == accountServer()

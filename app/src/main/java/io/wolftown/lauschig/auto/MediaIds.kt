@@ -18,6 +18,8 @@ sealed interface CarNode {
     /** A server library, or [DeviceLibrary.LIBRARY_ID] for the titles on this device. */
     data class Library(val libraryId: String) : CarNode
     data class Podcast(val itemId: String) : CarNode
+    /** Signed out: the only entry of the root, a hint to sign in on the phone (neither playable nor browsable). */
+    data object SignIn : CarNode
     /** Something playable: a book, an episode (`item~episode`) or a device title under [DeviceLibrary.SERVER_ID]. */
     data class Title(val serverId: String, val key: String) : CarNode
 }
@@ -38,6 +40,7 @@ object MediaIds {
     private const val LIBRARY = "library/"
     private const val PODCAST = "podcast/"
     private const val TITLE = "title/"
+    private const val SIGN_IN = "signin"
 
     private val SERVER_ID = Regex("[0-9a-f]{16}")
     private val ABS_ID = Regex("[A-Za-z0-9_-]{1,128}")
@@ -50,6 +53,7 @@ object MediaIds {
         CarNode.Downloads -> DOWNLOADS
         CarNode.SeriesList -> SERIES_LIST
         CarNode.Libraries -> LIBRARIES
+        CarNode.SignIn -> SIGN_IN
         is CarNode.Series -> SERIES + URLEncoder.encode(node.name, "UTF-8")
         is CarNode.Library -> LIBRARY + node.libraryId
         is CarNode.Podcast -> PODCAST + node.itemId
@@ -64,6 +68,7 @@ object MediaIds {
         id == DOWNLOADS -> CarNode.Downloads
         id == SERIES_LIST -> CarNode.SeriesList
         id == LIBRARIES -> CarNode.Libraries
+        id == SIGN_IN -> CarNode.SignIn
         id.startsWith(SERIES) -> seriesName(id.removePrefix(SERIES))?.let(CarNode::Series)
         id.startsWith(LIBRARY) -> id.removePrefix(LIBRARY).takeIf { it == DeviceLibrary.LIBRARY_ID || ABS_ID.matches(it) }?.let(CarNode::Library)
         id.startsWith(PODCAST) -> id.removePrefix(PODCAST).takeIf(ABS_ID::matches)?.let(CarNode::Podcast)

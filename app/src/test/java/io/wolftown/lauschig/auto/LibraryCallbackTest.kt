@@ -138,4 +138,30 @@ class LibraryCallbackTest {
         assertTrue(failed(callbackWith(null).onPlaybackResumption(session, app, true)))
         assertEquals(false to context.getString(io.wolftown.lauschig.R.string.car_error_nothing_to_resume), answers[1])
     }
+
+    @Test fun signedOut_theCarSeesOnlyTheSignInHint_andNothingStarts() {
+        val answers = mutableListOf<Pair<Boolean, String?>>()
+        val device = CarNode.Title(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:aaaaaaaaaaaaaaaaaaaaaaaa")
+        val signedOut = LibraryCallback(
+            context = context, scope = CoroutineScope(Dispatchers.Unconfined), library = library, search = CarSearch(library),
+            starts = CarStarts(
+                resolveTitle = { _, key, _ -> resolved += key; ServiceTitleStarter.Resolved.Ready(fileItems, 0, 0, streaming = false) },
+                searchTitle = { _, _ -> device }, lastTitle = { device }, accountServer = { null },
+            ),
+            mediaItems = CarMediaItems("$own.covers"), carContext = { CarContext(null, online = true) }, lastTitle = { null },
+            buttons = { emptyList() }, onCommand = { true }, onStart = { started += it.title }, onPlayLoaded = {}, onSubscribed = {},
+            onResumption = { ok, message -> answers += ok to message },
+        )
+        val root = signedOut.onGetChildren(session, car, "root", 0, 100, null).get(5, TimeUnit.SECONDS).value!!
+        assertEquals(listOf("signin"), root.map { it.mediaId })
+        assertEquals(TestCarTexts.signIn, root.single().mediaMetadata.title.toString())
+        assertEquals(false, root.single().mediaMetadata.isPlayable)
+        assertEquals(false, root.single().mediaMetadata.isBrowsable)
+        // Voice search, a cached id and a play key: nothing starts.
+        assertTrue(failed(signedOut.onSetMediaItems(session, car, listOf(MediaItem.Builder().setMediaId(MediaIds.of(device)).build()), 0, 0)))
+        assertTrue(failed(signedOut.onPlaybackResumption(session, app, true)))
+        assertEquals(false to context.getString(io.wolftown.lauschig.R.string.car_sign_in), answers.single())
+        assertTrue(resolved.isEmpty())
+        assertTrue(started.isEmpty())
+    }
 }

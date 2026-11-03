@@ -18,6 +18,7 @@ class CarSearch(private val library: CarLibrary) {
 
     /** Search results: matching series as folders first, then titles; at most [MAX_RESULTS]. */
     suspend fun search(query: String, ctx: CarContext): List<CarEntry> {
+        if (ctx.account == null) return emptyList() // signed out: nothing to find, nothing to play
         val tokens = words(query)
         if (tokens.isEmpty()) return emptyList()
         val snap = library.snapshot(ctx)
@@ -42,6 +43,7 @@ class CarSearch(private val library: CarLibrary) {
      * [ctx] should come after the connection check ([awaitOnline]), else streamed titles are not found.
      */
     suspend fun resolve(query: String, hints: SearchHints, ctx: CarContext, last: suspend () -> CarNode.Title?): CarNode.Title? {
+        if (ctx.account == null) return null // signed out: voice plays nothing (neither in the car nor in the app)
         val q = query.trim().ifEmpty { listOfNotNull(hints.title ?: hints.album, hints.artist).joinToString(" ") }
         if (q.isBlank()) {
             // The last title, even if it cannot stream right now: the start then says so ("not downloaded") instead of

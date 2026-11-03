@@ -623,4 +623,5 @@
     <string name="sign_out_keep_data">Keep data on this device</string>
     <string name="previous_account_message_data">Data of %1$s (%2$s) is still on this device. Delete it?</string>
     <string name="sign_out_unsynced_unknown">Whether changes are still missing on the server could not be checked.</string>
+    <string name="car_sign_in">Sign in to Lauschig on your phone</string>
 </resources>

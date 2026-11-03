@@ -10,7 +10,7 @@ class MediaIdsTest {
     private fun roundTrip(node: CarNode) = assertEquals(node, MediaIds.parse(MediaIds.of(node)))
 
     @Test fun fixedNodes_roundTrip() {
-        listOf(CarNode.Root, CarNode.Recent, CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach(::roundTrip)
+        listOf(CarNode.Root, CarNode.Recent, CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries, CarNode.SignIn).forEach(::roundTrip)
         assertEquals("root", MediaIds.of(CarNode.Root))
     }
 

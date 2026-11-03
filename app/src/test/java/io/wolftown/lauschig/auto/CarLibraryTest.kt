@@ -10,6 +10,7 @@ import io.wolftown.lauschig.auto.CarTestData.S
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.local.DeviceLibrary
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -118,13 +119,22 @@ class CarLibraryTest {
         assertEquals("Hörspiel 241", all.page(2, 100)[43].title)
     }
 
-    @Test fun signedOut_onlyDeviceTitles() = runTest {
-        val none = CarContext(account = null, online = false)
-        assertEquals(listOf("Lokal A"), titles(CarNode.Continue, none))
-        assertEquals(listOf("Auf dem Gerät"), titles(CarNode.Libraries, none))
-        assertEquals(emptyList<String>(), titles(CarNode.Downloads, none))
-        assertEquals(emptyList<String>(), titles(CarNode.SeriesList, none))
-        assertNull(lib.children(CarNode.Library("books"), none))
+    @Test fun signedOut_onlyTheSignInHint_nothingPlayable() = runTest {
+        val none = CarContext(account = null, online = true)
+        val root = lib.children(CarNode.Root, none)!!
+        assertEquals(listOf("In Lauschig auf dem Handy anmelden"), root.map { it.title })
+        assertEquals(CarNode.SignIn, root.single().node)
+        assertFalse(root.single().playable)
+        assertFalse(root.single().browsable)
+        // A car that cached the tree finds every folder empty, no device title either.
+        listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries, CarNode.Library(DeviceLibrary.LIBRARY_ID), CarNode.Series("Testreihe"))
+            .forEach { assertEquals("$it", emptyList<String>(), titles(it, none)) }
+        assertNull(lib.item(CarNode.Title(DEV, LOCAL_A), none))
+        assertNull(lib.item(CarNode.Continue, none))
+        assertEquals("In Lauschig auf dem Handy anmelden", lib.item(CarNode.SignIn, none)!!.title)
+        // Signed in, the hint is unknown.
+        assertNull(lib.item(CarNode.SignIn, online))
+        assertNull(lib.children(CarNode.SignIn, online))
     }
 
     @Test fun item_forTitlesAndFolders_refusesForeignServers() = runTest {

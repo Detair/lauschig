@@ -23,12 +23,13 @@ class CarStartsTest {
     private var found: CarNode.Title? = null
     private var last: CarNode.Title? = null
     private var loaded: CarNode.Title? = null
+    private var account: String? = s
 
     private val starts = CarStarts(
         resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); result },
         searchTitle = { q, hints -> searched += q to hints; found },
         lastTitle = { last },
-        accountServer = { s },
+        accountServer = { account },
         current = { loaded },
     )
 
@@ -40,6 +41,17 @@ class CarStartsTest {
         assertFalse(starts.needsResolution(listOf(MediaItem.fromUri(Uri.parse("file:///x.mp3")), MediaItem.fromUri("https://a/b"))))
         assertTrue(starts.needsResolution(listOf(MediaItem.fromUri("file:///x.mp3"), byId("title/$s/b"))))
         assertFalse(starts.needsResolution(emptyList()))
+    }
+
+    @Test fun signedOut_nothingStarts_notEvenADeviceTitle() = runTest {
+        account = null
+        last = CarNode.Title(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:aaaaaaaaaaaaaaaaaaaaaaaa")
+        found = last
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.SIGNED_OUT), starts.forRequest(listOf(byId(MediaIds.of(last!!))), 0))
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.SIGNED_OUT), starts.forRequest(listOf(bySearch("Lokal")), 0))
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.SIGNED_OUT), starts.forResumption())
+        assertTrue(resolved.isEmpty())
+        assertTrue(searched.isEmpty())
     }
 
     @Test fun browsedTitle_resolvesWithTheRewindRule() = runTest {

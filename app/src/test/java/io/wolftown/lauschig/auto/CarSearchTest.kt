@@ -61,6 +61,13 @@ class CarSearchTest {
         assertEquals(emptyList<CarEntry>(), search.search("  ", online))
     }
 
+    @Test fun signedOut_findsNothing_andVoicePlaysNothing() = runTest {
+        val none = CarContext(null, online = true)
+        assertEquals(emptyList<CarEntry>(), search.search("Lokal", none))
+        assertNull(search.resolve("Lokal A", SearchHints(), none) { CarNode.Title(CarTestData.DEV, CarTestData.LOCAL_A) })
+        assertNull(search.resolve("", SearchHints(), none) { CarNode.Title(CarTestData.DEV, CarTestData.LOCAL_A) })
+    }
+
     @Test fun search_offline_onlyPlayableTitles() = runTest {
         assertEquals(listOf("Band 1"), search.search("band", offline).map { it.title })
     }

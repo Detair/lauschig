@@ -100,13 +100,15 @@ class LastTitleStarterTest {
         assertEquals(emptyList<String>(), plays)
     }
 
-    @Test fun signedOut_aDeviceTitleStillResumes_aServerTitleDoesNot() = runTest {
+    @Test fun signedOut_nothingResumes_aDeviceTitleOnlyWhileSignedIn() = runTest {
         val local = "local:0123456789abcdef01234567"
         db.itemDao().upsertFromList(listOf(io.wolftown.lauschig.db.entities.ItemEntity(DeviceLibrary.SERVER_ID, local, DeviceLibrary.LIBRARY_ID, "Lokal")))
         db.progressDao().saveLocal(DeviceLibrary.SERVER_ID, local, 30.0, 600.0, false, 1)
-        accounts.acc.value = null
         store.value = LastPlayed(DeviceLibrary.SERVER_ID, local, 5_000)
         assertEquals(LastTitleStarter.Last(DeviceLibrary.SERVER_ID, local, 5_000), starter().last())
+        // Signed out only Setup is on the phone: play keys, the car and headphones resume nothing.
+        accounts.acc.value = null
+        assertNull(starter().last())
         book("srv")
         store.value = LastPlayed(s, "srv", 5_000)
         assertNull(starter().last())

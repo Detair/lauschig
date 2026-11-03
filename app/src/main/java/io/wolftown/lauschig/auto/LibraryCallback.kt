@@ -219,6 +219,7 @@ class LibraryCallback(
         CarStarts.Reason.LOCAL_UNAVAILABLE -> R.string.error_local_unavailable
         CarStarts.Reason.NOT_PLAYABLE -> R.string.error_item_not_playable
         CarStarts.Reason.NOTHING_TO_RESUME -> R.string.car_error_nothing_to_resume
+        CarStarts.Reason.SIGNED_OUT -> R.string.car_sign_in
     }
 
     override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {

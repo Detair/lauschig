@@ -18,7 +18,9 @@ import io.wolftown.lauschig.R
 class CarMediaItems(private val coverAuthority: String) {
     fun toMediaItem(e: CarEntry): MediaItem {
         val extras = Bundle()
-        if (e.browsable) {
+        if (e.type == CarEntry.Type.HINT) {
+            // Just a line of text: no style, no progress, no download badge.
+        } else if (e.browsable) {
             val style = if (e.childStyle == CarEntry.Style.GRID) MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM else MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
             extras.putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, style)
             extras.putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, style)
@@ -52,6 +54,7 @@ class CarMediaItems(private val coverAuthority: String) {
                     CarEntry.Type.SERIES -> MediaMetadata.MEDIA_TYPE_FOLDER_AUDIO_BOOKS
                     CarEntry.Type.LIBRARY -> MediaMetadata.MEDIA_TYPE_FOLDER_AUDIO_BOOKS
                     CarEntry.Type.FOLDER -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+                    CarEntry.Type.HINT -> MediaMetadata.MEDIA_TYPE_MIXED
                 },
             )
             .setExtras(extras)
@@ -84,6 +87,7 @@ class ResourceCarTexts(private val res: Resources) : CarTexts {
     override val series get() = res.getString(R.string.car_series)
     override val libraries get() = res.getString(R.string.car_libraries)
     override val device get() = res.getString(R.string.library_tab_device)
+    override val signIn get() = res.getString(R.string.car_sign_in)
 
     override fun remaining(sec: Double): String = res.getString(R.string.car_remaining, duration(sec))
     override fun volume(sequence: String): String = res.getString(R.string.car_volume, sequence)
