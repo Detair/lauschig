@@ -4,6 +4,7 @@ import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.net.FakeAccountStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -58,6 +59,33 @@ class AccountDataJanitorTest {
         assertEquals(listOf(failed), purged)
         assertEquals(emptySet<String>(), kept.pending.value)
         assertEquals(listOf(keptId), kept.list.value.map { it.serverId })
+    }
+
+    @Test fun anUnreadableAccountStore_isNeverTakenForSignedOut_nothingIsPurgedOrDeleted() = runTest {
+        kept.pending.value = setOf(failed)
+        val broken = object : AccountStore by accounts {
+            override val account: kotlinx.coroutines.flow.Flow<Account?> = kotlinx.coroutines.flow.flow { throw java.io.IOException("corrupt") }
+        }
+        AccountDataJanitor(broken, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true }).run()
+        assertEquals(emptyList<String>(), purged)
+        assertEquals(emptyList<String>(), deletedDirs)
+        assertEquals(setOf(failed), kept.pending.value)
+    }
+
+    @Test fun aSignInDuringTheRun_isSeenBeforeEachPurge() = runTest {
+        kept.pending.value = setOf(failed)
+        var reads = 0
+        // Signed out at the start of the run; the pending account signs in right after.
+        val changing = object : AccountStore by accounts {
+            override val account: kotlinx.coroutines.flow.Flow<Account?> = kotlinx.coroutines.flow.flow {
+                reads++
+                emit(if (reads == 1) null else Account(failed, "u", "n", false, ServerAddresses(null, null), emptySet()))
+            }
+        }
+        AccountDataJanitor(changing, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true }).run()
+        assertEquals(emptyList<String>(), purged)
+        assertEquals(emptySet<String>(), kept.pending.value) // its data is live again
+        assertTrue(failed !in deletedDirs)
     }
 
     @Test fun theSameAccountSignedInAgain_isNotPurged() = runTest {

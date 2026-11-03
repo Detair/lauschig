@@ -28,11 +28,14 @@ class AccountDataJanitor(
     )
 
     suspend fun run() {
-        val current = accounts.account.first()?.serverId
+        // An unreadable account store is never taken for "signed out": then nothing is purged or deleted.
+        val current = signedIn() ?: return
         val keptIds = kept.accounts.first().map { it.serverId }.toSet()
         for (sid in kept.pendingPurges.first()) {
-            // Signed in again, or kept by a later sign-out: the data is wanted, the old purge is void.
-            if (sid == current || sid in keptIds) {
+            // Signed in again (read anew before each purge), or kept by a later sign-out: the data is wanted, the old
+            // purge is void.
+            val now = signedIn() ?: return
+            if (sid == current.id || sid == now.id || sid in keptIds) {
                 kept.removePendingPurge(sid)
                 continue
             }
@@ -48,12 +51,25 @@ class AccountDataJanitor(
         }
         val owned = kept.accounts.first().map { it.serverId }.toSet() + kept.pendingPurges.first()
         for (sid in serverDirs()) {
-            if (sid == current || sid in owned || data.hasRows(sid)) continue
+            if (sid == current.id || sid in owned || data.hasRows(sid)) continue
             // A sign-in may have happened meanwhile: its first download must not lose its directory.
-            if (accounts.account.first()?.serverId == sid) continue
+            val now = signedIn() ?: return
+            if (now.id == sid) continue
             if (deleteDir(sid)) Log.i(TAG, "deleted downloads without an owner")
         }
     }
+
+    /** The signed-in server id right now ([SignedIn.id] null: signed out); null if the store cannot be read. */
+    private suspend fun signedIn(): SignedIn? = try {
+        SignedIn(accounts.account.first()?.serverId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "account store unreadable; no cleanup this time", e)
+        null
+    }
+
+    private class SignedIn(val id: String?)
 
     private companion object {
         const val TAG = "AccountDataJanitor"
