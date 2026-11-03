@@ -45,6 +45,8 @@ private const val PLAYER_OPEN_WAIT_MS = 2_000L
 fun AppRoot(
     startDestination: Any,
     appearance: Appearance = Appearance(),
+    /** The visible tabs in their order. */
+    tabs: List<TopLevelTab> = TopLevelTab.entries,
     viewModel: AppViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
@@ -114,6 +116,7 @@ fun AppRoot(
                 connectionChecking = checking,
                 onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } },
                 selectedTab = navController.currentTab(),
+                tabs = tabs,
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,
             ) {

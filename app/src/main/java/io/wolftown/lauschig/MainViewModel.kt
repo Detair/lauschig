@@ -10,6 +10,8 @@ import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.settings.UiSettings
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.Start
+import io.wolftown.lauschig.ui.nav.TabLayout
+import io.wolftown.lauschig.ui.nav.route
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,19 +26,25 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Start-router input: [Setup] without an account, [Start] with one; null while the LOCAL account read is
- * pending (a DataStore read, a few ms). Never touches the network, so a dead server or an expired token
+ * Start-router input: [Setup] without an account, the chosen start tab ([TabLayout.start], default [Start]) with one;
+ * null while the LOCAL account and layout reads are pending (DataStore reads, a few ms). Never touches the network, so a dead server or an expired token
  * cannot delay or redirect the start.
  */
 @HiltViewModel
 class MainViewModel(
     accounts: AccountStore,
     appearanceSource: Flow<Appearance> = flowOf(Appearance()),
+    tabLayoutSource: Flow<TabLayout> = flowOf(TabLayout.DEFAULT),
     /** "Continue on app start" (see [continueOnLauncherStart]); never blocks the start. */
     private val onStartWithAccount: suspend () -> Unit = {},
 ) : ViewModel() {
     @Inject constructor(accounts: AccountStore, settings: PlaybackSettings, starter: LastTitleStarter, ui: UiSettings) :
-        this(accounts, ui.appearance, { if (settings.continueOnStart.first()) starter.resumeLast(maxAgeMs = CONTINUE_MAX_AGE_MS) })
+        this(accounts, ui.appearance, ui.tabLayout, { if (settings.continueOnStart.first()) starter.resumeLast(maxAgeMs = CONTINUE_MAX_AGE_MS) })
+
+    private val layouts = tabLayoutSource.catch { e -> if (e is CancellationException) throw e else emit(TabLayout.DEFAULT) }
+
+    /** The tabs of the bottom bar / rail; follows the settings at once (the start screen only on the next cold start). */
+    val tabLayout: StateFlow<TabLayout> = layouts.stateIn(viewModelScope, SharingStarted.Eagerly, TabLayout.DEFAULT)
 
     /**
      * The look (theme, colors, text size); null until the first local read, so the splash stays up until the first
@@ -59,7 +67,9 @@ class MainViewModel(
             } catch (e: Exception) {
                 null
             }
-            _startDestination.value = if (account == null) Setup else Start
+            // The chosen start screen, read once (a later change applies on the next cold start). Intents (widget, links,
+            // notifications) navigate on top of it, so they keep their target.
+            _startDestination.value = if (account == null) Setup else layouts.first().start.route()
         }
     }
 

@@ -8,8 +8,10 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.wolftown.lauschig.ui.nav.TabLayout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -51,6 +53,23 @@ class UiSettings(private val store: DataStore<Preferences>) {
         )
     }.distinctUntilChanged()
 
+    /** Order, visibility and start screen of the tabs; normalised on read (see [TabLayout.of]). */
+    val tabLayout: Flow<TabLayout> = store.data.map { prefs ->
+        TabLayout.of(prefs[TAB_ORDER]?.split(','), prefs[TABS_HIDDEN], prefs[START_TAB])
+    }.distinctUntilChanged()
+
+    suspend fun setTabLayout(layout: TabLayout) = updateTabLayout { layout }
+
+    /** Read-modify-write in one DataStore transaction, so quick taps never work on a stale layout. */
+    suspend fun updateTabLayout(change: (TabLayout) -> TabLayout) {
+        store.edit {
+            val layout = change(TabLayout.of(it[TAB_ORDER]?.split(','), it[TABS_HIDDEN], it[START_TAB]))
+            it[TAB_ORDER] = layout.order.joinToString(",") { t -> t.name }
+            it[TABS_HIDDEN] = layout.hidden.mapTo(HashSet()) { t -> t.name }
+            it[START_TAB] = layout.start.name
+        }
+    }
+
     suspend fun setTheme(mode: ThemeMode) {
         store.edit { it[THEME] = mode.name }
     }
@@ -74,5 +93,8 @@ class UiSettings(private val store: DataStore<Preferences>) {
         val PURE_BLACK = booleanPreferencesKey("pure_black")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val FONT_SCALE = intPreferencesKey("font_scale_percent")
+        val TAB_ORDER = stringPreferencesKey("tab_order")
+        val TABS_HIDDEN = stringSetPreferencesKey("tabs_hidden")
+        val START_TAB = stringPreferencesKey("start_tab")
     }
 }

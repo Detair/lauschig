@@ -53,4 +53,14 @@ class UiSettingsTest {
         assertEquals(ThemeMode.SYSTEM, a.theme)
         assertEquals(100, a.fontScalePercent)
     }
+
+    @Test fun tabLayout_defaultAndStored() = runTest {
+        assertEquals(io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT, settings.tabLayout.first())
+        val custom = io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT
+            .moved(io.wolftown.lauschig.ui.TopLevelTab.Search, -2)
+            .withHidden(io.wolftown.lauschig.ui.TopLevelTab.Discover, true)
+            .withStart(io.wolftown.lauschig.ui.TopLevelTab.Library)
+        settings.setTabLayout(custom)
+        assertEquals(custom, UiSettings(store).tabLayout.first())
+    }
 }

@@ -554,4 +554,17 @@
     <string name="font_scale_percent">%1$d %%</string>
     <string name="settings_preview_title">Vorschau</string>
     <string name="settings_preview_text">So sehen Titel und Text aus.</string>
+    <string name="nav_settings_title">Navigation</string>
+    <string name="nav_settings_entry">Navigation anpassen</string>
+    <string name="nav_settings_entry_hint">Reihenfolge der Reiter, ausgeblendete Reiter und Startbildschirm</string>
+    <string name="nav_settings_hint">Änderungen an den Reitern gelten sofort.</string>
+    <string name="nav_settings_tabs">Reiter</string>
+    <string name="nav_settings_start">Startbildschirm</string>
+    <string name="nav_settings_start_hint">Lauschig öffnet ab dem nächsten Start hier. Player, Links und Benachrichtigungen öffnen weiter ihre eigene Seite.</string>
+    <string name="nav_settings_reset">Zurücksetzen</string>
+    <string name="nav_settings_always">Immer sichtbar</string>
+    <string name="nav_settings_hidden">Ausgeblendet</string>
+    <string name="nav_settings_visible">%1$s anzeigen</string>
+    <string name="nav_settings_up">%1$s nach oben</string>
+    <string name="nav_settings_down">%1$s nach unten</string>
 </resources>

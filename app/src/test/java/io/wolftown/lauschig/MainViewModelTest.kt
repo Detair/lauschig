@@ -65,4 +65,34 @@ class MainViewModelTest {
         val vm = viewModels.own(MainViewModel(FakeAccountStore(), flow { throw IOException("corrupt") }))
         assertEquals(io.wolftown.lauschig.settings.Appearance(), vm.appearance.value)
     }
+
+    private fun signedIn() = FakeAccountStore().apply {
+        acc.value = Account("s1", "u", "n", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet())
+    }
+
+    @Test fun startDestination_isTheChosenStartTab() {
+        val layout = io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT.withStart(io.wolftown.lauschig.ui.TopLevelTab.Library)
+        val vm = viewModels.own(MainViewModel(signedIn(), tabLayoutSource = kotlinx.coroutines.flow.flowOf(layout)))
+        assertEquals(io.wolftown.lauschig.ui.nav.Library, vm.startDestination.value)
+        assertEquals(layout, vm.tabLayout.value)
+    }
+
+    @Test fun startDestination_withoutAccount_isSetup_whateverTheLayout() {
+        val layout = io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT.withStart(io.wolftown.lauschig.ui.TopLevelTab.Search)
+        assertEquals(Setup, viewModels.own(MainViewModel(FakeAccountStore(), tabLayoutSource = kotlinx.coroutines.flow.flowOf(layout))).startDestination.value)
+    }
+
+    @Test fun startDestination_unreadableLayout_isStart() {
+        val vm = viewModels.own(MainViewModel(signedIn(), tabLayoutSource = flow { throw IOException("corrupt") }))
+        assertEquals(Start, vm.startDestination.value)
+    }
+
+    @Test fun startDestination_staysFixed_whenTheLayoutChangesLater() {
+        val source = kotlinx.coroutines.flow.MutableStateFlow(io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT)
+        val vm = viewModels.own(MainViewModel(signedIn(), tabLayoutSource = source))
+        assertEquals(Start, vm.startDestination.value)
+        source.value = io.wolftown.lauschig.ui.nav.TabLayout.DEFAULT.withStart(io.wolftown.lauschig.ui.TopLevelTab.Discover)
+        assertEquals(Start, vm.startDestination.value) // used on the next cold start
+        assertEquals(io.wolftown.lauschig.ui.TopLevelTab.Discover, vm.tabLayout.value.start) // the bar follows at once
+    }
 }

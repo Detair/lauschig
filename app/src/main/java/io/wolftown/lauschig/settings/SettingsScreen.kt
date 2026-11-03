@@ -143,6 +143,7 @@ fun SettingsRoute(
     onOpenDownloads: () -> Unit = {},
     onOpenConnection: () -> Unit = {},
     onOpenAdmin: () -> Unit = {},
+    onOpenNavigation: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -151,6 +152,7 @@ fun SettingsRoute(
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
         playbackActions = viewModel.playbackActions,
         appearanceActions = viewModel.appearanceActions,
+        onOpenNavigation = onOpenNavigation,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
         onOpenDownloads = onOpenDownloads,
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
@@ -176,6 +178,7 @@ fun SettingsScreen(
     playbackActions: PlaybackPrefsActions = PlaybackPrefsActions(),
     modifier: Modifier = Modifier,
     appearanceActions: AppearanceActions = AppearanceActions(),
+    onOpenNavigation: () -> Unit = {},
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
@@ -193,7 +196,13 @@ fun SettingsScreen(
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
         }
         PlaybackSection(state.playback, playbackActions)
-        AppearanceSection(state.appearance, appearanceActions)
+        AppearanceSection(state.appearance, appearanceActions) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.nav_settings_entry)) },
+                supportingContent = { Text(stringResource(R.string.nav_settings_entry_hint)) },
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenNavigation).testTag("openNavigation"),
+            )
+        }
 
         Section(R.string.settings_section_series)
         ModeRow(NextVolumeMode.SUGGEST, state.nextVolume, R.string.settings_next_suggest, R.string.settings_next_suggest_hint, onNextVolume)

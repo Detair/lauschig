@@ -554,4 +554,17 @@
     <string name="font_scale_percent">%1$d %%</string>
     <string name="settings_preview_title">Preview</string>
     <string name="settings_preview_text">This is how titles and text look.</string>
+    <string name="nav_settings_title">Navigation</string>
+    <string name="nav_settings_entry">Customise navigation</string>
+    <string name="nav_settings_entry_hint">Order of the tabs, hidden tabs and the start screen</string>
+    <string name="nav_settings_hint">Changes to the tabs apply at once.</string>
+    <string name="nav_settings_tabs">Tabs</string>
+    <string name="nav_settings_start">Start screen</string>
+    <string name="nav_settings_start_hint">Lauschig opens here from the next start. The player, links and notifications still open their own page.</string>
+    <string name="nav_settings_reset">Reset</string>
+    <string name="nav_settings_always">Always shown</string>
+    <string name="nav_settings_hidden">Hidden</string>
+    <string name="nav_settings_visible">Show %1$s</string>
+    <string name="nav_settings_up">Move %1$s up</string>
+    <string name="nav_settings_down">Move %1$s down</string>
 </resources>

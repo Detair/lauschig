@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +61,20 @@ class AppScaffoldTest {
         rule.onNodeWithText("Discover").assertIsDisplayed()
         rule.onNodeWithText("Search").assertIsDisplayed()
         rule.onAllNodesWithTag("navIcon", useUnmergedTree = true).assertCountEquals(4)
+    }
+
+    @Test
+    fun bottomBar_showsTheGivenTabsInOrder() {
+        rule.setContent {
+            LauschigTheme {
+                AppScaffold(ONLINE, miniPlayer = {}, tabs = listOf(TopLevelTab.Search, TopLevelTab.Start)) { Text("content") }
+            }
+        }
+        rule.onAllNodesWithTag("navIcon", useUnmergedTree = true).assertCountEquals(2)
+        rule.onNodeWithText("Library").assertDoesNotExist()
+        val search = rule.onNodeWithText("Search").fetchSemanticsNode().boundsInRoot
+        val home = rule.onNodeWithText("Home").fetchSemanticsNode().boundsInRoot
+        assertTrue("Search comes first", search.left < home.left)
     }
 
     @Test

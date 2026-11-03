@@ -41,7 +41,7 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
 import kotlinx.coroutines.delay
 
-/** The four bottom-navigation tabs. */
+/** The four top-level tabs; their order, visibility and the start screen are the user's (`TabLayout`). */
 enum class TopLevelTab(@StringRes val label: Int, val icon: ImageVector) {
     Start(R.string.nav_start, Icons.Rounded.Home),
     Library(R.string.nav_library, Icons.Rounded.LibraryBooks),
@@ -102,6 +102,8 @@ fun AppScaffold(
     miniPlayer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     selectedTab: TopLevelTab? = TopLevelTab.Start,
+    /** The visible tabs in their order (see `TabLayout`). */
+    tabs: List<TopLevelTab> = TopLevelTab.entries,
     showBottomBar: Boolean = true,
     showOfflineBanner: Boolean = true,
     showReauthBanner: Boolean = false,
@@ -124,7 +126,7 @@ fun AppScaffold(
             if (showBottomBar) Column {
                 miniPlayer()
                 NavigationBar {
-                    TopLevelTab.entries.forEach { tab ->
+                    tabs.forEach { tab ->
                         NavigationBarItem(
                             selected = tab == selectedTab,
                             onClick = { onTabSelected(tab) },

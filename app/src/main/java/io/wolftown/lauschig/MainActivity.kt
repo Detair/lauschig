@@ -77,11 +77,12 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             val start by viewModel.startDestination.collectAsStateWithLifecycle()
+            val tabs by viewModel.tabLayout.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
             val link by linkRequest.collectAsStateWithLifecycle()
             start?.let {
                 AppRoot(
-                    startDestination = it, appearance = appearance, openRequest = open, onOpenHandled = { openRequest.value = null },
+                    startDestination = it, appearance = appearance, tabs = tabs.visible, openRequest = open, onOpenHandled = { openRequest.value = null },
                     linkRequest = link, onLinkHandled = { linkRequest.value = null },
                 )
             }

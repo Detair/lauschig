@@ -215,8 +215,12 @@ class PlaybackService : MediaLibraryService() {
         // The position reaches the server soon after a pause or the end of a title, not only with the periodic sync.
         exo.addListener(ProgressSyncOnPause({ currentKey(exo) }, syncTrigger::syncProgress))
 
+        // Tapping the notification (or SystemUI's media controls) opens the player, like the widget, on top of whatever
+        // start screen the user chose. Its own request code: the cleanup notification's MainActivity intent differs only
+        // in its extras, and with FLAG_UPDATE_CURRENT the two would overwrite each other's target.
         val activity = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            this, SESSION_ACTIVITY_REQUEST, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_PLAYER),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // The session player: "previous"/"next" from a steering wheel or headset move by 30 s, never to the book start.
         val safe = CarSafePlayer(exo, CarButtons.SEEK_MS).also { carPlayer = it }
@@ -576,6 +580,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private companion object {
+        /** Request code of the session activity (the cleanup notification uses 0). */
+        const val SESSION_ACTIVITY_REQUEST = 1
         const val SEEK_MS = 30_000L
         const val MIN_BUFFER_MS = 5 * 60_000
         const val MAX_BUFFER_MS = 10 * 60_000

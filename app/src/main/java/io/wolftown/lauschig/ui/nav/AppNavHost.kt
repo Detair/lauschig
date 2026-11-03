@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.cleanup.CleanupRoute
+import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
 import io.wolftown.lauschig.ui.browse.BrowseRoute
@@ -27,8 +28,8 @@ import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
 
 /**
- * [startDestination] is [Setup] when there is no account and [Start] otherwise (decided from the local
- * account store, never from the network). After a successful login [Setup] is removed from the back stack.
+ * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
+ * stores, never from the network). After a successful login [Setup] is removed from the back stack.
  * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
@@ -42,8 +43,10 @@ fun AppNavHost(navController: NavHostController, startDestination: Any, modifier
                 onOpenDownloads = { navController.navigate(Downloads) },
                 onOpenConnection = { navController.navigate(ConnectionStatus) },
                 onOpenAdmin = { navController.navigate(ServerAdmin) },
+                onOpenNavigation = { navController.navigate(NavigationSettings) },
             )
         }
+        composable<NavigationSettings> { NavigationSettingsRoute(onBack = { navController.popBackStack() }) }
         composable<ConnectionStatus> { ConnectionStatusRoute(onBack = { navController.popBackStack() }) }
         composable<ServerAdmin> { ServerAdminRoute(onBack = { navController.popBackStack() }) }
         composable<Downloads> {
@@ -124,13 +127,7 @@ fun NavHostController.currentTab(): TopLevelTab? {
 }
 
 fun NavHostController.navigateToTab(tab: TopLevelTab) {
-    val route: Any = when (tab) {
-        TopLevelTab.Start -> Start
-        TopLevelTab.Library -> Library
-        TopLevelTab.Discover -> Discover
-        TopLevelTab.Search -> Search
-    }
-    navigate(route) {
+    navigate(tab.route()) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true

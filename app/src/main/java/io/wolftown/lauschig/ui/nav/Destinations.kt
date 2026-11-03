@@ -17,6 +17,8 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 @Serializable data object Player
 @Serializable data object Setup
 @Serializable data object Settings
+/** Tab order, visibility and start screen (Einstellungen → Darstellung → Navigation anpassen). */
+@Serializable data object NavigationSettings
 @Serializable data object Cleanup
 @Serializable data object Downloads
 @Serializable data object ConnectionStatus
