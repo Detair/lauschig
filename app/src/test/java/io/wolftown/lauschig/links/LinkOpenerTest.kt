@@ -38,6 +38,14 @@ class LinkOpenerTest {
         assertEquals(listOf("new"), loaded)
     }
 
+    @Test fun unknownTitle_rightAfterAColdStart_waitsForTheFirstCheck() = runTest {
+        // The opener asks `online` (which waits for the first answer, see awaitConnectionAnswer) before it says offline.
+        var asked = 0
+        val o = LinkOpener({ account }, { s, id -> s == sid && id in inRoom }, { _, _ -> null }, { asked++; true }, { _, id -> inRoom += id })
+        assertEquals(LinkTarget.Item("new"), o.open("https://abs.example.org/item/new"))
+        assertEquals(1, asked)
+    }
+
     @Test fun unknownTitle_offline_isNotAvailable() = runTest {
         online = false
         assertEquals(LinkTarget.Message(R.string.link_offline), opener().open("https://abs.example.org/item/new"))

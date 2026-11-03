@@ -4,7 +4,7 @@ import androidx.annotation.StringRes
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.AccountStore
-import io.wolftown.lauschig.auto.awaitOnline
+import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.sync.LibrarySync
@@ -28,7 +28,7 @@ class LinkOpener(
     private val account: suspend () -> Account?,
     private val itemExists: suspend (serverId: String, itemId: String) -> Boolean,
     private val seriesName: suspend (serverId: String, seriesId: String) -> String?,
-    /** True once the server is online, waiting a few seconds right after a cold start. */
+    /** True once the server is online; right after a cold start it waits for the first check's answer. */
     private val online: suspend () -> Boolean,
     private val loadDetails: suspend (serverId: String, itemId: String) -> Unit,
 ) {
@@ -36,7 +36,7 @@ class LinkOpener(
         account = { accounts.account.first() },
         itemExists = { sid, id -> items.get(sid, id) != null },
         seriesName = items::seriesNameById,
-        online = { awaitOnline(api.connection, ONLINE_WAIT_MS) },
+        online = { awaitConnectionAnswer(api.connection, api.checking, CHECK_WAIT_MS) },
         loadDetails = sync::loadDetails,
     )
 
@@ -70,6 +70,7 @@ class LinkOpener(
     }
 
     companion object {
-        const val ONLINE_WAIT_MS = 3_000L
+        /** The first probe of a cold start: up to 3 s for an unreachable local address, then the public one. */
+        const val CHECK_WAIT_MS = 10_000L
     }
 }
