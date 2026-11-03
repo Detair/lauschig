@@ -12,7 +12,9 @@ import java.util.concurrent.Executor
  * The file behind a [CoverRef] for [CoverProvider]: the title's own cover on the device (download or device title), or
  * the server cover cached under [cacheDir]. [file] never waits for the network – it runs on a binder thread of the car
  * or SystemUI: on a miss it answers "none" right away and fetches the cover on [executor] (each cover once, however
- * often it is asked), then tells [onFetched], so the service can make the car and the notification ask again.
+ * often it is asked). [request] instead waits for that fetch: the provider hands the car a pipe and fills it once the
+ * cover is here, so the car's lists need no reload. [onFetched] tells the service about every arrival, and whether a
+ * request got it ("delivered"); one nobody received means the car must be made to ask again.
  * Device titles are never fetched.
  */
 class CoverStore(
@@ -35,10 +37,27 @@ class CoverStore(
         data object Unavailable : Fetch
     }
 
-    /** A cover was fetched and cached (called on the [executor] thread). */
-    @Volatile var onFetched: ((serverId: String, libraryItemId: String) -> Unit)? = null
+    /** What [request] can say at once. */
+    sealed interface Answer {
+        class Here(val file: File) : Answer
+        /** Nothing will come now: a device title without a cover, or one the server did not deliver a moment ago. */
+        data object None : Answer
+        /** Being fetched: the request's `deliver` is called once, with the file or null, unless [cancel]led first. */
+        class Later(val cancel: () -> Unit) : Answer
+    }
 
+    /**
+     * A cover was fetched and cached (called on the [executor] thread); [delivered]: a [request] waiting for it got it.
+     */
+    @Volatile var onFetched: ((serverId: String, libraryItemId: String, delivered: Boolean) -> Unit)? = null
+
+    /** Guards [waiters] and every change of [inFlight] that [request] must see together with them. */
+    private val lock = Any()
     private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** Requests waiting for a cover being fetched, by its cache file. */
+    private val waiters = HashMap<String, MutableList<Waiter>>()
+
+    private class Waiter(val deliver: (File?) -> Unit)
     /** Covers the server did not deliver, until when not to ask again (SystemUI reloads artwork on every change). */
     private val misses = ConcurrentHashMap<String, Long>()
 
@@ -54,17 +73,54 @@ class CoverStore(
         if (inFlight.add(target.path)) {
             try {
                 executor.execute {
+                    var cached: File? = null
                     try {
-                        load(ref.serverId, itemId, dir, target)
+                        cached = load(ref.serverId, itemId, dir, target)
                     } finally {
-                        inFlight.remove(target.path)
+                        val delivered = finish(target.path, cached)
+                        if (cached != null) onFetched?.invoke(ref.serverId, itemId, delivered)
                     }
                 }
             } catch (e: Exception) {
-                inFlight.remove(target.path) // executor refused (shut down)
+                finish(target.path, null) // executor refused (shut down)
             }
         }
         return null
+    }
+
+    /**
+     * Like [file], but a cover being fetched is [Answer.Later] delivered to [deliver] (on the [executor] thread, or at
+     * once if the fetch ended in between): the file, or null if none came (no cover, failure, offline).
+     */
+    fun request(ref: CoverRef, deliver: (File?) -> Unit): Answer {
+        file(ref)?.let { return Answer.Here(it) } // a miss starts the fetch
+        if (DeviceLibrary.isLocal(ref.serverId, ref.key)) return Answer.None
+        val target = cached(ref)
+        val waiter = Waiter(deliver)
+        synchronized(lock) {
+            if (target.path in inFlight) {
+                waiters.getOrPut(target.path) { mutableListOf() } += waiter
+                return Answer.Later { synchronized(lock) { waiters[target.path]?.remove(waiter) } }
+            }
+        }
+        // Not being fetched: the server did not deliver it a moment ago, or it arrived just now.
+        return target.takeIf { it.isUsable() }?.let { Answer.Here(it) } ?: Answer.None
+    }
+
+    /** The fetch for [path] ended with [file] (null: none): every waiting request is answered; true if one got it. */
+    private fun finish(path: String, file: File?): Boolean {
+        val waiting = synchronized(lock) {
+            inFlight.remove(path)
+            waiters.remove(path).orEmpty()
+        }
+        waiting.forEach { w ->
+            try {
+                w.deliver(file)
+            } catch (e: Exception) {
+                Log.w(TAG, "a cover request could not take its answer", e)
+            }
+        }
+        return file != null && waiting.isNotEmpty()
     }
 
     /** Whether [file] would answer with a file right now; never fetches (the car's lists are built with it). */
@@ -87,7 +143,8 @@ class CoverStore(
         dir.deleteRecursively()
     }
 
-    private fun load(serverId: String, itemId: String, dir: File, target: File) {
+    /** Fetches and caches the cover; the cached [target], or null if none came. */
+    private fun load(serverId: String, itemId: String, dir: File, target: File): File? {
         val result = try {
             fetch(serverId, itemId)
         } catch (e: Exception) {
@@ -95,10 +152,10 @@ class CoverStore(
             Fetch.Failed
         }
         when (result) {
-            Fetch.Unavailable -> return
-            Fetch.Missing -> { misses[target.path] = clock() + MISS_TTL_MS; return }
-            Fetch.Failed -> { misses[target.path] = clock() + ERROR_TTL_MS; return }
-            is Fetch.Found -> if (result.bytes.isEmpty()) { misses[target.path] = clock() + MISS_TTL_MS; return }
+            Fetch.Unavailable -> return null
+            Fetch.Missing -> { misses[target.path] = clock() + MISS_TTL_MS; return null }
+            Fetch.Failed -> { misses[target.path] = clock() + ERROR_TTL_MS; return null }
+            is Fetch.Found -> if (result.bytes.isEmpty()) { misses[target.path] = clock() + MISS_TTL_MS; return null }
         }
         try {
             dir.mkdirs()
@@ -106,16 +163,16 @@ class CoverStore(
             part.writeBytes(result.bytes)
             if (!part.renameTo(target)) {
                 part.delete()
-                return
+                return null
             }
             // Older versions of the same cover are stale now.
             dir.listFiles { f -> f.name.startsWith("$itemId@") && f.name != target.name }?.forEach { it.delete() }
         } catch (e: IOException) {
             Log.w(TAG, "cover cache write failed", e)
-            return
+            return null
         }
         misses.remove(target.path)
-        onFetched?.invoke(serverId, itemId)
+        return target
     }
 
     companion object {
