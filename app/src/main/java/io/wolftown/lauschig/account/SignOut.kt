@@ -1,26 +1,19 @@
 package io.wolftown.lauschig.account
 
-import android.content.Context
 import android.util.Log
-import coil3.SingletonImageLoader
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.awaitConnectionAnswer
-import io.wolftown.lauschig.download.DownloadPrompts
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.LastPlayedStore
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.SleepTimer
 import io.wolftown.lauschig.playback.forgetServerTitle
-import io.wolftown.lauschig.rmab.RmabRepository
 import io.wolftown.lauschig.sync.BookmarkSync
 import io.wolftown.lauschig.sync.ProgressSync
-import io.wolftown.lauschig.ui.search.RecentSearches
-import io.wolftown.lauschig.ui.setup.OidcSignIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -89,11 +82,7 @@ class SignOut(
         bookmarkSync: BookmarkSync,
         api: ApiProvider,
         serverLogout: ServerLogout,
-        rmab: RmabRepository,
-        oidc: OidcSignIn,
-        recentSearches: RecentSearches,
-        prompts: DownloadPrompts,
-        @ApplicationContext context: Context,
+        cleaner: AccountStateCleaner,
     ) : this(
         accounts, data, kept, work, lastPlayed,
         pausePlayback = {
@@ -112,18 +101,7 @@ class SignOut(
         pushes = listOf({ sid -> progressSync.sync(sid) }, { sid -> bookmarkSync.sync(sid) }),
         awaitOnline = { awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS) },
         logout = serverLogout::logout,
-        clearAccountState = { sid ->
-            step("rmab") { rmab.disconnect() }
-            step("oidc") { oidc.clearPending() }
-            step("searches") { recentSearches.clear() }
-            step("prompts") { prompts.clearFor(sid) }
-            // Server covers only: a kept download's cover is a file in its download directory.
-            step("covers") {
-                val images = SingletonImageLoader.get(context)
-                images.memoryCache?.clear()
-                withContext(Dispatchers.IO) { images.diskCache?.clear() }
-            }
-        },
+        clearAccountState = cleaner::clear,
     )
 
     override suspend fun check(): SignOutCheck? {

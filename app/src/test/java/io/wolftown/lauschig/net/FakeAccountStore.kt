@@ -25,5 +25,7 @@ class FakeAccountStore : AccountStore {
     override suspend fun markNeedsReauth() { reauth.value = true }
     /** The flag of the last [clear], null if it was never called. */
     var clearedKeeping: Boolean? = null
-    override suspend fun clear(keepDownloads: Boolean) { acc.value = null; access = null; refresh = null; clearedKeeping = keepDownloads }
+    /** Called on [clear] (tests that record the order of a sign-out). */
+    var onClear: () -> Unit = {}
+    override suspend fun clear(keepDownloads: Boolean) { onClear(); acc.value = null; access = null; refresh = null; clearedKeeping = keepDownloads }
 }

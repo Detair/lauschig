@@ -15,6 +15,7 @@ import io.wolftown.lauschig.playback.LastPlayed
 import io.wolftown.lauschig.playback.LastPlayedStore
 import io.wolftown.lauschig.sync.InMemorySyncStamps
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -40,6 +41,8 @@ class SignOutTest {
     private lateinit var db: LauschigDatabase
     private lateinit var root: File
     private lateinit var data: AccountData
+    private val stamps = InMemorySyncStamps()
+    private val forgottenCovers = mutableListOf<String>()
     private val account = Account(a, "u1", "fabian", false, ServerAddresses("http://10.0.2.2:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl()), emptySet())
     private val accounts = FakeAccountStore()
     private val kept = FakeKeptAccounts()
@@ -58,8 +61,9 @@ class SignOutTest {
         db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries()
             .setQueryExecutor { it.run() }.setTransactionExecutor { it.run() }.build()
         root = File(ctx.cacheDir, "signout-${System.nanoTime()}/downloads").apply { mkdirs() }
-        data = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), InMemorySyncStamps(), {})
+        data = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), stamps, forgottenCovers::add)
         accounts.acc.value = account
+        accounts.onClear = { calls += "clear" }
         accounts.access = "access-1"
         accounts.refresh = "refresh-1"
     }
@@ -76,8 +80,8 @@ class SignOutTest {
         purgeData: AccountData = data,
     ) = SignOut(
         accounts = accounts,
-        data = purgeData,
-        kept = kept,
+        data = Recording(purgeData),
+        kept = recordingKept,
         work = { sid -> cancelled += sid; calls += "work" },
         lastPlayed = lastPlayed,
         pausePlayback = { calls += "pause" },
@@ -87,6 +91,18 @@ class SignOutTest {
         logout = logout,
         clearAccountState = { sid -> calls += "state:$sid" },
     )
+
+    /** Records the data steps of a sign-out in [calls]. */
+    private inner class Recording(private val inner: AccountData) : AccountData by inner {
+        override suspend fun purge(serverId: String) { calls += "purge"; inner.purge(serverId) }
+        override suspend fun pauseDownloads(serverId: String) { calls += "pauseDownloads"; inner.pauseDownloads(serverId) }
+        override suspend fun deleteRows(serverId: String) { calls += "rowsAgain"; inner.deleteRows(serverId) }
+    }
+
+    private val recordingKept = object : KeptAccountStore by kept {
+        override suspend fun put(account: KeptAccount) { calls += "remember"; kept.put(account) }
+        override suspend fun remove(serverId: String) { calls += "forget"; kept.remove(serverId) }
+    }
 
     /** One title of [server] with progress, a complete download with its file, a bookmark, a queue entry and audio settings. */
     private suspend fun seed(server: String, id: String = "book1") {
@@ -128,14 +144,15 @@ class SignOutTest {
         assertNull(lastPlayed.value)
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
         assertEquals(emptySet<String>(), kept.pending.value)
-        // Playback first, the credentials last (nothing reacts to "signed out" before the data is final).
-        assertEquals("stop", calls.first())
-        assertTrue(calls.indexOf("work") < calls.indexOf("state:$a"))
-        assertTrue("state:$a" in calls && "lastPlayed" in calls && "logout" in calls)
+        // Playback first, then the work (no sync rewrites rows after the purge), the data, and the credentials last
+        // (nothing reacts to "signed out" before the data is final). The logout runs alongside, awaited before the end.
+        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "state:$a", "clear"), calls - "logout")
+        assertTrue(calls.indexOf("logout") in calls.indexOf("work") until calls.indexOf("clear"))
     }
 
     @Test fun keeping_keepsRowsAndFiles_pausesWaitingDownloads_andRemembersTheAccount() = runTest {
         seed(a)
+        stamps.set("progress_sync:$a", 7)
         db.downloadDao().upsert(DownloadEntity(a, "book2", DownloadState.QUEUED, 1))
         lastPlayed.value = LastPlayed(a, "book1", 1)
 
@@ -149,9 +166,33 @@ class SignOutTest {
         assertNull(accounts.acc.value)
         assertNull(accounts.refresh)
         assertEquals(true, accounts.clearedKeeping)
+        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "state:$a", "clear"), calls - "logout")
+        // Kept means kept: the sync stamps and the car's covers of the account stay too.
+        assertEquals(7L, stamps.get("progress_sync:$a"))
+        assertEquals(emptyList<String>(), forgottenCovers)
         assertEquals(listOf(a), cancelled)
         assertEquals(listOf("refresh-1"), logouts)
         assertNull(lastPlayed.value) // a play key cannot start the old account's title
+    }
+
+    @Test fun theCallerGoingAway_midSignOut_stillFinishesIt() = runTest {
+        seed(a)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val out = SignOut(
+            accounts, Recording(data), recordingKept, { sid -> cancelled += sid; calls += "work" }, lastPlayed,
+            pausePlayback = {}, stopPlayback = { calls += "stop"; gate.await() }, pushes = emptyList(), awaitOnline = { true },
+            logout = { _, _ -> true }, clearAccountState = { calls += "state:$it" },
+        )
+        val job = launch { out.execute(keepDownloads = false) }
+        testScheduler.runCurrent()
+        assertEquals(listOf("stop"), calls)
+        job.cancel() // the Settings ViewModel is cleared when the navigation pops it
+        gate.complete(Unit)
+        job.join()
+        assertNull(accounts.acc.value)
+        assertNull(accounts.refresh)
+        assertEquals(List(6) { false }, rows(a))
+        assertEquals("clear", calls.last())
     }
 
     @Test fun aDeviceTitleLastPlayed_isKept() = runTest {

@@ -32,6 +32,23 @@ class IdleWorker(context: Context, params: WorkerParameters) : Worker(context, p
     override fun doWork() = Result.success()
 }
 
+/** Runs until it is stopped, like a download in the middle of a file. */
+class BlockingWorker(context: Context, params: WorkerParameters) : androidx.work.CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        started.complete(Unit)
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            stopped.complete(Unit)
+        }
+    }
+
+    companion object {
+        var started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var stopped = kotlinx.coroutines.CompletableDeferred<Unit>()
+    }
+}
+
 /** Sign-out cancels the account's sync and download work; another server's downloads and device work stay. */
 @RunWith(RobolectricTestRunner::class)
 class AccountWorkTest {
@@ -73,6 +90,20 @@ class AccountWorkTest {
         assertEquals(WorkInfo.State.ENQUEUED, state(DefaultDownloadManager.workName(b, "book1")))
         assertEquals(WorkInfo.State.ENQUEUED, state("local-scan"))
         assertEquals(WorkInfo.State.ENQUEUED, state("cleanup-reminder"))
+    }
+
+    @Test fun aRunningDownload_isStopped() = runBlocking {
+        BlockingWorker.started = kotlinx.coroutines.CompletableDeferred()
+        BlockingWorker.stopped = kotlinx.coroutines.CompletableDeferred()
+        val name = DefaultDownloadManager.workName(a, "book1")
+        wm.enqueueUniqueWork(name, ExistingWorkPolicy.KEEP, OneTimeWorkRequestBuilder<BlockingWorker>().addTag(DefaultDownloadManager.serverTag(a)).build())
+        kotlinx.coroutines.withTimeout(10_000) { BlockingWorker.started.await() }
+        assertEquals(WorkInfo.State.RUNNING, state(name))
+
+        WorkManagerAccountWork({ wm }, { listOf("book1") }, waitMs = 5_000).cancel(a)
+
+        kotlinx.coroutines.withTimeout(10_000) { BlockingWorker.stopped.await() } // its coroutine was cancelled
+        assertEquals(WorkInfo.State.CANCELLED, state(name))
     }
 
     @Test fun theNextSignInSchedulesThePeriodicSyncAgain() {

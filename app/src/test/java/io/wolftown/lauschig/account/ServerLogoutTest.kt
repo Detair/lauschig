@@ -43,6 +43,20 @@ class ServerLogoutTest {
         assertNull(req.getHeader("Authorization"))
     }
 
+    @Test fun aRedirectToAnotherHost_isNotFollowed() = runBlocking {
+        // The refresh token goes to the account's server only, never where a redirect points.
+        val elsewhere = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", elsewhere.url("/logout").toString()))
+            val base = server.url("/")
+            assertFalse(logout(ConnectionState.Online(base, ConnectionState.Via.LOCAL)).logout(account(base), "refresh-1"))
+            assertEquals(1, server.requestCount)
+            assertEquals(0, elsewhere.requestCount)
+        } finally {
+            elsewhere.shutdown()
+        }
+    }
+
     @Test fun offline_sendsNothing() = runBlocking {
         assertFalse(logout(ConnectionState.Offline).logout(account(server.url("/")), "refresh-1"))
         assertEquals(0, server.requestCount)
