@@ -129,3 +129,30 @@ widget preview is a static layout (no generated preview); podcast pages have no 
 
 Verification: see the phase report (unit tests, lint, assemble, `CarBrowseTest` on emulator-5554, widget presses with
 the process killed, failing resumption, links via VIEW/SEND, admin scan/match/online users against the local test ABS).
+
+## Fix round 1 (review, 2026-11-03)
+
+- **Play-key guard** (#1, #3): arms only while the player is empty (`shouldArm`), lets go for good once something plays
+  (player listener → `onEngaged`), and never settles a service that is already in the foreground (API 29+,
+  `foregroundServiceType`): `startForeground` with its own id made Android cancel Media3's media notification. The first
+  press's deadline counts (7 s up to API 33, 20 s from 34). At the deadline with the resumption still running the
+  service goes foreground with the placeholder and keeps running; it stops (with the toast) only when the resumption
+  fails, or when nothing plays after a successful one. Media3's own `startForeground` later replaces the placeholder.
+- **Widget covers** (#2): `WidgetCoverCache` keeps the decoded cover per `CoverRef` (a miss is asked again after 5 min);
+  only the widget's own cover arriving redraws it (an episode matches by its podcast).
+- **Stale "playing"** (#4): `PlaybackService.running` (onCreate/onDestroy); without the service the widget shows the
+  title paused whatever redraws it (boot, update, next write). The store itself is corrected the next time the service
+  starts (as before); no extra boot/update receiver.
+- **Accounts** (#8): `WidgetAccountWatcher` (started by the app) clears a stored title of another server after a
+  sign-out or server change; the widget never shows one meanwhile; device titles stay.
+- **Neu verbinden** (#5): "Verbunden" only if a probe of this reconnect answered and the shared state is online.
+- **Cold-start links** (#6): `awaitConnectionAnswer` waits while `ApiProvider.checking` says the first check is running,
+  at most 10 s, before "Titel nicht offline verfügbar".
+- **Path prefixes** (#7): Android's globs do not backtrack (`.*` stops at the next `/`; an advanced-pattern `.*` eats
+  the rest and never gives back – checked on the API 35 emulator), so the filter lists the depths: `pathPattern` for up
+  to 2 prefix segments on every version, `pathAdvancedPattern` with explicit `[^/]+` segments for 3 and 4 on Android 12+.
+  **Limit:** before Android 12 links with a prefix deeper than 2 segments, and everywhere deeper than 4, do not open
+  Lauschig (sharing the link still works). `LinkFilterTest` resolves the merged manifest with Robolectric.
+- **Tests** (#9): widget actions checked with `assertHasStartServiceClickAction` (intents built once per key);
+  `WidgetPublisher` takes a snapshot function (ticker, release, stale-state correction tested); MainActivity's routing
+  moved to `IncomingIntents.consume` (replay, stripping, open extra, voice, SSO never a link).
