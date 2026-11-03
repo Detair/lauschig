@@ -8,6 +8,8 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -33,5 +35,24 @@ class ApiProviderTest {
         assertEquals(1, subscriptions)
         assertNotNull(auth)
         assertNotNull(lib)
+    }
+
+    @Test
+    fun afterNobodyListened_theStateIsOfflineAgain_untilAFreshProbeAnswers() = runTest {
+        // At home the state was Online(LOCAL). The process idled (nobody collected), then the car started the
+        // service: an old Online must not be replayed as if it were current (it would stream from the home address).
+        val home = ConnectionState.Online("http://192.168.1.10:13378/".toHttpUrl(), ConnectionState.Via.LOCAL)
+        val upstream = flow {
+            emit(home)
+            awaitCancellation()
+        }
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        val first = backgroundScope.launch { provider.connection.collect {} }
+        runCurrent()
+        assertEquals(home, provider.connectionState.value)
+        first.cancel()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(ConnectionState.Offline, provider.connectionState.value)
     }
 }

@@ -34,13 +34,20 @@ class ApiProvider(
     private val cache = HashMap<HttpUrl, Retrofit>()
     private val clients = HashMap<HttpUrl, OkHttpClient>()
 
-    // Shared so that several API flows do not each run their own probe loop.
-    private val shared = connection.stateIn(scope, SharingStarted.WhileSubscribed(5_000), ConnectionState.Offline)
+    // Shared so that several API flows do not each run their own probe loop. When nobody has listened for 5 s the
+    // value falls back to Offline: a process kept alive at home must not hand an old Online(LOCAL) to the next
+    // listener (e.g. the car starting the playback service) before a fresh probe answered.
+    private val shared = connection.stateIn(
+        scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline,
+    )
 
     /** The shared connection state (one probe loop for everyone). */
     val connection: Flow<ConnectionState> get() = shared
 
-    /** Same shared state with a synchronous [StateFlow.value] (stays [ConnectionState.Offline] until something collects). */
+    /**
+     * Same shared state with a synchronous [StateFlow.value]: [ConnectionState.Offline] until something collects, and
+     * again once nothing has collected for a few seconds (never an old value from before).
+     */
     val connectionState: StateFlow<ConnectionState> get() = shared
 
     private val retrofit: Flow<Retrofit?> = shared
