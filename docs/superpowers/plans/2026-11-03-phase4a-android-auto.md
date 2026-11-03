@@ -162,3 +162,38 @@ Instrumented (`app/src/androidTest`, emulator-5554 with the logged-in test serve
 `MediaBrowser` and the platform `MediaBrowser` (the legacy path AA and SystemUI use) connect to `PlaybackService`, get the
 root, the children of every root node, search "Testreihe", play a title from the tree; then pause. Afterwards
 `logcat`: SystemUI's `MediaResumeListener` no longer logs `onConnectFailed`.
+
+## Implementation notes (2026-11-03)
+
+Decisions made or changed while building it:
+
+- **Library requests never run on the main thread.** The instrumented test deadlocked the app: a legacy
+  `MediaBrowserCompat` connect (Android Auto, Assistant) blocks the main thread until `onGetLibraryRoot` completes, and
+  the recent root's future needed the main thread. `LibraryCallback` futures run on `Dispatchers.Default`; Room,
+  DataStore and Media3's notify/`sendError` calls are thread-safe. Only `onConnectAsync` and `onCustomCommand` answer
+  synchronously on the calling thread.
+- **Cover grants up front.** SystemUI's media controls and Bluetooth read the artwork URI from the platform session
+  without ever connecting to us, so the connect-time grant never reaches them (logcat: "Permission Denial … not
+  exported"). The service grants the cover prefix to `CarAccess.COVER_READERS` (car hosts, Assistant, SystemUI,
+  Bluetooth) when it starts; not installed packages are skipped. Verified: SystemUI then reaches the provider.
+- **Negative cover cache.** SystemUI and the notification reload the artwork on every metadata change (the chapter
+  subtitle changes it too); a title without a cover was fetched from the server each time. `CoverStore` remembers a
+  "no cover" answer for 30 min and a failed request for 2 min; offline (nothing asked) is not remembered.
+- **A cleared queue never finishes a title** (`PlaybackProgressBridge`): ExoPlayer goes to `ENDED` when a controller
+  clears the playlist, and the bridge used to save the title as finished. Only a queue played to its end finishes it.
+- **No URIs from outside.** Only this app's controllers may hand the player items with URIs; other full-access callers
+  start titles by id or search; `CONTROL` callers lose `SET_MEDIA_ITEM`/`CHANGE_MEDIA_ITEMS` (they can play, pause, seek).
+- **Phone notification and lock screen** show the same media buttons as the car (−30 s / play / +30 s, overflow: speed,
+  sleep timer, chapters); previous/next from headsets and steering wheels are ±30 s everywhere (`CarSafePlayer`).
+- **Left out:** a "Warteschlange" node (the queue advances inside the service; a car list of queued titles adds a tab
+  without adding much); podcast items in search (episodes are reachable through Bibliotheken → podcast); episodes are
+  listed from Room only (a podcast never opened in the app shows only its stored/recent episodes);
+  `EXTRAS_KEY_ROOT_CHILDREN_LIMIT` is not read (the root has exactly 4 nodes, AA's usual limit).
+- **Instrumented runs keep the app's data:** `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
+  -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true` (without the flag AGP uninstalls the app and its login).
+
+Verification: `testDebugUnitTest` 767 tests, 0 failures (one earlier run had a MockWebServer socket timeout in
+`GuardedCallFactoryTest`, green on rerun); `lintDebug` 0 errors; `assembleDebug` ok; `CarBrowseTest` 5/5 on
+emulator-5554 (API 35). SystemUI's `MediaResumeListener` now logs "Connected … Can get resumable media" instead of
+`onConnectFailed`. A media-key PLAY with the app process killed started the service and resumed the last title at its
+saved position while offline; the app then showed it in the mini player with the chapter as subtitle.
