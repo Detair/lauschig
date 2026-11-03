@@ -127,6 +127,7 @@ class SignOutTest {
         assertEquals(listOf("refresh-1"), logouts)
         assertNull(lastPlayed.value)
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
+        assertEquals(emptySet<String>(), kept.pending.value)
         // Playback first, the credentials last (nothing reacts to "signed out" before the data is final).
         assertEquals("stop", calls.first())
         assertTrue(calls.indexOf("work") < calls.indexOf("state:$a"))
@@ -183,6 +184,9 @@ class SignOutTest {
         signOut(purgeData = broken).execute(keepDownloads = false)
         assertNull(accounts.acc.value)
         assertNull(accounts.refresh)
+        // The data is not lost to nowhere: the next app start finishes the purge.
+        assertEquals(setOf(a), kept.pending.value)
+        assertEquals(emptyList<KeptAccount>(), kept.list.value)
     }
 
     @Test fun withoutAccount_nothingHappens() = runTest {

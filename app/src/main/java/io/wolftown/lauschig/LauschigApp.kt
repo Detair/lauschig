@@ -7,6 +7,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
+import io.wolftown.lauschig.account.AccountDataJanitor
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
@@ -14,6 +15,7 @@ import io.wolftown.lauschig.playback.AutoResumer
 import io.wolftown.lauschig.playback.NextVolumePrefetcher
 import io.wolftown.lauschig.sync.SyncScheduler
 import io.wolftown.lauschig.ui.common.newCoverImageLoader
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +32,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var autoResumer: AutoResumer
     @Inject lateinit var localFolders: LocalFolders
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
+    @Inject lateinit var accountDataJanitor: AccountDataJanitor
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -46,6 +49,16 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         scope.launch { localFolders.scanIfDue() }
         // Sign-out or another server: the homescreen widget forgets the old account's title.
         scope.launch { widgetAccounts.run() }
+        // A purge that failed during a sign-out is finished; downloads nobody can reach any more go.
+        scope.launch {
+            try {
+                accountDataJanitor.run()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LauschigApp", "account data cleanup failed", e)
+            }
+        }
         // The player state is main-thread bound; the prefetcher only reads it.
         prefetcher.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         // Registers its audio-device callback only while the setting is on.

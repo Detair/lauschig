@@ -151,7 +151,8 @@ class SignOut(
             step("pause downloads") { data.pauseDownloads(serverId) }
             step("remember") { kept.put(KeptAccount(serverId, account.username, account.displayHost)) }
         } else {
-            step("purge") { data.purge(serverId) }
+            // A purge that fails (disk full, files left) is finished at the next start: the data never becomes unreachable.
+            if (step("purge") { data.purge(serverId); true } != true) step("pending purge") { kept.addPendingPurge(serverId) }
             step("forget") { kept.remove(serverId) }
         }
         step("last played") { lastPlayed.forgetServerTitle() }

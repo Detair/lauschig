@@ -42,6 +42,12 @@ class KeptAccountsTest {
         assertEquals(listOf(KeptAccount("c", "lukas", "h")), DataStoreKeptAccounts(store).accounts.first())
     }
 
+    @Test fun pendingPurges_addRemove_persisted() = runTest {
+        assertEquals(emptySet<String>(), kept.pendingPurges.first())
+        kept.addPendingPurge("a"); kept.addPendingPurge("b"); kept.removePendingPurge("a")
+        assertEquals(setOf("b"), DataStoreKeptAccounts(store).pendingPurges.first())
+    }
+
     @Test fun unreadableValue_isEmpty_notACrash() = runTest {
         store.edit { it[stringPreferencesKey("accounts_json")] = "{not json" }
         assertEquals(emptyList<KeptAccount>(), kept.accounts.first())

@@ -10,4 +10,8 @@ class FakeKeptAccounts(initial: List<KeptAccount> = emptyList()) : KeptAccountSt
     override suspend fun put(account: KeptAccount) = list.update { l -> l.filterNot { it.serverId == account.serverId } + account }
     override suspend fun remove(serverId: String) = list.update { l -> l.filterNot { it.serverId == serverId } }
     override suspend fun markAsked(serverId: String) = list.update { l -> l.map { if (it.serverId == serverId) it.copy(asked = true) else it } }
+    val pending = MutableStateFlow(emptySet<String>())
+    override val pendingPurges: Flow<Set<String>> = pending
+    override suspend fun addPendingPurge(serverId: String) = pending.update { it + serverId }
+    override suspend fun removePendingPurge(serverId: String) = pending.update { it - serverId }
 }
