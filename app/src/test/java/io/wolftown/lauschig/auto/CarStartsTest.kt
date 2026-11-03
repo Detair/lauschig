@@ -22,12 +22,14 @@ class CarStartsTest {
     private var result: ServiceTitleStarter.Resolved = ServiceTitleStarter.Resolved.Ready(listOf(MediaItem.fromUri("file:///a.mp3")), 0, 5_000, streaming = false)
     private var found: CarNode.Title? = null
     private var last: CarNode.Title? = null
+    private var loaded: CarNode.Title? = null
 
     private val starts = CarStarts(
         resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); result },
         searchTitle = { q, hints -> searched += q to hints; found },
         lastTitle = { last },
         accountServer = { s },
+        current = { loaded },
     )
 
     private fun byId(id: String) = MediaItem.Builder().setMediaId(id).build()
@@ -83,5 +85,16 @@ class CarStartsTest {
         val out = starts.forResumption() as CarStarts.Outcome.Ready
         assertEquals(CarNode.Title(s, "last"), out.title)
         assertEquals(Triple(s, "last", true), resolved.single())
+    }
+
+    @Test fun theTitleAlreadyLoaded_isNotReloaded() = runTest {
+        // Tapping the playing title in the car, or "Spiel Lauschig" while it is loaded: just play on, no reload.
+        loaded = CarNode.Title(s, "b")
+        assertEquals(CarStarts.Outcome.AlreadyLoaded(CarNode.Title(s, "b")), starts.forRequest(listOf(byId("title/$s/b")), 0))
+        found = CarNode.Title(s, "b")
+        assertEquals(CarStarts.Outcome.AlreadyLoaded(CarNode.Title(s, "b")), starts.forRequest(listOf(bySearch("")), 0))
+        assertTrue(resolved.isEmpty())
+        // Another title loads as usual.
+        assertTrue(starts.forRequest(listOf(byId("title/$s/other")), 0) is CarStarts.Outcome.Ready)
     }
 }

@@ -20,10 +20,14 @@ class CarStarts(
     private val lastTitle: suspend () -> CarNode.Title?,
     /** The signed-in account's server (null when signed out: then only device titles play). */
     private val accountServer: suspend () -> String?,
+    /** The title loaded in the player right now (ready or buffering), null if none. */
+    private val current: suspend () -> CarNode.Title? = { null },
 ) {
     sealed interface Outcome {
         data class Ready(val title: CarNode.Title, val items: List<MediaItem>, val index: Int, val offsetMs: Long, val streaming: Boolean) : Outcome
         data class Failed(val reason: Reason) : Outcome
+        /** The requested title is the one loaded: keep its queue and position, just play. */
+        data class AlreadyLoaded(val title: CarNode.Title) : Outcome
     }
 
     enum class Reason { NOTHING_FOUND, NOT_FOUND, OFFLINE, LOCAL_UNAVAILABLE, NOT_PLAYABLE, NOTHING_TO_RESUME }
@@ -33,7 +37,8 @@ class CarStarts(
 
     /**
      * The request item at [startIndex] (else the first) decides; the rest of a car list is never queued (the player
-     * queue holds the files of one title, later titles come from Lauschig's own queue).
+     * queue holds the files of one title, later titles come from Lauschig's own queue). The title that is loaded
+     * already is not reloaded ([Outcome.AlreadyLoaded]): reloading would rebuffer and jump back.
      */
     suspend fun forRequest(items: List<MediaItem>, startIndex: Int): Outcome {
         val item = items.getOrNull(if (startIndex == C.INDEX_UNSET) 0 else startIndex) ?: items.firstOrNull()
@@ -44,6 +49,7 @@ class CarStarts(
         } else {
             (MediaIds.parse(item.mediaId) as? CarNode.Title)?.takeIf { allowed(it) } ?: return Outcome.Failed(Reason.NOT_FOUND)
         }
+        if (title == current()) return Outcome.AlreadyLoaded(title)
         return start(title)
     }
 

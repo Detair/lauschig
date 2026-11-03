@@ -54,6 +54,8 @@ class LibraryCallback(
     private val onCommand: (action: String) -> Boolean,
     /** A title is about to start from the car, voice or resumption (download on play for streams). */
     private val onStart: (CarStarts.Outcome.Ready) -> Unit,
+    /** The requested title is already loaded: play on where it is (main thread is posted to by the caller). */
+    private val onPlayLoaded: () -> Unit,
     /** A browser subscribed to a folder; the service notifies it when the library changes. */
     private val onSubscribed: (parentId: String) -> Unit,
 ) : MediaLibrarySession.Callback {
@@ -181,6 +183,12 @@ class LibraryCallback(
             Log.i(TAG, "${controller.packageName} starts ${MediaIds.of(out.title)}")
             onStart(out)
             MediaSession.MediaItemsWithStartPosition(out.items, out.index, out.offsetMs)
+        }
+        is CarStarts.Outcome.AlreadyLoaded -> {
+            // Same title: no reload (no rebuffer, no jump back). The request itself is skipped.
+            Log.i(TAG, "${controller.packageName} plays the loaded ${MediaIds.of(out.title)} on")
+            onPlayLoaded()
+            throw CancellationException("already loaded")
         }
         is CarStarts.Outcome.Failed -> {
             Log.i(TAG, "${controller.packageName} cannot start: ${out.reason}")

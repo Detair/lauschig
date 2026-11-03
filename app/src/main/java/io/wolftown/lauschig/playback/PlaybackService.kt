@@ -72,6 +72,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import javax.inject.Inject
@@ -287,6 +288,14 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun carContext() = CarContext(accountStore.account.first()?.serverId, api.connectionState.value is ConnectionState.Online)
 
+    /** The title in the player if it can just play on (not ended, not failed). Main thread. */
+    private fun loadedTitle(): CarNode.Title? {
+        val exo = player ?: return null
+        val state = exo.playbackState
+        if (state != Player.STATE_READY && state != Player.STATE_BUFFERING) return null
+        return currentKey(exo)?.let { (serverId, key) -> CarNode.Title(serverId, key) }
+    }
+
     private suspend fun lastTitle(): CarNode.Title? = lastTitleStarter.last()?.let { CarNode.Title(it.serverId, it.itemId) }
 
     private fun libraryCallback(buttons: CarButtons): LibraryCallback {
@@ -308,6 +317,7 @@ class PlaybackService : MediaLibraryService() {
             },
             lastTitle = ::lastTitle,
             accountServer = { accountStore.account.first()?.serverId },
+            current = { withContext(Dispatchers.Main.immediate) { loadedTitle() } },
         )
         return LibraryCallback(
             context = this,
@@ -321,6 +331,7 @@ class PlaybackService : MediaLibraryService() {
             buttons = { buttons.buttons(currentButtonState()) },
             onCommand = ::onCarCommand,
             onStart = { out -> if (out.streaming) playDownloadStarter.start(out.title.serverId, out.title.key) },
+            onPlayLoaded = { scope.launch { player?.play() } },
             onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
         )
     }
