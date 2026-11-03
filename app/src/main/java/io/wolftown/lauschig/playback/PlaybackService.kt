@@ -48,6 +48,7 @@ import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.connection.awaitOnlineAnswer
+import io.wolftown.lauschig.connection.belongsTo
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.QueueDao
@@ -164,11 +165,13 @@ class PlaybackService : MediaLibraryService() {
         }
         connectionJob = scope.launch {
             // Another account (sign-out, new server) forgets the server, so its token never reaches an old queue's origin.
-            accountStore.account.map { it?.let { a -> a.serverId to a.userId } }.distinctUntilChanged().collectLatest { who ->
+            // Only a state of this account's addresses counts: right after a switch the shared state may still replay the
+            // previous server's Online before the reset arrives.
+            accountStore.account.map { it?.let { a -> Triple(a.serverId, a.userId, a.addresses) } }.distinctUntilChanged().collectLatest { who ->
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
-                    if (it is ConnectionState.Online) lastOnline = it
+                    if (it is ConnectionState.Online && it.belongsTo(who.third)) lastOnline = it
                 }
             }
         }
