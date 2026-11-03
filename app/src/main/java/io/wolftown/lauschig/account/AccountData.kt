@@ -53,16 +53,16 @@ class AccountData(
     suspend fun pauseDownloads(serverId: String) = dao.pauseActiveDownloads(serverId)
 
     /**
-     * Deletes everything of [serverId]: rows first (nothing then points at the files), then the files and caches, then
-     * the sync stamps (a later sign-in of the same account syncs everything again at once).
+     * Deletes everything of [serverId]: the sync stamps first (a kill afterwards costs at most an extra fetch, never a
+     * stamp that hides missing rows), then the rows (nothing then points at the files), then the files and caches.
      */
     suspend fun purge(serverId: String) {
         require(!DeviceLibrary.isLocal(serverId)) { "the device library is not account data" }
+        stamps.removeServer(serverId)
         dao.deleteServer(serverId)
         withContext(io) {
             files.deleteServer(serverId)
             forgetCovers(serverId)
         }
-        stamps.removeServer(serverId)
     }
 }

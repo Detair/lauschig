@@ -166,6 +166,19 @@ class AccountDataTest {
         assertEquals(4L, stamps.get("local_folders_scan"))
     }
 
+    @Test fun purge_stampsFirst_thenRows_thenFiles() = runBlocking {
+        // A kill in between then costs at most an extra fetch, never a stamp that hides missing rows for hours.
+        db.itemDao().upsertFromList(listOf(io.wolftown.lauschig.db.entities.ItemEntity(a, "book1", "lib", "T")))
+        File(root, "$a/book1").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(1))
+        val order = mutableListOf<String>()
+        fun state() = "rows=${runBlocking { db.itemDao().get(a, "book1") } != null} files=${File(root, a).exists()}"
+        val stamps = object : io.wolftown.lauschig.sync.SyncStamps by InMemorySyncStamps() {
+            override suspend fun removeServer(serverId: String) { order += "stamps " + state() }
+        }
+        AccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, { order += "covers " + state() }).purge(a)
+        assertEquals(listOf("stamps rows=true files=true", "covers rows=false files=false"), order)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun purge_neverTheDeviceLibrary(): Unit = runBlocking { data.purge(dev) }
 
