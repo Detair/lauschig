@@ -114,6 +114,18 @@ class LibraryViewModelTest {
         assertFalse(s.series.flatMap { it.items }.any { it.title == "Solo" })
     }
 
+    @Test fun theFilterIsBlamed_onlyWhenItHidesTheTabsTitles() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("book", "lib1"), item("play", "lib2")))
+        listen("book") // only the audiobook is in progress
+        val vm = vm()
+        vm.await { it.items.size == 1 }
+        vm.setKinds(setOf(LibraryKind.HOERSPIEL))
+        assertTrue("the radio-play filter hides the one title in progress", vm.await { it.items.isEmpty() }.hiddenByFilter)
+        vm.selectTab(LibraryTab.Finished)
+        assertFalse("nothing is finished at all: not the filter's doing", vm.await { it.tab == LibraryTab.Finished }.hiddenByFilter)
+    }
+
     @Test fun kindFilter_hoerspieleOnly_hidesAudiobooks() = runTest {
         libs()
         db.itemDao().upsertFromList(listOf(item("book", "lib1"), item("play", "lib2")))

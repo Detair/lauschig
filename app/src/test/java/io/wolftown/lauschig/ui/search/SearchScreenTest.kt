@@ -64,6 +64,7 @@ class SearchScreenTest {
         val state = SearchUiState(
             query = "zzz", resultsFor = "zzz", searched = true,
             availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.AUDIOBOOK),
+            hiddenByFilter = true,
         )
         rule.setContent { LauschigTheme { SearchScreen(state, {}, {}, { kinds += it }, {}, {}, { _, _ -> }) } }
         rule.onNodeWithText("Nothing found for “zzz”").assertIsDisplayed()

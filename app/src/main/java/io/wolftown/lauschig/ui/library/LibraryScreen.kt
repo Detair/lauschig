@@ -49,7 +49,6 @@ import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.SectionTitle
 import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.common.TagFilterChip
-import io.wolftown.lauschig.ui.common.kindFilterActive
 import io.wolftown.lauschig.ui.theme.Spacing
 
 @StringRes
@@ -144,7 +143,7 @@ fun LibraryScreen(
         when {
             empty && !state.loaded -> StatePage { LoadingState(verticalPadding = it) }
             // Empty only because of the kind or tag filter: say so, and offer to reset it.
-            empty && (state.selectedTag != null || kindFilterActive(state.availableKinds, state.selectedKinds)) -> StatePage { padding ->
+            empty && state.hiddenByFilter -> StatePage { padding ->
                 FilterEmptyState(onReset = { onKinds(emptySet()); onTag(null) }, Modifier.testTag("libraryEmpty"), verticalPadding = padding)
             }
             empty -> StatePage { padding ->

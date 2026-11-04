@@ -85,12 +85,19 @@ class DiscoverScreenTest {
 
     @Test fun discoverScreen_emptyOnlyBecauseOfTheFilter_saysSo_andResetsIt() {
         val kinds = mutableListOf<Set<LibraryKind>>()
-        val state = DiscoverUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.HOERSPIEL))
+        val state = DiscoverUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.HOERSPIEL), hiddenByFilter = true)
         rule.setContent { LauschigTheme { DiscoverScreen(state, { kinds += it }, {}, {}, { _, _ -> }) } }
         rule.onNodeWithText("No titles with this filter").assertIsDisplayed()
         rule.onNodeWithText("Refresh library").assertDoesNotExist()
         rule.onNodeWithText("Reset filter").performClick()
         assertEquals(listOf(emptySet<LibraryKind>()), kinds)
+    }
+
+    @Test fun discoverScreen_emptyCatalogWithAFilterSet_offersTheRefresh_notTheReset() {
+        val state = DiscoverUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.HOERSPIEL))
+        rule.setContent { LauschigTheme { DiscoverScreen(state, {}, {}, {}, { _, _ -> }) } }
+        rule.onNodeWithText("Refresh library").assertIsDisplayed()
+        rule.onNodeWithText("No titles with this filter").assertDoesNotExist()
     }
 
     @Test fun discoverScreen_whileLoading_saysNothingIsThere_never() {

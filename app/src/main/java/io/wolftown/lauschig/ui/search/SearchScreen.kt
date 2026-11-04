@@ -53,7 +53,6 @@ import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
 import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.SectionTitle
-import io.wolftown.lauschig.ui.common.kindFilterActive
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.theme.Spacing
 
@@ -134,7 +133,7 @@ fun SearchScreen(
                         }
                     }
                 }
-            } else if (state.searched && !state.hasResults && kindFilterActive(state.availableKinds, state.selectedKinds)) {
+            } else if (state.searched && !state.hasResults && state.hiddenByFilter) {
                 full("empty") {
                     FilterEmptyState(
                         onReset = { onKinds(emptySet()) }, Modifier.testTag("searchEmpty"),

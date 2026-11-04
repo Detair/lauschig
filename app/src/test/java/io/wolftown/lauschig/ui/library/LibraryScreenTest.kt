@@ -64,13 +64,23 @@ class LibraryScreenTest {
     @Test fun emptyOnlyBecauseOfTheTag_saysSo_andResetsKindsAndTag() {
         val kinds = mutableListOf<Set<LibraryKind>>()
         val tags = mutableListOf<String?>()
-        val state = LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true, availableTags = listOf(io.wolftown.lauschig.catalog.Facet("Krimi", 2, "1")), selectedTag = "Krimi")
+        val state = LibraryUiState(
+            availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true, availableTags = listOf(io.wolftown.lauschig.catalog.Facet("Krimi", 2, "1")),
+            selectedTag = "Krimi", hiddenByFilter = true,
+        )
         rule.setContent { LauschigTheme { LibraryScreen(state, {}, { kinds += it }, {}, onTag = { tags += it }) } }
         rule.onNodeWithText("No titles with this filter").assertIsDisplayed()
         rule.onNodeWithText("Titles you start listening to show up here.").assertDoesNotExist()
         rule.onNodeWithText("Reset filter").performClick()
         assertEquals(listOf(emptySet<LibraryKind>()), kinds)
         assertEquals(listOf<String?>(null), tags)
+    }
+
+    @Test fun emptyTabWithAFilterSet_isNotBlamedOnTheFilter() {
+        val state = LibraryUiState(availableKinds = both, selectedKinds = setOf(LibraryKind.HOERSPIEL), loaded = true, hiddenByFilter = false)
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
+        rule.onNodeWithText("Titles you start listening to show up here.").assertIsDisplayed()
+        rule.onNodeWithText("No titles with this filter").assertDoesNotExist()
     }
 
     @Test fun notLoadedYet_showsNoEmptyHint() {

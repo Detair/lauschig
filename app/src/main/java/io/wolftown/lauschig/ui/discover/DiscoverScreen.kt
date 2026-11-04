@@ -62,7 +62,6 @@ import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.SectionTitle
 import io.wolftown.lauschig.ui.common.coverModel
-import io.wolftown.lauschig.ui.common.kindFilterActive
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.theme.Spacing
 
@@ -111,7 +110,7 @@ fun DiscoverScreen(
         if (state.loading) {
             full("loading") { LoadingState() }
         } else if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
-            state.authors.isEmpty() && state.all.isEmpty() && kindFilterActive(state.availableKinds, state.selectedKinds)
+            state.authors.isEmpty() && state.all.isEmpty() && state.hiddenByFilter
         ) {
             full("empty") { FilterEmptyState(onReset = { onKinds(emptySet()) }, Modifier.testTag("discoverEmpty")) }
         } else if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&

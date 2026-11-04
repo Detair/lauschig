@@ -172,6 +172,16 @@ class DiscoverViewModelTest {
         assertTrue("starts loading, not empty", v.state.value.loading)
         val empty = v.await { !it.loading }
         assertTrue(empty.all.isEmpty() && empty.recent.isEmpty())
+        assertTrue("an empty catalog is not the filter's doing", !empty.hiddenByFilter)
+    }
+
+    @Test fun discover_aKindFilterThatHidesEverything_isNamedAsTheReason() = runTest {
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(sid, "lib1", "Books", "book", 0), LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)))
+        db.itemDao().upsertFromList(listOf(item("1", "Buch", "lib1")))
+        val v = vm()
+        v.await { it.all.size == 1 }
+        v.setKinds(setOf(LibraryKind.HOERSPIEL))
+        assertTrue(v.await { it.all.isEmpty() && !it.loading }.hiddenByFilter)
     }
 
     @Test fun discover_itemsWithoutMetadata_listedOnlyInAllTitles() = runTest {
