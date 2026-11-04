@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.library
 
+import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.ui.platform.testTag
@@ -142,10 +143,10 @@ fun LibraryScreen(
         }
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()
         when {
-            empty && !state.loaded -> LoadingState()
-            empty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            empty && !state.loaded -> StatePage { LoadingState(verticalPadding = it) }
+            empty -> StatePage { padding ->
                 val (icon, hint) = emptyHint(state.tab)
-                EmptyState(icon, stringResource(R.string.library_empty), Modifier.testTag("libraryEmpty"), supporting = stringResource(hint))
+                EmptyState(icon, stringResource(R.string.library_empty), Modifier.testTag("libraryEmpty"), supporting = stringResource(hint), verticalPadding = padding)
             }
             else -> LibraryGrid(state, tile)
         }

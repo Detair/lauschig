@@ -1,5 +1,10 @@
 package io.wolftown.lauschig.ui.library
 
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -46,6 +51,14 @@ class LibraryScreenTest {
         rule.onNodeWithText("Nothing here yet").assertIsDisplayed()
         rule.onNodeWithText("Titles you start listening to show up here.").assertIsDisplayed()
         rule.onNodeWithText("Audiobooks").assertDoesNotExist()
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w800dp-h360dp", fontScale = 2.0f)
+    fun emptyState_inPhoneLandscapeAtLargeText_scrollsIntoView() {
+        val state = LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
+        // About the height left under the tabs with the mini player in phone landscape.
+        rule.setContent { LauschigTheme { Box(Modifier.height(170.dp)) { LibraryScreen(state, {}, {}, {}) } } }
+        rule.onNodeWithText("Titles you start listening to show up here.").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun notLoadedYet_showsNoEmptyHint() {

@@ -1,7 +1,14 @@
 package io.wolftown.lauschig.ui.common
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,17 +43,37 @@ const val LOADING_INDICATOR_DELAY_MS = 400L
  * empty state, which would claim there is nothing.
  */
 @Composable
-fun LoadingState(modifier: Modifier = Modifier) {
+fun LoadingState(modifier: Modifier = Modifier, verticalPadding: Dp = 48.dp) {
     var show by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(LOADING_INDICATOR_DELAY_MS)
         show = true
     }
     val label = stringResource(R.string.state_loading)
-    Box(modifier.fillMaxWidth().padding(vertical = 48.dp).testTag("loadingState"), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxWidth().padding(vertical = verticalPadding).testTag("loadingState"), contentAlignment = Alignment.Center) {
         if (show) CircularProgressIndicator(Modifier.size(32.dp).semantics { contentDescription = label }, strokeWidth = 3.dp)
     }
 }
+
+/**
+ * A page-level loading or empty state (a page with nothing else below its header): centred in the height that is left,
+ * and scrollable where that is too short for it – a phone in landscape with the mini player, large text. [content] gets
+ * the vertical padding to use: less on a short page.
+ */
+@Composable
+fun StatePage(modifier: Modifier = Modifier, content: @Composable (verticalPadding: Dp) -> Unit) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val padding = if (maxHeight < SHORT_PAGE) Spacing.l else 48.dp
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) { content(padding) }
+    }
+}
+
+/** Below this height a [StatePage] uses less padding. */
+private val SHORT_PAGE = 360.dp
 
 /**
  * A list page that has loaded and holds nothing: an icon, one [headline], one [supporting] line in plain words and an
@@ -59,9 +86,11 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     supporting: String? = null,
     action: (@Composable () -> Unit)? = null,
+    /** Space above and below; [StatePage] makes it smaller where the page is short. */
+    verticalPadding: Dp = 48.dp,
 ) {
     Column(
-        modifier.fillMaxWidth().padding(horizontal = Spacing.xl, vertical = 48.dp),
+        modifier.fillMaxWidth().padding(horizontal = Spacing.xl, vertical = verticalPadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))

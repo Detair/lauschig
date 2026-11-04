@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.downloads
 
+import io.wolftown.lauschig.ui.common.StatePage
 import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -159,7 +160,7 @@ fun DownloadsScreen(
         }
         HorizontalDivider(Modifier.padding(top = 8.dp))
         when {
-            !state.loaded -> LoadingState()
+            !state.loaded -> StatePage { LoadingState(verticalPadding = it) }
             state.total == 0 -> Empty(Icons.Rounded.DownloadForOffline, stringResource(R.string.downloads_empty), stringResource(R.string.downloads_empty_hint))
             state.entries.isEmpty() -> Empty(Icons.Rounded.SearchOff, stringResource(R.string.downloads_no_match))
             else -> LazyColumn(Modifier.fillMaxSize()) {
@@ -198,7 +199,7 @@ private fun DownloadSort.label(): Int = when (this) {
 
 @Composable
 private fun Empty(icon: ImageVector, headline: String, supporting: String? = null) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState(icon, headline, supporting = supporting) }
+    StatePage { EmptyState(icon, headline, supporting = supporting, verticalPadding = it) }
 }
 
 @Composable

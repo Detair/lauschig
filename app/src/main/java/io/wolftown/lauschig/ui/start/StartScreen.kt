@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.theme.coverTintTarget
 import io.wolftown.lauschig.ui.theme.controlColorOn
 import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
@@ -130,9 +131,9 @@ fun StartScreen(
     onPlayPause: (itemId: String) -> Unit = onPlay,
 ) {
     if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty() && state.newEpisodes.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        StatePage(modifier) { padding ->
             if (state.loading) {
-                LoadingState()
+                LoadingState(verticalPadding = padding)
             } else {
                 EmptyState(
                     Icons.Rounded.Headphones, stringResource(R.string.start_empty),
@@ -140,6 +141,7 @@ fun StartScreen(
                     action = {
                         Button(onClick = onOpenLibrary, modifier = Modifier.testTag("openLibrary")) { Text(stringResource(R.string.start_open_library)) }
                     },
+                    verticalPadding = padding,
                 )
             }
         }
