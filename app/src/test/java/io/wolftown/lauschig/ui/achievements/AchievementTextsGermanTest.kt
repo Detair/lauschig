@@ -3,13 +3,16 @@ package io.wolftown.lauschig.ui.achievements
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import io.wolftown.lauschig.stats.Achievement
 import io.wolftown.lauschig.stats.AchievementKey
 import io.wolftown.lauschig.stats.AchievementState
+import androidx.compose.ui.text.TextLayoutResult
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -17,6 +20,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
 
 /** The German texts: names with their plurals, tiers, progress, dates and the notice. */
@@ -68,6 +72,27 @@ class AchievementTextsGermanTest {
         rule.onNodeWithTag("achievement:streak").assertTextEquals(
             "7 Tage am Stück", "Tage in Folge mit mindestens einer Minute", "Stufe 2 von 5", "12 von 30 Tagen", "Seit 12. März 2026",
         )
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "de-w412dp-h2000dp", fontScale = 2.0f)
+    @GraphicsMode(GraphicsMode.Mode.NATIVE) // real text measuring
+    fun atDoubleFontSize_fewerColumns_ratherThanAWordBroken() {
+        val cards = listOf(
+            AchievementState(Achievement.EARLY_BIRD, listOf(LocalDate.of(2026, 11, 4)), null),
+            AchievementState(Achievement.STREAK, listOf(LocalDate.of(2026, 11, 4)), 3.0),
+            AchievementState(Achievement.WEEKEND, emptyList(), 600.0),
+        )
+        rule.setContent { LauschigTheme { AchievementsScreen(AchievementsUiState(loading = false, cards = cards, unlockedTiers = 2), onBack = {}) } }
+        // Two columns of 184 dp would break „Frühaufsteher“: one column.
+        val first = rule.onNodeWithTag("achievement:early_bird").getBoundsInRoot()
+        val second = rule.onNodeWithTag("achievement:streak").getBoundsInRoot()
+        assertEquals(first.left, second.left)
+        for (word in listOf("Frühaufsteher", "Hörwochenende")) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            rule.onNodeWithText(word, useUnmergedTree = true).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+            assertEquals("$word on one line", 1, layouts.single().lineCount)
+        }
     }
 
     @Test fun theNotice_inGerman() {

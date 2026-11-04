@@ -25,9 +25,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -35,6 +37,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,9 +78,11 @@ fun AchievementsScreen(state: AchievementsUiState, onBack: () -> Unit, modifier:
             StatePage { padding -> LoadingState(verticalPadding = padding) }
             return
         }
+        // A column is never narrower than the widest word on a card (large text): fewer columns rather than a broken word.
+        val cardMin = maxOf(CARD_MIN_WIDTH, widestWord(state.cards) + Spacing.m * 2)
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val gap = Spacing.tileGap
-            val columns = ((maxWidth - Spacing.gutter * 2 + gap) / (CARD_MIN_WIDTH + gap)).toInt().coerceAtLeast(1)
+            val columns = ((maxWidth - Spacing.gutter * 2 + gap) / (cardMin + gap)).toInt().coerceAtLeast(1)
             val rows = state.cards.chunked(columns)
             LazyColumn(
                 Modifier.fillMaxSize().testTag("achievementsGrid"),
@@ -100,6 +106,29 @@ fun AchievementsScreen(state: AchievementsUiState, onBack: () -> Unit, modifier:
             }
         }
     }
+}
+
+/** The widest single word of the cards' texts in their styles (what cannot wrap any further). */
+@Composable
+private fun widestWord(cards: List<AchievementState>): Dp {
+    val type = MaterialTheme.typography
+    val texts = buildList {
+        for (s in cards) {
+            add(achievementName(s.achievement, s.tier) to type.titleSmall)
+            add(achievementDescription(s.achievement) to type.bodySmall)
+            achievementTierLine(s)?.let { add(it to type.labelMedium) }
+            achievementProgress(s)?.let { add(it to type.labelMedium.merge(Tabular)) }
+            add(achievementStatus(s) to type.labelMedium)
+        }
+    }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val widest = remember(texts, density) {
+        texts.maxOfOrNull { (text, style) ->
+            text.split(' ').filter { it.isNotEmpty() }.maxOfOrNull { word -> measurer.measure(word, style, softWrap = false, maxLines = 1).size.width } ?: 0
+        } ?: 0
+    }
+    return with(density) { widest.toDp() }
 }
 
 /**

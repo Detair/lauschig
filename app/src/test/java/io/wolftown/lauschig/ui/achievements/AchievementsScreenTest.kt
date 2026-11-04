@@ -121,9 +121,7 @@ class AchievementsScreenTest {
     fun largeText_nothingCutOff() {
         show()
         val a = rule.onNodeWithTag("achievement:hours").getBoundsInRoot()
-        val b = rule.onNodeWithTag("achievement:series").getBoundsInRoot()
-        // Still two columns at this width; each card as tall as its text needs.
-        assertEquals(a.bottom, b.bottom)
+        // Each card as tall and as wide as its text needs.
         for (text in listOf("Hours you have listened in total", "Since March 12, 2026", "37 of 50 h")) {
             val bounds = rule.onNodeWithText(text, useUnmergedTree = true).getBoundsInRoot()
             assertTrue("$text below the card: $bounds vs $a", bounds.bottom <= a.bottom && bounds.right <= a.right)
