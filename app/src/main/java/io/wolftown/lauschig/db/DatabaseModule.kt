@@ -33,4 +33,5 @@ object DatabaseModule {
     @Provides fun historyDao(db: LauschigDatabase) = db.historyDao()
     @Provides fun collectionDao(db: LauschigDatabase) = db.collectionDao()
     @Provides fun localLibraryDao(db: LauschigDatabase) = db.localLibraryDao()
+    @Provides fun listeningSessionDao(db: LauschigDatabase) = db.listeningSessionDao()
 }

@@ -194,6 +194,17 @@ class AccountDataTest {
         assertFalse(File(root, a).exists())
     }
 
+    @Test fun deleteRows_alsoForgetsThatServersStamps_onlyThose() = runBlocking {
+        val c = "cccccccccccccccc"
+        stamps.set("listening_sessions_resume_page:$c", 3) // written by a run that ended after the purge
+        stamps.set("listening_sessions_resume_page:$b", 5)
+
+        data.deleteRows(c)
+
+        assertEquals(null, stamps.get("listening_sessions_resume_page:$c"))
+        assertEquals(5L, stamps.get("listening_sessions_resume_page:$b"))
+    }
+
     @Test fun deleteRows_isTheRowPartOnly_andHasRowsSeesEveryTable() = runBlocking {
         val c = "cccccccccccccccc"
         File(root, "$c/x").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(1))

@@ -122,4 +122,10 @@ class AccountWorkTest {
 
         assertEquals(WorkInfo.State.ENQUEUED, state(SyncScheduler.PERIODIC))
     }
+
+    @Test fun cancel_alsoEndsTheAccountsWorkOutsideWorkManager() = runBlocking {
+        val cancelled = mutableListOf<String>()
+        WorkManagerAccountWork({ wm }, { emptyList() }, waitMs = 1_000, cancelOther = { cancelled += it }).cancel(a)
+        assertEquals(listOf(a), cancelled)
+    }
 }

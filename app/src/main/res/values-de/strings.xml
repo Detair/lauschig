@@ -647,4 +647,80 @@
     <string name="downloads_previous_confirm_title">Daten von %1$s löschen?</string>
     <string name="downloads_previous_confirm_message">Die Downloads (%1$s) und noch nicht übertragene Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
     <string name="downloads_previous_confirm_message_data">Die noch nicht übertragenen Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
+    <string name="stats_title">Statistik</string>
+    <string name="stats_period_week">Woche</string>
+    <string name="stats_period_month">Monat</string>
+    <string name="stats_period_year">Jahr</string>
+    <string name="stats_period_all">Gesamt</string>
+    <string name="stats_previous">Vorheriger Zeitraum</string>
+    <string name="stats_next">Nächster Zeitraum</string>
+    <string name="stats_since">Seit %1$s</string>
+    <plurals name="stats_active_days">
+        <item quantity="one">an %1$d Tag</item>
+        <item quantity="other">an %1$d Tagen</item>
+    </plurals>
+    <string name="stats_period_nothing">In diesem Zeitraum nichts gehört</string>
+    <string name="stats_tile_streak">Am Stück</string>
+    <string name="stats_tile_longest">Rekord</string>
+    <string name="stats_tile_finished">Beendet</string>
+    <plurals name="stats_days">
+        <item quantity="one">%1$d Tag</item>
+        <item quantity="other">%1$d Tage</item>
+    </plurals>
+    <plurals name="stats_books">
+        <item quantity="one">%1$d Buch</item>
+        <item quantity="other">%1$d Bücher</item>
+    </plurals>
+    <plurals name="stats_series">
+        <item quantity="one">%1$d Serie</item>
+        <item quantity="other">%1$d Serien</item>
+    </plurals>
+    <plurals name="stats_series_volumes">
+        <item quantity="one">%1$d Band</item>
+        <item quantity="other">%1$d Bände</item>
+    </plurals>
+    <string name="stats_section_finished">Beendete Bücher</string>
+    <string name="stats_section_top_titles">Am meisten gehört</string>
+    <string name="stats_section_top_authors">Autorinnen und Autoren</string>
+    <string name="stats_section_series">Beendete Serien</string>
+    <string name="stats_finished_earlier">früher</string>
+    <string name="stats_unknown_title">Unbekannter Titel</string>
+    <string name="stats_empty">Noch nichts gehört</string>
+    <string name="stats_empty_hint">Sobald du hörst, siehst du hier, wie viel – auch ohne Verbindung.</string>
+    <string name="stats_unreached">Der Server war nicht erreichbar. Was auf anderen Geräten gehört wurde, kommt dazu, sobald er es ist.</string>
+    <string name="stats_chart_days">Hörzeit pro Tag: %1$s</string>
+    <string name="stats_chart_months">Hörzeit pro Monat: %1$s</string>
+    <string name="stats_chart_years">Hörzeit pro Jahr: %1$s</string>
+    <string name="stats_chart_entry">%1$s %2$s</string>
+    <string name="stats_settings_hint">Hörzeit, Tage am Stück und beendete Bücher</string>
+    <string name="stats_card_week">Diese Woche</string>
+    <plurals name="stats_card_streak">
+        <item quantity="one">%1$d Tag am Stück</item>
+        <item quantity="other">%1$d Tage am Stück</item>
+    </plurals>
+    <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_3_0">
+        <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
+        <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
+        <item>Der Titel zum Weiterhören ist eine große Karte auf der Startseite, mit eigener Wiedergabetaste</item>
+        <item>Das Cover färbt die Detailseite und die Weiterhören-Karte ein</item>
+        <item>Der Player gleitet aus dem Mini-Player nach oben und wieder zurück</item>
+        <item>Ruhige eigene Farben, wenn dynamische Farben aus sind</item>
+        <item>Lade- und Leerseiten sagen klar, was gerade passiert</item>
+        <item>Android Auto: Cover laden zuverlässig, die Liste springt nicht mehr</item>
+        <item>Tablets: Beim Drehen wandern die Details in den rechten Bereich; eigene Querformat-Ansichten für Details und Player</item>
+        <item>Nach der Anmeldung mit einem anderen Konto bleiben die Downloads des vorherigen erreichbar</item>
+    </string-array>
+    <string name="stats_tile_period_longest">Längste Serie</string>
+    <string name="stats_tile_active_days">Hörtage</string>
+    <string name="stats_history_loading">Hörhistorie wird geladen …</string>
+    <string name="stats_history_wifi">Die vollständige Hörhistorie wird im WLAN geladen.</string>
+    <string name="stats_chart_none">Keine Hörzeit</string>
+    <string name="stats_chart_today">heute</string>
+    <string name="stats_chart_this_month">dieser Monat</string>
+    <string name="stats_chart_this_year">dieses Jahr</string>
+    <string name="stats_chart_entry_current">%1$s (%2$s) %3$s</string>
+    <string name="stats_history_load_now">Jetzt laden</string>
+    <string name="stats_history_failed">Hörhistorie unvollständig – erneut laden</string>
+    <string name="stats_history_retry">Erneut laden</string>
 </resources>

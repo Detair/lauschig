@@ -12,6 +12,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -144,6 +145,7 @@ fun SettingsRoute(
     onOpenConnection: () -> Unit = {},
     onOpenAdmin: () -> Unit = {},
     onOpenNavigation: () -> Unit = {},
+    onOpenStats: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -160,6 +162,7 @@ fun SettingsRoute(
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
         adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
         accountSection = { AccountSection() },
+        onOpenStats = onOpenStats,
     )
 }
 
@@ -192,6 +195,7 @@ fun SettingsScreen(
     adminSection: @Composable () -> Unit = {},
     /** Slot for "Konto" with "Abmelden" (needs Hilt); the first section. */
     accountSection: @Composable () -> Unit = {},
+    onOpenStats: () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -199,6 +203,13 @@ fun SettingsScreen(
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
         }
         accountSection()
+        // The account's listening, right under the account.
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.stats_title)) },
+            supportingContent = { Text(stringResource(R.string.stats_settings_hint)) },
+            leadingContent = { Icon(Icons.Rounded.BarChart, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenStats).testTag("openStats"),
+        )
         PlaybackSection(state.playback, playbackActions)
         AppearanceSection(state.appearance, appearanceActions) {
             ListItem(

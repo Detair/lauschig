@@ -228,6 +228,22 @@ interface SessionDao {
     /** Every session of one playable recorded on this device (synced or not), for the history. */
     @Query("SELECT * FROM local_sessions WHERE serverId = :serverId AND itemId = :itemKey")
     fun observeForKey(serverId: String, itemKey: String): Flow<List<LocalSessionEntity>>
+
+    /** Ids of this device's sessions of one account that reached the server (uploaded under the same id). */
+    @Query("SELECT id FROM local_sessions WHERE serverId = :serverId AND synced = 1")
+    suspend fun syncedIds(serverId: String): List<String>
+
+    /** Every session recorded on this device for one account (synced or not), for the statistics. */
+    @Query("SELECT * FROM local_sessions WHERE serverId = :serverId")
+    fun observeAll(serverId: String): Flow<List<LocalSessionEntity>>
+
+    /** This device's sessions of one account started at or after [since] (epoch ms). */
+    @Query("SELECT * FROM local_sessions WHERE serverId = :serverId AND startedAt >= :since")
+    fun observeSince(serverId: String, since: Long): Flow<List<LocalSessionEntity>>
+
+    /** This device's sessions of one account started in [from, to) (epoch ms). */
+    @Query("SELECT * FROM local_sessions WHERE serverId = :serverId AND startedAt >= :from AND startedAt < :to")
+    suspend fun between(serverId: String, from: Long, to: Long): List<LocalSessionEntity>
 }
 
 /**

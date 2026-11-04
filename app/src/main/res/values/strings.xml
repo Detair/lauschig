@@ -647,4 +647,80 @@
     <string name="downloads_previous_confirm_title">Delete the data of %1$s?</string>
     <string name="downloads_previous_confirm_message">The downloads (%1$s) and changes of this account that are not on the server yet are deleted from this device.</string>
     <string name="downloads_previous_confirm_message_data">The changes of this account that are not on the server yet are deleted from this device.</string>
+    <string name="stats_title">Statistics</string>
+    <string name="stats_period_week">Week</string>
+    <string name="stats_period_month">Month</string>
+    <string name="stats_period_year">Year</string>
+    <string name="stats_period_all">All time</string>
+    <string name="stats_previous">Previous period</string>
+    <string name="stats_next">Next period</string>
+    <string name="stats_since">Since %1$s</string>
+    <plurals name="stats_active_days">
+        <item quantity="one">on %1$d day</item>
+        <item quantity="other">on %1$d days</item>
+    </plurals>
+    <string name="stats_period_nothing">Nothing listened in this period</string>
+    <string name="stats_tile_streak">Streak</string>
+    <string name="stats_tile_longest">Best streak</string>
+    <string name="stats_tile_finished">Finished</string>
+    <plurals name="stats_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="stats_books">
+        <item quantity="one">%1$d book</item>
+        <item quantity="other">%1$d books</item>
+    </plurals>
+    <plurals name="stats_series">
+        <item quantity="one">%1$d series</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <plurals name="stats_series_volumes">
+        <item quantity="one">%1$d volume</item>
+        <item quantity="other">%1$d volumes</item>
+    </plurals>
+    <string name="stats_section_finished">Finished books</string>
+    <string name="stats_section_top_titles">Most listened</string>
+    <string name="stats_section_top_authors">Authors</string>
+    <string name="stats_section_series">Finished series</string>
+    <string name="stats_finished_earlier">earlier</string>
+    <string name="stats_unknown_title">Unknown title</string>
+    <string name="stats_empty">Nothing listened yet</string>
+    <string name="stats_empty_hint">Once you listen, you will see here how much – also offline.</string>
+    <string name="stats_unreached">The server could not be reached. Listening on other devices shows up once it is.</string>
+    <string name="stats_chart_days">Listening time per day: %1$s</string>
+    <string name="stats_chart_months">Listening time per month: %1$s</string>
+    <string name="stats_chart_years">Listening time per year: %1$s</string>
+    <string name="stats_chart_entry">%1$s %2$s</string>
+    <string name="stats_settings_hint">Listening time, streaks and finished books</string>
+    <string name="stats_card_week">This week</string>
+    <plurals name="stats_card_streak">
+        <item quantity="one">%1$d day in a row</item>
+        <item quantity="other">%1$d days in a row</item>
+    </plurals>
+    <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_3_0">
+        <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
+        <item>A small card on Start shows how much you listened this week</item>
+        <item>The title to continue is a large card on Start with its own play button</item>
+        <item>The cover tints the details page and the “continue” card</item>
+        <item>The player slides up from the mini player and back down</item>
+        <item>Calm colours of Lauschig’s own when dynamic colours are off</item>
+        <item>Loading and empty pages say plainly what is going on</item>
+        <item>Android Auto: covers load reliably and the list no longer jumps</item>
+        <item>Tablets: the details move into the right pane when you rotate; own landscape layouts for details and player</item>
+        <item>After signing in with another account, the previous account’s downloads stay reachable</item>
+    </string-array>
+    <string name="stats_tile_period_longest">Longest streak</string>
+    <string name="stats_tile_active_days">Days listened</string>
+    <string name="stats_history_loading">Loading your listening history …</string>
+    <string name="stats_history_wifi">Your full listening history loads on Wi-Fi.</string>
+    <string name="stats_chart_none">No listening time</string>
+    <string name="stats_chart_today">today</string>
+    <string name="stats_chart_this_month">this month</string>
+    <string name="stats_chart_this_year">this year</string>
+    <string name="stats_chart_entry_current">%1$s (%2$s) %3$s</string>
+    <string name="stats_history_load_now">Load now</string>
+    <string name="stats_history_failed">Listening history incomplete – load again</string>
+    <string name="stats_history_retry">Load again</string>
 </resources>

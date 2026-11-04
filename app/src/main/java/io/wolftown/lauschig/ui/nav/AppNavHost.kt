@@ -35,6 +35,7 @@ import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
+import io.wolftown.lauschig.ui.stats.StatsRoute
 
 /**
  * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
@@ -60,7 +61,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -70,6 +71,7 @@ fun AppNavHost(
                     onOpenConnection = { navController.navigate(ConnectionStatus) },
                     onOpenAdmin = { navController.navigate(ServerAdmin) },
                     onOpenNavigation = { navController.navigate(NavigationSettings) },
+                    onOpenStats = { navController.navigate(Stats) },
                 )
             }
         }
@@ -83,6 +85,9 @@ fun AppNavHost(
             }
         }
         composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
+        composable<Stats> {
+            ReadableWidth { StatsRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+        }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).

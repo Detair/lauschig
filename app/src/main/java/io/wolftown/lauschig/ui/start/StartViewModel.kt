@@ -34,6 +34,18 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import io.wolftown.lauschig.stats.ListeningStats
+import io.wolftown.lauschig.stats.StatsCard
+import io.wolftown.lauschig.stats.StatsSessions
+import java.time.LocalDate
+import io.wolftown.lauschig.stats.CalendarNow
+import io.wolftown.lauschig.stats.StatSession
+import io.wolftown.lauschig.stats.StatsCalendar
+import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
 /**
@@ -53,6 +65,8 @@ class StartViewModel(
     private val episodeDao: EpisodeDao,
     private val player: PlayerController,
     private val catalog: Catalog,
+    private val stats: StatsSessions,
+    private val calendar: StatsCalendar,
     /** Where grouping and tile mapping run; tests pass a test dispatcher. */
     private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -60,7 +74,8 @@ class StartViewModel(
     @Inject constructor(
         covers: CoverPathCache, accountStore: AccountStore, catalogDao: CatalogDao, libraryDao: LibraryDao, itemDao: ItemDao,
         progressDao: ProgressDao, downloadDao: DownloadDao, episodeDao: EpisodeDao, player: PlayerController, catalog: Catalog,
-    ) : this(covers, accountStore, catalogDao, libraryDao, itemDao, progressDao, downloadDao, episodeDao, player, catalog, Dispatchers.Default)
+        stats: StatsSessions, calendar: StatsCalendar,
+    ) : this(covers, accountStore, catalogDao, libraryDao, itemDao, progressDao, downloadDao, episodeDao, player, catalog, stats, calendar, Dispatchers.Default)
 
     private var serverId: String? = null
 
@@ -146,6 +161,47 @@ class StartViewModel(
 
     private data class Four<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
+    private val resumes = MutableStateFlow(0)
+
+    /** "Today" as of the last midnight, time/zone/language change or resume of the screen ([onResume]). */
+    private val calendarNow: Flow<CalendarNow> = merge(resumes, calendar.changes).map { calendar.now() }.distinctUntilChanged()
+
+    /**
+     * The statistics card: this week's listening from the cached sessions and this device's own (they count at once),
+     * null while less than a minute was heard in the last [ListeningStats.CARD_DAYS] days. Reads only those days (a
+     * streak that reaches further back reads older days once); a burst of writes while a title plays is computed once.
+     */
+    val statsCard: StateFlow<StatsCard?> = combine(accountStore.account.map { it?.serverId }.distinctUntilChanged(), calendarNow, ::Pair)
+        .flatMapLatest { (sid, cal) ->
+            if (sid == null) return@flatMapLatest flowOf(null)
+            val from = cal.today.minusDays(ListeningStats.CARD_DAYS.toLong())
+            stats.observeRowsSince(sid, from.atStartOfDay(cal.zone).toInstant().toEpochMilli())
+                .conflate()
+                .map { rows -> card(sid, cal, from, ListeningStats.merge(rows.server, rows.local)) }
+        }
+        .flowOn(dispatcher)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private suspend fun card(sid: String, cal: CalendarNow, windowStart: LocalDate, recent: List<StatSession>): StatsCard? {
+        var days = ListeningStats.days(recent, cal.zone)
+        var from = windowStart
+        var card = ListeningStats.startCard(days, cal.today, cal.weekStart) ?: return null
+        // The streak runs back to the window's first day: it may go on before it.
+        while (card.streak >= ChronoUnit.DAYS.between(from, cal.today)) {
+            val older = from.minusDays(STREAK_CHUNK_DAYS)
+            val more = stats.between(sid, older.atStartOfDay(cal.zone).toInstant().toEpochMilli(), from.atStartOfDay(cal.zone).toInstant().toEpochMilli())
+            if (more.isEmpty()) break
+            days = days + ListeningStats.days(more, cal.zone)
+            from = older
+            card = ListeningStats.startCard(days, cal.today, cal.weekStart) ?: break
+        }
+        return card
+    }
+
+    /** The screen is shown again: "today" may have moved on while it was away. */
+    fun onResume() = resumes.update { it + 1 }
+
     /** The loaded title while it plays, else null (the "continue" card shows pause for it). */
     val playingId: StateFlow<String?> = player.state.map { p -> p.itemId?.takeIf { p.isPlaying } }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -162,5 +218,8 @@ class StartViewModel(
     companion object {
         const val ROW_LIMIT = 10
         const val NEW_EPISODES_LIMIT = 15
+
+        /** How far back the start card reads at a time when a streak reaches beyond its window. */
+        const val STREAK_CHUNK_DAYS = 90L
     }
 }

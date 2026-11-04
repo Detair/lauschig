@@ -23,3 +23,5 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 @Serializable data object Downloads
 @Serializable data object ConnectionStatus
 @Serializable data object ServerAdmin
+/** Listening statistics (from Start and Settings). */
+@Serializable data object Stats
