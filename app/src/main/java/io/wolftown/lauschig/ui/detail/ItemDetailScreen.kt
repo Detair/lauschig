@@ -72,7 +72,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.LayoutDirection
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
@@ -231,8 +230,8 @@ private val COLUMN_COVER_MAX = 280.dp
 
 /**
  * The header's backdrop, moving with the list: the cover's [tint] behind the back row and the cover, fading into the
- * [surface] before the texts start – downwards to just below the cover in the column, sideways to just past the cover
- * (and softly at its bottom) when the cover sits beside the texts. Nothing once the header has scrolled away.
+ * [surface] before the texts start: just below the cover in the column, at the header's top when the cover sits beside
+ * the texts (a band behind the back row). Nothing once the header has scrolled away.
  */
 private fun DrawScope.drawHeaderTint(
     list: LazyListState, tint: Color, surface: Color, coverPx: Float, besideCover: Boolean, reachTop: Float, reachSide: Float,
@@ -241,35 +240,14 @@ private fun DrawScope.drawHeaderTint(
     val items = list.layoutInfo.visibleItemsInfo
     val header = items.firstOrNull { it.key == "header" } ?: return
     val pageTop = (items.firstOrNull { it.key == "back" }?.offset ?: (header.offset - 48.dp.roundToPx())).toFloat()
-    val coverBottom = header.offset + coverPx
-    if (!besideCover) {
-        val end = coverBottom + 8.dp.toPx()
-        if (end <= 0f) return
-        drawRect(
-            Brush.verticalGradient(0f to tint, 1f to surface, startY = pageTop - reachTop, endY = end),
-            topLeft = Offset(-reachSide, -reachTop),
-            size = Size(size.width + 2 * reachSide, end + reachTop),
-        )
-    } else {
-        val fade = 32.dp.toPx()
-        if (coverBottom + fade <= 0f) return
-        val endX = 16.dp.toPx() + coverPx + 8.dp.toPx()
-        val start = if (layoutDirection == LayoutDirection.Rtl) size.width + reachSide else -reachSide
-        val stop = if (layoutDirection == LayoutDirection.Rtl) size.width - endX else endX
-        val left = minOf(start, stop)
-        val width = kotlin.math.abs(stop - start)
-        drawRect(
-            Brush.horizontalGradient(0f to tint, 1f to surface, startX = start, endX = stop),
-            topLeft = Offset(left, -reachTop),
-            size = Size(width, coverBottom + reachTop),
-        )
-        // The column's foot fades into the surface instead of ending in a line.
-        drawRect(
-            Brush.verticalGradient(0f to surface.copy(alpha = 0f), 1f to surface, startY = coverBottom - fade, endY = coverBottom),
-            topLeft = Offset(left, coverBottom - fade),
-            size = Size(width, fade),
-        )
-    }
+    // In the column the texts start below the cover; beside it they start level with its top.
+    val end = if (besideCover) header.offset.toFloat() else header.offset + coverPx + 8.dp.toPx()
+    if (end <= 0f) return
+    drawRect(
+        Brush.verticalGradient(0f to tint, 1f to surface, startY = pageTop - reachTop, endY = end),
+        topLeft = Offset(-reachSide, -reachTop),
+        size = Size(size.width + 2 * reachSide, end + reachTop),
+    )
 }
 
 /** [sideCover]: the cover's size when it sits beside the texts (see [headerBesideCover]); null puts it above them. */
