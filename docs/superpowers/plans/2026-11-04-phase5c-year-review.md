@@ -115,3 +115,45 @@ emulator check. Version stays 0.3.0; "Was ist neu" got two lines (the review; wh
 - The "history incomplete" line was checked in tests only (a full cache counts as complete on the emulator).
 - TalkBack on the emulator kept asking for the Accessibility Suite's notification permission; the speech was checked
   through TalkBack's log (the TTS engine was not ready), not by ear.
+
+## Fix round 1 (review 2026-11-04, controller's rulings)
+
+Rebased onto `main` (fcc9dba, phase 5B merged) first; the tree under the rebased commits was unchanged.
+
+- **F1 + F7** One set of hours: the rhythm's parts of the day (`YearReview.DAY_PARTS`: morning 4–12, afternoon 12–17,
+  evening 17–24, night 0–4) and the listener types take the achievements' windows – night owl 0–4
+  (`Achievements.NIGHT_WINDOW`), early bird 4–6 (`EARLY_WINDOW`, the start of the morning), commuter 6–9/16–19 on
+  weekdays. 4:30 is "morning" and an early bird, never "night"; 23:00 is "evening" and no night owl.
+- **F2** The rhythm slide needs the days slide's three days.
+- **F3** The opening leaves out "with N titles" at 0 (`OPENING_TITLE_SEC` = a minute); the top titles need two titles
+  (`MIN_TOP_TITLES`) – one would only repeat the opening and the closing.
+- **F4** The achievements slide counts achievements (each once, at its highest tier of the year), shows six at most and
+  says "and N more" beyond them.
+- **F5** A series completed in the year by progress-dated books alone still gets the Finished slide (the series is its
+  big number then, its last volume's cover the tint).
+- **F6** Of the types above their threshold the **largest share** wins; ties in the listed order (six long Saturdays:
+  weekend listener, not marathon; long weekdays besides: marathon).
+- **F8** The story's slide and played entrances are written to the route's `SavedStateHandle`: after a process death
+  it goes on there (the slide's time starts again). The unused `rememberStoryState`/Saver are gone.
+- **F9** `rememberStoryMotion` KDoc says what it does (TalkBack live, the animator scale on composition and resume);
+  tests for both.
+- **F10** Right/left arrows and the D-pad go next/previous (mirrored right-to-left), space pauses and resumes.
+- **F11** The pull-down is read in the draw phase; composition only sees whether there is one.
+- **F12** The slide time follows Android's "time to take action" (tested through the accessibility manager); only touch
+  exploration turns auto-advance off, other assistive services keep it (KDoc).
+- **F13** No "next" custom action on the last slide, no "previous" on the first.
+- **F14** Spoken numbers and lines use the shown formatter and helpers (`countText`, `titlesLine`, `finishedUnit`).
+- **F15** `topPeople` instead of a shadowing `people`; the opening's title floor is a named constant.
+- **F16** The 200 % test measures every big number/name (no overflow, not ellipsized) and that a slide scrolls on a
+  short window; the Start card says when it has read its data (`YearReviewOffer.known`) instead of a sleep; the
+  "built once" test waits for an explicit state change; tests for Sydney's New Year (DST at New Year), Berlin's DST
+  days, right-to-left taps and keys, the pull pausing the time.
+- **F17** The opening's „Noch nicht alle Hörsitzungen geladen“ follows the account's history live and goes as soon as
+  it is complete (the slides themselves stay built once).
+
+Verification: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1503 tests, lint 0 errors, 15 warnings,
+none new; one run hit the known lint crash, the rerun was clean). Emulator:
+a thin 2025 (1 h 11 min on two days: opening, author, achievement, closing – no repeated title, no rhythm), the seeded
+2026 by keyboard (arrows, space pausing and resuming), its rhythm ("Meist morgens auf dem Weg"), achievements (5 = five
+badges) and type (Pendler) slides; screenshots `fx-*` and `contact-fx-*`. Test sessions removed from the server
+(48 again, progress unchanged), the app's rows, achievement rows and sync stamps restored; no emulator setting changed.
