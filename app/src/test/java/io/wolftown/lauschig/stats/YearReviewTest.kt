@@ -370,6 +370,50 @@ class YearReviewTest {
         assertEquals(ListenerType.MARATHON, build(weekdays)!!.slide<ReviewSlide.Personality>()!!.type)
     }
 
+    @Test fun personality_equalSharesOfFractionalSeconds_alwaysGiveTheSameType_whateverTheOrder() {
+        val random = java.util.Random(7)
+        // Eight Saturdays of four sessions with fractional seconds (3–4 h a day): weekend and marathon hold the same.
+        val saturdays = (0 until 8).flatMap { w ->
+            val day = d("2026-03-07").plusDays(7L * w)
+            (0 until 4).map { k -> stat("${day}T${10 + k}:00", 2700.0 + random.nextInt(900) + random.nextDouble()) }
+        }
+        // Two commute sessions of 1.5 h on each weekday: commuter and marathon hold the same.
+        val commutes = (0 until 10).flatMap { i ->
+            val day = d("2026-03-02").plusDays(i.toLong()).let { if (it.dayOfWeek.value > 5) it.plusDays(2) else it }
+            listOf(stat("${day}T07:00", 5400.0 + random.nextDouble()), stat("${day}T17:00", 5400.0 + random.nextDouble()))
+        }
+        for ((sessions, type) in listOf(saturdays to ListenerType.WEEKEND, commutes to ListenerType.COMMUTER)) {
+            val answers = (0 until 200).map { n ->
+                build(sessions.shuffled(java.util.Random(n.toLong())))!!.slide<ReviewSlide.Personality>()!!.type
+            }.toSet()
+            assertEquals(setOf(type), answers)
+        }
+    }
+
+    @Test fun personality_nightOwlAndEarlyBird_fromAFifthOfTheTime_aRealListenersShare() {
+        // Three half hours a week at 1:00 among an hour a day: about 21 % – a night owl.
+        val weeks = (0 until 4).flatMap { w ->
+            val monday = d("2026-03-02").plusDays(7L * w)
+            listOf(0L, 2L, 4L).map { stat("${monday.plusDays(it)}T01:00", 1800.0) } +
+                (0L..4L).map { stat("${monday.plusDays(it)}T20:00", 3960.0) } // 7 h a week in all
+        }
+        assertEquals(ListenerType.NIGHT_OWL, build(weeks)!!.slide<ReviewSlide.Personality>()!!.type)
+        // At the threshold: 20.0 % is enough, 19.9 % is not – for the night owl (1:00) and the early bird (5:00).
+        for ((time, type) in listOf("01:00" to ListenerType.NIGHT_OWL, "05:00" to ListenerType.EARLY_BIRD)) {
+            fun share(window: Double) = daily("2026-03-02", 5, window / 5, time = time) + daily("2026-03-02", 5, (36000.0 - window) / 5, time = "20:00")
+            assertEquals(ReviewSlide.Personality(type, 0.2, 0), build(share(7200.0))!!.slide<ReviewSlide.Personality>())
+            assertNull(build(share(7164.0))!!.slide<ReviewSlide.Personality>())
+        }
+        assertEquals(0.2, YearReview.PERSONALITY_SHARE.getValue(ListenerType.NIGHT_OWL), 0.0)
+        assertEquals(0.2, YearReview.PERSONALITY_SHARE.getValue(ListenerType.EARLY_BIRD), 0.0)
+    }
+
+    @Test fun eachSlideHasItsKind_inTheFixedOrder() {
+        assertEquals(SlideKind.entries.toList(), SlideKind.entries.sortedBy { it.ordinal })
+        val review = YearReview(2026, listOf(ReviewSlide.Opening(2026, hour, 1, false), ReviewSlide.Closing(2026, hour, 1, 0, null, null, null)))
+        assertEquals(listOf(SlideKind.OPENING, SlideKind.CLOSING), review.kinds)
+    }
+
     @Test fun offeredYear_fromDecemberToJanuary_theYearThatEnds() {
         assertEquals(2026, YearReview.offeredYear(d("2026-12-01")))
         assertEquals(2026, YearReview.offeredYear(d("2026-12-31")))

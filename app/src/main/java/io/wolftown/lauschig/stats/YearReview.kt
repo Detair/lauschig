@@ -19,6 +19,9 @@ enum class ListeningTime { MORNING, AFTERNOON, EVENING, NIGHT, COMMUTE_MORNING, 
 /** The personality slide's types, in the order a tie is decided. */
 enum class ListenerType { NIGHT_OWL, EARLY_BIRD, COMMUTER, WEEKEND, MARATHON }
 
+/** What a slide is about, in the slides' fixed order (a story's place is kept by it when the slides are rebuilt). */
+enum class SlideKind { OPENING, DAYS, RHYTHM, TOP_TITLES, TOP_PEOPLE, FINISHED, ACHIEVED, PERSONALITY, CLOSING }
+
 /** One tier reached in the year ([Achievement] tiers are 1-based). */
 @Immutable
 data class ReachedTier(val achievement: Achievement, val tier: Int, val day: LocalDate)
@@ -86,9 +89,25 @@ sealed interface ReviewSlide {
     ) : ReviewSlide
 }
 
+/** What [this] slide is about. */
+val ReviewSlide.kind: SlideKind
+    get() = when (this) {
+        is ReviewSlide.Opening -> SlideKind.OPENING
+        is ReviewSlide.Days -> SlideKind.DAYS
+        is ReviewSlide.Rhythm -> SlideKind.RHYTHM
+        is ReviewSlide.TopTitles -> SlideKind.TOP_TITLES
+        is ReviewSlide.TopPeople -> SlideKind.TOP_PEOPLE
+        is ReviewSlide.Finished -> SlideKind.FINISHED
+        is ReviewSlide.Achieved -> SlideKind.ACHIEVED
+        is ReviewSlide.Personality -> SlideKind.PERSONALITY
+        is ReviewSlide.Closing -> SlideKind.CLOSING
+    }
+
 /** A year in review: its slides in their fixed order. */
 @Immutable
 data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
+    val kinds: List<SlideKind> get() = slides.map { it.kind }
+
     companion object {
         /** The review exists from one hour of listening in the year (the entry points offer it then). */
         const val MIN_YEAR_SEC = 3600.0
@@ -137,18 +156,28 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
 
         /**
          * The share of the year's time each type needs. Its time is what the achievement of the same name counts: night
-         * owl and early bird by session start in [Achievements.NIGHT_WINDOW] and [Achievements.EARLY_WINDOW], commuter
-         * in [Achievements.COMMUTE_WINDOWS] on weekdays; weekend = Saturday and Sunday; marathon = days of
-         * [MARATHON_DAY_SEC]. Of the types above their share, the one with the **largest share** wins (ties in
-         * [ListenerType] order: weekend before marathon when the long days are weekend days).
+         * owl and early bird by session start in [Achievements.NIGHT_WINDOW] (0–4) and [Achievements.EARLY_WINDOW]
+         * (4–6), commuter in [Achievements.COMMUTE_WINDOWS] on weekdays; weekend = Saturday and Sunday; marathon = days
+         * of [MARATHON_DAY_SEC]. Of the types above their share, the one with the **largest share** wins; shares are
+         * compared in steps of [SHARE_STEP] (0.1 %), equal steps in [ListenerType] order (weekend before marathon when the
+         * long days are the weekend days).
+         *
+         * Night owl and early bird need 20 %: their windows are short (four and two hours), and someone who listens there
+         * three times a week for half an hour, with an hour a day in all, holds about 21 %.
          */
         val PERSONALITY_SHARE: Map<ListenerType, Double> = mapOf(
-            ListenerType.NIGHT_OWL to 0.30,
-            ListenerType.EARLY_BIRD to 0.25,
+            ListenerType.NIGHT_OWL to 0.20,
+            ListenerType.EARLY_BIRD to 0.20,
             ListenerType.COMMUTER to 0.40,
             ListenerType.WEEKEND to 0.50,
             ListenerType.MARATHON to 0.40,
         )
+
+        /**
+         * Shares are compared in thousandths: two shares that are equal in fact (the long days are exactly the weekend
+         * days) may differ in the last bit of a sum of fractional seconds, and the order of the sessions would decide.
+         */
+        const val SHARE_STEP = 0.001
 
         /** "Mostly on the way" when the weekday commute hours hold this share. */
         const val COMMUTE_SHARE = 0.5
@@ -340,9 +369,10 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
         }.sortedWith(compareByDescending<ReachedTier> { it.day }.thenBy { it.achievement.ordinal })
 
         /**
-         * The type with the largest share of the year's time among those above their own [PERSONALITY_SHARE]; ties in
-         * [ListenerType] order. Needs [PERSONALITY_MIN_SEC] on [PATTERN_DAYS] days; null when no pattern reaches its
-         * share. By each session's start (local time in [zone]); marathon by the days' totals.
+         * The type with the largest share of the year's time among those above their own [PERSONALITY_SHARE] (both
+         * compared in [SHARE_STEP]s); ties in [ListenerType] order. Needs [PERSONALITY_MIN_SEC] on [PATTERN_DAYS] days;
+         * null when no pattern reaches its share. By each session's start (local time in [zone]); marathon by the days'
+         * totals.
          */
         private fun personality(inYear: List<StatSession>, days: Map<LocalDate, Double>, zone: ZoneId, activeDays: Int): ReviewSlide.Personality? {
             val total = days.values.sum()
@@ -367,8 +397,9 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
                 ListenerType.WEEKEND to weekend / total,
                 ListenerType.MARATHON to marathonDays.sum() / total,
             )
-            val best = ListenerType.entries.filter { shares.getValue(it) >= PERSONALITY_SHARE.getValue(it) }
-                .maxByOrNull { shares.getValue(it) } ?: return null // the first of equal ones
+            fun steps(share: Double): Long = Math.round(share / SHARE_STEP)
+            val best = ListenerType.entries.filter { steps(shares.getValue(it)) >= steps(PERSONALITY_SHARE.getValue(it)) }
+                .maxByOrNull { steps(shares.getValue(it)) } ?: return null // the first of equal steps
             return ReviewSlide.Personality(best, shares.getValue(best), if (best == ListenerType.MARATHON) marathonDays.size else 0)
         }
     }
