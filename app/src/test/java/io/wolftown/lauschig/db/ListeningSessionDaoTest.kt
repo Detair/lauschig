@@ -50,6 +50,18 @@ class ListeningSessionDaoTest {
         assertEquals(1, dao.observeAll(s).first().size)
     }
 
+    @Test fun countIdsAndDelete_onlyTouchThisServer() = runTest {
+        val dao = db.listeningSessionDao()
+        dao.upsertAll(listOf(row("a"), row("b"), row("c"), row("a", server = "other")))
+
+        assertEquals(3, dao.count(s))
+        assertEquals(listOf("a", "b", "c"), dao.ids(s).sorted())
+        dao.delete(s, listOf("a", "c"))
+
+        assertEquals(listOf("b"), dao.ids(s))
+        assertEquals(listOf("a"), dao.ids("other"))
+    }
+
     @Test fun localSessions_observeAll_onlyThisServer() = runTest {
         val dao = db.sessionDao()
         dao.upsert(LocalSessionEntity("l1", s, "li_1", 0.0, 5.0, 5.0, 1, 2, synced = false))

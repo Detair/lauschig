@@ -18,11 +18,15 @@ import javax.inject.Singleton
  * Caches every listening session of the account (`GET /api/me/listening-sessions`, newest `updatedAt` first) in Room,
  * the source of the listening statistics.
  *
- * - The first run pages through everything ([FULL_PAGE] per page, at most [MAX_PAGES] pages).
- * - A later run first asks for the newest session alone: when it is not newer than the last complete run's newest and
- *   the server's total is unchanged, nothing changed and the run ends there. Otherwise it pages ([LATER_PAGE] per page)
- *   until a page reaches sessions updated before that newest minus [OVERLAP_MS] (sessions another device uploads late
- *   keep their old time), or the last page.
+ * - A **full run** pages through everything ([FULL_PAGE] per page, at most [MAX_PAGES] pages) and then drops the rows
+ *   the server no longer lists (deleted there). The first run is one.
+ * - A **later run** first asks for the newest session alone: when it is not newer than the last run's newest and the
+ *   server's total is unchanged, nothing changed. Otherwise it pages ([LATER_PAGE] per page) until a page reaches
+ *   sessions updated before that newest minus [OVERLAP_MS], or the last page.
+ * - The server keeps the `updatedAt` a device uploads (verified on ABS 2.37.1), so a session another device uploads days
+ *   late sorts below the overlap. Then the cached count no longer matches the server's total (less the rows it lists
+ *   but Lauschig cannot read), and a full run follows – at most once per [FULL_INTERVAL_MS], which also bounds the cost
+ *   of a server whose count never matches.
  *
  * Each page is written as it arrives (one page in memory; an interrupted run keeps what it got). Only a complete run
  * moves the stamps, so a failure starts over next time. Offline, and for the device library, nothing happens. Runs of one
@@ -52,46 +56,106 @@ class ListeningSessionSync(
         if (DeviceLibrary.isLocal(serverId)) return
         val api = api.first() ?: return
         val since = stamps.get(newestKey(serverId))
-        if (since != null) {
+        if (since == null) {
+            fullRun(api, serverId)
+        } else {
             val probe = api.listeningSessions(itemsPerPage = 1, page = 0)
             val top = probe.sessions.firstOrNull()?.updatedAt ?: 0L
-            if (top <= since && probe.total.toLong() == stamps.get(totalKey(serverId))) {
-                stamps.set(runKey(serverId), clock())
-                return
-            }
+            if (top > since || probe.total.toLong() != stamps.get(totalKey(serverId))) laterRun(api, serverId, since)
+            if (!inStep(serverId) && fullDue(serverId)) fullRun(api, serverId)
         }
-        val cutoff = since?.minus(OVERLAP_MS)
-        val size = if (since == null) FULL_PAGE else LATER_PAGE
-        var newest = since ?: 0L
+        stamps.set(runKey(serverId), clock())
+    }
+
+    /** The newest pages, down to the overlap below the last run's newest session. */
+    private suspend fun laterRun(api: MeApi, serverId: String, since: Long) {
+        val cutoff = since - OVERLAP_MS
+        var newest = since
         var total: Int? = null
         var page = 0
         while (page < MAX_PAGES) {
-            val result = api.listeningSessions(itemsPerPage = size, page = page)
+            val result = api.listeningSessions(itemsPerPage = LATER_PAGE, page = page)
             if (total == null) total = result.total
             val sessions = result.sessions
-            if (sessions.isNotEmpty()) dao.upsertAll(sessions.map { it.toEntity(serverId) })
-            newest = maxOf(newest, sessions.maxOfOrNull { it.updatedAt } ?: 0L)
+            newest = maxOf(newest, write(serverId, sessions))
             page++
-            if (sessions.isEmpty() || page >= result.numPages) break
-            if (cutoff != null && sessions.minOf { it.updatedAt } < cutoff) break
+            if (sessions.isEmpty() || page >= result.numPages || sessions.minOf { it.updatedAt } < cutoff) break
         }
         stamps.set(newestKey(serverId), newest)
         stamps.set(totalKey(serverId), (total ?: 0).toLong())
-        stamps.set(runKey(serverId), clock())
+    }
+
+    /** Every page, then the rows the server no longer lists go. */
+    private suspend fun fullRun(api: MeApi, serverId: String) {
+        val seen = HashSet<String>()
+        var newest = 0L
+        var total = 0
+        var complete = false
+        var page = 0
+        while (page < MAX_PAGES) {
+            val result = api.listeningSessions(itemsPerPage = FULL_PAGE, page = page)
+            total = result.total
+            newest = maxOf(newest, write(serverId, result.sessions))
+            result.sessions.mapTo(seen) { it.id }
+            page++
+            if (result.sessions.isEmpty() || page >= result.numPages) {
+                complete = true
+                break
+            }
+        }
+        if (complete) {
+            var stale = dao.ids(serverId).filterNot { it in seen }
+            if (stale.isNotEmpty()) {
+                // A session updated while the pages were read moved to the top, onto a page read already: read that
+                // again, so it is not taken for deleted.
+                val head = api.listeningSessions(itemsPerPage = LATER_PAGE, page = 0)
+                newest = maxOf(newest, write(serverId, head.sessions))
+                head.sessions.mapTo(seen) { it.id }
+                total = head.total
+                stale = stale.filterNot { it in seen }
+                stale.chunked(ListeningSessionDao.DELETE_CHUNK).forEach { dao.delete(serverId, it) }
+            }
+        }
+        val rows = dao.count(serverId)
+        stamps.set(newestKey(serverId), newest)
+        stamps.set(totalKey(serverId), total.toLong())
+        // What the server lists but cannot be read (or lies beyond the cap): not a reason for the next full run.
+        stamps.set(unreadableKey(serverId), (total - rows).coerceAtLeast(0).toLong())
+        stamps.set(fullKey(serverId), clock())
+    }
+
+    /** Writes one page; returns its newest `updatedAt` (0 for none). */
+    private suspend fun write(serverId: String, sessions: List<UserListeningSessionDto>): Long {
+        if (sessions.isNotEmpty()) dao.upsertAll(sessions.map { it.toEntity(serverId) })
+        return sessions.maxOfOrNull { it.updatedAt } ?: 0L
+    }
+
+    /** The cache holds as many sessions as the server lists (less the unreadable ones of the last full run). */
+    private suspend fun inStep(serverId: String): Boolean {
+        val total = stamps.get(totalKey(serverId)) ?: return false
+        return dao.count(serverId).toLong() == total - (stamps.get(unreadableKey(serverId)) ?: 0L)
+    }
+
+    private suspend fun fullDue(serverId: String): Boolean {
+        val last = stamps.get(fullKey(serverId)) ?: return true
+        return clock() - last !in 0 until FULL_INTERVAL_MS
     }
 
     companion object {
         const val MIN_INTERVAL_MS = 30 * 60 * 1000L
         const val OVERLAP_MS = 24 * 60 * 60 * 1000L
+        const val FULL_INTERVAL_MS = 24 * 60 * 60 * 1000L
         const val FULL_PAGE = 100
         const val LATER_PAGE = 20
 
-        /** Safety cap for one run: 50,000 sessions on a first run. */
+        /** Safety cap for one run: 50,000 sessions on a full run. */
         const val MAX_PAGES = 500
 
         // Every key ends with ":<serverId>", so sign-out forgets them with the account (SyncStamps.removeServer).
         private fun newestKey(serverId: String) = "listening_sessions:$serverId"
         private fun totalKey(serverId: String) = "listening_sessions_total:$serverId"
+        private fun unreadableKey(serverId: String) = "listening_sessions_unreadable:$serverId"
+        private fun fullKey(serverId: String) = "listening_sessions_full:$serverId"
         private fun runKey(serverId: String) = "listening_sessions_run:$serverId"
     }
 }

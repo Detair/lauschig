@@ -15,4 +15,18 @@ interface ListeningSessionDao {
 
     @Query("SELECT * FROM listening_sessions WHERE serverId = :serverId")
     fun observeAll(serverId: String): Flow<List<ListeningSessionEntity>>
+
+    @Query("SELECT COUNT(*) FROM listening_sessions WHERE serverId = :serverId")
+    suspend fun count(serverId: String): Int
+
+    @Query("SELECT id FROM listening_sessions WHERE serverId = :serverId")
+    suspend fun ids(serverId: String): List<String>
+
+    /** At most [ListeningSessionDao.DELETE_CHUNK] ids per call (SQLite's variable limit on older Androids is 999). */
+    @Query("DELETE FROM listening_sessions WHERE serverId = :serverId AND id IN (:ids)")
+    suspend fun delete(serverId: String, ids: List<String>)
+
+    companion object {
+        const val DELETE_CHUNK = 500
+    }
 }

@@ -44,6 +44,10 @@ class ListeningSessionSyncTest {
         var sessions: List<UserListeningSessionDto> = emptyList()
         val asked = mutableListOf<Pair<Int, Int>>()
         var failPage: Int? = null
+        /** Rows the server lists but Lauschig cannot read (counted in the total, dropped from the page). */
+        var unreadable = 0
+        /** Runs before a page is cut, e.g. to change a session while a run is paging. */
+        var beforePage: (itemsPerPage: Int, page: Int) -> Unit = { _, _ -> }
 
         override suspend fun me() = AbsUser("u", "n", "user")
         override suspend fun updateProgress(itemId: String, u: ProgressUpdate) = error("unused")
@@ -52,9 +56,11 @@ class ListeningSessionSyncTest {
         override suspend fun listeningSessions(itemsPerPage: Int, page: Int): UserListeningSessionsPage {
             asked += itemsPerPage to page
             if (page == failPage && itemsPerPage > 1) throw IOException("down")
+            beforePage(itemsPerPage, page)
             val sorted = sessions.sortedByDescending { it.updatedAt }
-            val pages = (sorted.size + itemsPerPage - 1) / itemsPerPage
-            return UserListeningSessionsPage(sorted.size, pages, page, itemsPerPage, sorted.drop(page * itemsPerPage).take(itemsPerPage))
+            val total = sorted.size + unreadable
+            val pages = (total + itemsPerPage - 1) / itemsPerPage
+            return UserListeningSessionsPage(total, pages, page, itemsPerPage, sorted.drop(page * itemsPerPage).take(itemsPerPage))
         }
     }
 
@@ -201,5 +207,68 @@ class ListeningSessionSyncTest {
         assertEquals("li_pod~ep_1", byId.getValue("e").itemKey)
         assertEquals("Podcast", byId.getValue("e").title) // the podcast, not the episode: the statistics count items
         assertEquals("", byId.getValue("gone").itemKey)
+    }
+
+    @Test fun aSessionUploadedDaysLate_isFoundByAFullRun_atMostOncePerDay() = runTest {
+        server.sessions = sessions(250)
+        sync().sync(s)
+        // Another device was offline for three days and uploads its session now: the server keeps its old updatedAt
+        // (verified on ABS 2.37.1), so it sorts far below the 24 h overlap.
+        server.sessions = server.sessions + session("late", now - 72 * hour - 1)
+        now += hour
+        server.asked.clear()
+
+        sync().sync(s)
+        // Probe, then the newest pages: not there. The count no longer matches the total, but the last full run was
+        // an hour ago: it waits.
+        assertEquals(listOf(1 to 0, 20 to 0, 20 to 1), server.asked)
+        assertTrue(rows().none { it.id == "late" })
+
+        now += 24 * hour
+        server.asked.clear()
+        sync().sync(s)
+        assertEquals(listOf(1 to 0, 100 to 0, 100 to 1, 100 to 2), server.asked)
+        assertTrue(rows().any { it.id == "late" })
+
+        server.asked.clear()
+        now += hour
+        sync().sync(s) // in step again: one small request
+        assertEquals(listOf(1 to 0), server.asked)
+    }
+
+    @Test fun sessionsDeletedOnTheServer_leaveWithTheNextFullRun_onesThatMoveUpWhilePagingStay() = runTest {
+        server.sessions = sessions(250)
+        sync().sync(s)
+        server.sessions = server.sessions.filterNot { it.id == "s200" }
+        now += 25 * hour
+        server.asked.clear()
+        // While the full run reads page 1, s150 is listened to on another device and moves to the top (page 0, read
+        // already): it must not be taken for deleted.
+        server.beforePage = { size, page ->
+            if (size == 100 && page == 1) server.sessions = server.sessions.map { if (it.id == "s150") it.copy(updatedAt = now, timeListening = 777.0) else it }
+        }
+
+        sync().sync(s)
+
+        assertEquals(listOf(1 to 0, 20 to 0, 20 to 1, 100 to 0, 100 to 1, 100 to 2, 20 to 0), server.asked)
+        val all = rows()
+        assertEquals(249, all.size)
+        assertTrue(all.none { it.id == "s200" })
+        assertEquals(777.0, all.single { it.id == "s150" }.timeListeningSec, 0.0)
+    }
+
+    @Test fun unreadableRows_doNotCauseAFullRunEveryDay() = runTest {
+        server.sessions = sessions(250)
+        server.unreadable = 1
+        sync().sync(s)
+        assertEquals(250, rows().size)
+        server.asked.clear()
+
+        now += 25 * hour
+        sync().sync(s)
+        now += 25 * hour
+        sync().sync(s)
+
+        assertEquals(listOf(1 to 0, 1 to 0), server.asked)
     }
 }
