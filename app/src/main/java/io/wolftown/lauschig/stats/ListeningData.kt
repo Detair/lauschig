@@ -36,6 +36,9 @@ class ListeningData(
 
     /** Every achievement in catalogue order ([Achievements.evaluate]). */
     fun achievements(): List<AchievementState> = Achievements.evaluate(sessions, finished, seriesGroups, items, zone)
+
+    /** What decides which tiers are reached ([Achievements.tierInputs]); equal for two values = the same tiers. */
+    val tierInputs: TierInputs by lazy { Achievements.tierInputs(sessions, finished, series.size, items, days, zone) }
 }
 
 /**

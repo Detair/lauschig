@@ -1,6 +1,17 @@
 package io.wolftown.lauschig.ui.achievements
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
+import android.database.sqlite.SQLiteFullException
+import io.wolftown.lauschig.db.dao.AchievementSeenDao
+import io.wolftown.lauschig.db.entities.LocalSessionEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import org.junit.Assert.assertTrue
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.TestViewModels
@@ -76,16 +87,23 @@ class AchievementNoticeViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm() = viewModels.own(
+    /** Every evaluation of the history (the expensive step), counted. */
+    private val evaluations = AtomicInteger()
+
+    /** Every value the notice had while the Start screen listened. */
+    private val notices = CopyOnWriteArrayList<AchievementNotice?>()
+
+    private fun vm(seenDao: AchievementSeenDao = db.achievementSeenDao()) = viewModels.own(
         AchievementNoticeViewModel(
             accounts,
             ListeningDataSource(StatsSessions(db.listeningSessionDao(), db.sessionDao()), db.progressDao(), db.catalogDao(), db.libraryDao(), Catalog()),
-            db.achievementSeenDao(),
+            seenDao,
             historyLoad = { history },
             progressSynced = { progressSynced },
             calendar = calendar,
             clock = { now },
             dispatcher = UnconfinedTestDispatcher(),
+            evaluate = { evaluations.incrementAndGet(); it.achievements() },
         ),
     )
 
@@ -107,6 +125,15 @@ class AchievementNoticeViewModelTest {
     private suspend fun AchievementNoticeViewModel.awaitNotice(p: (AchievementNotice?) -> Boolean) =
         withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { notice.first(p) } }
 
+    /** Real time (not the test's virtual clock): the collector runs on real threads. */
+    private suspend fun quiet(ms: Long = 300) = withContext(Dispatchers.Default) { delay(ms) }
+
+    /** Waits (in real time) until the history was evaluated at least [n] times, then lets the step after it run. */
+    private suspend fun evaluated(n: Int) {
+        eventually({ evaluations.get() }) { it >= n }
+        quiet()
+    }
+
     @Test fun aHistoryOfYears_isMarkedSeenSilently_onTheFirstEvaluation() = runTest {
         // Two years of listening (1 h, 10 h, a 3-day streak …) arrive with the first sync.
         (0 until 10).forEach { session("s$it", "2024-03-0${it % 9 + 1}T20:00", 4000.0) }
@@ -124,21 +151,42 @@ class AchievementNoticeViewModelTest {
         progressSynced = false
         val vm = vm()
         backgroundScope.launchCollect(vm)
-        delay(200)
+        evaluated(1)
         assertEquals(emptyList<String>(), seen())
 
         history.value = HistoryLoad.NONE // the history is complete, the progress not yet: still nothing
-        delay(200)
+        quiet()
         assertEquals(emptyList<String>(), seen())
 
-        // More arrives meanwhile; then the progress sync writes and the next evaluation is the first – silent.
+        // More arrives meanwhile; then the progress sync writes and the next look is the first – silent.
         session("2", "2026-11-02T10:00", 40000.0)
-        delay(200)
+        evaluated(2)
         assertEquals(emptyList<String>(), seen())
         progressSynced = true
+        // A progress row that changes no tier (no evaluation needed) still settles the account.
         db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "li_9", 10.0, 100.0, isFinished = false, lastUpdate = 1)))
         assertEquals(listOf("_baseline:0@1000", "hours:1@1000", "hours:2@1000", "marathon:1@1000"), eventually({ seen() }) { it.isNotEmpty() })
-        assertNull(vm.notice.value)
+        assertTrue(notices.all { it == null })
+    }
+
+    @Test fun aFirstSync_whoseLastPageAndTheCompleteFlagComeBackToBack_tellsNothing() = runTest {
+        history.value = HistoryLoad.INCOMPLETE
+        val vm = vm()
+        backgroundScope.launchCollect(vm)
+        evaluated(1) // the empty cache
+        // Two years, every three hours: hours, streak, night owl, early bird, weekend, commuter – all in the last page.
+        val start = at("2024-11-01T00:00")
+        val page = (0 until 5000).map { i ->
+            ListeningSessionEntity(sid, "p$i", "li_1", "T", "A", start + i * 3 * 3_600_000L, start + i * 3 * 3_600_000L + 60_000, 1200.0, 360000.0, 10.0)
+        }
+        db.listeningSessionDao().upsertAll(page)
+        history.value = HistoryLoad.NONE // 0 ms later: the flag may be seen before the page's evaluation is done
+
+        eventually({ seen() }) { it.isNotEmpty() }
+        evaluated(3) // the empty cache, the page, the fresh look the baseline is taken from – in either order
+        val rows = seen()
+        assertTrue("the baseline holds the page's tiers: $rows", "hours:7@1000" in rows && "streak:5@1000" in rows && "night_owl:1@1000" in rows)
+        assertTrue("told: ${notices.filterNotNull()}", notices.all { it == null })
     }
 
     @Test fun afterTheBaseline_aNewUnlockIsToldOnce_andSeveralAtOnceTogether() = runTest {
@@ -162,10 +210,12 @@ class AchievementNoticeViewModelTest {
         assertEquals(listOf(AchievementKey("hours", 2), AchievementKey("marathon", 1), AchievementKey("early_bird", 1)), three.unlocks)
         vm.shown(three)
         vm.awaitNotice { it == null }
-        // Shown is shown: the same data never tells it again.
-        session("1", "2026-11-01T10:00", 3001.0)
-        delay(200)
-        assertNull(vm.notice.value)
+        // Shown is shown: a new look at the same tiers tells nothing again.
+        val before = evaluations.get()
+        notices.clear()
+        session("4", "2026-11-03T12:00", 30.0) // a new session: evaluated again, no new tier
+        evaluated(before + 1)
+        assertTrue("told again: $notices", notices.all { it == null })
     }
 
     @Test fun anotherAccount_hasItsOwnBaseline_andALateShownForTheOldOneWritesNothing() = runTest {
@@ -182,11 +232,11 @@ class AchievementNoticeViewModelTest {
         assertNull(vm.awaitNotice { it?.serverId != sid })
 
         vm.shown(old) // the snackbar of the signed-out account ended late
-        delay(200)
+        quiet()
         assertEquals(listOf("_baseline:0@1000"), seen())
     }
 
-    @Test fun aSecondScreen_doesNotTakeTheBaselineTwice() = runTest {
+    @Test fun anExistingBaseline_isKept_andATierReachedSinceIsTold() = runTest {
         session("1", "2026-11-01T10:00", 4000.0)
         db.achievementSeenDao().insertAll(listOf(AchievementSeenEntity(sid, AchievementSeenEntity.BASELINE_ID, 0, 5)))
         val vm = vm()
@@ -196,7 +246,70 @@ class AchievementNoticeViewModelTest {
         assertEquals(listOf("_baseline:0@5"), seen())
     }
 
-    /** The Start screen listening (the notice is computed only while someone does). */
+    @Test fun aPlaybackTickOnACountedDay_isNotEvaluatedAgain_aNewTierIs() = runTest {
+        session("1", "2026-11-01T10:00", 1000.0)
+        db.sessionDao().upsert(LocalSessionEntity("local", sid, "li_1", 0.0, 100.0, 300.0, at("2026-11-01T12:00"), at("2026-11-01T12:05"), synced = false))
+        val vm = vm()
+        backgroundScope.launchCollect(vm)
+        eventually({ seen() }) { it == listOf("_baseline:0@1000") }
+        evaluated(1)
+        val before = evaluations.get()
+
+        // Ten more seconds of the open session (310 s, under ten minutes, on a day that counts already): no tier can move.
+        db.sessionDao().upsert(LocalSessionEntity("local", sid, "li_1", 0.0, 110.0, 310.0, at("2026-11-01T12:00"), at("2026-11-01T12:05") + 10_000, synced = false))
+        quiet(500)
+        assertEquals(before, evaluations.get())
+
+        // The open session crosses 1 h in total: evaluated, and told.
+        db.sessionDao().upsert(LocalSessionEntity("local", sid, "li_1", 0.0, 2700.0, 2610.0, at("2026-11-01T12:00"), at("2026-11-01T12:50"), synced = false))
+        assertEquals(listOf(AchievementKey("hours", 1)), vm.awaitNotice { it != null }!!.unlocks)
+        assertEquals(before + 1, evaluations.get())
+    }
+
+    @Test fun aFailingWrite_tellsNothing_andTheBaselineIsTriedAgain() = runTest {
+        session("1", "2026-11-01T10:00", 4000.0)
+        val failures = AtomicInteger(1)
+        val flaky = object : AchievementSeenDao by db.achievementSeenDao() {
+            override suspend fun insertAll(rows: List<AchievementSeenEntity>) {
+                if (failures.getAndDecrement() > 0) throw SQLiteFullException("disk full")
+                db.achievementSeenDao().insertAll(rows)
+            }
+        }
+        val vm = vm(flaky)
+        backgroundScope.launchCollect(vm)
+        evaluated(1)
+        assertEquals(emptyList<String>(), seen())
+        assertTrue(notices.all { it == null })
+
+        session("2", "2026-11-02T10:00", 60.0) // the next look tries again
+        assertEquals(listOf("_baseline:0@1000", "hours:1@1000"), eventually({ seen() }) { it.isNotEmpty() })
+        assertTrue(notices.all { it == null })
+    }
+
+    @Test fun aFailingRead_endsTheNoticeQuietly_neverTheScreen() = runTest {
+        session("1", "2026-11-01T10:00", 4000.0)
+        val broken = object : AchievementSeenDao by db.achievementSeenDao() {
+            override fun observeAll(serverId: String): Flow<List<AchievementSeenEntity>> = flow { throw SQLiteException("closed") }
+        }
+        val vm = vm(broken)
+        backgroundScope.launchCollect(vm)
+        quiet(500)
+        assertNull(vm.notice.value)
+        // An exception escaping into the view model's scope would fail this test (runTest reports uncaught ones).
+    }
+
+    @Test fun mapWhenChanged_computesOnlyForANewKey_andRetriesAFailure() = runTest {
+        val computed = mutableListOf<Int>()
+        var fail = true
+        val out = flowOf(1, 11, 2, 12, 22, 3).mapWhenChanged({ it % 10 }) { v ->
+            if (v == 2 && fail) { fail = false; null } else { computed += v; v * 100 }
+        }.toList()
+        // 11 has the key of 1: no new computation, the last result again; 2 failed (null) and 12 computes again.
+        assertEquals(listOf(100, 100, null, 1200, 1200, 300), out)
+        assertEquals(listOf(1, 12, 3), computed)
+    }
+
+    /** The Start screen listening (the notice is computed only while someone does); every value is kept. */
     private fun CoroutineScope.launchCollect(vm: AchievementNoticeViewModel) =
-        launch(Dispatchers.Default.limitedParallelism(1)) { vm.notice.collect {} }
+        launch(Dispatchers.Default.limitedParallelism(1)) { vm.notice.collect { notices += it } }
 }

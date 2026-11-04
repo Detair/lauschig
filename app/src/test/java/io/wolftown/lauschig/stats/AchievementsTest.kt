@@ -301,6 +301,36 @@ class AchievementsTest {
         assertEquals(4.0, four.value!!, 0.0)
     }
 
+    // --- what the tiers depend on (the notice skips an evaluation when it did not move) --------------------------------
+
+    private fun inputs(sessions: List<StatSession>, finished: List<FinishedBook> = emptyList(), items: Map<String, ItemEntity> = emptyMap(), zone: ZoneId = berlin) =
+        Achievements.tierInputs(sessions, finished, seriesCount = 0, items = items, days = ListeningStats.days(sessions, zone), zone = zone)
+
+    @Test fun tierInputs_aPlaybackTickOnACountedDay_movesNothing_crossingALineDoes() {
+        val base = listOf(stat("1", "2026-11-01T10:00", 1000.0), stat("2", "2026-11-01T12:00", 300.0))
+        fun with(second: Double) = listOf(base[0], stat("2", "2026-11-01T12:00", second))
+        assertEquals(inputs(base), inputs(with(310.0)))
+        assertTrue(inputs(base) != inputs(with(2600.0)))                          // 1 h in total
+        assertTrue(inputs(base) != inputs(with(600.0)))                           // ten minutes: a time window may hold
+        assertTrue(inputs(base) != inputs(base + stat("3", "2026-11-01T13:00", 5.0))) // a new session
+        assertTrue(inputs(base) != inputs(base + stat("3", "2026-11-02T13:00", 60.0))) // a new day in the run
+        assertTrue(inputs(base) != inputs(base, zone = ZoneId.of("America/New_York")))
+        assertTrue(inputs(base) != inputs(base, finished = listOf(book("li_1", "2026-11-01", finishedAt = at("2026-11-01T13:00")))))
+    }
+
+    @Test fun tierInputs_equal_meansTheSameTiersReached_overManyRandomTicks() {
+        val random = java.util.Random(7)
+        val items = mapOf("a" to ItemEntity(s, "a", "lib", "a", genres = listOf("Krimi")), "b" to ItemEntity(s, "b", "lib", "b", genres = listOf("Humor")))
+        fun keys(list: List<StatSession>) = Achievements.evaluate(list, emptyList(), emptyList(), items, berlin).flatMap { it.keys }
+        var sessions = (0 until 6).map { i -> stat("s$i", "2026-10-0${i + 1}T0${random.nextInt(10)}:00", random.nextInt(4000).toDouble(), item = if (i % 2 == 0) "a" else "b") }
+        repeat(400) {
+            val i = random.nextInt(sessions.size)
+            val grown = sessions.mapIndexed { j, x -> if (j == i) x.copy(listenedSec = x.listenedSec + random.nextInt(900)) else x }
+            if (inputs(grown, items = items) == inputs(sessions, items = items)) assertEquals(keys(sessions), keys(grown))
+            sessions = grown
+        }
+    }
+
     // --- determinism and order ---------------------------------------------------------------------------------------
 
     @Test fun theSameData_alwaysTheSameDates_whateverTheOrder() {

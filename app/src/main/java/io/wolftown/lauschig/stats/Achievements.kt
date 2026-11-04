@@ -57,6 +57,29 @@ enum class Achievement(val id: String, val tiers: List<Double>, val measure: Ach
     }
 }
 
+/**
+ * What [Achievements.tierInputs] reduces the data to: equal inputs mean the same tiers are reached. [items] is compared
+ * by reference first (the catalog part is reused while only sessions or progress change).
+ */
+data class TierInputs(
+    val zone: ZoneId,
+    val sessions: Int,
+    /** Order-independent sum of the session ids' hashes: a session added or replaced. */
+    val sessionIds: Int,
+    val withListening: Int,
+    /** Sessions long enough for a time window ([Achievements.WINDOW_SESSION_SEC]). */
+    val windowLong: Int,
+    val hoursTiers: Int,
+    val longestRun: Int,
+    val marathon: Boolean,
+    val weekend: Boolean,
+    /** Titles heard long enough for their genres. */
+    val genreTitles: Int,
+    val finished: List<Pair<String, Long?>>,
+    val series: Int,
+    val items: Map<String, ItemEntity>,
+)
+
 /** One reached tier (1-based), as the seen table keys it. */
 data class AchievementKey(val id: String, val tier: Int)
 
@@ -117,9 +140,14 @@ object Achievements {
     /** Sums of many small doubles must not fall a hair short of a threshold. */
     private const val EPS = 1e-6
 
-    private val NIGHT = LocalTime.MIDNIGHT to LocalTime.of(4, 0)
-    private val EARLY = LocalTime.of(4, 0) to LocalTime.of(6, 0)
-    private val COMMUTE = listOf(LocalTime.of(6, 0) to LocalTime.of(9, 0), LocalTime.of(16, 0) to LocalTime.of(19, 0))
+    /** Night owl: a session started in [start, end) local time. */
+    val NIGHT_WINDOW: Pair<LocalTime, LocalTime> = LocalTime.MIDNIGHT to LocalTime.of(4, 0)
+
+    /** Early bird: a session started in [start, end) local time. */
+    val EARLY_WINDOW: Pair<LocalTime, LocalTime> = LocalTime.of(4, 0) to LocalTime.of(6, 0)
+
+    /** Commuter: weekday sessions started in one of these [start, end) windows. */
+    val COMMUTE_WINDOWS: List<Pair<LocalTime, LocalTime>> = listOf(LocalTime.of(6, 0) to LocalTime.of(9, 0), LocalTime.of(16, 0) to LocalTime.of(19, 0))
 
     /** Every achievement in catalogue order. [items] (by id) give the genres; [seriesGroups] as [ListeningStats.finishedSeries]. */
     fun evaluate(
@@ -140,8 +168,8 @@ object Achievements {
                 Achievement.BOOKS -> counted(a, bookDays)
                 Achievement.SERIES -> series(seriesGroups, finished)
                 Achievement.MARATHON -> marathon(days)
-                Achievement.NIGHT_OWL -> firstSession(a, ordered, zone) { it in NIGHT }
-                Achievement.EARLY_BIRD -> firstSession(a, ordered, zone) { it in EARLY }
+                Achievement.NIGHT_OWL -> firstSession(a, ordered, zone) { it in NIGHT_WINDOW }
+                Achievement.EARLY_BIRD -> firstSession(a, ordered, zone) { it in EARLY_WINDOW }
                 Achievement.WEEKEND -> weekend(days)
                 Achievement.ONE_GO -> oneGo(ordered, finished)
                 Achievement.COMMUTER -> commuter(ordered, zone)
@@ -151,8 +179,9 @@ object Achievements {
     }
 
     /**
-     * Recently unlocked first (the current tier's day; reached without a day after those), then the closest to their
-     * next tier, ties in catalogue order.
+     * Every unlocked one before every locked one. Unlocked: the current tier's day, newest first (reached without a day
+     * after those). Ties – and all of the locked ones – by closeness to the next tier (a complete one counts as there),
+     * then in catalogue order.
      */
     fun sorted(states: List<AchievementState>): List<AchievementState> = states.sortedWith(
         compareBy<AchievementState> { if (it.unlocked) 0 else 1 }
@@ -162,6 +191,47 @@ object Achievements {
     )
 
     fun unlockedTiers(states: List<AchievementState>): Int = states.sumOf { it.tier }
+
+    /**
+     * What decides which tiers [evaluate] finds reached (not on which day), from the same data plus its [days] and the
+     * number of finished series. Cheap (no sort, no zone conversion per session) and coarse on purpose: a playback tick
+     * on a day that counts already moves none of it, so the notice skips the evaluation then.
+     */
+    fun tierInputs(
+        sessions: List<StatSession>,
+        finished: List<FinishedBook>,
+        seriesCount: Int,
+        items: Map<String, ItemEntity>,
+        days: Map<LocalDate, Double>,
+        zone: ZoneId,
+    ): TierInputs {
+        var ids = 0
+        var listened = 0
+        var windows = 0
+        val perTitle = HashMap<String, Double>()
+        for (s in sessions) {
+            ids += s.id.hashCode()
+            if (s.listenedSec > 0) listened++
+            if (s.listenedSec >= WINDOW_SESSION_SEC) windows++
+            if (s.itemKey.isNotEmpty()) perTitle.merge(s.itemId, s.listenedSec, Double::plus)
+        }
+        val total = days.values.sum()
+        return TierInputs(
+            zone = zone,
+            sessions = sessions.size,
+            sessionIds = ids,
+            withListening = listened,
+            windowLong = windows,
+            hoursTiers = Achievement.HOURS.tiers.count { total + EPS >= it },
+            longestRun = ListeningStats.runLengths(days).maxOfOrNull { it.second } ?: 0,
+            marathon = days.values.any { it + EPS >= Achievement.MARATHON.tiers.single() },
+            weekend = bestWeekend(days) + EPS >= Achievement.WEEKEND.tiers.single(),
+            genreTitles = perTitle.values.count { it + EPS >= GENRE_TITLE_SEC },
+            finished = finished.map { it.itemId to it.finishedAt },
+            series = seriesCount,
+            items = items,
+        )
+    }
 
     /**
      * The day each tier was first reached by the measure along [events] (in time order: day, measure then; a null day is
@@ -211,24 +281,27 @@ object Achievements {
 
     /** Saturday plus the Sunday after it: held on the Saturday if it alone was enough, else on the Sunday. */
     private fun weekend(days: Map<LocalDate, Double>): AchievementState {
-        val saturdays = days.keys.mapNotNull { day ->
-            when (day.dayOfWeek) {
-                DayOfWeek.SATURDAY -> day
-                DayOfWeek.SUNDAY -> day.minusDays(1)
-                else -> null
-            }
-        }.toSortedSet()
-        var best = 0.0
         val events = ArrayList<Pair<LocalDate, Double>>()
-        for (saturday in saturdays) {
+        for (saturday in saturdays(days)) {
             val sat = days[saturday] ?: 0.0
-            val both = sat + (days[saturday.plusDays(1)] ?: 0.0)
-            best = maxOf(best, both)
             events += saturday to sat
-            events += saturday.plusDays(1) to both
+            events += saturday.plusDays(1) to sat + (days[saturday.plusDays(1)] ?: 0.0)
         }
-        return AchievementState(Achievement.WEEKEND, tiers(Achievement.WEEKEND, events.asSequence()), best)
+        return AchievementState(Achievement.WEEKEND, tiers(Achievement.WEEKEND, events.asSequence()), bestWeekend(days))
     }
+
+    /** The Saturdays of every weekend with listening, in date order. */
+    private fun saturdays(days: Map<LocalDate, Double>) = days.keys.mapNotNull { day ->
+        when (day.dayOfWeek) {
+            DayOfWeek.SATURDAY -> day
+            DayOfWeek.SUNDAY -> day.minusDays(1)
+            else -> null
+        }
+    }.toSortedSet()
+
+    /** The most listened over one Saturday and the Sunday after it. */
+    private fun bestWeekend(days: Map<LocalDate, Double>): Double =
+        saturdays(days).maxOfOrNull { (days[it] ?: 0.0) + (days[it.plusDays(1)] ?: 0.0) } ?: 0.0
 
     private operator fun Pair<LocalTime, LocalTime>.contains(time: LocalTime) = !time.isBefore(first) && time.isBefore(second)
 
@@ -244,7 +317,7 @@ object Achievements {
     private fun commuter(ordered: List<StatSession>, zone: ZoneId): AchievementState {
         val rides = ordered.filter { s ->
             s.listenedSec >= WINDOW_SESSION_SEC &&
-                localStart(s, zone).let { start -> start.dayOfWeek.value <= DayOfWeek.FRIDAY.value && COMMUTE.any { start.toLocalTime() in it } }
+                localStart(s, zone).let { start -> start.dayOfWeek.value <= DayOfWeek.FRIDAY.value && COMMUTE_WINDOWS.any { start.toLocalTime() in it } }
         }
         val reached = tiers(Achievement.COMMUTER, rides.asSequence().mapIndexed { i, s -> ListeningStats.dayOf(s.startedAt, zone) to (i + 1).toDouble() })
         return AchievementState(Achievement.COMMUTER, reached, rides.size.toDouble())
