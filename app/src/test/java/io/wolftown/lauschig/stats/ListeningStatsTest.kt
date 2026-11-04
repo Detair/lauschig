@@ -277,4 +277,27 @@ class ListeningStatsTest {
         assertEquals(listOf("Reihe A" to 2), series.map { it.name to it.volumes })
         assertNull(ListeningStats.finishedSeries(emptyList(), emptySet()).firstOrNull())
     }
+
+    // --- start card --------------------------------------------------------------------------------------------------
+
+    @Test fun startCard_thisWeekWithItsDays_andTheStreak() {
+        val card = ListeningStats.startCard(days("2026-11-02" to 3600.0, "2026-11-03" to 600.0, "2026-11-04" to 1800.0, "2026-11-01" to 999.0), d("2026-11-04"), DayOfWeek.MONDAY)!!
+        assertEquals(6000.0, card.weekSec, 0.0) // Sunday the 1st belongs to last week
+        assertEquals(4, card.streak)
+        assertEquals(listOf(3600.0, 600.0, 1800.0, 0.0, 0.0, 0.0, 0.0), card.days.map { it.seconds })
+        assertEquals(2, card.days.indexOfFirst { it.current })
+    }
+
+    @Test fun startCard_shownWhileSomethingWasHeardInTheLast30Days_only() {
+        val today = d("2026-11-04")
+        // Ten days ago: nothing this week, but the card stays (and says so).
+        val quiet = ListeningStats.startCard(days("2026-10-25" to 7200.0), today, DayOfWeek.MONDAY)!!
+        assertEquals(0.0, quiet.weekSec, 0.0)
+        assertEquals(0, quiet.streak)
+        // 29 days ago still counts, 30 days ago no longer; a few seconds by accident do not count at all.
+        assertTrue(ListeningStats.startCard(days("2026-10-06" to 600.0), today, DayOfWeek.MONDAY) != null)
+        assertNull(ListeningStats.startCard(days("2026-10-05" to 600.0), today, DayOfWeek.MONDAY))
+        assertNull(ListeningStats.startCard(days("2026-11-04" to 20.0, "2026-11-01" to 20.0), today, DayOfWeek.MONDAY))
+        assertNull(ListeningStats.startCard(emptyMap(), today, DayOfWeek.MONDAY))
+    }
 }

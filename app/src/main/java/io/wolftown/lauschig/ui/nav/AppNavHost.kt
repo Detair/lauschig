@@ -61,7 +61,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -71,6 +71,7 @@ fun AppNavHost(
                     onOpenConnection = { navController.navigate(ConnectionStatus) },
                     onOpenAdmin = { navController.navigate(ServerAdmin) },
                     onOpenNavigation = { navController.navigate(NavigationSettings) },
+                    onOpenStats = { navController.navigate(Stats) },
                 )
             }
         }

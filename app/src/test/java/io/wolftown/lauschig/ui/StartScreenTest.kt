@@ -2,6 +2,8 @@ package io.wolftown.lauschig.ui
 
 import org.robolectric.annotation.GraphicsMode
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.text.TextLayoutResult
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onChild
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
@@ -175,5 +178,33 @@ class StartScreenTest {
         rule.onNodeWithTag("seeAll-recent").performClick()
         assertEquals(1, library)
         assertEquals(1, discover)
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w400dp-h2400dp")
+    fun statsCard_underTheContinueTitle_opensTheStatistics_hiddenWithoutOne() {
+        var opened = 0
+        val monday = java.time.LocalDate.of(2026, 11, 2)
+        val card = io.wolftown.lauschig.stats.StatsCard(
+            weekSec = 18_720.0, streak = 3,
+            days = (0..6).map { io.wolftown.lauschig.stats.Bar(monday.plusDays(it.toLong()), if (it < 3) 6240.0 else 0.0, it == 2) },
+        )
+        var stats by androidx.compose.runtime.mutableStateOf<io.wolftown.lauschig.stats.StatsCard?>(card)
+        val state = StartUiState(continueItems = listOf(summary("a", "Book A"), summary("b", "Book B")), downloaded = listOf(summary("d", "Book D")))
+        rule.setContent { LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}, stats = stats, onOpenStats = { opened++ }) } }
+
+        // One node to a screen reader, the bars left out; it says how a tap opens.
+        val content = rule.onNodeWithTag("statsCard").assertIsDisplayed().onChild()
+        content.assertTextEquals("This week", "5 h 12 min", "3 days in a row")
+        assertEquals("Open statistics", content.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].label)
+        val hero = rule.onNodeWithTag("continueHero").fetchSemanticsNode().boundsInRoot
+        val cardTop = rule.onNodeWithTag("statsCard").fetchSemanticsNode().boundsInRoot.top
+        val downloaded = rule.onNodeWithText("Downloaded").fetchSemanticsNode().boundsInRoot.top
+        assertTrue(hero.bottom <= cardTop && cardTop < downloaded)
+        rule.onNodeWithTag("statsCard").performClick()
+        assertEquals(1, opened)
+
+        stats = null
+        rule.onNodeWithTag("statsCard").assertDoesNotExist()
     }
 }

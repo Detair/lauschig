@@ -34,6 +34,13 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import io.wolftown.lauschig.stats.ListeningStats
+import io.wolftown.lauschig.stats.StatsCard
+import io.wolftown.lauschig.stats.StatsSessions
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.WeekFields
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -53,6 +60,7 @@ class StartViewModel(
     private val episodeDao: EpisodeDao,
     private val player: PlayerController,
     private val catalog: Catalog,
+    private val stats: StatsSessions,
     /** Where grouping and tile mapping run; tests pass a test dispatcher. */
     private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -60,7 +68,8 @@ class StartViewModel(
     @Inject constructor(
         covers: CoverPathCache, accountStore: AccountStore, catalogDao: CatalogDao, libraryDao: LibraryDao, itemDao: ItemDao,
         progressDao: ProgressDao, downloadDao: DownloadDao, episodeDao: EpisodeDao, player: PlayerController, catalog: Catalog,
-    ) : this(covers, accountStore, catalogDao, libraryDao, itemDao, progressDao, downloadDao, episodeDao, player, catalog, Dispatchers.Default)
+        stats: StatsSessions,
+    ) : this(covers, accountStore, catalogDao, libraryDao, itemDao, progressDao, downloadDao, episodeDao, player, catalog, stats, Dispatchers.Default)
 
     private var serverId: String? = null
 
@@ -145,6 +154,22 @@ class StartViewModel(
     }
 
     private data class Four<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
+    /**
+     * The statistics card: this week's listening from the cached sessions and this device's own (they count at once),
+     * null while nothing was heard in the last 30 days. Days in the device's zone, weeks from the locale's first day.
+     */
+    val statsCard: StateFlow<StatsCard?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
+        .flatMapLatest { sid ->
+            if (sid == null) flowOf(null)
+            else stats.observe(sid).map { sessions ->
+                val zone = ZoneId.systemDefault()
+                ListeningStats.startCard(ListeningStats.days(sessions, zone), LocalDate.now(zone), WeekFields.of(Locale.getDefault()).firstDayOfWeek)
+            }
+        }
+        .flowOn(dispatcher)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The loaded title while it plays, else null (the "continue" card shows pause for it). */
     val playingId: StateFlow<String?> = player.state.map { p -> p.itemId?.takeIf { p.isPlaying } }.distinctUntilChanged()

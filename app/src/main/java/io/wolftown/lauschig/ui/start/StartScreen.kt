@@ -2,6 +2,7 @@ package io.wolftown.lauschig.ui.start
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -67,6 +69,9 @@ import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.extras.listenedText
 import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.stats.StatsCard
+import io.wolftown.lauschig.ui.stats.BarChart
+import io.wolftown.lauschig.ui.stats.statsDuration
 import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
 import io.wolftown.lauschig.ui.theme.controlColorOn
 import io.wolftown.lauschig.ui.theme.coverTintTarget
@@ -91,10 +96,12 @@ fun StartRoute(
     onOpenSettings: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
     onOpenDiscover: () -> Unit = {},
+    onOpenStats: () -> Unit = {},
     viewModel: StartViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playingId by viewModel.playingId.collectAsStateWithLifecycle()
+    val stats by viewModel.statsCard.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     // An episode tile opens its podcast.
     val onOpen: (String) -> Unit = { onOpenItem(PlayableKey.parse(it).libraryItemId) }
@@ -108,6 +115,7 @@ fun StartRoute(
         StartScreen(
             state, onOpen = onOpen, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary,
             onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f), playingId = playingId, onPlayPause = viewModel::playOrPause,
+            stats = stats, onOpenStats = onOpenStats,
         )
     }
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpen) }
@@ -116,6 +124,7 @@ fun StartRoute(
 /**
  * Tap opens the details, the play button plays, long-press opens the actions menu. The first "continue" title is a
  * large card with its own play/pause button ([onPlayPause]; pause while it is [playingId]); the others stay in the row.
+ * Below them a small [stats] card (this week, the streak) opens the statistics; it is null while nothing was heard lately.
  */
 @Composable
 fun StartScreen(
@@ -128,6 +137,8 @@ fun StartScreen(
     onOpenDiscover: () -> Unit = {},
     playingId: String? = null,
     onPlayPause: (itemId: String) -> Unit = onPlay,
+    stats: StatsCard? = null,
+    onOpenStats: () -> Unit = {},
 ) {
     if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty() && state.newEpisodes.isEmpty()) {
         StatePage(modifier) { padding ->
@@ -158,6 +169,11 @@ fun StartScreen(
             }
             val rest = state.continueItems.drop(1)
             if (rest.isNotEmpty()) item(key = "continue", contentType = "row") { TileRow(rest, onOpen, onPlay, onMenu, Modifier.padding(top = Spacing.m)) }
+        }
+        if (stats != null) {
+            item(key = "stats", contentType = "stats") {
+                StartStatsCard(stats, onOpenStats, Modifier.padding(horizontal = Spacing.gutter).padding(top = if (hero != null) Spacing.l else Spacing.section))
+            }
         }
         section("episodes", R.string.start_new_episodes, state.newEpisodes, null, onOpen, onPlay, onMenu)
         section("next", R.string.start_next_in_series, state.nextInSeries, null, onOpen, onPlay, onMenu)
@@ -275,6 +291,43 @@ private fun ContinueHero(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * This week at a glance: the listening time, the streak and the week's days as small bars (today in primary). Tapping it
+ * opens the statistics. Said as one sentence; the bars are left out of it (the statistics page lists the values).
+ */
+@Composable
+private fun StartStatsCard(card: StatsCard, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.widthIn(max = HERO_MAX_WIDTH).fillMaxWidth().testTag("statsCard"),
+    ) {
+        Row(
+            Modifier
+                .clickable(onClickLabel = stringResource(R.string.stats_card_open), onClick = onOpen)
+                .semantics(mergeDescendants = true) {}
+                .padding(Spacing.m),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.stats_card_week), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(statsDuration(card.weekSec), style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"))
+                if (card.streak > 0) {
+                    Text(
+                        pluralStringResource(R.plurals.stats_card_streak, card.streak, card.streak),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            BarChart(
+                card.days.map { it.seconds }, card.days.indexOfFirst { it.current }.takeIf { it >= 0 }, description = null,
+                modifier = Modifier.padding(start = Spacing.l).width(112.dp), height = 40.dp,
+            )
         }
     }
 }

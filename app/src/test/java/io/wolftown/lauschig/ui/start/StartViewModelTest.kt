@@ -19,6 +19,7 @@ import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerUiState
+import io.wolftown.lauschig.stats.StatsSessions
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -82,7 +83,7 @@ class StartViewModelTest {
             initializer {
                 StartViewModel(
                     covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), NoopPlayer(), Catalog(),
-                    UnconfinedTestDispatcher(),
+                    StatsSessions(db.listeningSessionDao(), db.sessionDao()), UnconfinedTestDispatcher(),
                 )
             }
         }
@@ -234,5 +235,17 @@ class StartViewModelTest {
         assertEquals(dev, tile.serverId)
         assertTrue(tile.isDownloaded)
         assertEquals(0.5f, tile.progress, 0.001f)
+    }
+
+    @Test fun statsCard_appearsOnceSomethingWasHeard_thisDevicesSessionsCountAtOnce() = runTest {
+        val vm = vm()
+        assertEquals(null, withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { vm.statsCard.first() } })
+
+        val now = System.currentTimeMillis()
+        db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("s1", sid, "a", 0.0, 120.0, 120.0, now, now, synced = false))
+
+        val card = withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { vm.statsCard.first { it != null } } }!!
+        assertEquals(120.0, card.weekSec, 0.0)
+        assertEquals(1, card.streak) // 2 minutes today: today counts, a streak of one day
     }
 }

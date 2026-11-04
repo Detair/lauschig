@@ -66,6 +66,10 @@ data class TitleTime(val itemId: String, val title: String?, val author: String?
 @Immutable
 data class AuthorTime(val name: String, val seconds: Double)
 
+/** The small card on Start: this week's listening, the streak and the week's days. */
+@Immutable
+data class StatsCard(val weekSec: Double, val streak: Int, val days: List<Bar>)
+
 @Immutable
 data class PeriodSummary(
     val range: PeriodRange,
@@ -218,6 +222,21 @@ object ListeningStats {
         groups.filter { g -> g.size >= 2 && g.all { it.id in finished } }
             .map { g -> FinishedSeries(g.first().seriesName!!.trim(), g.size, g.first().id) }
             .sortedBy { it.name.lowercase() }
+
+    /** How far back the start card looks for listening before it hides. */
+    const val CARD_DAYS = 30
+
+    /**
+     * This week (from [weekStart]) for the start card, or null when less than [ACTIVE_DAY_SEC] were heard in the last
+     * [CARD_DAYS] days including today (nothing to show, and a few seconds by accident do not bring it back).
+     */
+    fun startCard(days: Map<LocalDate, Double>, today: LocalDate, weekStart: DayOfWeek): StatsCard? {
+        val recent = (0 until CARD_DAYS).sumOf { days[today.minusDays(it.toLong())] ?: 0.0 }
+        if (recent < ACTIVE_DAY_SEC) return null
+        val start = range(StatsPeriod.WEEK, today, weekStart).start
+        val week = (0 until 7).map { start.plusDays(it.toLong()) }.map { Bar(it, days[it] ?: 0.0, it == today) }
+        return StatsCard(week.sumOf { it.seconds }, streaks(days, today).current, week)
+    }
 
     /** The numbers of one period: totals, bars, finished books, the most heard titles and authors. */
     fun summary(

@@ -37,7 +37,8 @@ import kotlin.math.min
 fun BarChart(
     values: List<Double>,
     current: Int?,
-    description: String,
+    /** What a screen reader says for the chart; null hides it (a card that says it in words already). */
+    description: String?,
     modifier: Modifier = Modifier,
     labels: List<String?>? = null,
     height: Dp = 140.dp,
@@ -45,7 +46,7 @@ fun BarChart(
     currentColor: Color = MaterialTheme.colorScheme.primary,
     baselineColor: Color = MaterialTheme.colorScheme.outlineVariant,
 ) {
-    Column(modifier.clearAndSetSemantics { contentDescription = description }) {
+    Column(modifier.clearAndSetSemantics { if (description != null) contentDescription = description }) {
         Canvas(Modifier.fillMaxWidth().height(height)) {
             val n = values.size
             if (n == 0) return@Canvas
