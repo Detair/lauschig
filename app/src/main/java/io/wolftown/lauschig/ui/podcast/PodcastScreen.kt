@@ -55,7 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.DownloadIconButton
-import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ActionRow
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
@@ -147,10 +147,7 @@ fun PodcastScreen(
 private fun Header(state: PodcastUiState) {
     val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.widthIn(max = 220.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).testTag("cover")) {
-            Initials(state.title)
-            if (model != null) AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
+        CoverArt(model, state.title, Modifier.widthIn(max = 220.dp).fillMaxWidth().aspectRatio(1f).testTag("cover"), initialsStyle = MaterialTheme.typography.headlineLarge)
         Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
         state.author?.let {
             Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())

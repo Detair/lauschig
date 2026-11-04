@@ -56,7 +56,7 @@ import io.wolftown.lauschig.rmab.RmabViewModel
 import io.wolftown.lauschig.rmab.label
 import io.wolftown.lauschig.rmab.tileIcon
 import io.wolftown.lauschig.ui.common.CoverTile
-import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
@@ -178,13 +178,11 @@ private fun AuthorImage(state: BrowseUiState) {
     val url = remember(base, author.id) {
         base.newBuilder().addPathSegments("api/authors").addPathSegment(author.id).addPathSegment("image").build().toString()
     }
-    Box(Modifier.size(96.dp).clip(CircleShape).testTag("authorImage")) {
-        Initials(state.name)
-        AsyncImage(
-            model = url, contentDescription = stringResource(R.string.browse_author_image, state.name),
-            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-        )
-    }
+    val description = stringResource(R.string.browse_author_image, state.name)
+    CoverArt(
+        url, state.name, Modifier.size(96.dp).testTag("authorImage").semantics { contentDescription = description },
+        shape = CircleShape, initialsStyle = MaterialTheme.typography.headlineSmall,
+    )
 }
 
 /** Greyed stand-in for a volume number the library lacks; with Audible data it shows the cover and opens the details. */

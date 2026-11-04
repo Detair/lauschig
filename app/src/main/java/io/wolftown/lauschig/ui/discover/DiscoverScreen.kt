@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -35,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -43,11 +41,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverTile
-import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
@@ -193,16 +191,9 @@ private fun AllTitlesHeader(sort: DiscoverSort, onSort: (DiscoverSort) -> Unit) 
 @Composable
 private fun SeriesTileView(tile: SeriesTile, onClick: () -> Unit) {
     val base = LocalServerBaseUrl.current
-    Column(Modifier.width(TILE_WIDTH).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)) {
-        Box(Modifier.size(TILE_WIDTH).clip(RoundedCornerShape(8.dp))) {
-            Initials(tile.name)
-            tile.cover?.let { c ->
-                coverModel(base, c.id, c.coverPath, c.coverVersion)?.let {
-                    AsyncImage(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                }
-            }
-        }
-        Text(tile.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+    Column(Modifier.width(TILE_WIDTH).clip(CoverShapes.Tile).clickable(onClick = onClick)) {
+        CoverArt(tile.cover?.let { c -> coverModel(base, c.id, c.coverPath, c.coverVersion) }, tile.name, Modifier.size(TILE_WIDTH))
+        Text(tile.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         Text(
             pluralStringResource(R.plurals.discover_volumes, tile.count, tile.count),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -213,17 +204,14 @@ private fun SeriesTileView(tile: SeriesTile, onClick: () -> Unit) {
 @Composable
 private fun AuthorTileView(tile: AuthorTile, onClick: () -> Unit) {
     val base = LocalServerBaseUrl.current
-    Column(Modifier.width(96.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(72.dp).clip(CircleShape)) {
-            Initials(tile.name)
-            if (tile.authorId != null && base != null) {
-                val url = remember(base, tile.authorId) {
-                    base.newBuilder().addPathSegments("api/authors").addPathSegment(tile.authorId).addPathSegment("image").build().toString()
-                }
-                AsyncImage(url, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    Column(Modifier.width(96.dp).clip(CoverShapes.Tile).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        val url = if (tile.authorId != null && base != null) {
+            remember(base, tile.authorId) {
+                base.newBuilder().addPathSegments("api/authors").addPathSegment(tile.authorId).addPathSegment("image").build().toString()
             }
-        }
-        Text(tile.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        } else null
+        CoverArt(url, tile.name, Modifier.size(72.dp), shape = CircleShape, initialsStyle = MaterialTheme.typography.titleMedium)
+        Text(tile.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         Text(
             pluralStringResource(R.plurals.browse_title_count, tile.count, tile.count),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
