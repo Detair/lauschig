@@ -20,8 +20,8 @@ fun placeholderTones(scheme: ColorScheme): List<PlaceholderTone> = with(scheme) 
         tone(primaryContainer, tertiaryContainer, onPrimaryContainer),
         tone(secondaryContainer, primaryContainer, onSecondaryContainer),
         tone(tertiaryContainer, secondaryContainer, onTertiaryContainer),
-        tone(surfaceContainerHighest, secondaryContainer, onSurfaceVariant),
-        tone(lerp(primaryContainer, secondaryContainer, 0.5f), secondaryContainer, onSecondaryContainer),
+        tone(lerp(secondaryContainer, tertiaryContainer, 0.5f), secondaryContainer, onSecondaryContainer),
+        tone(lerp(primaryContainer, secondaryContainer, 0.5f), tertiaryContainer, onSecondaryContainer),
     )
 }
 
