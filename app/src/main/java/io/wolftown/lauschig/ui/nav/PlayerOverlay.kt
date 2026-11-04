@@ -7,7 +7,6 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -89,22 +89,26 @@ fun PlayerOverlay(
                 throw e
             }
         }
-        Box(
+        // A surface of its own (outside the frame's Scaffold): the text colour is set here, and touches stop here.
+        Surface(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { translationY = backProgress * PREDICTIVE_BACK_SHIFT.toPx() }
-                .background(MaterialTheme.colorScheme.surface)
                 .testTag("playerOverlay"),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Column(Modifier.fillMaxSize().padding(insets)) {
-                FrameBanners(banner, showReauthBanner, onReauth, onOpenConnection)
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    CompositionLocalProvider(LocalBackdropReach provides reach) {
-                        PlayerRoute(onClose = onClose, onOpenDetails = onOpenDetails)
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().padding(insets)) {
+                    FrameBanners(banner, showReauthBanner, onReauth, onOpenConnection)
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        CompositionLocalProvider(LocalBackdropReach provides reach) {
+                            PlayerRoute(onClose = onClose, onOpenDetails = onOpenDetails)
+                        }
                     }
                 }
+                SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(insets))
             }
-            SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(insets))
         }
     }
 }
