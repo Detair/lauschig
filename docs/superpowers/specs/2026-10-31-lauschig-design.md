@@ -185,6 +185,21 @@ Android-Features nutzen:
   (anonymisiert/maskiert) per ShareSheet, damit Familienmitglieder ohne adb Fehler melden können.
 - **Automatisches Löschen fertig gehörter Titel:** Optionales zeitgesteuertes oder sofortiges
   Löschen nach Beenden eines Hörbuchs.
+- **Warmes Nacht-Farbschema („Kaminfeuer & Bernstein“):** Mokka-Anthrazit (`#161311`),
+  Creme-Weiß (`#F4ECE1`) und Honig-Bernstein (`#F5BA42`) für ermüdungsfreies Hören im Bett.
+- **Player-Tastenleiste (Variante B):** Einheitliche 3-teilige Regler oben (`Tempo`, `Sleep`, `Klang`)
+  plus horizontales Auszieh-Banner für Kapitel & Notizen.
+- **Audio-Dynamikkompressor:** Nachtmodus zur Begrenzung lauter Soundeffekte und Anhebung leiser Sprache
+  via Android `DynamicsProcessing` (ab minSdk 28).
+- **Performance & Caching:** 150 MB Coil DiskCache, Room Compound-Indizes und Recomposition-Throttling.
+- **UI-Feinschliff & Ergonomie:**
+  - 2-Zeitstempel-System (abgelaufen links, verbleibend rechts mit Tap-Umschaltung für Kapitel/Gesamt).
+  - Neues Offline-Symbol (`ArrowCircleDown` / `OfflinePin` statt `DownloadDone`).
+  - Metadaten-Leiste und klare Button-Hierarchie auf der Buch-Detailseite.
+  - Entfernung störender Play-Button-Overlays auf kleinen Cover-Thumbnails.
+  - Interaktive Tooltips bei Statistik-Diagrammen und Wischgeste für den Mini-Player.
+- **Schrittweise Modularisierung:** Entflechtung in `:core:model`, `:core:database` und `:core:playback`.
+- **Ökosystem-Vorbereitung:** Schneller Profilwechsel für Familien-Tablets, Google Cast und Kapitelsuche.
 - Siehe Umsetzungsplan in [`docs/superpowers/plans/2026-11-05-phase6-quality-and-comfort.md`](../plans/2026-11-05-phase6-quality-and-comfort.md).
 
 ### 2.8 Später: TV-Modus (Android TV / Google TV)

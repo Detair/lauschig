@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, dynamic speech compression, core performance optimizations (Coil disk cache, Room database indexes, recomposition throttling), and incremental multi-module architecture.
+**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, dynamic speech compression, core performance optimizations (Coil disk cache, Room database indexes, recomposition throttling), incremental multi-module architecture, UI polish & ergonomics (2-timestamp system with chapter/total toggle, replacement of the downloaded badge icon, detail metadata quick bar, cover thumbnail play-button removal, stats tooltips, mini-player swipe gesture), and architecture preparation for future multi-profile / cast / chapter search extensions.
 
 **Branch:** `phase-6` (branched from `main` after PR #16 / Phase 5C).
 
@@ -23,6 +23,9 @@
 | **Dynamik-Kompressor & Sprachfokus** | Ältere Hörspiele haben teils extreme Lautstärkesprünge (Flüstern vs. laute Soundeffekte/Musik), was nachts im Bett aufschreckt. | Sanfter Nacht-Kompressor via Androids `DynamicsProcessing` (ab API 28 / minSdk). Begrenzt laute Pegelspitzen und hebt leise Sprache verständlich an. Ein/Aus-Schalter im [🎙️ Klang]-Sheet. |
 | **Performance: Caching & Indizes** | Coil hat keinen DiskCache (Cover werden nach Neustart neu geladen); Room-Queries machen Full Table Scans; Recomposition-Spikes bei Playback-Ticks. | (1) 150 MB Coil DiskCache in `context.cacheDir`. (2) Compound-Indizes auf `progress(serverId, isFinished, lastUpdate)`, `downloads(serverId, state)` und `items(serverId, seriesName, seriesSortKey)`. (3) Throttling von `observeAll`-Listen während Playback. |
 | **Schrittweise Modularisierung** | Monolithisches `:app`-Modul mit >95.000 Zeilen verlangsamt KSP, Hilt und Gradle-Builds spürbar. | Schrittweiser Auszug: (1) `:core:model` (reine Datenmodelle), (2) `:core:database` (Room-Entities, DAOs, Migrations getrennt von Compose), (3) `:core:playback` (ExoPlayer & Media3 Service). |
+| **UI-Feinschliff & Ergonomie** | 3 Zeitstempel im Player sind überladen; Play-Buttons auf Mini-Covern verdecken Typografie; Detailseite fehlt Quick-Info; Statistikbalken nicht interaktiv. | 2-Zeitstempel-System (Elapsed links, Remaining rechts mit Tap-Toggle für Kapitel/Gesamt), Entfernung der Play-Overlays von Thumbnails, Metadaten-Leiste auf Detailseite, interaktive Diagramm-Tooltips, Mini-Player Wischgeste. |
+| **Symbol für lokal gespeicherte Titel** | `Icons.Rounded.DownloadDone` (Häkchen auf Querbalken `✓_`) wirkt unruhig/missverständlich und wird oft mit „Gelesen“ verwechselt. | Ersatz durch `Icons.Rounded.ArrowCircleDown` (bewährter Streaming-Standard analog Spotify/Pocket Casts) oder `Icons.Rounded.OfflinePin` (Google Material Offline-Standard) für maximale Klarheit auf Cover-Badges, Detail-Aktionen und Source-Indikatoren. |
+| **Zukünftige Ökosystem-Erweiterungen** | Familien teilen sich Tablets; Smart-Lautsprecher im Haus; lange Hörbücher haben unübersichtliche Kapitellisten. | Architektur-Vorbereitung für schnellen Profilwechsel (`AccountStore`), Google Cast / Chromecast (`CastPlayer` Media3) und Kapitelsuche im Bottom Sheet. |
 
 ---
 
@@ -181,6 +184,63 @@
 - [ ] **10.4 Verifikation & Build-Zeiten:**
   - Verifikation: Alle 1.492+ Tests grün.
   - Benchmark der Gradle-Build-Zeiten vor und nach der Modularisierung.
+
+---
+
+### Task 11: UI-Feinschliff, Ergonomie & Symbole
+- [ ] **11.1 Player 2-Zeitstempel-System & Umschalt-Logik:**
+  - `PlayerScreen.kt` & `PlayerProgress`: Ersetzen der 3 redundanten Zeitstempel (`18:07`, `3:09:58 / 7:54:00`, `1:02:04`) durch 2 Werte am Fortschrittsbalken: Links abgelaufene Zeit (`18:07`), Rechts verbleibende Zeit (`-1:02:04`).
+  - Umschaltung der rechten Restzeit per Fingertipp (Toggle):
+    - Modus A: *„Verbleibend im aktuellen Kapitel“* (z. B. `-14:20`)
+    - Modus B: *„Verbleibend im gesamten Buch“* (z. B. `-3:18:42`)
+  - Persistenz der Benutzerauswahl in `UiSettings` (`playerRemainingTimeMode`).
+  - Barrierefreie Screenreader-Ansage („Kapitel verbleibend: X Minuten, zum Umschalten doppeltippen“).
+  - Tests: `PlayerScreenTest`, `PlayerProgressTest`.
+- [ ] **11.2 Neues Symbol für lokal heruntergeladene Titel („Lokal auf dem Gerät“):**
+  - **Problem:** Das bisherige Symbol `Icons.Rounded.DownloadDone` (Häkchen über einer Querlinie `✓_`) wirkt auf kleinen Cover-Badges unruhig, unscharf und wird leicht mit einer erledigten To-Do-Checkbox („Gelesen“) verwechselt.
+  - **Lösung:** Ersetzung durch das etablierte Audio-Offline-Symbol `Icons.Rounded.ArrowCircleDown` (Streaming-Standard analog Spotify / Pocket Casts) oder `Icons.Rounded.OfflinePin` (Google Material Design Standard für offline gepinnte Inhalte).
+  - Konsistente Anwendung an allen relevanten UI-Stellen:
+    - `CoverTile.kt`: `StatusBadge` in der oberen rechten Ecke der Buch-Cover mit warmem Kontrast-Badge.
+    - `ItemActions.kt`: `DownloadIconButton` im Zustand `Complete`.
+    - `CollectionsUi.kt`: Download-Status in Bibliotheks- und Sammlungslisten.
+    - `SourceIndicator.kt`: Indikator `PlaySource.DOWNLOAD` im Player.
+    - `PodcastScreen.kt`: Status in Podcast-Episodenlisten.
+  - Text-Ressource: `R.string.cover_offline_available` („Auf diesem Gerät verfügbar“).
+  - Tests: `CoverTileTest`, `ItemActionsTest`, `SourceIndicatorTest`.
+- [ ] **11.3 Buch-Detailseite Quick-Info & Button-Harmonisierung:**
+  - `BookDetailScreen.kt`:
+    - Kompakte Metadaten-Leiste mit Badges direkt unter dem Titel vor den CTA-Buttons:
+      `[⏱ 14h 22m]`, `[🎙 David Nathan]`, `[📖 Ungekürzt]`, `[📅 2024]`
+    - Button-Hierarchie harmonisieren:
+      - Großer, gut treffbarer Haupt-Button für Wiedergabe (`[ ▶ Weiterhören ]` bzw. `[ ▶ Jetzt hören ]`) in Primärfarbe.
+      - Daneben kompakter Begleit-Button für Download (als `FilledTonalButton` oder eleganter `DownloadIconButton`).
+  - Tests: `BookDetailScreenTest`.
+- [ ] **11.4 Startseite & Bibliotheks-Cover: Entfernung des Play-Button Overlays:**
+  - `CoverTile.kt`: Entfernen des runden Play-Button-Overlays (`FilledIconButton(Play)`) auf kleinen Cover-Thumbnails.
+  - Cover-Tap öffnet die Buch-Detailseite (oder Player bei „Zuletzt gehört“). Verhindert das Verdecken der Cover-Typografie und versehentliches Abspielen beim horizontalen Scrollen.
+  - Tests: `CoverTileTest`, `StartScreenTest`.
+- [ ] **11.5 Statistik-Diagramm: Interaktive Tooltips:**
+  - `StatsScreen.kt`: Antippen eines Balkens (Tages-, Wochen- oder Monatsverlauf) zeigt einen schwebenden, sanft animierten Tooltip über dem Balken mit exakter Minutenzahl und Datum.
+  - Barrierefreiheit: Screenreader liest bei Fokus den Wert des ausgewählten Balkens vor.
+  - Tests: `StatsScreenTest`.
+- [ ] **11.6 Mini-Player Wischgeste (Swipe-up to expand):**
+  - `MiniPlayer.kt`: Unterstützung von Wischgesten nach oben (`swipeable` / `draggable`), um den Vollbild-Player flüssig aufzuziehen.
+  - Tests: `MiniPlayerTest`.
+
+---
+
+### Task 12: Zukünftige Ökosystem-Erweiterungen (Vorbereitung Phase 7)
+- [ ] **12.1 Schneller Profilwechsel (Multi-Account auf Familien-Tablets):**
+  - Schnelles Umschalten zwischen hinterlegten ABS-Konten im Profilmenü ohne vollständiges Abmelden und Cache-Löschen.
+  - `AccountStore` & `AccountDataJanitor`: Vorbereitung der Multi-Account-Session-Verwaltung.
+  - Tests: `AccountStoreTest`.
+- [ ] **12.2 Google Cast / Chromecast (Smart-Speaker Integration):**
+  - Architektur-Vorbereitung für Google Cast via Media3 `CastPlayer`.
+  - Abstraction in `PlayerController` für nahtloses Umschalten zwischen lokaler ExoPlayer-Wiedergabe und Cast-Session.
+  - Tests: `PlayerControllerCastTest`.
+- [ ] **12.3 Kapitelsuche & Filterung im Sheet:**
+  - `SearchTextField` im oberen Bereich des Kapitel-Bottom-Sheets zum schnellen Filtern langer Kapitel-/Tracklisten bei umfangreichen Hörbüchern.
+  - Tests: `ChapterListTest`.
 
 ---
 
