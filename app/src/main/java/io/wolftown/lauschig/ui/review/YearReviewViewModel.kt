@@ -22,6 +22,7 @@ import io.wolftown.lauschig.sync.HistoryLoad
 import io.wolftown.lauschig.sync.ListeningSessionSync
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.nav.YearReviewPage
+import java.time.ZoneId
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -118,7 +120,11 @@ class YearReviewViewModel(
         }
     }
 
-    /** The review again whenever the cached data or the history's state changes (bursts are computed once). */
+    /**
+     * The review again whenever the history's state or the cache's shape changes – sessions added or removed, a book
+     * finished, another zone (bursts are computed once). A title playing in the background only adds seconds to its
+     * open session: that is no reason to change an open story (numbers would tick, TalkBack would re-announce).
+     */
     private fun builds(): Flow<YearReviewUiState> = flow {
         val sid = accounts.account.first()?.serverId
         if (sid == null) {
@@ -128,10 +134,19 @@ class YearReviewViewModel(
         val incomplete = historyLoad(sid).map { it != HistoryLoad.NONE }.distinctUntilChanged()
         emitAll(
             combine(source.observe(sid, calendar.zones()), incomplete, ::Pair)
+                .distinctUntilChangedBy { (data, notAll) -> shapeOf(data, notAll) }
                 .conflate()
                 .map { (data, notAll) -> build(sid, data, notAll) },
         )
     }
+
+    private data class Shape(val sessions: Int, val sessionIds: Int, val finished: Int, val finishedIds: Int, val incomplete: Boolean, val zone: ZoneId)
+
+    private fun shapeOf(data: ListeningData, incomplete: Boolean) = Shape(
+        data.sessions.size, data.sessions.fold(0) { h, s -> h + s.id.hashCode() },
+        data.finished.size, data.finished.fold(0) { h, f -> h + f.itemId.hashCode() },
+        incomplete, data.zone,
+    )
 
     private fun build(sid: String, data: ListeningData, incomplete: Boolean): YearReviewUiState {
         val review = YearReview.build(year, data.sessions, data.finished, data.seriesGroups, data.achievements(), data.items, data.zone, incomplete)

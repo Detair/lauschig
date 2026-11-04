@@ -145,6 +145,20 @@ class YearReviewViewModelTest {
         vm.until { it.opening.incomplete }
     }
 
+    @Test fun aPlaybackTick_doesNotRebuildTheOpenReview_aNewSessionDoes() = runTest {
+        session("1", "2026-03-02T20:00", 3600.0)
+        val vm = vm()
+        assertEquals(3600.0, vm.loaded().opening.totalSec, 0.0)
+        // A title playing in the background writes its open session every few seconds: the story stays as it is (no
+        // ticking numbers, no re-announcement for TalkBack).
+        session("1", "2026-03-02T20:00", 3700.0)
+        kotlinx.coroutines.withContext(Dispatchers.Default.limitedParallelism(1)) { kotlinx.coroutines.delay(300) }
+        assertEquals(3600.0, vm.state.value.opening.totalSec, 0.0)
+        // A new session is a real change: built again, with everything the cache holds now.
+        session("2", "2026-03-03T20:00", 1800.0)
+        vm.until { it.opening.totalSec == 5500.0 }
+    }
+
     @Test fun aRebuild_keepsThePlaceOnTheSameKindOfSlide_andThePlayedEntrances() = runTest {
         session("1", "2026-03-02T20:00", 3600.0) // one title on one day: opening, author, the first hour, closing
         val vm = vm()
