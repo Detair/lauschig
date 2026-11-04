@@ -28,7 +28,7 @@ import io.wolftown.lauschig.ui.theme.rememberCoverSwatch
 @Composable
 fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    YearReviewScreen(state, onClose, motion = rememberStoryMotion(), story = state.review?.let { viewModel.story(it.slides.size) })
+    YearReviewScreen(state, onClose, story = { viewModel.story(it) }, motion = rememberStoryMotion())
 }
 
 /**
@@ -40,10 +40,10 @@ fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltVi
 fun YearReviewScreen(
     state: YearReviewUiState,
     onClose: () -> Unit,
+    /** Where the story of so many slides stands (the view model keeps it, see [YearReviewViewModel.story]). */
+    story: (count: Int) -> StoryState,
     modifier: Modifier = Modifier,
     motion: StoryMotion = StoryMotion(),
-    /** Where the story stands (the view model keeps it across a rotation); null: remembered here. */
-    story: StoryState? = null,
 ) {
     val review = state.review
     if (state.loading || review == null) {
@@ -69,7 +69,7 @@ fun YearReviewScreen(
     review.slides.mapNotNull { it.leadItemId }.distinct().forEach { id ->
         key(id) { rememberCoverSwatch(reviewCoverModel(id, state.covers), state.covers[id]?.version ?: 0) }
     }
-    val place = story ?: rememberStoryState(review.slides.size)
+    val place = story(review.slides.size)
     StoryPager(
         place, onClose, title = stringResource(R.string.review_title, review.year),
         colors = { reviewSlideColors(review.slides[it], state.covers) },

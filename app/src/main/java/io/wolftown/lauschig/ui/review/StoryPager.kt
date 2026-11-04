@@ -45,8 +45,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameMillis
@@ -164,56 +162,49 @@ private var SemanticsPropertyReceiver.segmentState by SegmentStateKey
 
 /**
  * The story's position: the slide shown, how far its time has run ([progress], 0..1) and which slides were shown
- * already (each slide's entrance plays once). Survives a rotation ([Saver]).
+ * already (each slide's entrance plays once). [onPlace] hears every change of the slide or of the shown ones (a view
+ * model keeps them across a process death); the running time is not kept.
  */
 @Stable
-class StoryState(val count: Int, index: Int = 0, progress: Float = 0f, shown: Set<Int> = emptySet()) {
+class StoryState(
+    val count: Int,
+    index: Int = 0,
+    progress: Float = 0f,
+    shown: Set<Int> = emptySet(),
+    private val onPlace: (index: Int, shown: Set<Int>) -> Unit = { _, _ -> },
+) {
     var index by mutableIntStateOf(index.coerceIn(0, (count - 1).coerceAtLeast(0)))
         private set
     var progress by mutableFloatStateOf(progress)
         internal set
-    private val shown = shown.toMutableSet()
+    private val shown = shown.filterTo(HashSet()) { it in 0 until count }
 
     val isLast: Boolean get() = index >= count - 1
+
+    /** The slides whose entrance has played. */
+    val shownSlides: Set<Int> get() = shown.toSet()
 
     /** The next slide; false (nothing changes) on the last one. */
     fun next(): Boolean {
         if (isLast) return false
         index++
         progress = 0f
+        onPlace(index, shownSlides)
         return true
     }
 
     /** The slide before; on the first one, its time starts again. */
     fun previous() {
-        if (index > 0) index--
+        if (index > 0) {
+            index--
+            onPlace(index, shownSlides)
+        }
         progress = 0f
     }
 
     /** True the first time slide [i] is shown: its entrance plays then, never again. */
-    fun firstShow(i: Int): Boolean = shown.add(i)
-
-    companion object {
-        val Saver: Saver<StoryState, Any> = Saver(
-            save = { listOf(it.count, it.index, it.progress, it.shown.toIntArray()) },
-            restore = {
-                val l = it as List<*>
-                StoryState(l[0] as Int, l[1] as Int, l[2] as Float, (l[3] as IntArray).toSet())
-            },
-        )
-    }
+    fun firstShow(i: Int): Boolean = shown.add(i).also { if (it) onPlace(index, shownSlides) }
 }
-
-/**
- * The story's place, kept across a rotation and a process death. Saved under its own key, not its position, so a
- * caller composed along another path after the restore still finds it. (Inside the app's navigation host that is not
- * enough – see `YearReviewViewModel.story`.)
- */
-@Composable
-fun rememberStoryState(count: Int): StoryState =
-    rememberSaveable(count, saver = StoryState.Saver, key = STORY_STATE_KEY) { StoryState(count) }
-
-private const val STORY_STATE_KEY = "storyState"
 
 /**
  * A story: full-screen slides one after the other, with segmented progress bars and a close button on top.

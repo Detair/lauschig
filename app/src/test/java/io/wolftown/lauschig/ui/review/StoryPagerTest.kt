@@ -14,7 +14,6 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -290,40 +289,5 @@ class StoryPagerTest {
     @Test fun withoutAnimations_noEntrance() {
         show(StoryState(2), StoryMotion(autoAdvance = false, animations = false))
         assertEquals(listOf(0 to false), entrances)
-    }
-
-    @Test fun thePlaceSurvivesARotation_alsoWhenTheFrameComposesThePageAlongAnotherPath() {
-        // Turning a phone switches the frame between the tab bar and the navigation rail: another path to the page.
-        val tester = StateRestorationTester(rule)
-        var state: StoryState? = null
-        var rail = false
-        tester.setContent {
-            val page = @Composable {
-                val s = rememberStoryState(4).also { state = it }
-                Story(s, StoryMotion(autoAdvance = false))
-            }
-            if (rail) androidx.compose.foundation.layout.Row { androidx.compose.foundation.layout.Box { page() } } else page()
-        }
-        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
-        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
-        rail = true
-        tester.emulateSavedInstanceStateRestore()
-        assertEquals(2, state!!.index)
-    }
-
-    @Test fun thePlaceSurvivesARotation() {
-        val tester = StateRestorationTester(rule)
-        var state: StoryState? = null
-        tester.setContent {
-            val s = rememberStoryState(4).also { state = it }
-            Story(s, StoryMotion(autoAdvance = false))
-        }
-        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
-        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
-        tester.emulateSavedInstanceStateRestore()
-        assertEquals(2, state!!.index)
-        // Slides 0–2 were shown: going back plays no entrance again.
-        assertTrue(!state!!.firstShow(1))
-        assertTrue(state!!.firstShow(3))
     }
 }

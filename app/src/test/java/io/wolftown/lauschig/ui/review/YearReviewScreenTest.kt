@@ -66,12 +66,16 @@ class YearReviewScreenTest {
     }
 
     private var closed = 0
+    private val places = HashMap<Int, StoryState>()
+
+    /** As the view model hands it out: one place per story length. */
+    private fun place(count: Int) = places.getOrPut(count) { StoryState(count) }
 
     private fun show(review: YearReview?, motion: StoryMotion = StoryMotion(autoAdvance = false, animations = false), loading: Boolean = false, fontScale: Float? = null) {
         rule.setContent {
             LauschigTheme {
                 val content = @androidx.compose.runtime.Composable {
-                    YearReviewScreen(YearReviewUiState(2026, loading = loading, review = review), onClose = { closed++ }, motion = motion)
+                    YearReviewScreen(YearReviewUiState(2026, loading = loading, review = review), onClose = { closed++ }, story = ::place, motion = motion)
                 }
                 if (fontScale == null) content() else CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) { content() }
             }
@@ -184,10 +188,11 @@ class YearReviewScreenTest {
 @Config(sdk = [35], qualifiers = "de")
 class YearReviewScreenGermanTest {
     @get:Rule val rule = createComposeRule()
+    private val place = StoryState(9)
 
     @Test fun slides_inGerman() {
         rule.setContent {
-            LauschigTheme { YearReviewScreen(YearReviewUiState(2026, loading = false, review = YearReviewScreenTest.FULL), onClose = {}, motion = StoryMotion(false, false)) }
+            LauschigTheme { YearReviewScreen(YearReviewUiState(2026, loading = false, review = YearReviewScreenTest.FULL), onClose = {}, story = { place }, motion = StoryMotion(false, false)) }
         }
         fun spoken() = rule.onNodeWithTag("storySlide").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].single()
         assertEquals("Folie 1 von 9. Dein Hörjahr 2026. 47 Stunden gehört, mit 12 Titeln. Noch nicht alle Hörsitzungen geladen.", spoken())

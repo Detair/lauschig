@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.review
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.TestViewModels
@@ -77,13 +78,14 @@ class YearReviewViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm(year: Int = 2026) = viewModels.own(
+    private fun vm(year: Int = 2026, savedState: SavedStateHandle = SavedStateHandle()) = viewModels.own(
         YearReviewViewModel(
             year, accounts,
             ListeningDataSource(StatsSessions(db.listeningSessionDao(), db.sessionDao()), db.progressDao(), db.catalogDao(), db.libraryDao(), Catalog()),
             calendar, historyLoad = { history },
             covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false },
             dispatcher = UnconfinedTestDispatcher(),
+            savedState = savedState,
         ),
     )
 
@@ -118,26 +120,47 @@ class YearReviewViewModelTest {
         assertTrue(opening.incomplete)
     }
 
-    @Test fun builtOnce_listeningMeanwhileChangesNothingUnderTheReader() = runTest {
+    @Test fun builtOnce_listeningMeanwhileChangesNothingUnderTheReader_theHistoryNoteFollowsLive() = runTest {
         session("1", "2026-03-02T20:00", 3600.0)
+        history.value = HistoryLoad.LOADING
         val vm = vm()
         val first = vm.loaded()
+        assertTrue((first.review!!.slides.first() as ReviewSlide.Opening).incomplete)
+        // Two more hours arrive; Room has them (the next read would see them) …
         session("2", "2026-03-03T20:00", 7200.0)
-        history.value = HistoryLoad.LOADING
-        // Room emits again; the story stays as it was opened.
-        withContext(Dispatchers.Default) { kotlinx.coroutines.delay(200) }
-        assertEquals(first, vm.state.value)
-        assertFalse((vm.state.value.review!!.slides.first() as ReviewSlide.Opening).incomplete)
+        db.listeningSessionDao().observeAll(sid).first { it.size == 2 }
+        // … and the history completes: the note goes – a new state, built from the same slides.
+        history.value = HistoryLoad.NONE
+        val now = withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(10_000) { vm.state.first { (it.review?.slides?.first() as? ReviewSlide.Opening)?.incomplete == false } }
+        }
+        assertEquals(3600.0, (now.review!!.slides.first() as ReviewSlide.Opening).totalSec, 0.0)
+        assertEquals(first.review!!.slides.drop(1), now.review.slides.drop(1))
+        assertEquals(first.covers, now.covers)
+        // Loading again (a failed read, a Wi-Fi wait): the note is back.
+        history.value = HistoryLoad.INCOMPLETE
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(10_000) { vm.state.first { (it.review?.slides?.first() as? ReviewSlide.Opening)?.incomplete == true } }
+        }
     }
 
-    @Test fun theStorysPlace_staysWithTheViewModel_aNewLengthStartsAgain() = runTest {
-        val vm = vm()
+    @Test fun theStorysPlace_staysWithTheViewModel_andOutlivesTheProcessInTheSavedState() = runTest {
+        val saved = SavedStateHandle()
+        val vm = vm(savedState = saved)
         val place = vm.story(9)
+        place.firstShow(0)
         place.next()
+        place.firstShow(1)
         place.next()
         assertTrue(vm.story(9) === place)
-        assertEquals(2, vm.story(9).index)
-        assertEquals(0, vm.story(8).index)
+        // The process ends; a new view model on the same saved state goes on there, without replaying the entrances.
+        val again = vm(savedState = saved).story(9)
+        assertEquals(2, again.index)
+        assertEquals(setOf(0, 1), again.shownSlides)
+        assertFalse(again.firstShow(1))
+        assertTrue(again.firstShow(2))
+        // Another story (the year has other slides now): from the start.
+        assertEquals(0, vm(savedState = saved).story(8).index)
     }
 
     @Test fun aYearBelowAnHour_orNoAccount_hasNoReview() = runTest {
