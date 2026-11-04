@@ -122,8 +122,8 @@ class YearReviewViewModel(
 
     /**
      * The review again whenever the history's state or the cache's shape changes – sessions added or removed, a book
-     * finished, another zone (bursts are computed once). A title playing in the background only adds seconds to its
-     * open session: that is no reason to change an open story (numbers would tick, TalkBack would re-announce).
+     * finished or dated, another zone (bursts are computed once). A title playing in the background only adds seconds
+     * to its open session: that is no reason to change an open story (numbers would tick, TalkBack would re-announce).
      */
     private fun builds(): Flow<YearReviewUiState> = flow {
         val sid = accounts.account.first()?.serverId
@@ -144,7 +144,7 @@ class YearReviewViewModel(
 
     private fun shapeOf(data: ListeningData, incomplete: Boolean) = Shape(
         data.sessions.size, data.sessions.fold(0) { h, s -> h + s.id.hashCode() },
-        data.finished.size, data.finished.fold(0) { h, f -> h + f.itemId.hashCode() },
+        data.finished.size, data.finished.fold(0) { h, f -> h + 31 * f.itemId.hashCode() + f.finishedAt.hashCode() },
         incomplete, data.zone,
     )
 
