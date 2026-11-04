@@ -756,7 +756,7 @@
     </plurals>
     <string name="achievement_notice_view">View</string>
     <string name="achievements_title">Achievements</string>
-    <string name="achievements_summary">%1$d of %2$d reached</string>
+    <string name="achievements_summary">Reached: %1$d of %2$d</string>
     <string name="achievement_hours_desc">Hours you have listened in total</string>
     <string name="achievement_streak_desc">Days in a row with at least a minute</string>
     <string name="achievement_books_desc">Books you have heard to the end</string>
@@ -784,7 +784,7 @@
     <string name="achievement_reached">Reached</string>
     <string name="achievement_locked">Not reached yet</string>
     <string name="stats_achievements_all">All (%1$d/%2$d)</string>
-    <string name="stats_achievements_all_spoken">All achievements, %1$d of %2$d reached</string>
+    <string name="stats_achievements_all_spoken">All achievements, reached: %1$d of %2$d</string>
     <string name="stats_achievements_none">No achievements yet</string>
     <!-- After "… of": the same words as on the card in English. -->
     <plurals name="achievement_spoken_days">

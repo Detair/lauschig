@@ -137,7 +137,7 @@ class StatsScreenTest {
         rule.setContent { LauschigTheme { StatsScreen(listened.copy(achievements = preview), onBack = {}, onOpenAchievements = { calls += "all" }) } }
         val list = rule.onNodeWithTag("statsList")
         list.performScrollToNode(hasText("Achievements"))
-        rule.onNodeWithTag("statsAchievementsAll").assertTextEquals("All (4/28)").assertContentDescriptionEquals("All achievements, 4 of 28 reached")
+        rule.onNodeWithTag("statsAchievementsAll").assertTextEquals("All (4/28)").assertContentDescriptionEquals("All achievements, reached: 4 of 28")
         list.performScrollToNode(hasText("10 hours listened"))
         rule.onNodeWithText("Since November 3, 2026").assertIsDisplayed()
         list.performScrollToNode(hasText("Night owl"))

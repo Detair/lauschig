@@ -96,7 +96,7 @@ class AchievementsScreenTest {
     @Test fun header_countsTheReachedTiers_backGoesBack() {
         var back = 0
         show(onBack = { back++ })
-        rule.onNodeWithText("6 of 28 reached").assertExists()
+        rule.onNodeWithText("Reached: 6 of 28").assertExists()
         rule.onNodeWithTag("achievementsBack").performClick()
         assertEquals(1, back)
     }
