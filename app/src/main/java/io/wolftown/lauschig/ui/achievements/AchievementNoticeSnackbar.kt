@@ -16,6 +16,8 @@ import io.wolftown.lauschig.stats.Achievement
  * „Neuer Erfolg: 7 Tage am Stück“ (several: „3 neue Erfolge“) with „Ansehen“ ([onOpen]; no action without it) in
  * [hostState]'s host. Once the snackbar ended – dismissed, timed out or acted on – [onShown] marks the notice told. A
  * newer notice replaces the one on screen, and leaving the screen ends it: then it counts as not shown and comes again.
+ * The timeout also runs while the app is in the background, so a notice that appears just before the phone is put away
+ * counts as told (accepted: "told once" rather than "told until seen").
  */
 @Composable
 fun AchievementNoticeSnackbar(
