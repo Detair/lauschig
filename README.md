@@ -4,6 +4,27 @@ Lauschig is a native, offline-first Android client for [Audiobookshelf](https://
 It is built for listening: your library and downloaded books open instantly, playback never waits for the
 network, and listening progress is synced with the server whenever a connection is available.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/start.png" width="260" alt="Start screen with the continue card for Winnetou III, a row of titles in progress and this week's listening time"><br>Continue where you left off</td>
+    <td align="center" valign="top"><img src="docs/screenshots/detail.png" width="260" alt="Detail page of Die Schatzinsel with a header tinted in the cover's colours"><br>Every title in its cover's colours</td>
+    <td align="center" valign="top"><img src="docs/screenshots/player.png" width="260" alt="Player for Winnetou III with chapter progress, speed, chapters, sleep timer and audio settings"><br>Chapters, speed and sleep timer at hand</td>
+  </tr>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/statistics.png" width="260" alt="Statistics for the year: listening time per month, streaks and finished books"><br>Listening statistics by week, month and year</td>
+    <td align="center" valign="top"><img src="docs/screenshots/achievements.png" width="260" alt="Achievements grid with levels for streaks, hours listened and finished books"><br>Achievements for streaks, hours and finished books</td>
+    <td align="center" valign="top"><img src="docs/screenshots/year-in-review.png" width="260" alt="Year in review slide with the five most listened titles of the year"><br>Your year in review</td>
+  </tr>
+</table>
+
+![Tablet in landscape: the library's finished titles on the left, the details of Nussknacker und Mausekönig on the right](docs/screenshots/tablet-library.png)
+
+On tablets, the library and a title's details sit side by side.
+
+The screenshots use a demo library of public-domain books with covers made for it.
+
 ## Why
 
 Existing clients tend to block on the server at startup or lose progress when offline. Lauschig treats the
