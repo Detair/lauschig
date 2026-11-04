@@ -26,6 +26,13 @@ import io.wolftown.lauschig.ui.nav.currentTab
 import io.wolftown.lauschig.ui.nav.Player
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.isOnPlayer
+import io.wolftown.lauschig.ui.nav.PlayerOverlay
+import io.wolftown.lauschig.ui.nav.closePlayer
+import io.wolftown.lauschig.ui.nav.openDetailsFromPlayer
+import io.wolftown.lauschig.ui.nav.playerCoversFrame
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.nav.navigateToTab
@@ -128,18 +135,30 @@ fun AppRoot(
 
     val onSetup = navController.isOnSetup()
     val onPlayer = navController.isOnPlayer()
+    // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
+    val playerSlide = remember { MutableTransitionState(false) }
+    if (playerSlide.targetState != onPlayer) playerSlide.targetState = onPlayer
+    val playerCovers = playerCoversFrame(onPlayer, playerSlide)
+    val playerUp = onPlayer || playerSlide.currentState || playerSlide.targetState
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
     val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection, checking)
+    // One banner state for the frame and the player layer, so both show the same hint at the same time.
+    val connectionBanner = rememberConnectionBanner(connection, checking)
+    val showReauth = needsReauth && !onSetup
+    val onReauth = { navController.navigate(Setup) { launchSingleTop = true } }
+    val onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme(appearance) {
             WindowBackground()
             AppScaffold(
                 connection = connection,
+                // Under the player only: unseen, and not for TalkBack either.
+                modifier = if (playerCovers) Modifier.clearAndSetSemantics {} else Modifier,
                 miniPlayer = {
-                    if (!onSetup && !onPlayer) {
+                    if (!onSetup && !playerCovers) {
                         MiniPlayer(
                             playerState,
                             onToggle = viewModel.player::togglePlayPause,
@@ -147,21 +166,33 @@ fun AppRoot(
                         )
                     }
                 },
-                // The full player uses the whole window (its buttons stay above the fold); it has its own close.
-                showBottomBar = !onSetup && !onPlayer,
+                // The full player covers the whole window (its buttons stay above the fold); it has its own close.
+                showBottomBar = !onSetup && !playerCovers,
                 navigationRail = rememberNavigationRail(),
                 showOfflineBanner = !onSetup,
-                showReauthBanner = needsReauth && !onSetup,
-                onReauth = { navController.navigate(Setup) { launchSingleTop = true } },
+                showReauthBanner = showReauth,
+                onReauth = onReauth,
                 connectionChecking = checking,
-                onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } },
+                onOpenConnection = onOpenConnection,
                 selectedTab = navController.currentTab(),
                 tabs = tabs,
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,
+                showSnackbars = !playerUp,
+                connectionBanner = connectionBanner,
             ) {
                 AppNavHost(navController, startDestination, homeRoute = startTab.route())
             }
+            PlayerOverlay(
+                playerSlide,
+                banner = connectionBanner.takeIf { !onSetup },
+                showReauthBanner = showReauth,
+                onReauth = onReauth,
+                onOpenConnection = onOpenConnection,
+                snackbarHostState = snackbarHost,
+                onClose = navController::closePlayer,
+                onOpenDetails = navController::openDetailsFromPlayer,
+            )
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {
                 DownloadPromptDialog(it, viewModel::answerMetered, viewModel::answerContention, viewModel::dismissPrompt)

@@ -3,12 +3,11 @@ package io.wolftown.lauschig.ui.nav
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -32,7 +31,6 @@ import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.library.LibraryRoute
-import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
@@ -56,7 +54,7 @@ fun AppNavHost(
     NavHost(
         navController, startDestination = startDestination, modifier = modifier,
         // The navigation library's own fades everywhere, except that the page under the player stays put while the
-        // player slides over it (see the Player destination).
+        // player (PlayerOverlay) slides over it and is there at once when the player slides away.
         enterTransition = { fadeIn(tween(DEFAULT_FADE_MS)) },
         exitTransition = { if (targetState.destination.hasRoute<Player>()) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(DEFAULT_FADE_MS)) },
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
@@ -122,16 +120,13 @@ fun AppNavHost(
                 onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
             )
         }
-        // The app's one moment of motion: the full player rises from the mini player and sinks back into it.
+        // The player itself is PlayerOverlay, a layer above the whole frame (see AppRoot); this destination draws nothing.
+        // Its fade-in (of nothing) lasts as long as the player's slide, which keeps the page beneath until it is covered.
         composable<Player>(
-            enterTransition = { slideInVertically(playerSlide()) { it } },
-            popExitTransition = { slideOutVertically(playerSlide()) { it } },
+            enterTransition = { fadeIn(tween(PLAYER_SLIDE_MS + 50)) },
+            popExitTransition = { ExitTransition.None },
         ) {
-            PlayerRoute(
-                onClose = { navController.popBackStack() },
-                // The details replace the player, so "back" from them returns to where the player was opened from.
-                onOpenDetails = { id -> navController.navigate(ItemDetail(PlayableKey.parse(id).libraryItemId)) { popUpTo<Player> { inclusive = true } } },
-            )
+            Box(Modifier.fillMaxSize())
         }
         composable<Setup> {
             ReadableWidth {
@@ -144,11 +139,15 @@ fun AppNavHost(
 /** The navigation library's default cross-fade, kept for every page but the player. */
 private const val DEFAULT_FADE_MS = 700
 
-/** The player's slide: 300 ms with Material's standard easing (the system's "remove animations" makes it instant). */
-private const val PLAYER_SLIDE_MS = 300
-private val StandardEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+/** The player's own actions, used by [PlayerOverlay]: close, and details that replace the player. */
+fun NavHostController.closePlayer() {
+    popBackStack()
+}
 
-private fun <T> playerSlide() = tween<T>(PLAYER_SLIDE_MS, easing = StandardEasing)
+/** The details replace the player, so "back" from them returns to where the player was opened from. */
+fun NavHostController.openDetailsFromPlayer(itemId: String) {
+    navigate(ItemDetail(PlayableKey.parse(itemId).libraryItemId)) { popUpTo<Player> { inclusive = true } }
+}
 
 /**
  * After a sign-in. Re-auth (opened on top of the app): just go back. First setup: Setup is replaced by the user's start

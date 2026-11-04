@@ -131,10 +131,14 @@ fun AppScaffold(
     onOpenConnection: () -> Unit = {},
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    /** False while a layer above the frame (the player) shows the snackbars instead. */
+    showSnackbars: Boolean = true,
+    /** The connection hint; a caller that shows it elsewhere too (the player layer) passes its own, so both agree. */
+    connectionBanner: ConnectionBanner? = rememberConnectionBanner(connection, connectionChecking),
     content: @Composable (PaddingValues) -> Unit,
 ) {
     // Derived, so going online hides the banner in the same composition (no effect round trip).
-    val banner = rememberConnectionBanner(connection, connectionChecking).takeIf { showOfflineBanner }
+    val banner = connectionBanner.takeIf { showOfflineBanner }
 
     val body: @Composable (PaddingValues) -> Unit = { inner ->
         // A page's backdrop may reach over the status bar only while no banner sits between them.
@@ -168,7 +172,7 @@ fun AppScaffold(
             val sides = if (showBottomBar) WindowInsetsSides.Vertical + WindowInsetsSides.End else WindowInsetsSides.Vertical + WindowInsetsSides.Horizontal
             Scaffold(
                 modifier = Modifier.weight(1f),
-                snackbarHost = { SnackbarHost(snackbarHostState) },
+                snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
                 contentWindowInsets = safe.only(sides),
                 // Without a bottom bar the mini player keeps clear of the navigation bar itself.
                 bottomBar = { Column(Modifier.windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) { miniPlayer() } },
@@ -179,7 +183,7 @@ fun AppScaffold(
     }
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (showBottomBar) Column {
                 miniPlayer()
