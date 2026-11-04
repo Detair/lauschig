@@ -156,3 +156,32 @@ errors). Emulator: the current bar's dot and bold label (light, dark, Start card
 stamps), then back on unmetered Wi-Fi the full run ran and dropped the test session that had been deleted from the server
 (49 → 48 rows; „Der Anfang“ is now finished on 3 Nov, its first real finishing session). The "loading" line was only
 checked in tests (one page on the test server finishes before a screenshot).
+
+## Fix round 2 (re-review of fix round 1)
+
+- **N1** "Unmetered" no longer depends on the VPN: the default network is NOT_METERED, or it is a VPN (NetBird, how this
+  family reaches its server) and a validated, unmetered Wi-Fi or Ethernet exists (`UnmeteredNetwork`). The hint offers
+  „Jetzt laden“ / "Load now": one tap reads the whole history once over any network.
+- **N2** The gate is asked before every page; leaving the Wi-Fi mid-run stops it at its stored place, without stamps.
+- **N3** A resume place counts only while the cache holds the rows the earlier pages imply (less the overlap and the
+  unreadable rows); otherwise the run starts over. Sign-out's "rows again" step also removes the account's stamps.
+- **N4** The empty-cache rule ignores rows the server lists but the app cannot read (no full download every 30 minutes
+  for an all-unreadable account); the unreadable count adds up over a resumed run; unreadable rows are retried after an
+  app update, not on a timer.
+- **N5** While the history is incomplete on a metered network, a run reads the newest page (recent numbers stay fresh)
+  and counts for the 30-minute throttle; the hint follows the stored "incomplete" state (also after a failed or
+  cancelled run, in another process), and a routine reconcile on a complete history shows no line.
+- **N6** The unsorted-order fallback keeps the daily limit.
+- **N7 (accepted, documented)** Sessions deleted on the server leave the cache **only** with a full run that happens
+  anyway for another reason (first sync, another device's late upload, an app update with unreadable rows) and that
+  reads the whole list in one go with every row readable and the total unchanged. There are no extra runs for
+  deletions, so in a steady state a session an admin deleted can keep counting for a long time.
+- **N8** The Stats view model collects the calendar once (a shared state); the midnight timer reads the wall clock after
+  each step of at most 15 minutes and is re-armed on time/zone/date/locale broadcasts.
+- **N9** The Start sparkline's plain bars keep 3:1 against the card's `surfaceContainer` (tested with the accent).
+
+Verification of fix round 2: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1367 tests, lint 0
+errors). Emulator, Wi-Fi marked metered and the sync stamps cleared: the page showed the cache with „Die vollständige
+Hörhistorie wird im WLAN geladen“ and „Jetzt laden“; the run had read only the newest page and written only its run
+stamp. „Jetzt laden“ then read the whole history over the metered network and the hint went away. A VPN could not be
+run on the emulator; the VPN cases are unit tests over the network facts.
