@@ -36,6 +36,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -52,6 +53,14 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -116,13 +125,18 @@ data class SlideColors(val background: Color, val content: Color)
 
 /**
  * How the story moves. [autoAdvance]: on by itself every [STORY_SLIDE_MS] – off for TalkBack (it would fight the
- * reading) and with the system's animations removed (nothing moves by itself then); the story is navigated by tap and
- * by buttons instead. [animations]: the entrance of a slide (a number counting up) and the cross-fades.
+ * reading) and with the system's animations removed (nothing moves by itself then); the story is navigated by tap, keys
+ * and buttons instead. Other assistive services (Switch Access, Voice Access, a password manager) keep auto-advance,
+ * with the longer slide time the user asked for ("time to take action"), the slide's click and actions, and the keys.
+ * [animations]: the entrance of a slide (a number counting up) and the cross-fades.
  */
 @Immutable
 data class StoryMotion(val autoAdvance: Boolean = true, val animations: Boolean = true)
 
-/** [StoryMotion] as the device has it now: TalkBack (touch exploration) and the animator scale, both followed live. */
+/**
+ * [StoryMotion] as the device has it: TalkBack (touch exploration) followed live; the animator scale ("remove
+ * animations") read when the screen is composed and whenever it resumes (the setting is changed outside the app).
+ */
 @Composable
 fun rememberStoryMotion(): StoryMotion {
     val context = LocalContext.current
@@ -235,13 +249,19 @@ fun StoryPager(
     val foreground by animateColorAsState(slide.content, tween(fade), label = "storyContent")
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     var held by remember { mutableStateOf(false) }
+    // Space on a keyboard: paused until pressed again.
+    var keyPaused by remember { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
+    // The pull is read where it is drawn; composition only needs to know whether there is one.
+    val pulled by remember { derivedStateOf { drag != 0f } }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(focus) { focus.requestFocus() }
     val density = LocalDensity.current
     val closeAt = with(density) { CLOSE_DRAG.toPx() }
     val closeFling = with(density) { CLOSE_FLING_DP_PER_SEC.dp.toPx() }
     val a11y = LocalAccessibilityManager.current
     val duration = remember(a11y, slideMillis) { a11y?.calculateRecommendedTimeoutMillis(slideMillis, containsIcons = true, containsText = true) ?: slideMillis }
-    val running = motion.autoAdvance && lifecycle.isAtLeast(Lifecycle.State.RESUMED) && !held && drag == 0f
+    val running = motion.autoAdvance && lifecycle.isAtLeast(Lifecycle.State.RESUMED) && !held && !keyPaused && !pulled
 
     // Frame time, not an animation: a removed animator scale would finish an animation at once.
     LaunchedEffect(index, running, duration) {
@@ -309,6 +329,19 @@ fun StoryPager(
                     drawRect(background, topLeft = Offset(-left, -top), size = Size(size.width + left + right, size.height + top + bottom))
                 }
                 .semantics { paneTitle = title }
+                // Keys (a tablet's keyboard, a D-pad): right/left = next/previous (mirrored right-to-left), space pauses.
+                // Keys a focused button uses itself (space, enter) stay its own.
+                .focusRequester(focus)
+                .focusable()
+                .onKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (e.key) {
+                        Key.DirectionRight -> { if (rtl) state.previous() else state.next(); true }
+                        Key.DirectionLeft -> { if (rtl) state.next() else state.previous(); true }
+                        Key.Spacebar -> { keyPaused = !keyPaused; true }
+                        else -> false
+                    }
+                }
                 // The whole window is the tap area (on a tablet the sides beside the centred story too).
                 .pointerInput(state, rtl) {
                     detectTapGestures(
@@ -366,9 +399,10 @@ fun StoryPager(
                                 liveRegion = LiveRegionMode.Polite
                                 // A double tap goes on (said as such), like a tap on the right.
                                 if (!state.isLast) onClick(label = nextLabel) { state.next() }
-                                customActions = listOf(
-                                    CustomAccessibilityAction(nextLabel) { state.next() },
-                                    CustomAccessibilityAction(previousLabel) { state.previous(); true },
+                                // Only where they lead somewhere: no "next" on the last slide, no "previous" on the first.
+                                customActions = listOfNotNull(
+                                    CustomAccessibilityAction(nextLabel) { state.next() }.takeIf { !state.isLast },
+                                    CustomAccessibilityAction(previousLabel) { state.previous(); true }.takeIf { index > 0 },
                                 )
                             }
                             .padding(horizontal = Spacing.xl, vertical = Spacing.l),

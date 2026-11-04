@@ -21,6 +21,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.percentOffset
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.swipeDown
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -177,7 +180,79 @@ class StoryPagerTest {
         assertEquals("Next slide", config[androidx.compose.ui.semantics.SemanticsActions.OnClick].label)
         slide.performClick()
         assertEquals(2, state.index)
-        assertTrue(androidx.compose.ui.semantics.SemanticsActions.OnClick !in slide.fetchSemanticsNode().config)
+        val last = slide.fetchSemanticsNode().config
+        assertTrue(androidx.compose.ui.semantics.SemanticsActions.OnClick !in last)
+        // Only actions that lead somewhere: the last slide has no "next", the first no "previous".
+        assertEquals(listOf("Previous slide"), last[androidx.compose.ui.semantics.SemanticsActions.CustomActions].map { it.label })
+        rule.onNodeWithTag("storyPrevious").performClick()
+        rule.onNodeWithTag("storyPrevious").performClick()
+        assertEquals(0, state.index)
+        assertEquals(listOf("Next slide"), slide.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].map { it.label })
+    }
+
+    @Test fun keys_rightAndLeftMove_spacePausesAndResumes() {
+        val state = StoryState(3)
+        show(state, clock = true)
+        rule.mainClock.advanceTimeByFrame()
+        val story = rule.onNodeWithTag("story")
+        story.performKeyInput { pressKey(Key.DirectionRight) }
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(1, state.index)
+        story.performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(0, state.index)
+        story.performKeyInput { pressKey(Key.Spacebar) }
+        rule.mainClock.advanceTimeBy(10_000)
+        assertEquals(0, state.index)
+        story.performKeyInput { pressKey(Key.Spacebar) }
+        // Nothing asks for frames while paused: let the state change reach the composition first.
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(7_200)
+        assertEquals(1, state.index)
+    }
+
+    @Test fun rightToLeft_theTapZonesAndTheArrowsAreMirrored() {
+        val state = StoryState(3)
+        rule.setContent {
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
+                Story(state, StoryMotion(autoAdvance = false))
+            }
+        }
+        val story = rule.onNodeWithTag("story")
+        // The right third is "back" in right-to-left, the rest "next".
+        story.performTouchInput { click(percentOffset(0.1f, 0.5f)) }
+        assertEquals(1, state.index)
+        story.performTouchInput { click(percentOffset(0.9f, 0.5f)) }
+        assertEquals(0, state.index)
+        story.performKeyInput { pressKey(Key.DirectionLeft) }
+        assertEquals(1, state.index)
+        story.performKeyInput { pressKey(Key.DirectionRight) }
+        assertEquals(0, state.index)
+    }
+
+    @Test fun theUsersTimeToTakeAction_makesASlideStayLonger() {
+        val manager = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+            .getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+        org.robolectric.Shadows.shadowOf(manager).setNonInteractiveUiTimeout(20_000)
+        val state = StoryState(3)
+        show(state, clock = true)
+        rule.mainClock.advanceTimeBy(7_500)
+        assertEquals(0, state.index)
+        rule.mainClock.advanceTimeBy(13_000)
+        assertEquals(1, state.index)
+    }
+
+    @Test fun pulledDown_itWaits_andGoesOnOnceLetGo() {
+        val state = StoryState(3)
+        show(state, clock = true)
+        val slide = rule.onNodeWithTag("storySlide")
+        slide.performTouchInput { down(center); moveBy(androidx.compose.ui.geometry.Offset(0f, 20f)); moveBy(androidx.compose.ui.geometry.Offset(0f, 40f)) }
+        rule.mainClock.advanceTimeBy(10_000)
+        assertEquals(0, state.index)
+        slide.performTouchInput { up() }
+        rule.mainClock.advanceTimeBy(8_000)
+        assertEquals(1, state.index)
+        assertEquals(0, closed)
     }
 
     @Test fun withAutoAdvance_thereAreNoButtons() {
