@@ -29,6 +29,12 @@ class WhatsNewResourcesTest {
         assertEquals(BuildConfig.VERSION_NAME, WHATS_NEW.first().versionName)
     }
 
+    @Test fun version030_namesTheAchievements_inBothLanguages() {
+        val release = WHATS_NEW.first { it.versionName == "0.3.0" }
+        assertTrue(notes(Locale.GERMANY, release).any { it.startsWith("Erfolge:") })
+        assertTrue(notes(Locale.US, release).any { it.startsWith("Achievements:") })
+    }
+
     @Test fun everyRelease_hasGermanAndEnglishNotes_ofTheSameLength() {
         for (r in WHATS_NEW) {
             val de = notes(Locale.GERMANY, r)

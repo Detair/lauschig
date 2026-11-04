@@ -52,9 +52,20 @@ data class Bar(val start: LocalDate, val seconds: Double, val current: Boolean)
 @Immutable
 data class Streaks(val current: Int, val longest: Int)
 
-/** A book heard to its end; [day] is when, null when only the progress says so (finished before the known sessions). */
+/**
+ * A book heard to its end; [day] is when, null when only the progress says so (finished before the known sessions).
+ * [finishedAt] is the moment (epoch ms) of that finish; [progressDay] is, for a book only the progress marks finished,
+ * the day its progress last changed (null when the progress has no time) – the achievements count it then.
+ */
 @Immutable
-data class FinishedBook(val itemId: String, val title: String?, val author: String?, val day: LocalDate?)
+data class FinishedBook(
+    val itemId: String,
+    val title: String?,
+    val author: String?,
+    val day: LocalDate?,
+    val finishedAt: Long? = null,
+    val progressDay: LocalDate? = null,
+)
 
 /**
  * A series of one library whose numbered volumes are all finished. The same name in two libraries (Hörbuch and
@@ -171,16 +182,22 @@ object ListeningStats {
     fun hasPrevious(range: PeriodRange, firstDay: LocalDate?): Boolean =
         range.period != StatsPeriod.ALL && firstDay != null && firstDay.isBefore(range.start)
 
-    fun streaks(days: Map<LocalDate, Double>, today: LocalDate): Streaks {
-        val active = days.filterValues { it >= ACTIVE_DAY_SEC }.keys.toSortedSet()
-        var longest = 0
+    /** Every active day (at least [ACTIVE_DAY_SEC]) in date order, with the length of the run of active days ending on it. */
+    fun runLengths(days: Map<LocalDate, Double>): List<Pair<LocalDate, Int>> {
+        val out = ArrayList<Pair<LocalDate, Int>>()
         var run = 0
         var previous: LocalDate? = null
-        for (day in active) {
+        for (day in days.filterValues { it >= ACTIVE_DAY_SEC }.keys.sorted()) {
             run = if (previous != null && previous.plusDays(1) == day) run + 1 else 1
-            longest = maxOf(longest, run)
+            out += day to run
             previous = day
         }
+        return out
+    }
+
+    fun streaks(days: Map<LocalDate, Double>, today: LocalDate): Streaks {
+        val active = days.filterValues { it >= ACTIVE_DAY_SEC }.keys.toSortedSet()
+        val longest = runLengths(days).maxOfOrNull { it.second } ?: 0
         var current = 0
         var day = if (today in active) today else today.minusDays(1)
         while (day in active) {
@@ -208,14 +225,18 @@ object ListeningStats {
             val known = first[s.itemKey]
             if (known == null || s.updatedAt < known.updatedAt) first[s.itemKey] = s
         }
-        val dated = first.values.sortedByDescending { it.updatedAt }.map { FinishedBook(it.itemKey, it.title, it.author, dayOf(it.updatedAt, zone)) }
+        val dated = first.values.sortedByDescending { it.updatedAt }
+            .map { FinishedBook(it.itemKey, it.title, it.author, dayOf(it.updatedAt, zone), finishedAt = it.updatedAt) }
         val names = sessions.associateBy { it.itemKey }
         val undated = progress.asSequence()
             .filter { it.isFinished && it.itemId !in first && PlayableKey.parse(it.itemId).episodeId == null && !DeviceLibrary.isLocalKey(it.itemId) }
             .map { p ->
                 val session = names[p.itemId]
                 val item = catalog[p.itemId]
-                FinishedBook(p.itemId, session?.title ?: item?.title, session?.author ?: item?.author, day = null)
+                FinishedBook(
+                    p.itemId, session?.title ?: item?.title, session?.author ?: item?.author, day = null,
+                    progressDay = p.lastUpdate.takeIf { it > 0 }?.let { dayOf(it, zone) },
+                )
             }
             .sortedBy { it.title?.lowercase() ?: it.itemId }
             .toList()
@@ -227,9 +248,13 @@ object ListeningStats {
      * volumes at least (a single numbered volume is mostly a series the library holds one book of). Has no date.
      */
     fun finishedSeries(groups: List<List<ItemEntity>>, finished: Set<String>): List<FinishedSeries> =
-        groups.filter { g -> g.size >= 2 && g.all { it.id in finished } }
+        finishedSeriesGroups(groups, finished)
             .map { g -> FinishedSeries(g.first().seriesName!!.trim(), g.size, g.first().id, g.first().libraryId) }
             .sortedWith(compareBy({ it.name.lowercase() }, { it.libraryId }))
+
+    /** The volumes of each series [finishedSeries] counts (same rule), for callers that need more than the name. */
+    fun finishedSeriesGroups(groups: List<List<ItemEntity>>, finished: Set<String>): List<List<ItemEntity>> =
+        groups.filter { g -> g.size >= 2 && g.all { it.id in finished } }
 
     /** How far back the start card looks for listening before it hides. */
     const val CARD_DAYS = 30

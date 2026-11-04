@@ -12,16 +12,15 @@ import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
-import io.wolftown.lauschig.db.entities.ItemEntity
-import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.net.ApiProvider
+import io.wolftown.lauschig.stats.AchievementsPreview
 import io.wolftown.lauschig.stats.AuthorTime
-import io.wolftown.lauschig.stats.FinishedBook
 import io.wolftown.lauschig.stats.FinishedSeries
+import io.wolftown.lauschig.stats.ListeningData
+import io.wolftown.lauschig.stats.ListeningDataSource
 import io.wolftown.lauschig.stats.ListeningStats
 import io.wolftown.lauschig.stats.PeriodRange
 import io.wolftown.lauschig.stats.PeriodSummary
-import io.wolftown.lauschig.stats.StatSession
 import io.wolftown.lauschig.stats.StatsPeriod
 import io.wolftown.lauschig.stats.StatsSessions
 import io.wolftown.lauschig.sync.ListeningSessionSync
@@ -45,14 +44,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.ZoneId
-import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.stats.CalendarNow
-import io.wolftown.lauschig.stats.SessionRows
 import io.wolftown.lauschig.stats.StatsCalendar
 import io.wolftown.lauschig.sync.HistoryLoad
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.merge
 import javax.inject.Inject
 
@@ -105,6 +100,8 @@ data class StatsUiState(
     val finishedSeries: List<FinishedSeries> = emptyList(),
     /** For dates: a finished book's day names its year when it is not this one. */
     val today: LocalDate? = null,
+    /** The latest achievements and the count (not tied to the period); null without data. */
+    val achievements: AchievementsPreview? = null,
 )
 
 /**
@@ -153,17 +150,17 @@ class StatsViewModel(
     private data class Selection(val period: StatsPeriod = StatsPeriod.WEEK, val anchor: LocalDate? = null)
 
     /** Everything that does not depend on the shown period, recomputed when the data changes. */
-    private class Data(
-        val serverId: String,
-        val sessions: List<StatSession>,
-        val firstDay: LocalDate?,
-        val days: Map<LocalDate, Double>,
-        val finished: List<FinishedBook>,
-        val series: List<FinishedSeries>,
-        val items: Map<String, ItemEntity>,
-    )
+    private class Data(val listening: ListeningData, val achievements: AchievementsPreview) {
+        val serverId get() = listening.serverId
+        val sessions get() = listening.sessions
+        val firstDay get() = listening.firstDay
+        val days get() = listening.days
+        val finished get() = listening.finished
+        val series get() = listening.series
+        val items get() = listening.items
+    }
 
-    private class Raw(val rows: SessionRows, val progress: List<ProgressEntity>, val items: Map<String, ItemEntity>, val groups: List<List<ItemEntity>>, val zone: ZoneId)
+    private val source = ListeningDataSource(sessions, progress, catalogDao, libraries, catalog)
 
     private val selection = MutableStateFlow(Selection())
     private val refreshState = MutableStateFlow(Refresh(running = true, unreached = false))
@@ -186,27 +183,9 @@ class StatsViewModel(
 
     private val data: Flow<Data?> = serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else dataFor(sid) }
 
-    private fun dataFor(sid: String): Flow<Data> {
-        // The catalog (names, series) changes rarely; sessions and progress change while a title plays.
-        val catalogView = combine(catalogDao.observeAll(sid), libraries.observeAll(sid)) { items, libs ->
-            val podcastLibs = libs.filter { it.effectiveKind == LibraryKind.PODCAST }.mapTo(HashSet()) { it.id }
-            items.associateBy { it.id } to catalog.seriesGroups(items.filter { it.libraryId !in podcastLibs })
-        }
-        val zone = now.map { it.zone }.distinctUntilChanged()
-        return combine(sessions.observeRows(sid), progress.observeAll(sid), catalogView, zone) { rows, prog, (byId, groups), z ->
-            Raw(rows, prog, byId, groups, z)
-        }
-            .conflate() // a burst of writes is computed once
-            .map { raw ->
-                val merged = ListeningStats.merge(raw.rows.server, raw.rows.local, raw.items)
-                val days = ListeningStats.days(merged, raw.zone)
-                val finished = ListeningStats.finishedBooks(merged, raw.progress, raw.zone, raw.items)
-                Data(
-                    sid, merged, days.keys.firstOrNull(), days, finished,
-                    ListeningStats.finishedSeries(raw.groups, finished.mapTo(HashSet()) { it.itemId }), raw.items,
-                ).also { firstDay = it.firstDay }
-            }
-    }
+    /** The shared Room pipeline (a burst of writes is computed once), plus the achievements, which no period changes. */
+    private fun dataFor(sid: String): Flow<Data> =
+        source.observe(sid, now.map { it.zone }).map { d -> Data(d, AchievementsPreview.of(d.achievements())).also { firstDay = d.firstDay } }
 
     private val history: Flow<HistoryLoad> = serverId.flatMapLatest { sid -> if (sid == null) flowOf(HistoryLoad.NONE) else historyLoad(sid) }
 
@@ -303,6 +282,7 @@ class StatsViewModel(
             topTitles = summary.topTitles.map { row(it.itemId, it.title, it.author, seconds = it.seconds) },
             topAuthors = summary.topAuthors,
             finishedSeries = if (sel.period == StatsPeriod.ALL) d.series else emptyList(),
+            achievements = d.achievements,
         )
     }
 

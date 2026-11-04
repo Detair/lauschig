@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -44,11 +45,14 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier, action: (@Compos
     }
 }
 
-/** "See all" with a chevron. */
+/** "See all" (or [label]) with a chevron; [description] is what TalkBack says instead of the label. */
 @Composable
-fun SeeAllButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TextButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(start = 12.dp, end = 6.dp)) {
-        Text(stringResource(R.string.start_see_all))
+fun SeeAllButton(onClick: () -> Unit, modifier: Modifier = Modifier, label: String? = null, description: String? = null) {
+    TextButton(
+        onClick = onClick, contentPadding = PaddingValues(start = 12.dp, end = 6.dp),
+        modifier = modifier.then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+    ) {
+        Text(label ?: stringResource(R.string.start_see_all))
         Spacer(Modifier.width(2.dp))
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp))
     }

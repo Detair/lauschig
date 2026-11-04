@@ -15,6 +15,7 @@ import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.stats.Achievement
 import io.wolftown.lauschig.stats.StatsPeriod
 import io.wolftown.lauschig.stats.StatsSessions
 import io.wolftown.lauschig.ui.common.CoverPathCache
@@ -207,6 +208,19 @@ class StatsViewModelTest {
         assertEquals(listOf("Reihe"), all.finishedSeries.map { it.name })
         assertFalse(all.hasPrevious)
         assertFalse(all.hasNext)
+    }
+
+    @Test fun theAchievementsPreview_theLatestUnlocks_andTheCount_whateverThePeriod() = runTest {
+        session("1", "2026-10-01T20:00", 3600.0) // 1 h on 1 October
+        session("2", "2026-10-05T02:00", 900.0)  // a night owl on 5 October
+        val vm = vm()
+
+        val week = vm.await { it.achievements != null }
+        assertEquals(listOf(Achievement.NIGHT_OWL, Achievement.HOURS), week.achievements!!.recent.map { it.achievement })
+        assertEquals(2, week.achievements.unlockedTiers)
+        assertEquals(28, week.achievements.totalTiers)
+        vm.setPeriod(StatsPeriod.YEAR)
+        assertEquals(week.achievements, vm.await { it.period == StatsPeriod.YEAR }.achievements)
     }
 
     @Test fun aPastPeriod_showsItsLongestRunAndItsDays_neverTodaysStreak() = runTest {

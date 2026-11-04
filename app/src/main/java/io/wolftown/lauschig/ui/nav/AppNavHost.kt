@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -22,6 +23,7 @@ import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.achievements.AchievementsRoute
 import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
@@ -49,6 +51,8 @@ fun AppNavHost(
     modifier: Modifier = Modifier,
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
     homeRoute: Any = Start,
+    /** The app's snackbars (Start tells of a new achievement there). */
+    snackbarHost: SnackbarHostState? = null,
 ) {
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
@@ -61,7 +65,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -86,8 +90,14 @@ fun AppNavHost(
         }
         composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
         composable<Stats> {
-            ReadableWidth { StatsRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+            ReadableWidth {
+                StatsRoute(
+                    onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } },
+                )
+            }
         }
+        composable<AchievementsPage> { ReadableWidth { AchievementsRoute(onBack = { navController.popBackStack() }) } }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).

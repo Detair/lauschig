@@ -17,6 +17,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -77,6 +78,9 @@ class SystemStatsCalendar @Inject constructor(@ApplicationContext private val co
             }
         }
 }
+
+/** The device zone now and after every change [StatsCalendar.changes] reports (time windows and days are read in it). */
+fun StatsCalendar.zones(): Flow<ZoneId> = changes.map { now().zone }.onStart { emit(now().zone) }.distinctUntilChanged()
 
 /** Longest single wait of [awaitMidnight]: after it the wall clock is read again. */
 internal const val MIDNIGHT_STEP_MS = 15 * 60 * 1000L

@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -52,6 +53,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.stats.AchievementsPreview
 import io.wolftown.lauschig.stats.AuthorTime
 import io.wolftown.lauschig.stats.BarUnit
 import io.wolftown.lauschig.stats.FinishedSeries
@@ -59,11 +61,15 @@ import io.wolftown.lauschig.stats.PeriodRange
 import io.wolftown.lauschig.stats.PeriodSummary
 import io.wolftown.lauschig.stats.StatsPeriod
 import io.wolftown.lauschig.sync.HistoryLoad
+import io.wolftown.lauschig.ui.achievements.AchievementBadge
+import io.wolftown.lauschig.ui.achievements.achievementName
+import io.wolftown.lauschig.ui.achievements.achievementStatus
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.EmptyState
 import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.SectionHeader
+import io.wolftown.lauschig.ui.common.SeeAllButton
 import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.theme.Spacing
@@ -76,7 +82,12 @@ import java.util.Formatter
 import java.util.Locale
 
 @Composable
-fun StatsRoute(onBack: () -> Unit, onOpenItem: (itemId: String) -> Unit, viewModel: StatsViewModel = hiltViewModel()) {
+fun StatsRoute(
+    onBack: () -> Unit,
+    onOpenItem: (itemId: String) -> Unit,
+    onOpenAchievements: () -> Unit = {},
+    viewModel: StatsViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     // "Today" may have moved on while the page was away (midnight, another zone).
     LifecycleResumeEffect(viewModel) {
@@ -85,7 +96,7 @@ fun StatsRoute(onBack: () -> Unit, onOpenItem: (itemId: String) -> Unit, viewMod
     }
     StatsScreen(
         state, onBack, onPeriod = viewModel::setPeriod, onPrevious = viewModel::previous, onNext = viewModel::next,
-        onOpenItem = onOpenItem, onLoadNow = viewModel::loadHistoryNow,
+        onOpenItem = onOpenItem, onLoadNow = viewModel::loadHistoryNow, onOpenAchievements = onOpenAchievements,
     )
 }
 
@@ -108,6 +119,7 @@ fun StatsScreen(
     onOpenItem: (itemId: String) -> Unit = {},
     /** Reads the whole history now, also on mobile data (the user's explicit choice for this one run). */
     onLoadNow: () -> Unit = {},
+    onOpenAchievements: () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().testTag("statsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -160,6 +172,7 @@ fun StatsScreen(
             item(key = "tiles", contentType = "tiles") {
                 Tiles(state, Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl))
             }
+            state.achievements?.let { achievements(it, onOpenAchievements) }
             // A finished book's day names its year in "all time" and whenever it is not this year.
             titles("finished", R.string.stats_section_finished, state.finished, onOpenItem) { day ->
                 state.period == StatsPeriod.ALL || day.year != state.today?.year
@@ -444,6 +457,43 @@ private fun TitleRow(row: StatsTitle, onOpenItem: (String) -> Unit, withYear: Bo
         trailingContent = { Text(trailing, style = MaterialTheme.typography.labelLarge.merge(Tabular)) },
         modifier = Modifier.fillMaxWidth().then(if (row.known) Modifier.clickable { onOpenItem(row.itemId) } else Modifier),
     )
+}
+
+/** The latest unlocks (not tied to the period) and „Alle (12/28)“; every row opens the achievements. */
+private fun LazyListScope.achievements(preview: AchievementsPreview, onOpen: () -> Unit) {
+    item(key = "h-achievements", contentType = "header") {
+        SectionHeader(
+            stringResource(R.string.achievements_title),
+            Modifier.padding(start = Spacing.gutter, end = Spacing.xs, top = Spacing.section),
+            action = {
+                SeeAllButton(
+                    onOpen, Modifier.testTag("statsAchievementsAll"),
+                    label = stringResource(R.string.stats_achievements_all, preview.unlockedTiers, preview.totalTiers),
+                    description = stringResource(R.string.stats_achievements_all_spoken, preview.unlockedTiers, preview.totalTiers),
+                )
+            },
+        )
+    }
+    if (preview.recent.isEmpty()) {
+        item(key = "achievements-none", contentType = "note") {
+            Text(
+                stringResource(R.string.stats_achievements_none),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = Spacing.s),
+            )
+        }
+        return
+    }
+    items(preview.recent, key = { "achievement:${it.achievement.id}" }, contentType = { "achievement" }) { a ->
+        ListItem(
+            headlineContent = { Text(achievementName(a.achievement, a.tier), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            supportingContent = { Text(achievementStatus(a)) },
+            leadingContent = { AchievementBadge(a.achievement, a.unlocked, size = 40.dp) },
+            // TalkBack: "View achievement", a button.
+            modifier = Modifier.fillMaxWidth().clickable(onClickLabel = stringResource(R.string.stats_achievement_open), role = Role.Button, onClick = onOpen),
+        )
+    }
 }
 
 private fun LazyListScope.authors(rows: List<AuthorTime>) {

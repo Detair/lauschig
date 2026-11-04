@@ -183,7 +183,7 @@ fun AppRoot(
                 showSnackbars = !playerUp,
                 connectionBanner = connectionBanner,
             ) {
-                AppNavHost(navController, startDestination, homeRoute = startTab.route())
+                AppNavHost(navController, startDestination, homeRoute = startTab.route(), snackbarHost = snackbarHost)
             }
             PlayerOverlay(
                 playerLayer.slide,

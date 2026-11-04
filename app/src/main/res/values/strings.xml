@@ -702,6 +702,8 @@
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
         <item>A small card on Start shows how much you listened this week</item>
+        <item>Achievements: from 1 to 1000 hours, days in a row, finished books and series, and a few special ones – each with its date</item>
+        <item>A new achievement is announced once on Start; the statistics show the latest ones</item>
         <item>The title to continue is a large card on Start with its own play button</item>
         <item>The cover tints the details page and the “continue” card</item>
         <item>The player slides up from the mini player and back down</item>
@@ -723,4 +725,87 @@
     <string name="stats_history_load_now">Load now</string>
     <string name="stats_history_failed">Listening history incomplete – load again</string>
     <string name="stats_history_retry">Load again</string>
+    <!-- Achievements -->
+    <plurals name="achievement_hours_name">
+        <item quantity="one">%d hour listened</item>
+        <item quantity="other">%d hours listened</item>
+    </plurals>
+    <plurals name="achievement_streak_name">
+        <item quantity="one">%d day in a row</item>
+        <item quantity="other">%d days in a row</item>
+    </plurals>
+    <plurals name="achievement_books_name">
+        <item quantity="one">%d book finished</item>
+        <item quantity="other">%d books finished</item>
+    </plurals>
+    <plurals name="achievement_series_name">
+        <item quantity="one">%d series complete</item>
+        <item quantity="other">%d series complete</item>
+    </plurals>
+    <string name="achievement_marathon_name">Marathon</string>
+    <string name="achievement_night_owl_name">Night owl</string>
+    <string name="achievement_early_bird_name">Early bird</string>
+    <string name="achievement_weekend_name">Listening weekend</string>
+    <string name="achievement_one_go_name">In one go</string>
+    <string name="achievement_commuter_name">Commute</string>
+    <string name="achievement_genres_name">Genre explorer</string>
+    <string name="achievement_notice_one">New achievement: %1$s</string>
+    <plurals name="achievement_notice_many">
+        <item quantity="one">%d new achievement</item>
+        <item quantity="other">%d new achievements</item>
+    </plurals>
+    <string name="achievement_notice_view">View</string>
+    <string name="achievements_title">Achievements</string>
+    <string name="achievements_summary">Reached: %1$d of %2$d</string>
+    <string name="achievement_hours_desc">Hours you have listened in total</string>
+    <string name="achievement_streak_desc">Days in a row with at least %1$s</string>
+    <string name="achievement_books_desc">Books you have heard to the end</string>
+    <string name="achievement_series_desc">Series with every volume finished</string>
+    <string name="achievement_marathon_desc">%1$s on one day</string>
+    <string name="achievement_window_desc">%1$s, started between %2$s and %3$s</string>
+    <string name="achievement_weekend_desc">%1$s over one Saturday and Sunday</string>
+    <string name="achievement_one_go_desc">A book finished within %1$s of starting it</string>
+    <string name="achievement_commuter_desc">%1$s on weekdays, %2$s each, started %3$s</string>
+    <string name="achievement_genres_desc">Titles of %1$s, each heard for %2$s</string>
+    <string name="achievement_or">or</string>
+    <plurals name="achievement_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="achievement_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <string name="achievement_tier">Level %1$d of %2$d</string>
+    <string name="achievement_progress">%1$s / %2$s</string>
+    <string name="achievement_progress_spoken">%1$s of %2$s</string>
+    <string name="achievement_unit_hours">%d h</string>
+    <plurals name="achievement_unit_sessions">
+        <item quantity="one">%d session</item>
+        <item quantity="other">%d sessions</item>
+    </plurals>
+    <plurals name="achievement_unit_genres">
+        <item quantity="one">%d genre</item>
+        <item quantity="other">%d genres</item>
+    </plurals>
+    <string name="achievement_since">Since %1$s</string>
+    <string name="achievement_reached">Reached</string>
+    <string name="achievement_locked">Not reached yet</string>
+    <string name="stats_achievements_all">All (%1$d/%2$d)</string>
+    <string name="stats_achievements_all_spoken">All achievements, reached: %1$d of %2$d</string>
+    <string name="stats_achievements_none">No achievements yet</string>
+    <!-- After "… of": the same words as on the card in English. -->
+    <plurals name="achievement_spoken_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="achievement_spoken_books">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <plurals name="achievement_spoken_series">
+        <item quantity="one">%d series</item>
+        <item quantity="other">%d series</item>
+    </plurals>
+    <string name="stats_achievement_open">View achievement</string>
 </resources>

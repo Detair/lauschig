@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +56,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.PlayableKey
+import io.wolftown.lauschig.ui.achievements.AchievementNoticeSnackbar
+import io.wolftown.lauschig.ui.achievements.AchievementNoticeViewModel
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.EmptyState
@@ -99,7 +102,12 @@ fun StartRoute(
     onOpenLibrary: () -> Unit = {},
     onOpenDiscover: () -> Unit = {},
     onOpenStats: () -> Unit = {},
+    /** Where the notice of a new achievement shows (the app's host); null: none. */
+    snackbarHost: SnackbarHostState? = null,
+    /** „Ansehen“ on that notice. */
+    onOpenAchievements: (() -> Unit)? = null,
     viewModel: StartViewModel = hiltViewModel(),
+    notices: AchievementNoticeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playingId by viewModel.playingId.collectAsStateWithLifecycle()
@@ -108,6 +116,10 @@ fun StartRoute(
     LifecycleResumeEffect(viewModel) {
         viewModel.onResume()
         onPauseOrDispose {}
+    }
+    if (snackbarHost != null) {
+        val notice by notices.notice.collectAsStateWithLifecycle()
+        AchievementNoticeSnackbar(notice, snackbarHost, onShown = notices::shown, onOpen = onOpenAchievements)
     }
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     // An episode tile opens its podcast.
