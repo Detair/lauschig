@@ -185,3 +185,27 @@ errors). Emulator, Wi-Fi marked metered and the sync stamps cleared: the page sh
 Hörhistorie wird im WLAN geladen“ and „Jetzt laden“; the run had read only the newest page and written only its run
 stamp. „Jetzt laden“ then read the whole history over the metered network and the hint went away. A VPN could not be
 run on the emulator; the VPN cases are unit tests over the network facts.
+
+## Fix round 3 (last; re-review of fix round 2)
+
+- **M1 (accepted)** The VPN rule is a heuristic: behind a VPN any connected, validated, unmetered Wi-Fi/Ethernet counts,
+  not necessarily the VPN's own underlying network (a VPN pinned to cellular while a Wi-Fi is up would count as
+  unmetered), and `getAllNetworks()` was not exercised with a real VPN. To be confirmed on Fabian's phone with NetBird
+  on home Wi-Fi; if the framework hides the Wi-Fi there, the page falls back to "loads on Wi-Fi" with „Jetzt laden“.
+- **M2** While the history is incomplete on a metered network, a run asks for one session first and reads the newest
+  page only when something is newer than the cache.
+- **M3a** When that read shows the cache holds the whole list (the server lists none, the newest page is all of it, or
+  no more than the cache holds and no full run is half done), the history counts as complete – no hint for small ones.
+- **M3b** „Jetzt laden“ runs in the sync (`ListeningSessionSync.loadNow`, app lifetime): never dropped (the page hands
+  it over at once, LOADING shows at once), not stopped by leaving the page, waits for the connection, one run at a time;
+  the start of a sign-out (`AccountWork.cancel`) ends it and forgets the in-memory history state.
+- **M4** A failed full read shows „Hörhistorie unvollständig – erneut laden“ with „Erneut laden“ (`HistoryLoad.FAILED`)
+  instead of "loads on Wi-Fi".
+- **M5** The overlap page's unreadable rows are counted once; `historyLoad()` reads the stored state whenever a screen
+  starts to listen, and `cancelLoadNow` drops the in-memory state at sign-out.
+
+Verification: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1373 tests, lint 0 errors).
+Emulator: sign-out without keeping purged rows and stamps; signed in again on a metered Wi-Fi the run asked one session,
+read the newest page (20 of 48) and wrote only its run stamp; with the server paused, „Jetzt laden“ showed „Hörhistorie
+wird geladen …“ and after the request timed out „Hörhistorie unvollständig – erneut laden“ / „Erneut laden“
+(screenshot `shots/stats2/10-history-failed-load-again.png`); back on unmetered Wi-Fi the page's refresh read all 48.
