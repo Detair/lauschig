@@ -115,3 +115,44 @@ All six tasks are done on `phase-5a` (TDD, one commit per task plus three fixes 
 - The empty-cache-offline state was checked in tests only (on the emulator the first sync after signing in was done
   before the server could be stopped).
 - Sessions deleted on the server that this device recorded itself keep counting (they are in `local_sessions`).
+
+## Fix round 1 (review 2026-11-04, controller's rulings)
+
+- **F1** Finished series of the same name in two libraries no longer crash "Gesamt": `FinishedSeries.key` = library +
+  name; two entries (as `Catalog.seriesGroups` keeps them).
+- **F2** Full runs (first sync, an empty cache, an interrupted run, the reconcile) wait for an **unmetered** network;
+  later runs work on any network. A full run stores its place after each page (`listening_sessions_resume_page/
+  _resume_total:<sid>`) and continues with one page of overlap, or starts over when the total moved by more than a page.
+  250 per page. While the history is incomplete on a metered network the page says „Die vollständige Hörhistorie wird
+  im WLAN geladen“ (`ListeningSessionSync.historyLoad`).
+- **F3** Reconcile only when the server lists more sessions than this device can know: cached rows ∪ this account's
+  uploaded `local_sessions` (+ the unreadable count). Deletions start no full run; the next full run drops them.
+- **F4** A full run drops rows only after reading the whole list in one go, every listed row readable and the total
+  unchanged while reading (plus the head re-read). The unreadable count is the run's own; it brings no daily full run but
+  a retry after 7 days.
+- **F5** An empty cache is a first sync whatever the stamps say (unless the server had none). The page's refresh runs
+  per signed-in account (`collectLatest`): sign-out or another account cancels it.
+- **F6** `SyncWorker` runs the statistics sync after the episode auto-downloader.
+- **F7** A later-run page that is not newest-`updatedAt` first becomes a full read instead of an early stop (logged once).
+- **F8** Capped runs move no stamps; a capped full run continues from its stored place.
+- **F9** Tiles: the period that holds today shows „Am Stück“ + „Rekord“; a past period its „Längste Serie“ + „Hörtage“.
+- **F10** Finished-book dates show the year outside the current year and always in „Gesamt“, in the app's locale.
+- **F11** `StatsCalendar` (today, zone, week start) is read again at midnight, on time/zone/language broadcasts and on
+  resume; the week start honours Android 14+'s regional preference via `LocalePreferences`, else `WeekFields`.
+- **F12** The Start card reads the last 30 days (`observeSince` on the (serverId, startedAt) index; a longer streak reads
+  older days once, 90 at a time); both screens conflate Room bursts and compute off the main thread.
+- **F13** The current bar has a dot below it and a bold label; plain bars use `outline` only where it keeps 3:1 on the
+  surface; the description says "(heute)/(dieser Monat)/(dieses Jahr)" and „Keine Hörzeit“ for an empty period.
+- **F14** „Hörhistorie wird geladen …“ while a full run reads (no blocking spinner once there is data).
+- **F15** `isCurrent` removed (the tiles model replaces it); the index stays (used by F12).
+- **F16** Meaningful DAO re-emission and previous/next tests; tests for the series collision, all seven stamp keys,
+  capped and unreadable pages, a fixed calendar for the Start card.
+- **F17** KDoc and comments match the code (sync rules, worker order, `firstDay` may lag one emission).
+- **F18** Was ist neu 0.3.0 also names Android Auto covers, the tablet panes/layouts and the previous account's downloads.
+
+Verification of fix round 1: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1353 tests, lint 0
+errors). Emulator: the current bar's dot and bold label (light, dark, Start card), past-period tiles („Längste Serie“ /
+„Hörtage“, also for an empty week), the Wi-Fi hint on a metered network with the sync stamps cleared (no request, no
+stamps), then back on unmetered Wi-Fi the full run ran and dropped the test session that had been deleted from the server
+(49 → 48 rows; „Der Anfang“ is now finished on 3 Nov, its first real finishing session). The "loading" line was only
+checked in tests (one page on the test server finishes before a screenshot).
