@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui.detail
 
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.Stable
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.foundation.lazy.LazyListScope
@@ -176,19 +182,22 @@ fun ItemDetailScreen(
     // The tint reaches under the status bar where the frame allows it (never over a banner) and, on a wide window that
     // centres this page, into the free sides.
     val reachTop = with(density) { LocalBackdropReach.current.top.toPx() }
-    val reachSide = with(density) { LocalReadableGutter.current.toPx() }
+    val gutter = LocalReadableGutter.current
+    // Where the header's texts start, measured, so the backdrop fades out above them whatever the header's layout.
+    val marks = remember { HeaderMarks() }
     // The window (or pane) this page has, not the page's own height: the list below scrolls and has no bounds.
     BoxWithConstraints(modifier.fillMaxSize()) {
         val sideCover = if (headerBesideCover(maxWidth, maxHeight)) sideCoverSize(maxWidth, maxHeight) else null
-        val coverPx = with(density) { (sideCover ?: minOf(COLUMN_COVER_MAX, maxWidth - 32.dp)).toPx() }
         LazyColumn(
             Modifier.fillMaxSize().drawBehind {
-                drawHeaderTint(listState, tint.value, surface, coverPx, besideCover = sideCover != null, reachTop, reachSide)
+                // The page draws beyond its bounds here (under the status bar, into the gutters); the navigation host and
+                // the frame do not clip it, see LocalBackdropReach.
+                drawHeaderTint(listState, marks, tint.value, surface, reachTop, gutter?.px ?: 0f)
             },
             state = listState,
         ) {
             item("back") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().onSizeChanged { marks.backRowHeight = it.height }, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
                     Spacer(Modifier.weight(1f))
                     topActions()
@@ -200,7 +209,7 @@ fun ItemDetailScreen(
                 }
                 return@LazyColumn
             }
-            item("header") { Header(state, sideCover, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
+            item("header") { Header(state, sideCover, marks, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
             item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
             extras()
             item("chapters-title") {
@@ -228,20 +237,32 @@ fun ItemDetailScreen(
 /** The column's cover: as wide as the window up to this. */
 private val COLUMN_COVER_MAX = 280.dp
 
+/** Measured while laying out the header, read while drawing its backdrop. */
+@Stable
+private class HeaderMarks {
+    var backRowHeight by mutableIntStateOf(0)
+
+    /** The title's top inside the header item; NaN until laid out. */
+    var titleTop by mutableFloatStateOf(Float.NaN)
+
+    /** The header item's coordinates, to measure the title against (no state: only read in the title's callback). */
+    var header: LayoutCoordinates? = null
+}
+
+/** How far above the title the backdrop has faded out completely. */
+private val TINT_FADE_ABOVE_TITLE = 8.dp
+
 /**
- * The header's backdrop, moving with the list: the cover's [tint] behind the back row and the cover, fading into the
- * [surface] before the texts start: just below the cover in the column, at the header's top when the cover sits beside
- * the texts (a band behind the back row). Nothing once the header has scrolled away.
+ * The header's backdrop, moving with the list: the cover's [tint] from under the status bar (or from the page's top
+ * below a banner, see `LocalBackdropReach`), fading into the [surface] just above the title – below the cover in the
+ * column, behind the back row when the cover sits beside the texts. Nothing once the header has scrolled away.
  */
-private fun DrawScope.drawHeaderTint(
-    list: LazyListState, tint: Color, surface: Color, coverPx: Float, besideCover: Boolean, reachTop: Float, reachSide: Float,
-) {
-    if (tint == surface) return
+private fun DrawScope.drawHeaderTint(list: LazyListState, marks: HeaderMarks, tint: Color, surface: Color, reachTop: Float, reachSide: Float) {
+    if (tint == surface || marks.titleTop.isNaN()) return
     val items = list.layoutInfo.visibleItemsInfo
     val header = items.firstOrNull { it.key == "header" } ?: return
-    val pageTop = (items.firstOrNull { it.key == "back" }?.offset ?: (header.offset - 48.dp.roundToPx())).toFloat()
-    // In the column the texts start below the cover; beside it they start level with its top.
-    val end = if (besideCover) header.offset.toFloat() else header.offset + coverPx + 8.dp.toPx()
+    val pageTop = (items.firstOrNull { it.key == "back" }?.offset ?: (header.offset - marks.backRowHeight)).toFloat()
+    val end = header.offset + marks.titleTop - TINT_FADE_ABOVE_TITLE.toPx()
     if (end <= 0f) return
     drawRect(
         Brush.verticalGradient(0f to tint, 1f to surface, startY = pageTop - reachTop, endY = end),
@@ -252,16 +273,16 @@ private fun DrawScope.drawHeaderTint(
 
 /** [sideCover]: the cover's size when it sits beside the texts (see [headerBesideCover]); null puts it above them. */
 @Composable
-private fun Header(state: ItemDetailUiState, sideCover: Dp?, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Header(state: ItemDetailUiState, sideCover: Dp?, marks: HeaderMarks, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    Column(Modifier.fillMaxWidth().onGloballyPositioned { marks.header = it }.padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (sideCover == null) {
             Cover(state)
-            HeaderTexts(state, titleTop = 16.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse)
+            HeaderTexts(state, titleTop = 16.dp, marks, onPrimary, onDownload, onPause, onDelete, onOpenBrowse)
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Cover(state, sideCover)
                 // The primary action and the download controls stay with the title, so they are above the fold.
-                Column(Modifier.weight(1f)) { HeaderTexts(state, titleTop = 0.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse) }
+                Column(Modifier.weight(1f)) { HeaderTexts(state, titleTop = 0.dp, marks, onPrimary, onDownload, onPause, onDelete, onOpenBrowse) }
             }
         }
         state.description?.let { Description(it) }
@@ -269,8 +290,13 @@ private fun Header(state: ItemDetailUiState, sideCover: Dp?, onPrimary: () -> Un
 }
 
 @Composable
-private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
-    Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = titleTop))
+private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, marks: HeaderMarks, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    Text(
+        state.title, style = MaterialTheme.typography.headlineSmall,
+        modifier = Modifier.fillMaxWidth().padding(top = titleTop).onGloballyPositioned { title ->
+            marks.header?.takeIf { it.isAttached }?.let { marks.titleTop = it.localPositionOf(title, Offset.Zero).y }
+        },
+    )
     state.subtitle?.let {
         Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
     }
