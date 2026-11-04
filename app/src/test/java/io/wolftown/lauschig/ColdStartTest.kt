@@ -168,6 +168,7 @@ object ColdStartTestModule {
     @Provides fun collectionDao(db: LauschigDatabase) = db.collectionDao()
     @Provides fun localLibraryDao(db: LauschigDatabase) = db.localLibraryDao()
     @Provides fun listeningSessionDao(db: LauschigDatabase) = db.listeningSessionDao()
+    @Provides fun achievementSeenDao(db: LauschigDatabase) = db.achievementSeenDao()
     @Provides @Singleton fun lastPlayed(@ApplicationContext context: Context): io.wolftown.lauschig.playback.LastPlayedStore =
         io.wolftown.lauschig.playback.DataStoreLastPlayedStore(context)
 

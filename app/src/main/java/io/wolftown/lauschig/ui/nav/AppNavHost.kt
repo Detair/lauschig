@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -49,6 +50,8 @@ fun AppNavHost(
     modifier: Modifier = Modifier,
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
     homeRoute: Any = Start,
+    /** The app's snackbars (Start tells of a new achievement there). */
+    snackbarHost: SnackbarHostState? = null,
 ) {
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
@@ -61,7 +64,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(

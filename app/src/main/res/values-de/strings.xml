@@ -723,4 +723,34 @@
     <string name="stats_history_load_now">Jetzt laden</string>
     <string name="stats_history_failed">Hörhistorie unvollständig – erneut laden</string>
     <string name="stats_history_retry">Erneut laden</string>
+    <!-- Erfolge -->
+    <plurals name="achievement_hours_name">
+        <item quantity="one">%d Stunde gehört</item>
+        <item quantity="other">%d Stunden gehört</item>
+    </plurals>
+    <plurals name="achievement_streak_name">
+        <item quantity="one">%d Tag am Stück</item>
+        <item quantity="other">%d Tage am Stück</item>
+    </plurals>
+    <plurals name="achievement_books_name">
+        <item quantity="one">%d Buch beendet</item>
+        <item quantity="other">%d Bücher beendet</item>
+    </plurals>
+    <plurals name="achievement_series_name">
+        <item quantity="one">%d Serie komplett</item>
+        <item quantity="other">%d Serien komplett</item>
+    </plurals>
+    <string name="achievement_marathon_name">Marathon</string>
+    <string name="achievement_night_owl_name">Nachteule</string>
+    <string name="achievement_early_bird_name">Frühaufsteher</string>
+    <string name="achievement_weekend_name">Hörwochenende</string>
+    <string name="achievement_one_go_name">In einem Rutsch</string>
+    <string name="achievement_commuter_name">Pendelzeit</string>
+    <string name="achievement_genres_name">Genre-Vielfalt</string>
+    <string name="achievement_notice_one">Neuer Erfolg: %1$s</string>
+    <plurals name="achievement_notice_many">
+        <item quantity="one">%d neuer Erfolg</item>
+        <item quantity="other">%d neue Erfolge</item>
+    </plurals>
+    <string name="achievement_notice_view">Ansehen</string>
 </resources>
