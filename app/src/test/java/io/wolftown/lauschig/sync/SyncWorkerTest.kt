@@ -105,7 +105,7 @@ class SyncWorkerTest {
                 EpisodeAutoDownloader(kotlinx.coroutines.flow.flow { order += "autoDownload"; emit(AutoDownloadMode.OFF) }, db.episodeDao(), db.progressDao(), db.downloadDao(), noDownloads, { emptySet() }, {}),
                 BookmarkSync(flowOf(me), db.bookmarkDao()),
                 CollectionSync(flowOf(lib), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() },
-                ListeningSessionSync(flowOf(listeningApi), db.listeningSessionDao(), InMemorySyncStamps()),
+                ListeningSessionSync(flowOf(listeningApi), db.listeningSessionDao(), db.sessionDao(), InMemorySyncStamps(), { true }),
             )
         }
         return TestListenableWorkerBuilder<SyncWorker>(ctx).setWorkerFactory(factory).build().doWork()

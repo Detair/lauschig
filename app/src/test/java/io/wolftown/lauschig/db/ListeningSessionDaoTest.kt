@@ -5,14 +5,21 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.db.entities.ListeningSessionEntity
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CopyOnWriteArrayList
 
 /** The account's listening sessions for the statistics (server copy) and this device's own sessions of an account. */
 @RunWith(RobolectricTestRunner::class)
@@ -43,11 +50,29 @@ class ListeningSessionDaoTest {
         assertEquals(listOf("a"), dao.observeAll("other").first().map { it.id })
     }
 
-    @Test fun observeAll_emitsAgainAfterAWrite() = runTest {
+    @Test fun observeAll_emitsAgainAfterAWrite() = runBlocking {
         val dao = db.listeningSessionDao()
-        assertEquals(emptyList<ListeningSessionEntity>(), dao.observeAll(s).first())
+        val sizes = CopyOnWriteArrayList<Int>()
+        val collector = launch(Dispatchers.Default) { dao.observeAll(s).collect { sizes += it.size } }
+        withTimeout(10_000) { while (sizes.isEmpty()) delay(5) }
+
         dao.upsertAll(listOf(row("a")))
-        assertEquals(1, dao.observeAll(s).first().size)
+
+        withTimeout(10_000) { while (sizes.size < 2) delay(5) }
+        collector.cancel()
+        assertEquals(listOf(0, 1), sizes.take(2))
+    }
+
+    @Test fun newestUpdatedAt_andThisDevicesUploadedIds() = runTest {
+        val dao = db.listeningSessionDao()
+        assertNull(dao.newestUpdatedAt(s))
+        dao.upsertAll(listOf(row("a", updatedAt = 5), row("b", updatedAt = 9), row("c", server = "other", updatedAt = 99)))
+        assertEquals(9L, dao.newestUpdatedAt(s))
+
+        db.sessionDao().upsert(LocalSessionEntity("l1", s, "li_1", 0.0, 5.0, 5.0, 1, 2, synced = true))
+        db.sessionDao().upsert(LocalSessionEntity("l2", s, "li_1", 0.0, 5.0, 5.0, 1, 2, synced = false))
+        db.sessionDao().upsert(LocalSessionEntity("l3", "other", "li_1", 0.0, 5.0, 5.0, 1, 2, synced = true))
+        assertEquals(listOf("l1"), db.sessionDao().syncedIds(s))
     }
 
     @Test fun countIdsAndDelete_onlyTouchThisServer() = runTest {

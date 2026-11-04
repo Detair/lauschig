@@ -19,6 +19,10 @@ interface ListeningSessionDao {
     @Query("SELECT COUNT(*) FROM listening_sessions WHERE serverId = :serverId")
     suspend fun count(serverId: String): Int
 
+    /** The newest `updatedAt` in the cache; null when it is empty. */
+    @Query("SELECT MAX(updatedAt) FROM listening_sessions WHERE serverId = :serverId")
+    suspend fun newestUpdatedAt(serverId: String): Long?
+
     @Query("SELECT id FROM listening_sessions WHERE serverId = :serverId")
     suspend fun ids(serverId: String): List<String>
 
