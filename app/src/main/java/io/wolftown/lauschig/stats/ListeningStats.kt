@@ -88,6 +88,8 @@ data class PeriodSummary(
     val finishedBooks: List<FinishedBook>,
     val topTitles: List<TitleTime>,
     val topAuthors: List<AuthorTime>,
+    /** The most active days in a row inside the period. */
+    val longestStreak: Int = 0,
 )
 
 /**
@@ -300,6 +302,7 @@ object ListeningStats {
             finishedBooks = finishedHere,
             topTitles = titles,
             topAuthors = topAuthors,
+            longestStreak = streaks(perDay, range.end).longest,
         )
     }
 }

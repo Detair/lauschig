@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.PlayableKey
@@ -102,6 +103,11 @@ fun StartRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playingId by viewModel.playingId.collectAsStateWithLifecycle()
     val stats by viewModel.statsCard.collectAsStateWithLifecycle()
+    // "This week" may have moved on while the screen was away (midnight, Monday, another zone).
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onResume()
+        onPauseOrDispose {}
+    }
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     // An episode tile opens its podcast.
     val onOpen: (String) -> Unit = { onOpenItem(PlayableKey.parse(it).libraryItemId) }

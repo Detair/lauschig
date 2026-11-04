@@ -24,7 +24,6 @@ import io.wolftown.lauschig.stats.PeriodSummary
 import io.wolftown.lauschig.stats.StatSession
 import io.wolftown.lauschig.stats.StatsPeriod
 import io.wolftown.lauschig.stats.StatsSessions
-import io.wolftown.lauschig.stats.Streaks
 import io.wolftown.lauschig.sync.ListeningSessionSync
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CancellationException
@@ -37,7 +36,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -45,11 +43,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.WeekFields
-import java.util.Locale
+import io.wolftown.lauschig.db.entities.ProgressEntity
+import io.wolftown.lauschig.stats.CalendarNow
+import io.wolftown.lauschig.stats.SessionRows
+import io.wolftown.lauschig.stats.StatsCalendar
+import io.wolftown.lauschig.sync.HistoryLoad
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.merge
 import javax.inject.Inject
 
 /** A title row of the page: a most-heard title ([seconds]) or a finished book ([day]). */
@@ -67,6 +70,16 @@ data class StatsTitle(
     val known: Boolean = false,
 )
 
+/** The two streak tiles: today's streaks under the period that holds today, the period's own under a past one. */
+@Immutable
+sealed interface StatsStreakTiles {
+    /** Days in a row up to today, and the longest run ever. */
+    data class Current(val streak: Int, val record: Int) : StatsStreakTiles
+
+    /** The longest run inside the past period, and on how many of its days something was heard. */
+    data class Past(val longest: Int, val activeDays: Int) : StatsStreakTiles
+}
+
 @Immutable
 data class StatsUiState(
     /** The first data from Room is not there yet. */
@@ -75,31 +88,36 @@ data class StatsUiState(
     val refreshing: Boolean = false,
     /** The last attempt to ask the server on open did not get through (offline, or it failed); the cache is shown. */
     val unreached: Boolean = false,
+    /** The whole history is being read, or waits for Wi-Fi (the numbers may still grow). */
+    val history: HistoryLoad = HistoryLoad.NONE,
     /** Any listening at all; otherwise the page is its empty state. */
     val hasData: Boolean = false,
     val period: StatsPeriod = StatsPeriod.WEEK,
     val summary: PeriodSummary? = null,
-    /** The shown period holds today. */
-    val isCurrent: Boolean = true,
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = false,
-    val streaks: Streaks = Streaks(0, 0),
+    val tiles: StatsStreakTiles = StatsStreakTiles.Current(0, 0),
     val finished: List<StatsTitle> = emptyList(),
     val topTitles: List<StatsTitle> = emptyList(),
     val topAuthors: List<AuthorTime> = emptyList(),
     /** Only in [StatsPeriod.ALL] (a series has no date). */
     val finishedSeries: List<FinishedSeries> = emptyList(),
+    /** For dates: a finished book's day names its year when it is not this one. */
+    val today: LocalDate? = null,
 )
 
 /**
- * The statistics page: everything from Room (offline-first, see [ListeningStats]); on open it asks the server once for
- * new sessions, after the connection check said online. Opens on the current week; a period switch starts at that
- * period's current one; previous/next never go into the future nor before the first listening.
+ * The statistics page: everything from Room (offline-first, see [ListeningStats]); for the signed-in account it asks the
+ * server once for new sessions after the connection check said online (cancelled when the account changes or signs
+ * out). Opens on the current week; a period switch starts at that period's current one; previous/next never go into
+ * the future nor before the first listening. "Today", the zone and the week start come from [calendar] and are read
+ * again at midnight, on a time, zone or language change and when the page resumes ([onResume]). A burst of database
+ * writes (a playing title, a sync writing pages) is computed once, off the main thread.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class StatsViewModel(
-    accounts: AccountStore,
+    private val accounts: AccountStore,
     private val sessions: StatsSessions,
     private val progress: ProgressDao,
     private val catalogDao: CatalogDao,
@@ -108,21 +126,19 @@ class StatsViewModel(
     private val catalog: Catalog,
     private val refresh: suspend (serverId: String) -> Unit,
     private val awaitOnline: suspend () -> Boolean,
-    private val clock: () -> Long,
-    private val zone: () -> ZoneId,
-    private val weekStart: () -> DayOfWeek,
+    private val historyLoad: (serverId: String) -> Flow<HistoryLoad>,
+    private val calendar: StatsCalendar,
     private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
     @Inject constructor(
         accounts: AccountStore, sessions: StatsSessions, progress: ProgressDao, catalogDao: CatalogDao, libraries: LibraryDao,
-        covers: CoverPathCache, catalog: Catalog, sync: ListeningSessionSync, apiProvider: ApiProvider,
+        covers: CoverPathCache, catalog: Catalog, sync: ListeningSessionSync, apiProvider: ApiProvider, calendar: StatsCalendar,
     ) : this(
         accounts, sessions, progress, catalogDao, libraries, covers, catalog,
         refresh = sync::sync,
         awaitOnline = { awaitConnectionAnswer(apiProvider.connection, apiProvider.checking, CONNECTION_ANSWER_WAIT_MS) },
-        clock = System::currentTimeMillis,
-        zone = ZoneId::systemDefault,
-        weekStart = { WeekFields.of(Locale.getDefault()).firstDayOfWeek },
+        historyLoad = sync::historyLoad,
+        calendar = calendar,
         dispatcher = Dispatchers.Default,
     )
 
@@ -140,16 +156,26 @@ class StatsViewModel(
         val items: Map<String, ItemEntity>,
     )
 
+    private class Raw(val rows: SessionRows, val progress: List<ProgressEntity>, val items: Map<String, ItemEntity>, val groups: List<List<ItemEntity>>, val zone: ZoneId)
+
     private val selection = MutableStateFlow(Selection())
     private val refreshState = MutableStateFlow(Refresh(running = true, unreached = false))
+    private val resumes = MutableStateFlow(0)
 
     private data class Refresh(val running: Boolean, val unreached: Boolean)
 
-    /** The first day with a session, for the bound of [previous]; set whenever the data is computed. */
+    private val serverId = accounts.account.map { it?.serverId }.distinctUntilChanged()
+
+    /** "Today" as of the last midnight, time/zone/language change or resume. */
+    private val now: Flow<CalendarNow> = merge(resumes, calendar.changes).map { calendar.now() }.distinctUntilChanged()
+
+    /**
+     * The first day with a session, for the bound of [previous]. Written off the main thread whenever the data is
+     * computed; read by [previous] on the main thread, so it may lag one emission (the state's own bound does not).
+     */
     @Volatile private var firstDay: LocalDate? = null
 
-    private val data: Flow<Data?> = accounts.account.map { it?.serverId }.distinctUntilChanged()
-        .flatMapLatest { sid -> if (sid == null) flowOf(null) else dataFor(sid) }
+    private val data: Flow<Data?> = serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else dataFor(sid) }
 
     private fun dataFor(sid: String): Flow<Data> {
         // The catalog (names, series) changes rarely; sessions and progress change while a title plays.
@@ -157,68 +183,84 @@ class StatsViewModel(
             val podcastLibs = libs.filter { it.effectiveKind == LibraryKind.PODCAST }.mapTo(HashSet()) { it.id }
             items.associateBy { it.id } to catalog.seriesGroups(items.filter { it.libraryId !in podcastLibs })
         }
-        return combine(sessions.observeNamed(sid, catalogView) { it.first }, progress.observeAll(sid)) { (merged, view), prog ->
-            val (byId, groups) = view
-            val z = zone()
-            val days = ListeningStats.days(merged, z)
-            val finished = ListeningStats.finishedBooks(merged, prog, z, byId)
-            Data(
-                sid, merged, days.keys.firstOrNull(), days, finished,
-                ListeningStats.finishedSeries(groups, finished.mapTo(HashSet()) { it.itemId }), byId,
-            ).also { firstDay = it.firstDay }
+        val zone = now.map { it.zone }.distinctUntilChanged()
+        return combine(sessions.observeRows(sid), progress.observeAll(sid), catalogView, zone) { rows, prog, (byId, groups), z ->
+            Raw(rows, prog, byId, groups, z)
         }
+            .conflate() // a burst of writes is computed once
+            .map { raw ->
+                val merged = ListeningStats.merge(raw.rows.server, raw.rows.local, raw.items)
+                val days = ListeningStats.days(merged, raw.zone)
+                val finished = ListeningStats.finishedBooks(merged, raw.progress, raw.zone, raw.items)
+                Data(
+                    sid, merged, days.keys.firstOrNull(), days, finished,
+                    ListeningStats.finishedSeries(raw.groups, finished.mapTo(HashSet()) { it.itemId }), raw.items,
+                ).also { firstDay = it.firstDay }
+            }
     }
 
-    val state: StateFlow<StatsUiState> = combine(data, selection, refreshState) { d, sel, r -> build(d, sel, r) }
+    private val history: Flow<HistoryLoad> = serverId.flatMapLatest { sid -> if (sid == null) flowOf(HistoryLoad.NONE) else historyLoad(sid) }
+
+    val state: StateFlow<StatsUiState> = combine(data, selection, refreshState, now, history) { d, sel, r, cal, h -> build(d, sel, r, cal, h) }
         .flowOn(dispatcher)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState(refreshing = true))
 
     init {
+        // One refresh per signed-in account; a sign-out or another account cancels a refresh still running.
         viewModelScope.launch {
-            var reached = false
-            try {
-                val sid = accounts.account.first()?.serverId
-                if (sid != null && awaitOnline()) {
-                    refresh(sid)
-                    reached = true
+            serverId.collectLatest { sid ->
+                if (sid == null) {
+                    refreshState.value = Refresh(running = false, unreached = false)
+                    return@collectLatest
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "listening sessions not refreshed", e)
-            } finally {
-                refreshState.value = Refresh(running = false, unreached = !reached)
+                refreshState.value = Refresh(running = true, unreached = false)
+                var reached = false
+                try {
+                    if (awaitOnline()) {
+                        refresh(sid)
+                        reached = true
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "listening sessions not refreshed", e)
+                } finally {
+                    refreshState.value = Refresh(running = false, unreached = !reached)
+                }
             }
         }
     }
 
+    /** The page is shown again: "today" may have moved on while it was away. */
+    fun onResume() = resumes.update { it + 1 }
+
     fun setPeriod(period: StatsPeriod) = selection.update { if (it.period == period) it else Selection(period) }
 
     fun previous() = selection.update { sel ->
-        val range = rangeOf(sel, today())
+        val range = rangeOf(sel, calendar.now())
         if (ListeningStats.hasPrevious(range, firstDay)) sel.copy(anchor = ListeningStats.previousAnchor(range)) else sel
     }
 
     fun next() = selection.update { sel ->
-        val today = today()
-        val range = rangeOf(sel, today)
-        if (!ListeningStats.hasNext(range, today)) return@update sel
+        val cal = calendar.now()
+        val range = rangeOf(sel, cal)
+        if (!ListeningStats.hasNext(range, cal.today)) return@update sel
         val anchor = ListeningStats.nextAnchor(range)
         // Back in the period that holds today: follow today again (also across midnight).
-        sel.copy(anchor = if (rangeOf(sel.copy(anchor = anchor), today).end.isAfter(today)) null else anchor)
+        sel.copy(anchor = if (rangeOf(sel.copy(anchor = anchor), cal).end.isAfter(cal.today)) null else anchor)
     }
 
-    private fun today(): LocalDate = ListeningStats.dayOf(clock(), zone())
+    private fun rangeOf(sel: Selection, cal: CalendarNow, first: LocalDate? = firstDay): PeriodRange =
+        ListeningStats.range(sel.period, sel.anchor ?: cal.today, cal.weekStart, first)
 
-    private fun rangeOf(sel: Selection, today: LocalDate, first: LocalDate? = firstDay): PeriodRange =
-        ListeningStats.range(sel.period, sel.anchor ?: today, weekStart(), first)
-
-    private fun build(d: Data?, sel: Selection, r: Refresh): StatsUiState {
-        val base = StatsUiState(loading = false, refreshing = r.running, unreached = r.unreached, period = sel.period)
+    private fun build(d: Data?, sel: Selection, r: Refresh, cal: CalendarNow, history: HistoryLoad): StatsUiState {
+        val base = StatsUiState(
+            loading = false, refreshing = r.running, unreached = r.unreached, history = history, period = sel.period, today = cal.today,
+        )
         if (d == null || d.sessions.isEmpty()) return base
-        val today = today()
-        val range = rangeOf(sel, today, d.firstDay)
-        val summary = ListeningStats.summary(d.sessions, emptyList(), range, today, zone(), finished = d.finished)
+        val today = cal.today
+        val range = rangeOf(sel, cal, d.firstDay)
+        val summary = ListeningStats.summary(d.sessions, emptyList(), range, today, cal.zone, finished = d.finished)
         fun row(itemId: String, title: String?, author: String?, seconds: Double? = null, day: LocalDate? = null): StatsTitle {
             val item = d.items[itemId]
             return StatsTitle(
@@ -227,13 +269,18 @@ class StatsViewModel(
                 coverVersion = item?.coverUpdatedAt ?: 0, known = item != null,
             )
         }
+        val holdsToday = !today.isBefore(range.start) && today.isBefore(range.end)
+        val tiles = if (holdsToday) {
+            ListeningStats.streaks(d.days, today).let { StatsStreakTiles.Current(it.current, it.longest) }
+        } else {
+            StatsStreakTiles.Past(summary.longestStreak, summary.activeDays)
+        }
         return base.copy(
             hasData = true,
             summary = summary,
-            isCurrent = !today.isBefore(range.start) && today.isBefore(range.end),
             hasPrevious = ListeningStats.hasPrevious(range, d.firstDay),
             hasNext = ListeningStats.hasNext(range, today),
-            streaks = ListeningStats.streaks(d.days, today),
+            tiles = tiles,
             finished = summary.finishedBooks.map { row(it.itemId, it.title, it.author, day = it.day) },
             topTitles = summary.topTitles.map { row(it.itemId, it.title, it.author, seconds = it.seconds) },
             topAuthors = summary.topAuthors,

@@ -708,4 +708,13 @@
         <item>Ruhige eigene Farben, wenn dynamische Farben aus sind</item>
         <item>Lade- und Leerseiten sagen klar, was gerade passiert</item>
     </string-array>
+    <string name="stats_tile_period_longest">Längste Serie</string>
+    <string name="stats_tile_active_days">Hörtage</string>
+    <string name="stats_history_loading">Hörhistorie wird geladen …</string>
+    <string name="stats_history_wifi">Die vollständige Hörhistorie wird im WLAN geladen.</string>
+    <string name="stats_chart_none">Keine Hörzeit</string>
+    <string name="stats_chart_today">heute</string>
+    <string name="stats_chart_this_month">dieser Monat</string>
+    <string name="stats_chart_this_year">dieses Jahr</string>
+    <string name="stats_chart_entry_current">%1$s (%2$s) %3$s</string>
 </resources>

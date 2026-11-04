@@ -34,7 +34,7 @@ import io.wolftown.lauschig.stats.FinishedSeries
 import io.wolftown.lauschig.stats.PeriodRange
 import io.wolftown.lauschig.stats.PeriodSummary
 import io.wolftown.lauschig.stats.StatsPeriod
-import io.wolftown.lauschig.stats.Streaks
+import io.wolftown.lauschig.sync.HistoryLoad
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -62,8 +62,9 @@ class StatsScreenTest {
     private val listened = StatsUiState(
         loading = false, hasData = true, period = StatsPeriod.WEEK,
         summary = week(listOf(2400.0, 0.0, 30.0, 0.0, 0.0, 0.0, 0.0)),
-        isCurrent = true, hasPrevious = true, hasNext = false,
-        streaks = Streaks(current = 1, longest = 5),
+        hasPrevious = true, hasNext = false,
+        tiles = StatsStreakTiles.Current(streak = 1, record = 5),
+        today = LocalDate.of(2026, 11, 4),
         finished = listOf(StatsTitle("li_b", "Book B", "Ben", day = monday, known = true)),
         topTitles = listOf(StatsTitle("li_a", "Book A", "Anna", seconds = 2400.0, known = true), StatsTitle("gone", null, null, seconds = 30.0)),
         topAuthors = listOf(AuthorTime("Anna", 2400.0)),
@@ -97,7 +98,7 @@ class StatsScreenTest {
         rule.onNodeWithTag("statsTotal").assertTextEquals("40 min")
         rule.onNodeWithTag("statsActiveDays").assertTextEquals("on 1 day")
         rule.onNodeWithTag("statsChart").assertContentDescriptionEquals(
-            "Listening time per day: Monday 40 min, Tuesday 0 min, Wednesday 30 s, Thursday 0 min, Friday 0 min, Saturday 0 min, Sunday 0 min",
+            "Listening time per day: Monday 40 min, Tuesday 0 min, Wednesday (today) 30 s, Thursday 0 min, Friday 0 min, Saturday 0 min, Sunday 0 min",
         )
         rule.onNodeWithTag("tileStreak").assertTextEquals("Streak", "1 day")
         rule.onNodeWithTag("tileLongest").assertTextEquals("Best streak", "5 days")
@@ -109,6 +110,7 @@ class StatsScreenTest {
         val list = rule.onNodeWithTag("statsList")
         list.performScrollToNode(hasText("Finished books"))
         rule.onNodeWithText("Book B").assertIsDisplayed()
+        rule.onNodeWithText("Nov 2").assertIsDisplayed() // this year: no year
         list.performScrollToNode(hasText("Most listened"))
         list.performScrollToNode(hasText("Book A"))
         rule.onNodeWithText("Book A").performClick()
@@ -120,10 +122,17 @@ class StatsScreenTest {
     }
 
     @Test fun anEmptyPeriod_saysSo_andShowsNoLists() {
-        val empty = listened.copy(summary = week(List(7) { 0.0 }, today = null), isCurrent = false, hasNext = true, finished = emptyList(), topTitles = emptyList(), topAuthors = emptyList())
+        val empty = listened.copy(
+            summary = week(List(7) { 0.0 }, today = null), tiles = StatsStreakTiles.Past(longest = 0, activeDays = 0), hasNext = true,
+            finished = emptyList(), topTitles = emptyList(), topAuthors = emptyList(),
+        )
         rule.setContent { LauschigTheme { StatsScreen(empty, onBack = {}) } }
         rule.onNodeWithTag("statsTotal").assertTextEquals("0 min")
         rule.onNodeWithTag("statsActiveDays").assertTextEquals("Nothing listened in this period")
+        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("No listening time")
+        // A past period: its own longest run and days, not today's streak.
+        rule.onNodeWithTag("tileStreak").assertTextEquals("Longest streak", "0 days")
+        rule.onNodeWithTag("tileLongest").assertTextEquals("Days listened", "0 days")
         rule.onNodeWithTag("statsNext").assertIsEnabled()
         rule.onNodeWithText("Most listened").assertDoesNotExist()
         rule.onNodeWithText("Finished books").assertDoesNotExist()
@@ -141,8 +150,10 @@ class StatsScreenTest {
         rule.onNodeWithTag("statsPrevious").assertDoesNotExist()
         rule.onNodeWithTag("statsNext").assertDoesNotExist()
         rule.onNodeWithTag("statsPeriodLabel").assertTextEquals("Since Mar 1, 2025")
-        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("Listening time per year: 2025 1 h 0 min, 2026 1 h 0 min")
+        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("Listening time per year: 2025 1 h 0 min, 2026 (this year) 1 h 0 min")
         rule.onNodeWithTag("tileFinished").assertTextEquals("Finished", "1 book", "2 series")
+        rule.onNodeWithTag("statsList").performScrollToNode(hasText("Book B"))
+        rule.onNodeWithText("Nov 2, 2026").assertIsDisplayed() // all time: always with the year
         rule.onNodeWithTag("statsList").performScrollToNode(hasText("3 volumes"))
         rule.onNodeWithText("3 volumes").assertIsDisplayed()
         rule.onNodeWithTag("statsList").performScrollToNode(hasText("2 volumes"))
@@ -195,4 +206,20 @@ class StatsScreenTest {
 
     /** A node that shows text (a Text, not a container). */
     private fun hasTextExactly() = SemanticsMatcher.keyIsDefined(SemanticsProperties.Text)
+
+    @Test fun whileTheHistoryLoads_orWaitsForWifi_aQuietLineSaysSo() {
+        var state by mutableStateOf(listened.copy(history = HistoryLoad.LOADING))
+        rule.setContent { LauschigTheme { StatsScreen(state, onBack = {}) } }
+        rule.onNodeWithTag("statsHistory").assertTextEquals("Loading your listening history …")
+        rule.onNodeWithTag("statsTotal").assertIsDisplayed() // the numbers stay usable
+
+        state = listened.copy(history = HistoryLoad.WAITING_FOR_UNMETERED)
+        rule.onNodeWithTag("statsHistory").assertTextEquals("Your full listening history loads on Wi-Fi.")
+
+        state = listened
+        rule.onNodeWithTag("statsHistory").assertDoesNotExist()
+
+        state = StatsUiState(loading = false, refreshing = false, history = HistoryLoad.WAITING_FOR_UNMETERED)
+        rule.onNodeWithText("Your full listening history loads on Wi-Fi.").assertIsDisplayed()
+    }
 }

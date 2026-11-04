@@ -16,6 +16,14 @@ interface ListeningSessionDao {
     @Query("SELECT * FROM listening_sessions WHERE serverId = :serverId")
     fun observeAll(serverId: String): Flow<List<ListeningSessionEntity>>
 
+    /** Sessions started at or after [since] (epoch ms); uses the (serverId, startedAt) index. */
+    @Query("SELECT * FROM listening_sessions WHERE serverId = :serverId AND startedAt >= :since")
+    fun observeSince(serverId: String, since: Long): Flow<List<ListeningSessionEntity>>
+
+    /** Sessions started in [from, to) (epoch ms). */
+    @Query("SELECT * FROM listening_sessions WHERE serverId = :serverId AND startedAt >= :from AND startedAt < :to")
+    suspend fun between(serverId: String, from: Long, to: Long): List<ListeningSessionEntity>
+
     @Query("SELECT COUNT(*) FROM listening_sessions WHERE serverId = :serverId")
     suspend fun count(serverId: String): Int
 

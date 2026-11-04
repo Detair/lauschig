@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,19 +20,29 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.theme.contrastRatio
 import kotlin.math.max
 import kotlin.math.min
 
 /**
+ * The colour of the plain bars: the scheme's `outline` where it keeps 3:1 against [surface] (graphics contrast, WCAG
+ * 1.4.11), else `onSurfaceVariant`.
+ */
+fun statsBarColor(scheme: ColorScheme, surface: Color = scheme.surface): Color =
+    if (contrastRatio(scheme.outline, surface) >= 3.0) scheme.outline else scheme.onSurfaceVariant
+
+/**
  * Plain bars on a baseline (Canvas, no chart library): every bar in the neutral [barColor], the one at [current] in
- * [currentColor] – the one accent. Heights are relative to the largest value; a value above zero always shows a sliver.
- * [labels] (null entries stay empty) sit under their bars. For accessibility the chart is one node whose
- * [description] lists the values; the drawing and the labels are hidden behind it.
+ * [currentColor] – the one accent – and marked by more than colour: a dot below it and a bold label. Heights are
+ * relative to the largest value; a value above zero always shows a sliver. [labels] (null entries stay empty) sit under
+ * their bars. For accessibility the chart is one node whose [description] lists the values; the drawing and the labels
+ * are hidden behind it.
  */
 @Composable
 fun BarChart(
@@ -42,7 +53,7 @@ fun BarChart(
     modifier: Modifier = Modifier,
     labels: List<String?>? = null,
     height: Dp = 140.dp,
-    barColor: Color = MaterialTheme.colorScheme.outline,
+    barColor: Color = statsBarColor(MaterialTheme.colorScheme),
     currentColor: Color = MaterialTheme.colorScheme.primary,
     baselineColor: Color = MaterialTheme.colorScheme.outlineVariant,
 ) {
@@ -57,19 +68,24 @@ fun BarChart(
             val radius = min(barWidth / 2, 4.dp.toPx())
             val sliver = 2.dp.toPx()
             val line = 1.dp.toPx()
-            val floor = size.height - line
+            val dot = min(2.dp.toPx(), slot / 4)
+            // Room below the baseline for the dot that marks the current bar.
+            val floor = size.height - line - MARKER_SPACE.toPx()
+            fun centerX(i: Int) = slot * (if (rtl) n - 1 - i else i) + slot / 2
             values.forEachIndexed { i, v ->
                 if (v <= 0) return@forEachIndexed
                 val h = max(sliver, (v / top).toFloat() * floor)
-                val slotIndex = if (rtl) n - 1 - i else i
                 drawRoundRect(
                     color = if (i == current) currentColor else barColor,
-                    topLeft = Offset(slot * slotIndex + (slot - barWidth) / 2, floor - h),
+                    topLeft = Offset(centerX(i) - barWidth / 2, floor - h),
                     size = Size(barWidth, h),
                     cornerRadius = CornerRadius(radius, radius),
                 )
             }
-            drawLine(baselineColor, Offset(0f, size.height - line / 2), Offset(size.width, size.height - line / 2), strokeWidth = line)
+            drawLine(baselineColor, Offset(0f, floor + line / 2), Offset(size.width, floor + line / 2), strokeWidth = line)
+            if (current != null && current in values.indices) {
+                drawCircle(currentColor, radius = dot, center = Offset(centerX(current), floor + line + MARKER_SPACE.toPx() / 2))
+            }
         }
         if (labels != null) {
             Row(Modifier.fillMaxWidth().padding(top = Spacing.xs)) {
@@ -80,6 +96,7 @@ fun BarChart(
                                 label,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (i == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (i == current) FontWeight.Bold else null,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Visible,
@@ -93,3 +110,6 @@ fun BarChart(
         }
     }
 }
+
+/** Below the baseline: where the current bar's dot sits. */
+private val MARKER_SPACE = 8.dp

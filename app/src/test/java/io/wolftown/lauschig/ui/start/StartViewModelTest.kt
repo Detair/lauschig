@@ -75,6 +75,13 @@ class StartViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private val berlin = java.time.ZoneId.of("Europe/Berlin")
+    private val calendar = io.wolftown.lauschig.stats.FakeStatsCalendar(
+        io.wolftown.lauschig.stats.CalendarNow(java.time.LocalDate.of(2026, 11, 4), berlin, java.time.DayOfWeek.MONDAY),
+    )
+
+    private fun at(day: String, time: String = "09:00") = java.time.LocalDateTime.parse("${day}T$time").atZone(berlin).toInstant().toEpochMilli()
+
     private fun vm(): StartViewModel {
         val accounts = FakeAccountStore()
         accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
@@ -83,7 +90,7 @@ class StartViewModelTest {
             initializer {
                 StartViewModel(
                     covers, accounts, db.catalogDao(), db.libraryDao(), db.itemDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), NoopPlayer(), Catalog(),
-                    StatsSessions(db.listeningSessionDao(), db.sessionDao()), UnconfinedTestDispatcher(),
+                    StatsSessions(db.listeningSessionDao(), db.sessionDao()), calendar, UnconfinedTestDispatcher(),
                 )
             }
         }
@@ -237,15 +244,39 @@ class StartViewModelTest {
         assertEquals(0.5f, tile.progress, 0.001f)
     }
 
+    private suspend fun StartViewModel.card(p: (io.wolftown.lauschig.stats.StatsCard?) -> Boolean) =
+        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { statsCard.first(p) } }
+
     @Test fun statsCard_appearsOnceSomethingWasHeard_thisDevicesSessionsCountAtOnce() = runTest {
         val vm = vm()
-        assertEquals(null, withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { vm.statsCard.first() } })
+        assertEquals(null, vm.card { true })
 
-        val now = System.currentTimeMillis()
-        db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("s1", sid, "a", 0.0, 120.0, 120.0, now, now, synced = false))
+        db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("s1", sid, "a", 0.0, 120.0, 120.0, at("2026-11-04"), at("2026-11-04"), synced = false))
 
-        val card = withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { vm.statsCard.first { it != null } } }!!
+        val card = vm.card { it != null }!!
         assertEquals(120.0, card.weekSec, 0.0)
         assertEquals(1, card.streak) // 2 minutes today: today counts, a streak of one day
+    }
+
+    @Test fun statsCard_readsTheLastDays_aLongStreakReadsFurtherBack_onceDaysPassTheWeekMovesOn() = runTest {
+        // 45 days in a row up to today (the card reads 30 at first), and a session long before.
+        val today = java.time.LocalDate.of(2026, 11, 4)
+        db.listeningSessionDao().upsertAll(
+            (0 until 45).map { i ->
+                val day = today.minusDays(i.toLong()).toString()
+                io.wolftown.lauschig.db.entities.ListeningSessionEntity(sid, "d$i", "a", "A", null, at(day), at(day) + 60_000, 120.0, 3600.0, 10.0)
+            } + io.wolftown.lauschig.db.entities.ListeningSessionEntity(sid, "old", "a", "A", null, at("2025-01-01"), at("2025-01-01"), 120.0, 3600.0, 10.0),
+        )
+        val vm = vm()
+
+        val card = vm.card { it != null }!!
+        assertEquals(45, card.streak)
+        assertEquals(3 * 120.0, card.weekSec, 0.0) // Monday to Wednesday
+
+        // Midnight on Sunday: a new week, nothing heard in it yet; the streak still ends yesterday.
+        calendar.moveTo(io.wolftown.lauschig.stats.CalendarNow(java.time.LocalDate.of(2026, 11, 9), berlin, java.time.DayOfWeek.MONDAY))
+        val monday = vm.card { it != null && it.days.first().start == java.time.LocalDate.of(2026, 11, 9) }!!
+        assertEquals(0.0, monday.weekSec, 0.0)
+        assertEquals(0, monday.streak) // 5–8 November had nothing: broken
     }
 }

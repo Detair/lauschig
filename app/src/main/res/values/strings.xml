@@ -708,4 +708,13 @@
         <item>Calm colours of Lauschig’s own when dynamic colours are off</item>
         <item>Loading and empty pages say plainly what is going on</item>
     </string-array>
+    <string name="stats_tile_period_longest">Longest streak</string>
+    <string name="stats_tile_active_days">Days listened</string>
+    <string name="stats_history_loading">Loading your listening history …</string>
+    <string name="stats_history_wifi">Your full listening history loads on Wi-Fi.</string>
+    <string name="stats_chart_none">No listening time</string>
+    <string name="stats_chart_today">today</string>
+    <string name="stats_chart_this_month">this month</string>
+    <string name="stats_chart_this_year">this year</string>
+    <string name="stats_chart_entry_current">%1$s (%2$s) %3$s</string>
 </resources>

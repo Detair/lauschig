@@ -193,6 +193,16 @@ class ListeningStatsTest {
         assertEquals(d("2026-11-02"), summary.bars.first().start)
     }
 
+    @Test fun summary_knowsThePeriodsLongestStreak() {
+        val sessions = listOf(
+            stat("1", "2026-10-31T10:00", 600.0), // the Saturday before: not this week, so it does not lengthen the run
+            stat("2", "2026-11-02T10:00", 600.0), stat("3", "2026-11-03T10:00", 600.0), stat("4", "2026-11-04T10:00", 600.0),
+            stat("5", "2026-11-06T10:00", 600.0),
+        )
+        val range = ListeningStats.range(StatsPeriod.WEEK, d("2026-11-02"), DayOfWeek.MONDAY)
+        assertEquals(3, ListeningStats.summary(sessions, emptyList(), range, d("2026-11-20"), berlin).longestStreak)
+    }
+
     @Test fun summary_yearHasMonthBars_allHasYearBars() {
         val sessions = listOf(stat("1", "2025-12-31T23:00", 100.0), stat("2", "2026-01-15T10:00", 200.0), stat("3", "2026-11-03T10:00", 300.0))
         val today = d("2026-11-04")

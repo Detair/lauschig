@@ -21,6 +21,10 @@ import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import io.wolftown.lauschig.stats.CalendarNow
+import io.wolftown.lauschig.stats.FakeStatsCalendar
+import io.wolftown.lauschig.sync.HistoryLoad
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -74,12 +78,15 @@ class StatsViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private val calendar = FakeStatsCalendar(CalendarNow(LocalDate.of(2026, 11, 4), berlin, DayOfWeek.MONDAY))
+    private val history = MutableStateFlow(HistoryLoad.NONE)
+
     private fun vm(online: suspend () -> Boolean = { true }, refresh: suspend (String) -> Unit = { refreshed += it }): StatsViewModel =
         viewModels.own(
             StatsViewModel(
                 accounts, StatsSessions(db.listeningSessionDao(), db.sessionDao()), db.progressDao(), db.catalogDao(), db.libraryDao(),
                 CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }, Catalog(),
-                refresh = refresh, awaitOnline = online, clock = { now }, zone = { berlin }, weekStart = { DayOfWeek.MONDAY },
+                refresh = refresh, awaitOnline = online, historyLoad = { history }, calendar = calendar,
                 dispatcher = UnconfinedTestDispatcher(),
             ),
         )
@@ -101,7 +108,7 @@ class StatsViewModelTest {
         assertEquals(StatsPeriod.WEEK, week.period)
         assertEquals(d("2026-11-02"), week.summary!!.range.start)
         assertEquals(1800.0, week.summary.totalSec, 0.0)
-        assertTrue(week.isCurrent)
+        assertEquals(StatsStreakTiles.Current(streak = 1, record = 1), week.tiles) // yesterday counts, today not yet
 
         vm.setPeriod(StatsPeriod.MONTH)
         val month = vm.await { it.period == StatsPeriod.MONTH }
@@ -119,21 +126,23 @@ class StatsViewModelTest {
         val now = vm.await { it.summary != null }
         assertFalse(now.hasNext)
         assertTrue(now.hasPrevious)
-        vm.next() // not into the future
-        assertEquals(d("2026-11-02"), vm.await { true }.summary!!.range.start)
-
+        // Not into the future: had next() moved on to 9 November, one previous() would land on 2 November.
+        vm.next()
         vm.previous()
+        assertEquals(d("2026-10-26"), vm.await { it.summary?.range?.start != d("2026-11-02") }.summary!!.range.start)
+
         vm.previous()
         val first = vm.await { it.summary?.range?.start == d("2026-10-19") }
         assertFalse(first.hasPrevious)
         assertTrue(first.hasNext)
-        assertFalse(first.isCurrent)
-        vm.previous() // nothing before the first listening
-        assertEquals(d("2026-10-19"), vm.await { true }.summary!!.range.start)
+        assertTrue(first.tiles is StatsStreakTiles.Past)
+        // Nothing before the first listening: had previous() gone to 12 October, one next() would land on 19 October.
+        vm.previous()
         vm.next()
+        assertEquals(d("2026-10-26"), vm.await { it.summary?.range?.start != d("2026-10-19") }.summary!!.range.start)
         vm.next()
         val back = vm.await { it.summary?.range?.start == d("2026-11-02") }
-        assertTrue(back.isCurrent)
+        assertTrue(back.tiles is StatsStreakTiles.Current)
         assertFalse(back.hasNext)
     }
 
@@ -188,12 +197,79 @@ class StatsViewModelTest {
         assertEquals(listOf("Band Zwei", "Band Eins"), week.finished.map { it.title }) // newest first
         assertTrue(week.topTitles.all { it.known })
         assertEquals(emptyList<Any>(), week.finishedSeries)
-        assertEquals(2, week.streaks.current) // yesterday and today
+        assertEquals(StatsStreakTiles.Current(streak = 2, record = 2), week.tiles) // yesterday and today
 
         vm.setPeriod(StatsPeriod.ALL)
         val all = vm.await { it.period == StatsPeriod.ALL }
         assertEquals(listOf("Reihe"), all.finishedSeries.map { it.name })
         assertFalse(all.hasPrevious)
         assertFalse(all.hasNext)
+    }
+
+    @Test fun aPastPeriod_showsItsLongestRunAndItsDays_neverTodaysStreak() = runTest {
+        // Last week: Tuesday to Thursday in a row, and Saturday; this week: yesterday and today.
+        for ((i, day) in listOf("2026-10-27", "2026-10-28", "2026-10-29", "2026-10-31", "2026-11-03", "2026-11-04").withIndex()) {
+            session("s$i", "${day}T08:00", 600.0)
+        }
+        val vm = vm()
+        assertEquals(StatsStreakTiles.Current(streak = 2, record = 3), vm.await { it.summary != null }.tiles)
+
+        vm.previous()
+
+        assertEquals(StatsStreakTiles.Past(longest = 3, activeDays = 4), vm.await { it.summary?.range?.start == d("2026-10-26") }.tiles)
+    }
+
+    @Test fun atMidnight_orOnResume_todayIsReadAgain() = runTest {
+        session("1", "2026-11-08T22:00", 600.0) // Sunday evening
+        calendar.current = CalendarNow(d("2026-11-08"), berlin, DayOfWeek.MONDAY)
+        val vm = vm()
+        assertEquals(d("2026-11-02"), vm.await { it.summary != null }.summary!!.range.start)
+
+        calendar.moveTo(CalendarNow(d("2026-11-09"), berlin, DayOfWeek.MONDAY)) // midnight: a new week
+        val monday = vm.await { it.summary?.range?.start == d("2026-11-09") }
+        assertEquals(0.0, monday.summary!!.totalSec, 0.0)
+        assertTrue(monday.hasPrevious)
+
+        // The week start changed in the system settings while the page was away: read again on resume.
+        calendar.current = CalendarNow(d("2026-11-09"), berlin, DayOfWeek.SUNDAY)
+        vm.onResume()
+        assertEquals(d("2026-11-08"), vm.await { it.summary?.range?.start == d("2026-11-08") }.summary!!.range.start)
+    }
+
+    @Test fun theRefresh_belongsToTheAccount_signOutOrAnotherAccountCancelsIt() = runTest {
+        val started = CopyOnWriteArrayList<String>()
+        val cancelled = CopyOnWriteArrayList<String>()
+        val vm = vm(refresh = { sid ->
+            started += sid
+            try {
+                kotlinx.coroutines.awaitCancellation()
+            } finally {
+                cancelled += sid
+            }
+        })
+        vm.await { it.refreshing }
+        withTimeout(10_000) { while (started.isEmpty()) kotlinx.coroutines.delay(5) }
+
+        val other = "bbbbbbbbbbbbbbbb"
+        accounts.acc.value = Account(other, "v", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        withTimeout(10_000) { while (started.size < 2) kotlinx.coroutines.delay(5) }
+        assertEquals(listOf(sid), cancelled)
+        assertEquals(listOf(sid, other), started)
+
+        accounts.acc.value = null // signed out
+        withTimeout(10_000) { while (cancelled.size < 2) kotlinx.coroutines.delay(5) }
+        assertEquals(listOf(sid, other), cancelled)
+        assertFalse(vm.await { !it.refreshing }.refreshing)
+    }
+
+    @Test fun theHistoryLoad_reachesThePage() = runTest {
+        session("1", "2026-11-03T08:00", 1800.0)
+        val vm = vm()
+        assertEquals(HistoryLoad.NONE, vm.await { it.summary != null }.history)
+
+        history.value = HistoryLoad.LOADING
+        vm.await { it.history == HistoryLoad.LOADING }
+        history.value = HistoryLoad.WAITING_FOR_UNMETERED
+        vm.await { it.history == HistoryLoad.WAITING_FOR_UNMETERED }
     }
 }

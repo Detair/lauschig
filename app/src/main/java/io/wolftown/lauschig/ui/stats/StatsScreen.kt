@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.stats.AuthorTime
@@ -56,6 +57,7 @@ import io.wolftown.lauschig.stats.FinishedSeries
 import io.wolftown.lauschig.stats.PeriodRange
 import io.wolftown.lauschig.stats.PeriodSummary
 import io.wolftown.lauschig.stats.StatsPeriod
+import io.wolftown.lauschig.sync.HistoryLoad
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.EmptyState
 import io.wolftown.lauschig.ui.common.LoadingState
@@ -75,6 +77,11 @@ import java.util.Locale
 @Composable
 fun StatsRoute(onBack: () -> Unit, onOpenItem: (itemId: String) -> Unit, viewModel: StatsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // "Today" may have moved on while the page was away (midnight, another zone).
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onResume()
+        onPauseOrDispose {}
+    }
     StatsScreen(state, onBack, onPeriod = viewModel::setPeriod, onPrevious = viewModel::previous, onNext = viewModel::next, onOpenItem = onOpenItem)
 }
 
@@ -107,17 +114,30 @@ fun StatsScreen(
                 if (state.loading || state.refreshing) {
                     LoadingState(verticalPadding = padding)
                 } else {
-                    EmptyState(
-                        Icons.Rounded.BarChart, stringResource(R.string.stats_empty),
-                        supporting = stringResource(if (state.unreached) R.string.stats_unreached else R.string.stats_empty_hint),
-                        verticalPadding = padding,
-                    )
+                    val hint = when {
+                        state.history == HistoryLoad.WAITING_FOR_UNMETERED -> R.string.stats_history_wifi
+                        state.unreached -> R.string.stats_unreached
+                        else -> R.string.stats_empty_hint
+                    }
+                    EmptyState(Icons.Rounded.BarChart, stringResource(R.string.stats_empty), supporting = stringResource(hint), verticalPadding = padding)
                 }
             }
             return
         }
         LazyColumn(Modifier.fillMaxSize().testTag("statsList"), contentPadding = PaddingValues(bottom = Spacing.l)) {
             item(key = "periods", contentType = "periods") { PeriodChoice(state.period, onPeriod, Modifier.padding(horizontal = Spacing.gutter)) }
+            historyNote(state.history)?.let { note ->
+                // Quiet: the numbers are usable, they may still grow (older sessions arrive page by page, or on Wi-Fi).
+                item(key = "history", contentType = "history") {
+                    Text(
+                        stringResource(note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = Spacing.s).testTag("statsHistory"),
+                    )
+                }
+            }
             item(key = "head", contentType = "head") {
                 PeriodHead(state, summary, onPrevious, onNext, Modifier.padding(horizontal = Spacing.xs).padding(top = Spacing.m))
             }
@@ -127,12 +147,21 @@ fun StatsScreen(
             item(key = "tiles", contentType = "tiles") {
                 Tiles(state, Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl))
             }
-            titles("finished", R.string.stats_section_finished, state.finished, onOpenItem)
+            // A finished book's day names its year in "all time" and whenever it is not this year.
+            titles("finished", R.string.stats_section_finished, state.finished, onOpenItem) { day ->
+                state.period == StatsPeriod.ALL || day.year != state.today?.year
+            }
             titles("top", R.string.stats_section_top_titles, state.topTitles, onOpenItem)
             authors(state.topAuthors)
             series(state.finishedSeries)
         }
     }
+}
+
+private fun historyNote(history: HistoryLoad): Int? = when (history) {
+    HistoryLoad.LOADING -> R.string.stats_history_loading
+    HistoryLoad.WAITING_FOR_UNMETERED -> R.string.stats_history_wifi
+    HistoryLoad.NONE -> null
 }
 
 /** Week, month, year, all time: one choice, as one row (the labels shrink a little rather than wrap at large text). */
@@ -260,32 +289,56 @@ private fun PeriodChart(summary: PeriodSummary, modifier: Modifier = Modifier) {
     val dayName = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "dMMMM"), locale)
     // Spoken: every bar, but a month's days only where something was heard.
     val spoken = bars.filter { summary.unit != BarUnit.DAY || summary.range.period == StatsPeriod.WEEK || it.seconds > 0 }
+    val currentName = stringResource(
+        when (summary.unit) {
+            BarUnit.DAY -> R.string.stats_chart_today
+            BarUnit.MONTH -> R.string.stats_chart_this_month
+            BarUnit.YEAR -> R.string.stats_chart_this_year
+        },
+    )
     val entries = spoken.map { b ->
         val name = when (summary.unit) {
             BarUnit.DAY -> if (summary.range.period == StatsPeriod.WEEK) b.start.dayOfWeek.getDisplayName(DateTextStyle.FULL, locale) else b.start.format(dayName)
             BarUnit.MONTH -> b.start.month.getDisplayName(DateTextStyle.FULL_STANDALONE, locale)
             BarUnit.YEAR -> b.start.year.toString()
         }
-        stringResource(R.string.stats_chart_entry, name, statsDuration(b.seconds))
+        // Today (this month, this year) is said, not only coloured.
+        if (b.current) stringResource(R.string.stats_chart_entry_current, name, currentName, statsDuration(b.seconds))
+        else stringResource(R.string.stats_chart_entry, name, statsDuration(b.seconds))
     }
-    val description = stringResource(
-        when (summary.unit) {
-            BarUnit.DAY -> R.string.stats_chart_days
-            BarUnit.MONTH -> R.string.stats_chart_months
-            BarUnit.YEAR -> R.string.stats_chart_years
-        },
-        entries.joinToString(", "),
-    )
+    val description = if (summary.totalSec <= 0) {
+        stringResource(R.string.stats_chart_none)
+    } else {
+        stringResource(
+            when (summary.unit) {
+                BarUnit.DAY -> R.string.stats_chart_days
+                BarUnit.MONTH -> R.string.stats_chart_months
+                BarUnit.YEAR -> R.string.stats_chart_years
+            },
+            entries.joinToString(", "),
+        )
+    }
     BarChart(bars.map { it.seconds }, bars.indexOfFirst { it.current }.takeIf { it >= 0 }, description, modifier, labels = labels)
 }
 
-/** The streak now, the longest one and the books finished in the period. */
+/**
+ * Under the period that holds today: the streak up to today and the record; under a past period: its longest run and
+ * its days with listening (never today's streak under a past week). Then the books finished in the period.
+ */
 @Composable
 private fun Tiles(state: StatsUiState, modifier: Modifier = Modifier) {
     TileLine(modifier.fillMaxWidth()) {
         val books = state.finished.size
-        Tile(R.string.stats_tile_streak, pluralStringResource(R.plurals.stats_days, state.streaks.current, state.streaks.current), Modifier.testTag("tileStreak"))
-        Tile(R.string.stats_tile_longest, pluralStringResource(R.plurals.stats_days, state.streaks.longest, state.streaks.longest), Modifier.testTag("tileLongest"))
+        when (val t = state.tiles) {
+            is StatsStreakTiles.Current -> {
+                Tile(R.string.stats_tile_streak, pluralStringResource(R.plurals.stats_days, t.streak, t.streak), Modifier.testTag("tileStreak"))
+                Tile(R.string.stats_tile_longest, pluralStringResource(R.plurals.stats_days, t.record, t.record), Modifier.testTag("tileLongest"))
+            }
+            is StatsStreakTiles.Past -> {
+                Tile(R.string.stats_tile_period_longest, pluralStringResource(R.plurals.stats_days, t.longest, t.longest), Modifier.testTag("tileStreak"))
+                Tile(R.string.stats_tile_active_days, pluralStringResource(R.plurals.stats_days, t.activeDays, t.activeDays), Modifier.testTag("tileLongest"))
+            }
+        }
         // All time also counts the finished series (they have no date, so no other period does).
         val series = state.finishedSeries.size.takeIf { state.period == StatsPeriod.ALL }
         Tile(
@@ -342,19 +395,22 @@ private fun LazyListScope.sectionHeader(key: String, title: Int) {
     }
 }
 
-/** A list of titles with cover; a title the catalog knows opens its details. */
-private fun LazyListScope.titles(key: String, title: Int, rows: List<StatsTitle>, onOpenItem: (String) -> Unit) {
+/** A list of titles with cover; a title the catalog knows opens its details. [withYear]: a day shows its year. */
+private fun LazyListScope.titles(
+    key: String, title: Int, rows: List<StatsTitle>, onOpenItem: (String) -> Unit, withYear: (LocalDate) -> Boolean = { false },
+) {
     if (rows.isEmpty()) return
     sectionHeader(key, title)
-    items(rows, key = { "$key:${it.itemId}" }, contentType = { "title" }) { row -> TitleRow(row, onOpenItem) }
+    items(rows, key = { "$key:${it.itemId}" }, contentType = { "title" }) { row -> TitleRow(row, onOpenItem, row.day?.let(withYear) == true) }
 }
 
 @Composable
-private fun TitleRow(row: StatsTitle, onOpenItem: (String) -> Unit) {
+private fun TitleRow(row: StatsTitle, onOpenItem: (String) -> Unit, withYear: Boolean) {
     val name = row.title ?: stringResource(R.string.stats_unknown_title)
+    val locale = appLocale()
     val trailing = when {
         row.seconds != null -> statsDuration(row.seconds)
-        row.day != null -> row.day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(appLocale(), "dMMM")))
+        row.day != null -> row.day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, if (withYear) "dMMMy" else "dMMM"), locale))
         else -> stringResource(R.string.stats_finished_earlier)
     }
     ListItem(
