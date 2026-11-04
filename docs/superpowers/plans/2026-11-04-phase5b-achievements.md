@@ -125,3 +125,47 @@ All five tasks are done on `phase-5b` (TDD, one commit per task plus three fixes
   every 10 s tick while a title plays. Moving the evaluation into the sync and storing a pending notice would undo that.
 - Achievements are derived, so they can go away: sessions deleted on the server (once a full run prunes them), a
   finished mark removed, a series that gets a new volume. Reached again, they are not told again.
+
+## Fix round 1 (review 2026-11-04, controller's rulings)
+
+The branch was rebased onto `main` (17a3f35, phase 5A merged) first; the tree under the rebased commits was unchanged.
+
+- **F1** The silent baseline is taken from a fresh read and evaluation once the account is settled, not from the
+  flow's latest evaluation: the full sync flips "history complete" right after writing its last page, and the flow
+  could still hold the evaluation before that page (reproduced: 5000 sessions written and the flag flipped 0 ms later
+  gave a baseline of `_baseline` alone and 14 tiers told). Test `aFirstSync_whoseLastPageAndTheCompleteFlagComeBackToBack…`.
+- **F2 (accepted)** There is no zone per session: time windows and days are read in the device's current zone. After
+  the baseline, a zone change (a trip) can reach a zone-dependent tier – night owl, early bird, commuter, and the days
+  of a streak, marathon or weekend – with old listening; it is told once like any other new tier.
+- **F3 (accepted)** A book only the progress marks finished counts on the day of its progress's `lastUpdate`; a later
+  progress write (played again, a position moved on another device) moves that day – and the „Seit …“ of the books or
+  series tier it carries – forward, and an undated book can change which day the N-th book has. Whether a tier is
+  reached, and so the notice, never depends on it. (Also in the catalogue KDoc.)
+- **F4** The notice never takes Start down: a failing evaluation, read or write logs and tells nothing; a failed step
+  is tried again with the next change; a failing flow ends with no notice (tests with a throwing DAO).
+- **F5** The history is evaluated again only when something a tier depends on moved (`Achievements.tierInputs`: tier
+  counts of the total, longest run, ten-minute sessions, sessions and their ids, finished books, series, titles heard
+  30 minutes, catalog, zone) – a playback tick on a day that counts already is not; every change still settles a
+  waiting baseline. A random test checks that equal inputs always mean equal reached tiers. The statistics read only
+  the catalog columns they use (`CatalogDao.observeForStats`, no description).
+- **F6** Tiers are append-only (KDoc next to the ids); a test pins every family's id and thresholds.
+- **F7 (comment fixed, accepted)** After the baseline a tier can also be reached with older data (reconcile, a late
+  upload, a series edited on the server, F2) – told once all the same. A snackbar that times out in the background
+  counts as told. An account whose history never completes (metered only, every full read failed) gets no baseline and
+  so no notice.
+- **F8** The notice tests wait in real time for counted evaluations (no virtual `delay`); "shown is shown" looks again
+  at a new session and could fail; the misnamed test is `anExistingBaseline_isKept_andATierReachedSinceIsTold`; DST
+  tests for commuter, weekend and marathon; a Compose test runs `StartRoute` with the notice view model and the app's
+  snackbar host (fails if „View“ is not wired).
+- **F9** Descriptions take minutes, hours, counts and the time windows from the rule constants (times in the locale's
+  format: „zwischen 00:00 und 04:00 Uhr“, "between 12:00 AM and 4:00 AM"); `tiered` = counts towards a threshold (all
+  but night owl, early bird, one go), `leveled` = more than one tier („Stufe x von y“); rows and cards keyed by
+  achievement id; the route is `AchievementsPage`; tier 0 is documented as the baseline row's; `sorted`'s KDoc fixed.
+- **F10** The achievements title is a semantics heading; the Stats rows are buttons with „Erfolg ansehen“ / "View
+  achievement".
+
+Verification: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1440 tests, lint 0 errors, no new
+warnings). Emulator: the update showed no notice; a 5-minute test session on the local server brought „New
+achievement: 1 hour listened“ once, „View“ opened the grid with the new descriptions (`shots/achievements/fx1-…`);
+afterwards the session was deleted, the title's progress restored, the cache pruned and the test row removed from
+`achievement_seen`.
