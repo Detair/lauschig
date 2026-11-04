@@ -172,6 +172,15 @@ class ListeningStatsTest {
         assertEquals(Streaks(0, 0), ListeningStats.streaks(emptyMap(), d("2026-11-04")))
     }
 
+    @Test fun runLengths_eachActiveDayWithTheRunThatEndsThere_inDateOrder() {
+        val runs = ListeningStats.runLengths(
+            days("2026-10-03" to 100.0, "2026-10-01" to 100.0, "2026-10-02" to 60.0, "2026-10-04" to 59.0, "2026-10-05" to 600.0),
+        )
+        // 4 October has less than a minute: a gap, and no entry of its own.
+        assertEquals(listOf(d("2026-10-01") to 1, d("2026-10-02") to 2, d("2026-10-03") to 3, d("2026-10-05") to 1), runs)
+        assertEquals(emptyList<Pair<LocalDate, Int>>(), ListeningStats.runLengths(emptyMap()))
+    }
+
     // --- summary -----------------------------------------------------------------------------------------------------
 
     @Test fun summary_week_totalsActiveDaysBarsAndTheCurrentDay() {
@@ -275,6 +284,25 @@ class ListeningStatsTest {
         assertEquals(listOf("li_a", "li_old"), all.finishedBooks.map { it.itemId })
     }
 
+    @Test fun finishedBooks_knowTheMomentOfTheFinish_andProgressOnlyOnesTheDayTheProgressLastChanged() {
+        val sessions = listOf(
+            stat("1", "2026-11-02T10:00", 100.0, item = "li_a", updated = "2026-11-03T00:20", current = 3582.0),
+        )
+        val progress = listOf(
+            ProgressEntity(s, "li_old", 3600.0, 3600.0, isFinished = true, lastUpdate = at("2025-06-01T23:30")),
+            ProgressEntity(s, "li_unknown", 3600.0, 3600.0, isFinished = true, lastUpdate = 0), // no time known
+        )
+
+        val finished = ListeningStats.finishedBooks(sessions, progress, berlin).associateBy { it.itemId }
+
+        assertEquals(at("2026-11-03T00:20"), finished.getValue("li_a").finishedAt)
+        assertNull(finished.getValue("li_a").progressDay)
+        assertNull(finished.getValue("li_old").day) // the statistics still say "earlier"
+        assertNull(finished.getValue("li_old").finishedAt)
+        assertEquals(d("2025-06-01"), finished.getValue("li_old").progressDay) // in the device zone
+        assertNull(finished.getValue("li_unknown").progressDay)
+    }
+
     @Test fun finishedSeries_everyNumberedVolumeFinished_atLeastTwo() {
         fun vol(id: String, series: String, key: Double?, lib: String = "lib") = ItemEntity(s, id, lib, id, seriesName = series, seriesSortKey = key)
         val groups = listOf(
@@ -286,6 +314,15 @@ class ListeningStatsTest {
 
         assertEquals(listOf("Reihe A" to 2), series.map { it.name to it.volumes })
         assertNull(ListeningStats.finishedSeries(emptyList(), emptySet()).firstOrNull())
+    }
+
+    @Test fun finishedSeriesGroups_areTheVolumesOfEachFinishedSeries() {
+        fun vol(id: String, series: String, key: Double) = ItemEntity(s, id, "lib", id, seriesName = series, seriesSortKey = key)
+        val a = listOf(vol("a1", "Reihe A", 1.0), vol("a2", "Reihe A", 2.0))
+        val b = listOf(vol("b1", "Reihe B", 1.0), vol("b2", "Reihe B", 2.0))
+        val groups = ListeningStats.finishedSeriesGroups(listOf(a, b, listOf(vol("c1", "Einzeln", 1.0))), finished = setOf("a1", "a2", "b1", "c1"))
+
+        assertEquals(listOf(a), groups)
     }
 
     @Test fun finishedSeries_ofTheSameName_inTwoLibraries_areTwoEntries_withDistinctKeys() {
