@@ -59,7 +59,7 @@ class YearReviewViewModel(
     private val covers: CoverPathCache,
     dispatcher: CoroutineDispatcher,
     /** Where the story stands, kept across a process death (the route's own handle). */
-    private val savedState: SavedStateHandle = SavedStateHandle(),
+    private val savedState: SavedStateHandle,
 ) : ViewModel() {
     @Inject constructor(
         savedState: SavedStateHandle, accounts: AccountStore, source: ListeningDataSource, calendar: StatsCalendar,
