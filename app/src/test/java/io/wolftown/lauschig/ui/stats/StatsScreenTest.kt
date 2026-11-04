@@ -134,16 +134,19 @@ class StatsScreenTest {
         val all = listened.copy(
             period = StatsPeriod.ALL,
             summary = PeriodSummary(range, 7200.0, 3, BarUnit.YEAR, listOf(Bar(LocalDate.of(2025, 1, 1), 3600.0, false), Bar(LocalDate.of(2026, 1, 1), 3600.0, true)), emptyList(), emptyList(), emptyList()),
-            finishedSeries = listOf(FinishedSeries("Reihe", 3, "a1")),
+            // The same name in two libraries (Hörbuch and Hörspiel) is two series: two rows, no key clash.
+            finishedSeries = listOf(FinishedSeries("Reihe", 3, "a1", libraryId = "books"), FinishedSeries("Reihe", 2, "b1", libraryId = "plays")),
         )
         rule.setContent { LauschigTheme { StatsScreen(all, onBack = {}) } }
         rule.onNodeWithTag("statsPrevious").assertDoesNotExist()
         rule.onNodeWithTag("statsNext").assertDoesNotExist()
         rule.onNodeWithTag("statsPeriodLabel").assertTextEquals("Since Mar 1, 2025")
         rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("Listening time per year: 2025 1 h 0 min, 2026 1 h 0 min")
-        rule.onNodeWithTag("tileFinished").assertTextEquals("Finished", "1 book", "1 series")
-        rule.onNodeWithTag("statsList").performScrollToNode(hasText("Reihe"))
+        rule.onNodeWithTag("tileFinished").assertTextEquals("Finished", "1 book", "2 series")
+        rule.onNodeWithTag("statsList").performScrollToNode(hasText("3 volumes"))
         rule.onNodeWithText("3 volumes").assertIsDisplayed()
+        rule.onNodeWithTag("statsList").performScrollToNode(hasText("2 volumes"))
+        rule.onNodeWithText("2 volumes").assertIsDisplayed()
     }
 
     @Test

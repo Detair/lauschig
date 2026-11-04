@@ -56,8 +56,14 @@ data class Streaks(val current: Int, val longest: Int)
 @Immutable
 data class FinishedBook(val itemId: String, val title: String?, val author: String?, val day: LocalDate?)
 
+/**
+ * A series of one library whose numbered volumes are all finished. The same name in two libraries (Hörbuch and
+ * Hörspiel) is two series, as in [Catalog.seriesGroups]; [key] tells them apart.
+ */
 @Immutable
-data class FinishedSeries(val name: String, val volumes: Int, val coverItemId: String)
+data class FinishedSeries(val name: String, val volumes: Int, val coverItemId: String, val libraryId: String = "") {
+    val key: String get() = "$libraryId:${name.trim().lowercase()}"
+}
 
 /** Listening time of one item (a book, or a podcast with all its episodes). */
 @Immutable
@@ -220,8 +226,8 @@ object ListeningStats {
      */
     fun finishedSeries(groups: List<List<ItemEntity>>, finished: Set<String>): List<FinishedSeries> =
         groups.filter { g -> g.size >= 2 && g.all { it.id in finished } }
-            .map { g -> FinishedSeries(g.first().seriesName!!.trim(), g.size, g.first().id) }
-            .sortedBy { it.name.lowercase() }
+            .map { g -> FinishedSeries(g.first().seriesName!!.trim(), g.size, g.first().id, g.first().libraryId) }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.libraryId }))
 
     /** How far back the start card looks for listening before it hides. */
     const val CARD_DAYS = 30

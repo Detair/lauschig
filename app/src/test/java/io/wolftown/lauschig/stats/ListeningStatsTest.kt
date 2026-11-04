@@ -278,6 +278,19 @@ class ListeningStatsTest {
         assertNull(ListeningStats.finishedSeries(emptyList(), emptySet()).firstOrNull())
     }
 
+    @Test fun finishedSeries_ofTheSameName_inTwoLibraries_areTwoEntries_withDistinctKeys() {
+        fun vol(id: String, lib: String, key: Double) = ItemEntity(s, id, lib, id, seriesName = "Die drei ???", seriesSortKey = key)
+        val groups = listOf(
+            listOf(vol("h1", "hoerbuch", 1.0), vol("h2", "hoerbuch", 2.0)),
+            listOf(vol("s1", "hoerspiel", 1.0), vol("s2", "hoerspiel", 2.0)),
+        )
+        val series = ListeningStats.finishedSeries(groups, finished = setOf("h1", "h2", "s1", "s2"))
+
+        assertEquals(2, series.size)
+        assertEquals(2, series.map { it.key }.toSet().size)
+        assertEquals(setOf("hoerbuch", "hoerspiel"), series.map { it.libraryId }.toSet())
+    }
+
     // --- start card --------------------------------------------------------------------------------------------------
 
     @Test fun startCard_thisWeekWithItsDays_andTheStreak() {

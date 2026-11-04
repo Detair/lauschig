@@ -382,7 +382,7 @@ private fun LazyListScope.authors(rows: List<AuthorTime>) {
 private fun LazyListScope.series(rows: List<FinishedSeries>) {
     if (rows.isEmpty()) return
     sectionHeader("series", R.string.stats_section_series)
-    items(rows, key = { "series:${it.name}" }, contentType = { "series" }) { s ->
+    items(rows, key = { "series:${it.key}" }, contentType = { "series" }) { s ->
         ListItem(
             headlineContent = { Text(s.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(pluralStringResource(R.plurals.stats_series_volumes, s.volumes, s.volumes)) },
