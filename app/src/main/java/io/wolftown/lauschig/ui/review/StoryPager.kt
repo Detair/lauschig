@@ -36,12 +36,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -55,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -63,6 +66,7 @@ import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -73,19 +77,23 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.LocalBackdropReach
+import io.wolftown.lauschig.ui.findActivity
 import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.theme.isDark
 
 /** How long a slide stays before the story moves on by itself. */
 const val STORY_SLIDE_MS = 7_000L
@@ -182,16 +190,24 @@ class StoryState(val count: Int, index: Int = 0, progress: Float = 0f, shown: Se
     }
 }
 
+/**
+ * The story's place, kept across a rotation and a process death. Saved under its own key, not its position, so a
+ * caller composed along another path after the restore still finds it. (Inside the app's navigation host that is not
+ * enough – see `YearReviewViewModel.story`.)
+ */
 @Composable
-fun rememberStoryState(count: Int): StoryState = rememberSaveable(count, saver = StoryState.Saver) { StoryState(count) }
+fun rememberStoryState(count: Int): StoryState =
+    rememberSaveable(count, saver = StoryState.Saver, key = STORY_STATE_KEY) { StoryState(count) }
+
+private const val STORY_STATE_KEY = "storyState"
 
 /**
  * A story: full-screen slides one after the other, with segmented progress bars and a close button on top.
  *
  * - Moves on by itself after [slideMillis] (or the longer time the user asked apps to leave them, Android's "time to
  *   take action") while [StoryMotion.autoAdvance]; it stays on the last slide.
- * - A tap on the right two thirds is the next slide, on the left third the one before (mirrored right-to-left); a
- *   press held down pauses; a swipe down or the X closes ([onClose]).
+ * - A tap on the right two thirds of the window is the next slide, on the left third the one before (mirrored
+ *   right-to-left); a press held down pauses; a swipe down or the X closes ([onClose]).
  * - It never moves while the screen is not in front (the app in the background, a dialog), held down or pulled down.
  * - Without auto-advance (TalkBack, animations removed) there are buttons for the previous and next slide. For TalkBack
  *   each slide is one item that reads [description] (its position first) and is announced when the slide changes.
@@ -273,6 +289,8 @@ fun StoryPager(
         }
     }
 
+    StatusBarIconsFor(slide.content)
+
     val position = stringResource(R.string.review_slide_position, index + 1, state.count)
     val spoken = description(index)
     val nextLabel = stringResource(R.string.review_next)
@@ -291,12 +309,32 @@ fun StoryPager(
                     drawRect(background, topLeft = Offset(-left, -top), size = Size(size.width + left + right, size.height + top + bottom))
                 }
                 .semantics { paneTitle = title }
+                // The whole window is the tap area (on a tablet the sides beside the centred story too).
+                .pointerInput(state, rtl) {
+                    detectTapGestures(
+                        onPress = {
+                            held = true
+                            try {
+                                tryAwaitRelease()
+                            } finally {
+                                held = false
+                            }
+                        },
+                        // A long press only pauses; its release moves nothing.
+                        onLongPress = {},
+                        onTap = { at ->
+                            val third = size.width / 3f
+                            val back = if (rtl) at.x > size.width - third else at.x < third
+                            if (back) state.previous() else state.next()
+                        },
+                    )
+                }
                 .testTag("story"),
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(Modifier.widthIn(max = STORY_MAX_WIDTH).fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(start = Spacing.gutter, top = Spacing.s), verticalAlignment = Alignment.CenterVertically) {
-                    Segments(state, foreground, Modifier.weight(1f))
+                    Segments(state, foreground, Modifier.weight(1f), running = motion.autoAdvance)
                     IconButton(
                         onClick = onClose,
                         colors = IconButtonDefaults.iconButtonColors(contentColor = foreground),
@@ -307,26 +345,7 @@ fun StoryPager(
                     Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .nestedScroll(pull)
-                        .pointerInput(state, rtl) {
-                            detectTapGestures(
-                                onPress = {
-                                    held = true
-                                    try {
-                                        tryAwaitRelease()
-                                    } finally {
-                                        held = false
-                                    }
-                                },
-                                // A long press only pauses; its release moves nothing.
-                                onLongPress = {},
-                                onTap = { at ->
-                                    val third = size.width / 3f
-                                    val back = if (rtl) at.x > size.width - third else at.x < third
-                                    if (back) state.previous() else state.next()
-                                },
-                            )
-                        },
+                        .nestedScroll(pull),
                 ) {
                     val viewport = DpSize(maxWidth, maxHeight)
                     val scroll = rememberScrollState()
@@ -345,6 +364,8 @@ fun StoryPager(
                             .clearAndSetSemantics {
                                 contentDescription = "$position. $spoken"
                                 liveRegion = LiveRegionMode.Polite
+                                // A double tap goes on (said as such), like a tap on the right.
+                                if (!state.isLast) onClick(label = nextLabel) { state.next() }
                                 customActions = listOf(
                                     CustomAccessibilityAction(nextLabel) { state.next() },
                                     CustomAccessibilityAction(previousLabel) { state.previous(); true },
@@ -370,9 +391,37 @@ fun StoryPager(
     }
 }
 
-/** One segment per slide: the past ones full, the current one as far as its time has run, the rest empty. */
+/**
+ * The status and navigation bar icons in the slide's own text colour, dark or light (the slides reach under the bars,
+ * and a theme's containers can be light in a dark theme). When the story goes they follow the app's theme again, as
+ * everywhere else (see MainActivity).
+ */
 @Composable
-private fun Segments(state: StoryState, color: Color, modifier: Modifier = Modifier) {
+private fun StatusBarIconsFor(content: Color) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    val controller = remember(view) { view.context.findActivity()?.window?.let { WindowCompat.getInsetsController(it, view) } } ?: return
+    val themeDark by rememberUpdatedState(MaterialTheme.colorScheme.isDark)
+    DisposableEffect(controller) {
+        onDispose {
+            controller.isAppearanceLightStatusBars = !themeDark
+            controller.isAppearanceLightNavigationBars = !themeDark
+        }
+    }
+    // "Light bars" = dark icons: where the slide's text is dark.
+    val light = content.luminance() < 0.5f
+    SideEffect {
+        controller.isAppearanceLightStatusBars = light
+        controller.isAppearanceLightNavigationBars = light
+    }
+}
+
+/**
+ * One segment per slide: the past ones full, the current one as far as its time has run ([running]; full when the
+ * story does not move by itself – it only marks the place), the rest empty.
+ */
+@Composable
+private fun Segments(state: StoryState, color: Color, modifier: Modifier = Modifier, running: Boolean = true) {
     Row(modifier.height(Spacing.l), horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
         repeat(state.count) { i ->
             val segment = when {
@@ -386,7 +435,7 @@ private fun Segments(state: StoryState, color: Color, modifier: Modifier = Modif
                 // Read in the draw phase only: the running time redraws, it never recomposes.
                 val fill = when (segment) {
                     SegmentState.DONE -> 1f
-                    SegmentState.CURRENT -> state.progress
+                    SegmentState.CURRENT -> if (running) state.progress else 1f
                     SegmentState.TODO -> 0f
                 }
                 if (fill > 0f) {

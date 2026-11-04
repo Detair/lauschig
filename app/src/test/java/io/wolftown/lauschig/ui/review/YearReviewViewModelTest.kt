@@ -129,6 +129,16 @@ class YearReviewViewModelTest {
         assertFalse((vm.state.value.review!!.slides.first() as ReviewSlide.Opening).incomplete)
     }
 
+    @Test fun theStorysPlace_staysWithTheViewModel_aNewLengthStartsAgain() = runTest {
+        val vm = vm()
+        val place = vm.story(9)
+        place.next()
+        place.next()
+        assertTrue(vm.story(9) === place)
+        assertEquals(2, vm.story(9).index)
+        assertEquals(0, vm.story(8).index)
+    }
+
     @Test fun aYearBelowAnHour_orNoAccount_hasNoReview() = runTest {
         session("1", "2026-03-02T20:00", 3599.0)
         assertNull(vm().loaded().review)

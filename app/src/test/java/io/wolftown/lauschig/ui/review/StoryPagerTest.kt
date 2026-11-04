@@ -116,6 +116,18 @@ class StoryPagerTest {
         assertEquals(0f, state.progress, 0f)
     }
 
+    @Test
+    @Config(sdk = [35], qualifiers = "w1000dp-h600dp")
+    fun onAWideWindow_theSidesBesideTheStoryAreTapAreasToo() {
+        val state = StoryState(3)
+        show(state, StoryMotion(autoAdvance = false))
+        val story = rule.onNodeWithTag("story")
+        story.performTouchInput { click(percentOffset(0.95f, 0.5f)) }
+        assertEquals(1, state.index)
+        story.performTouchInput { click(percentOffset(0.05f, 0.5f)) }
+        assertEquals(0, state.index)
+    }
+
     @Test fun holdingPauses_andItsReleaseMovesNothing() {
         val state = StoryState(3)
         show(state, clock = true)
@@ -159,9 +171,13 @@ class StoryPagerTest {
         rule.onNodeWithTag("storyNext").assertIsNotEnabled()
         rule.onNodeWithTag("storyPrevious").performClick()
         assertEquals(1, state.index)
-        // TalkBack's actions menu moves too.
-        val actions = slide.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
-        assertEquals(listOf("Next slide", "Previous slide"), actions.map { it.label })
+        // TalkBack's actions menu moves too, and a double tap on the slide is "next" (said so) – not on the last one.
+        val config = slide.fetchSemanticsNode().config
+        assertEquals(listOf("Next slide", "Previous slide"), config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].map { it.label })
+        assertEquals("Next slide", config[androidx.compose.ui.semantics.SemanticsActions.OnClick].label)
+        slide.performClick()
+        assertEquals(2, state.index)
+        assertTrue(androidx.compose.ui.semantics.SemanticsActions.OnClick !in slide.fetchSemanticsNode().config)
     }
 
     @Test fun withAutoAdvance_thereAreNoButtons() {
@@ -199,6 +215,25 @@ class StoryPagerTest {
     @Test fun withoutAnimations_noEntrance() {
         show(StoryState(2), StoryMotion(autoAdvance = false, animations = false))
         assertEquals(listOf(0 to false), entrances)
+    }
+
+    @Test fun thePlaceSurvivesARotation_alsoWhenTheFrameComposesThePageAlongAnotherPath() {
+        // Turning a phone switches the frame between the tab bar and the navigation rail: another path to the page.
+        val tester = StateRestorationTester(rule)
+        var state: StoryState? = null
+        var rail = false
+        tester.setContent {
+            val page = @Composable {
+                val s = rememberStoryState(4).also { state = it }
+                Story(s, StoryMotion(autoAdvance = false))
+            }
+            if (rail) androidx.compose.foundation.layout.Row { androidx.compose.foundation.layout.Box { page() } } else page()
+        }
+        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
+        rule.onNodeWithTag("storySlide").performTouchInput { click(percentOffset(0.9f, 0.5f)) }
+        rail = true
+        tester.emulateSavedInstanceStateRestore()
+        assertEquals(2, state!!.index)
     }
 
     @Test fun thePlaceSurvivesARotation() {

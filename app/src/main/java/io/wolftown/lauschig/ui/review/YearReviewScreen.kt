@@ -28,7 +28,7 @@ import io.wolftown.lauschig.ui.theme.rememberCoverSwatch
 @Composable
 fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    YearReviewScreen(state, onClose, motion = rememberStoryMotion())
+    YearReviewScreen(state, onClose, motion = rememberStoryMotion(), story = state.review?.let { viewModel.story(it.slides.size) })
 }
 
 /**
@@ -37,7 +37,14 @@ fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltVi
  * listening a page that says so (with its own close).
  */
 @Composable
-fun YearReviewScreen(state: YearReviewUiState, onClose: () -> Unit, modifier: Modifier = Modifier, motion: StoryMotion = StoryMotion()) {
+fun YearReviewScreen(
+    state: YearReviewUiState,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    motion: StoryMotion = StoryMotion(),
+    /** Where the story stands (the view model keeps it across a rotation); null: remembered here. */
+    story: StoryState? = null,
+) {
     val review = state.review
     if (state.loading || review == null) {
         Column(modifier.fillMaxSize().testTag("reviewEmpty")) {
@@ -62,9 +69,9 @@ fun YearReviewScreen(state: YearReviewUiState, onClose: () -> Unit, modifier: Mo
     review.slides.mapNotNull { it.leadItemId }.distinct().forEach { id ->
         key(id) { rememberCoverSwatch(reviewCoverModel(id, state.covers), state.covers[id]?.version ?: 0) }
     }
-    val story = rememberStoryState(review.slides.size)
+    val place = story ?: rememberStoryState(review.slides.size)
     StoryPager(
-        story, onClose, title = stringResource(R.string.review_title, review.year),
+        place, onClose, title = stringResource(R.string.review_title, review.year),
         colors = { reviewSlideColors(review.slides[it], state.covers) },
         description = { reviewSlideDescription(review.slides[it]) },
         modifier = modifier,

@@ -38,7 +38,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.isUnspecified
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -64,10 +67,10 @@ import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.stats.BarChart
-import io.wolftown.lauschig.ui.stats.statsBarColor
 import io.wolftown.lauschig.ui.stats.statsDuration
 import io.wolftown.lauschig.ui.theme.Spacing
-import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.MIN_CONTROL_CONTRAST
+import io.wolftown.lauschig.ui.theme.contrastRatio
 import io.wolftown.lauschig.ui.theme.coverTintTarget
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -403,11 +406,26 @@ private fun Days(s: ReviewSlide.Days, entrance: Boolean) {
     streakLine(s)?.let { Line(it, Modifier.padding(top = Spacing.l)) }
 }
 
+/**
+ * The plain bars on a slide: its content colour blended into the background only as far as they still keep WCAG's 3:1
+ * for graphics against it – quieter than the strongest month (the content colour itself, with its dot and bold label).
+ */
+internal fun quietBarColor(background: Color, content: Color): Color {
+    if (background.isUnspecified) return content
+    var fraction = 0.5f
+    while (fraction < 1f) {
+        val c = lerp(background, content, fraction)
+        if (contrastRatio(c, background) >= MIN_CONTROL_CONTRAST) return c
+        fraction += 0.05f
+    }
+    return content
+}
+
 @Composable
 private fun Rhythm(s: ReviewSlide.Rhythm, entrance: Boolean) {
     val locale = appLocale()
     val background = LocalSlideBackground.current
-    val scheme = MaterialTheme.colorScheme
+    val content = LocalContentColor.current
     Overline(stringResource(R.string.review_rhythm_title))
     BigText(monthName(s), entrance)
     Line(stringResource(R.string.review_top_month, statsDuration(s.topMonthSec)))
@@ -416,8 +434,12 @@ private fun Rhythm(s: ReviewSlide.Rhythm, entrance: Boolean) {
         modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth().padding(top = Spacing.xl).testTag("reviewMonths"),
         labels = (1..12).map { java.time.Month.of(it).getDisplayName(DateTextStyle.NARROW_STANDALONE, locale) },
         height = 96.dp,
-        barColor = statsBarColor(scheme, background),
-        currentColor = scheme.controlColorOn(background),
+        // In the slide's own colours (a container's "on" colour may be light while the theme's neutrals are dark).
+        barColor = quietBarColor(background, content),
+        currentColor = content,
+        baselineColor = content.copy(alpha = 0.3f),
+        labelColor = content,
+        currentLabelColor = content,
     )
     weekdayLine(s)?.let { Line(it, Modifier.padding(top = Spacing.l)) }
     timeLine(s.time)?.let { Line(it) }
@@ -553,4 +575,4 @@ private fun Closing(s: ReviewSlide.Closing, covers: Map<String, ReviewCover>) {
 }
 
 /** The current slide's background (the month bars pick colours that keep their contrast on it). */
-val LocalSlideBackground = androidx.compose.runtime.staticCompositionLocalOf { androidx.compose.ui.graphics.Color.Unspecified }
+val LocalSlideBackground = androidx.compose.runtime.staticCompositionLocalOf { Color.Unspecified }

@@ -63,6 +63,15 @@ class YearReviewViewModel(
         // Lazily, not while subscribed: back from the background the story is the same one (and in the same place).
         .stateIn(viewModelScope, SharingStarted.Lazily, YearReviewUiState(year))
 
+    private var story: StoryState? = null
+
+    /**
+     * The story's place (slide, its time, the entrances played) lives here, not in saved UI state: turning the device
+     * switches the frame between the tab bar and the navigation rail, which composes the navigation host along another
+     * path – its pages' remembered state does not come along (seen on the emulator), the view model does.
+     */
+    fun story(count: Int): StoryState = story?.takeIf { it.count == count } ?: StoryState(count).also { story = it }
+
     private suspend fun load(): YearReviewUiState {
         val sid = accounts.account.first()?.serverId ?: return YearReviewUiState(year, loading = false)
         val data = source.observe(sid, calendar.zones()).first()
