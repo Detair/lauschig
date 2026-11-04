@@ -47,3 +47,81 @@ Each has a DE/EN title and one-line description (plain words, sentence case), an
 - Determinism: the same data must always give the same unlock dates (no "now" leaking into the replay except for undated books).
 - A first sync of years of history must not show a flood of notices.
 - Time windows use the device zone at the session's start, not UTC.
+
+## Implementation notes (2026-11-04)
+
+All five tasks are done on `phase-5b` (TDD, one commit per task plus three fixes found while verifying). Version stays
+0.3.0; "Was ist neu" got two lines (achievements; the notice on Start).
+
+**Built**
+- **Evaluator** `stats/Achievements.kt` (pure): the catalogue enum (ids as planned), `evaluate(sessions, finished,
+  seriesGroups, items, zone)` → `AchievementState(achievement, reached: List<LocalDate?>, value)` per achievement in
+  catalogue order, `sorted`, `unlockedTiers`, `TOTAL_TIERS` (28), `AchievementsPreview`. 5A's `ListeningStats` gained
+  what the families need, with tests there: `FinishedBook.finishedAt` (moment of the finish) and `.progressDay`,
+  `runLengths(days)` (streaks uses it), `finishedSeriesGroups` (finishedSeries uses it).
+- **Room v10** `achievement_seen(serverId, id, tier, seenAt)` (PK serverId+id+tier, insert-or-ignore keeps the first
+  time), AutoMigration 9→10, `10.json`, `MigrationTest.v9ToV10…`, sign-out checklist (AccountDataDao delete +
+  deleteServer + hasRows + SERVER_TABLES).
+- **Shared pipeline** `stats/ListeningData.kt`: `ListeningDataSource` (was the Stats view model's private pipeline:
+  merged sessions, days, finished books and series, catalog; conflated) – used by Stats, Achievements and the notice.
+- **Notice** `AchievementNotices.step` (pure) + `AchievementNoticeViewModel` + `AchievementNoticeSnackbar` on Start
+  (the app's snackbar host is handed to `StartRoute` through `AppNavHost`).
+- **UI** `ui/achievements/AchievementsScreen` (+ view model, texts, badge), route `Achievements` inside `ReadableWidth`,
+  the Stats section „Erfolge“, `SeeAllButton(label, description)`.
+
+**Decisions beyond the plan (Claudes Wahl, for review)**
+1. *Undated books are dated by their progress's `lastUpdate`* (the day in the device zone), not by "the first
+   evaluation that sees them": the same data gives the same day without storing a first-seen per book, and when a book
+   is first seen its `lastUpdate` is never later than that moment. A progress without a time (`lastUpdate` ≤ 0) still
+   counts, its tier is reached without a day („Erreicht“). No "now" enters the evaluation at all.
+2. *Baseline*: the first evaluation waits until the account's history is complete (`HistoryLoad.NONE`) **and** the
+   progress was synced once (`progress_sync:<sid>` stamp), then writes every reached tier plus a `_baseline` row
+   (tier 0) silently – so a new listener with nothing reached still gets their first notice. After the baseline every
+   new tier is told whatever the history does (an interrupted reconcile only brings genuine listening). Every data
+   change is a new look (fix `39fe67a`: a progress sync that changes no tier must still settle the baseline).
+3. *Shown once* = the snackbar ended (dismissed, timed out after `Long`, or „Ansehen“). Leaving Start while it shows
+   brings it back next time; a newer notice replaces it; a late end for an account that is no longer signed in writes
+   nothing. Notices appear only on Start (as planned); with another start tab they wait for a visit to Start.
+4. *Rules the plan left open*: commuter sessions need 10 minutes like night owl / early bird, Monday–Friday, start in
+   [6:00, 9:00) or [16:00, 19:00); genres count a title (a book, or a podcast with its episodes) once heard 30 minutes,
+   its catalog genres trimmed and case-insensitive; weekend = a Saturday plus the Sunday after it (held on Saturday when
+   Saturday alone is enough); one go = a book's first finish within 72 h of its first session with listening; a
+   series is complete on the day its last volume was finished (no day when a volume has none); the streak's progress is
+   the longest run (the rule's measure), not the current one.
+5. *Cards*: the title is the reached tier's name („7 Tage am Stück“; a locked card names its first goal) – the notice
+   says the same words; „Stufe 2 von 5“ only for a reached tier; progress = value of the next threshold („37 / 50
+   Std.“, under an hour „20 Min. / 1 Std.“, marathon/weekend as durations); then „Seit 12. März 2026“ / „Erreicht“ /
+   „Noch nicht erreicht“. TalkBack: one merged item reading the lines in order, the progress said „37 von 50 Std.“
+   (German dative: „12 von 30 Tagen“, „3 von 5 Büchern“), the bar itself silent.
+6. *Grid*: columns of at least 160 dp, but never narrower than the widest single word on any card (fix `2758556`: at
+   200 % in German two columns broke „Frühaufsteher“); each row as tall as its tallest card, the
+   status lines at the bottom so they line up. Up to four columns inside `ReadableWidth` on tablets.
+7. *Order*: unlocked by the current tier's day (newest first; reached without a day after those), ties by closeness
+   (a complete one counts as 1), then catalogue order; locked by closeness, then catalogue order.
+8. *Stats section* under the tiles (not tied to the period, in every period): the three latest as rows with a 40 dp
+   badge, „Alle (7/28)“ (said „Alle Erfolge, 7 von 28 erreicht“), „Noch keine Erfolge“ without any. „Alle (x/y)“
+   counts tiers: 28 in all (the plan's 31 was an example).
+9. *Names*: Pendelzeit/Commute (not „Pendler“), Genre-Vielfalt/Genre explorer, Hörwochenende/Listening weekend, In
+   einem Rutsch/In one go, Frühaufsteher/Early bird, Nachteule/Night owl, Marathon; EN "Level 2 of 5". Icons from
+   Material Icons Extended, Rounded (the project's set): Schedule, LocalFireDepartment, AutoStories, LibraryBooks,
+   DirectionsRun, NightsStay, WbTwilight, Weekend, Bolt, Commute, Category.
+
+**Verification**
+- `timeout 1500 ./gradlew testDebugUnitTest :abs-api:test lintDebug assembleDebug -q` green: 1427 tests (54 new), lint
+  0 errors and no new warnings (one run crashed inside lint's Kotlin analysis on the untouched `ApiStubs.kt` – the known
+  flake from earlier phases; the rerun was clean).
+- Emulator (lauschig35, local test ABS): update over 0.3.0 migrated Room 9→10 in place; the first evaluation marked
+  books 1, one go and series 1 silently (no snackbar); Stats section and grid (light/dark, EN/DE); test sessions posted
+  to the local server one at a time brought „New achievement: 1 hour listened“, „2 new achievements“ (night owl + 3 days
+  in a row, „View“ opened the grid) and „Neuer Erfolg: Frühaufsteher“, each once (a cold start told nothing again);
+  200 % font in German (one column, no word broken, after the fix); tablet mimic 800x1340 @213 portrait/landscape,
+  light/dark. Afterwards the three sessions were deleted from the server (48 again), the three titles' progress values
+  restored, the emulator's cache pruned by a full run, the four test rows removed from `achievement_seen`, and every
+  emulator setting reset.
+
+**Open / for Fabian**
+- Start now reads the account's whole history while it is shown (merge + evaluation per Room change, conflated, off the
+  main thread) – 5A kept Start to the last 30 days. Fine for the family's sizes; a very long history re-evaluates on
+  every 10 s tick while a title plays. Moving the evaluation into the sync and storing a pending notice would undo that.
+- Achievements are derived, so they can go away: sessions deleted on the server (once a full run prunes them), a
+  finished mark removed, a series that gets a new volume. Reached again, they are not told again.
