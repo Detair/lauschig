@@ -29,6 +29,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -150,57 +151,54 @@ fun AppScaffold(
             }
         }
     }
-    if (navigationRail) {
-        // System bars and a display cutout (phones in landscape), not the keyboard: screens with a text field handle it.
-        val safe = WindowInsets.systemBars.union(WindowInsets.displayCutout)
-        Row(modifier.fillMaxSize()) {
-            if (showBottomBar) {
-                NavigationRail(Modifier.testTag("navRail"), windowInsets = safe.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)) {
-                    // Centred on the side, easy to reach with a thumb holding a tablet.
-                    Spacer(Modifier.weight(1f))
-                    tabs.forEach { tab ->
-                        NavigationRailItem(
-                            selected = tab == selectedTab,
-                            onClick = { onTabSelected(tab) },
-                            icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.testTag("navIcon")) },
-                            label = { Text(stringResource(tab.label)) },
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
+    // One Scaffold call for both layouts, the rail only added in front of it: the pages keep their place in the
+    // composition, so turning a phone (bottom bar ↔ rail) restores their saved state – scroll positions and the like.
+    // System bars and a display cutout (phones in landscape), not the keyboard: screens with a text field handle it.
+    val safe = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+    Row(modifier.fillMaxSize()) {
+        if (navigationRail && showBottomBar) {
+            NavigationRail(Modifier.testTag("navRail"), windowInsets = safe.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)) {
+                // Centred on the side, easy to reach with a thumb holding a tablet.
+                Spacer(Modifier.weight(1f))
+                tabs.forEach { tab ->
+                    NavigationRailItem(
+                        selected = tab == selectedTab,
+                        onClick = { onTabSelected(tab) },
+                        icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.testTag("navIcon")) },
+                        label = { Text(stringResource(tab.label)) },
+                    )
                 }
+                Spacer(Modifier.weight(1f))
             }
-            val sides = if (showBottomBar) WindowInsetsSides.Vertical + WindowInsetsSides.End else WindowInsetsSides.Vertical + WindowInsetsSides.Horizontal
-            Scaffold(
-                modifier = Modifier.weight(1f),
-                snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
-                contentWindowInsets = safe.only(sides),
-                // Without a bottom bar the mini player keeps clear of the navigation bar itself.
-                bottomBar = { Column(Modifier.windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) { miniPlayer() } },
-                content = body,
-            )
         }
-        return
-    }
-    Scaffold(
-        modifier = modifier,
-        snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
-        bottomBar = {
-            if (showBottomBar) Column {
-                miniPlayer()
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = tab == selectedTab,
-                            onClick = { onTabSelected(tab) },
-                            icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.testTag("navIcon")) },
-                            label = { Text(stringResource(tab.label)) },
-                        )
+        val railSides = if (showBottomBar) WindowInsetsSides.Vertical + WindowInsetsSides.End else WindowInsetsSides.Vertical + WindowInsetsSides.Horizontal
+        Scaffold(
+            modifier = Modifier.weight(1f),
+            snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
+            contentWindowInsets = if (navigationRail) safe.only(railSides) else ScaffoldDefaults.contentWindowInsets,
+            bottomBar = {
+                if (navigationRail) {
+                    // Without a bottom bar the mini player keeps clear of the navigation bar itself.
+                    Column(Modifier.windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) { miniPlayer() }
+                } else if (showBottomBar) {
+                    Column {
+                        miniPlayer()
+                        NavigationBar {
+                            tabs.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = tab == selectedTab,
+                                    onClick = { onTabSelected(tab) },
+                                    icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.testTag("navIcon")) },
+                                    label = { Text(stringResource(tab.label)) },
+                                )
+                            }
+                        }
                     }
                 }
-            }
-        },
-        content = body,
-    )
+            },
+            content = body,
+        )
+    }
 }
 
 /** The banners on top of a page: "sign in again" first, then the offline / connecting hint. */
