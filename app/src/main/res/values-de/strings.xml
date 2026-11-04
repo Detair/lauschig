@@ -753,4 +753,35 @@
         <item quantity="other">%d neue Erfolge</item>
     </plurals>
     <string name="achievement_notice_view">Ansehen</string>
+    <string name="achievements_title">Erfolge</string>
+    <string name="achievements_summary">%1$d von %2$d erreicht</string>
+    <string name="achievement_hours_desc">Stunden, die du insgesamt gehört hast</string>
+    <string name="achievement_streak_desc">Tage in Folge mit mindestens einer Minute</string>
+    <string name="achievement_books_desc">Bücher, die du bis zum Ende gehört hast</string>
+    <string name="achievement_series_desc">Serien, von denen du jeden Band beendet hast</string>
+    <string name="achievement_marathon_desc">4 Stunden an einem Tag</string>
+    <string name="achievement_night_owl_desc">10 Minuten, begonnen zwischen 0 und 4 Uhr</string>
+    <string name="achievement_early_bird_desc">10 Minuten, begonnen zwischen 4 und 6 Uhr</string>
+    <string name="achievement_weekend_desc">5 Stunden an einem Samstag und Sonntag</string>
+    <string name="achievement_one_go_desc">Ein Buch binnen 72 Stunden nach dem Anfang beendet</string>
+    <string name="achievement_commuter_desc">20 Sitzungen werktags zu je 10 Minuten, begonnen 6–9 oder 16–19 Uhr</string>
+    <string name="achievement_genres_desc">Titel aus 5 Genres, jeder 30 Minuten gehört</string>
+    <string name="achievement_tier">Stufe %1$d von %2$d</string>
+    <string name="achievement_progress">%1$s / %2$s</string>
+    <string name="achievement_progress_spoken">%1$s von %2$s</string>
+    <string name="achievement_unit_hours">%d Std.</string>
+    <plurals name="achievement_unit_sessions">
+        <item quantity="one">%d Sitzung</item>
+        <item quantity="other">%d Sitzungen</item>
+    </plurals>
+    <plurals name="achievement_unit_genres">
+        <item quantity="one">%d Genre</item>
+        <item quantity="other">%d Genres</item>
+    </plurals>
+    <string name="achievement_since">Seit %1$s</string>
+    <string name="achievement_reached">Erreicht</string>
+    <string name="achievement_locked">Noch nicht erreicht</string>
+    <string name="stats_achievements_all">Alle (%1$d/%2$d)</string>
+    <string name="stats_achievements_all_spoken">Alle Erfolge, %1$d von %2$d erreicht</string>
+    <string name="stats_achievements_none">Noch keine Erfolge</string>
 </resources>

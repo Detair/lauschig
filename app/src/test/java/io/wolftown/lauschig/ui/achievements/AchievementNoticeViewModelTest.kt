@@ -10,6 +10,7 @@ import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.AchievementSeenEntity
 import io.wolftown.lauschig.db.entities.ListeningSessionEntity
+import io.wolftown.lauschig.db.entities.ProgressEntity
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.stats.AchievementKey
 import io.wolftown.lauschig.stats.CalendarNow
@@ -130,9 +131,12 @@ class AchievementNoticeViewModelTest {
         delay(200)
         assertEquals(emptyList<String>(), seen())
 
-        // The progress sync writes; then the next evaluation is the first – silent, whatever arrived meanwhile.
-        progressSynced = true
+        // More arrives meanwhile; then the progress sync writes and the next evaluation is the first – silent.
         session("2", "2026-11-02T10:00", 40000.0)
+        delay(200)
+        assertEquals(emptyList<String>(), seen())
+        progressSynced = true
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "li_9", 10.0, 100.0, isFinished = false, lastUpdate = 1)))
         assertEquals(listOf("_baseline:0@1000", "hours:1@1000", "hours:2@1000", "marathon:1@1000"), eventually({ seen() }) { it.isNotEmpty() })
         assertNull(vm.notice.value)
     }

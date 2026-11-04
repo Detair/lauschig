@@ -280,3 +280,15 @@ object Achievements {
         return AchievementState(Achievement.GENRES, listOfNotNull(reachedOn), genres.size.toDouble())
     }
 }
+
+/** The Stats page's section: the latest unlocks and how many tiers of all are reached. */
+@Immutable
+data class AchievementsPreview(val recent: List<AchievementState>, val unlockedTiers: Int, val totalTiers: Int = Achievements.TOTAL_TIERS) {
+    companion object {
+        const val RECENT = 3
+
+        /** The [RECENT] most recently unlocked (as [Achievements.sorted] orders them). */
+        fun of(states: List<AchievementState>) =
+            AchievementsPreview(Achievements.sorted(states).filter { it.unlocked }.take(RECENT), Achievements.unlockedTiers(states))
+    }
+}

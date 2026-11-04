@@ -23,6 +23,7 @@ import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
+import io.wolftown.lauschig.ui.achievements.AchievementsRoute
 import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
@@ -64,7 +65,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(Achievements) { launchSingleTop = true } }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -89,8 +90,14 @@ fun AppNavHost(
         }
         composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
         composable<Stats> {
-            ReadableWidth { StatsRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+            ReadableWidth {
+                StatsRoute(
+                    onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenAchievements = { navController.navigate(Achievements) { launchSingleTop = true } },
+                )
+            }
         }
+        composable<Achievements> { ReadableWidth { AchievementsRoute(onBack = { navController.popBackStack() }) } }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).

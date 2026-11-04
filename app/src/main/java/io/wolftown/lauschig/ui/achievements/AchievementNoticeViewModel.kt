@@ -12,6 +12,7 @@ import io.wolftown.lauschig.stats.AchievementNotices
 import io.wolftown.lauschig.stats.ListeningDataSource
 import io.wolftown.lauschig.stats.NoticeStep
 import io.wolftown.lauschig.stats.StatsCalendar
+import io.wolftown.lauschig.stats.zones
 import io.wolftown.lauschig.sync.HistoryLoad
 import io.wolftown.lauschig.sync.ListeningSessionSync
 import io.wolftown.lauschig.sync.ProgressSync
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -67,7 +67,7 @@ class AchievementNoticeViewModel(
     private val serverId = accounts.account.map { it?.serverId }.distinctUntilChanged()
 
     /** Time windows and days are read in the device zone. */
-    private val zone = calendar.changes.map { calendar.now().zone }.onStart { emit(calendar.now().zone) }.distinctUntilChanged()
+    private val zone = calendar.zones()
 
     val notice: StateFlow<AchievementNotice?> = serverId.flatMapLatest { sid -> if (sid == null) flowOf(null) else noticeFor(sid) }
         .flowOn(dispatcher)

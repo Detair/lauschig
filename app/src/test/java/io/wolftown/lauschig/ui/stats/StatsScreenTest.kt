@@ -27,6 +27,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import io.wolftown.lauschig.stats.Achievement
+import io.wolftown.lauschig.stats.AchievementState
+import io.wolftown.lauschig.stats.AchievementsPreview
 import io.wolftown.lauschig.stats.AuthorTime
 import io.wolftown.lauschig.stats.Bar
 import io.wolftown.lauschig.stats.BarUnit
@@ -119,6 +122,38 @@ class StatsScreenTest {
         list.performScrollToNode(hasText("Authors"))
         rule.onAllNodesWithText("Anna", useUnmergedTree = true).assertCountEquals(2) // Book A's author and the author row
         assertEquals(listOf("previous", "period:YEAR", "open:li_a"), calls)
+    }
+
+    @Test fun achievements_theThreeLatest_andAllWithTheCount() {
+        val calls = mutableListOf<String>()
+        val preview = AchievementsPreview(
+            recent = listOf(
+                AchievementState(Achievement.HOURS, listOf(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 3)), 11 * 3600.0),
+                AchievementState(Achievement.NIGHT_OWL, listOf(LocalDate.of(2026, 10, 5)), null),
+                AchievementState(Achievement.BOOKS, listOf(null), 1.0),
+            ),
+            unlockedTiers = 4, totalTiers = 28,
+        )
+        rule.setContent { LauschigTheme { StatsScreen(listened.copy(achievements = preview), onBack = {}, onOpenAchievements = { calls += "all" }) } }
+        val list = rule.onNodeWithTag("statsList")
+        list.performScrollToNode(hasText("Achievements"))
+        rule.onNodeWithTag("statsAchievementsAll").assertTextEquals("All (4/28)").assertContentDescriptionEquals("All achievements, 4 of 28 reached")
+        list.performScrollToNode(hasText("10 hours listened"))
+        rule.onNodeWithText("Since November 3, 2026").assertIsDisplayed()
+        list.performScrollToNode(hasText("Night owl"))
+        list.performScrollToNode(hasText("1 book finished"))
+        rule.onNodeWithText("Reached").assertIsDisplayed()
+        rule.onNodeWithText("Night owl").performClick()
+        rule.onNodeWithTag("statsAchievementsAll").performClick()
+        assertEquals(listOf("all", "all"), calls)
+    }
+
+    @Test fun achievements_noneYet_saysSo_allStillOpensThem() {
+        rule.setContent {
+            LauschigTheme { StatsScreen(listened.copy(achievements = AchievementsPreview(emptyList(), 0, 28)), onBack = {}) }
+        }
+        rule.onNodeWithTag("statsList").performScrollToNode(hasText("No achievements yet"))
+        rule.onNodeWithTag("statsAchievementsAll").assertTextEquals("All (0/28)")
     }
 
     @Test fun anEmptyPeriod_saysSo_andShowsNoLists() {
