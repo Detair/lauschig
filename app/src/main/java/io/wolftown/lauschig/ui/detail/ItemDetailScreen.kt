@@ -58,10 +58,9 @@ import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
 import io.wolftown.lauschig.ui.adaptive.LocalReadableGutter
 import io.wolftown.lauschig.ui.theme.animateCoverTint
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.drawBehind
@@ -174,8 +173,9 @@ fun ItemDetailScreen(
     val tint = animateCoverTint(model, surface)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
-    // The tint reaches under the status bar and, on a wide window that centres this page, into the free sides.
-    val reachTop = WindowInsets.systemBars.getTop(density).toFloat()
+    // The tint reaches under the status bar where the frame allows it (never over a banner) and, on a wide window that
+    // centres this page, into the free sides.
+    val reachTop = with(density) { LocalBackdropReach.current.top.toPx() }
     val reachSide = with(density) { LocalReadableGutter.current.toPx() }
     // The window (or pane) this page has, not the page's own height: the list below scrolls and has no bounds.
     BoxWithConstraints(modifier.fillMaxSize()) {

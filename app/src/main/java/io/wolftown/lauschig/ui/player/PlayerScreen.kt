@@ -79,22 +79,17 @@ import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.ui.common.DownloadIconButton
 import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
 import io.wolftown.lauschig.ui.theme.animateCoverTint
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.QuickDownload
@@ -391,20 +386,18 @@ fun PlayerScreen(
         }
     }
 
-    // The gradient reaches under the status bar and a side cutout too (the page itself sits inside them).
-    val bars = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+    // The gradient reaches under the status bar and the side insets where the frame allows it (never over a banner).
+    val reach = LocalBackdropReach.current
     val density = LocalDensity.current
-    val direction = LocalLayoutDirection.current
-    val reach = Rect(
-        bars.getLeft(density, direction).toFloat(), bars.getTop(density).toFloat(),
-        bars.getRight(density, direction).toFloat(), 0f,
-    )
     BoxWithConstraints(
         modifier.fillMaxSize().drawBehind {
+            val top = with(density) { reach.top.toPx() }
+            val left = with(density) { reach.left.toPx() }
+            val right = with(density) { reach.right.toPx() }
             drawRect(
-                Brush.verticalGradient(0f to tint.value, 0.6f to surface, startY = -reach.top, endY = size.height),
-                topLeft = Offset(-reach.left, -reach.top),
-                size = Size(size.width + reach.left + reach.right, size.height + reach.top),
+                Brush.verticalGradient(0f to tint.value, 0.6f to surface, startY = -top, endY = size.height),
+                topLeft = Offset(-left, -top),
+                size = Size(size.width + left + right, size.height + top),
             )
         },
     ) {

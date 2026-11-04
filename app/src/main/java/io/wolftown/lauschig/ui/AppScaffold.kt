@@ -36,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,12 +44,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
+import io.wolftown.lauschig.ui.common.backdropReach
 import kotlinx.coroutines.delay
 
 /** The four top-level tabs; their order, visibility and the start screen are the user's (`TabLayout`). */
@@ -133,10 +137,13 @@ fun AppScaffold(
     val banner = rememberConnectionBanner(connection, connectionChecking).takeIf { showOfflineBanner }
 
     val body: @Composable (PaddingValues) -> Unit = { inner ->
+        // A page's backdrop may reach over the status bar only while no banner sits between them.
+        val reach = backdropReach(inner, LocalLayoutDirection.current, bannerShown = showReauthBanner || banner != null)
         Column(Modifier.fillMaxSize().padding(inner)) {
-            if (showReauthBanner) ReauthBanner(onReauth)
-            banner?.let { ConnectionHint(it, onOpenConnection) }
-            Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
+            FrameBanners(banner, showReauthBanner, onReauth, onOpenConnection)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                CompositionLocalProvider(LocalBackdropReach provides reach) { content(PaddingValues()) }
+            }
         }
     }
     if (navigationRail) {
@@ -190,6 +197,13 @@ fun AppScaffold(
         },
         content = body,
     )
+}
+
+/** The banners on top of a page: "sign in again" first, then the offline / connecting hint. */
+@Composable
+fun FrameBanners(banner: ConnectionBanner?, showReauthBanner: Boolean, onReauth: () -> Unit, onOpenConnection: () -> Unit) {
+    if (showReauthBanner) ReauthBanner(onReauth)
+    banner?.let { ConnectionHint(it, onOpenConnection) }
 }
 
 @Composable
