@@ -27,6 +27,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -65,9 +66,12 @@ class LibraryViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm(prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") })): LibraryViewModel {
+    private fun vm(
+        prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
+        signedIn: Boolean = true,
+    ): LibraryViewModel {
         val store = FakeAccountStore()
-        store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        if (signedIn) store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao()))
     }
 
@@ -85,6 +89,10 @@ class LibraryViewModelTest {
         db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, id, t, 100.0, fin, last, false)))
 
     private suspend fun LibraryViewModel.await(p: (LibraryUiState) -> Boolean) = withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    @Test fun signedOut_isLoaded_notLoadingForever() = runTest {
+        assertTrue(vm(signedIn = false).await { it.loaded }.items.isEmpty())
+    }
 
     @Test fun seriesTab_ordersBySequence_unknownLast() = runTest {
         libs()

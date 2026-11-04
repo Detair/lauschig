@@ -44,6 +44,7 @@ import io.wolftown.lauschig.external.MissingVolume
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -86,9 +87,10 @@ class BrowseViewModelTest {
         prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
         info: AuthorInfoCache = authors,
         missing: MissingVolumesSource = MissingVolumesSource(flowOf(false), flowOf(true)) { _, _, _, _ -> null },
+        signedIn: Boolean = true,
     ): BrowseViewModel {
         val store = FakeAccountStore()
-        store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        if (signedIn) store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
         val factory = viewModelFactory {
             initializer {
@@ -111,6 +113,10 @@ class BrowseViewModelTest {
 
     private suspend fun BrowseViewModel.await(p: (BrowseUiState) -> Boolean) =
         withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    @Test fun signedOut_isLoaded_notLoadingForever() = runTest {
+        assertTrue(vm(BrowseKind.SERIES, "Saga", signedIn = false).await { it.loaded }.entries.isEmpty())
+    }
 
     @Test fun authorPage_offline_showsBooksWithoutBio() = runTest {
         libs()

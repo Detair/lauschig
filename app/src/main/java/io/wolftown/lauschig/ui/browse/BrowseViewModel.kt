@@ -113,7 +113,8 @@ class BrowseViewModel(
     }
 
     val state: StateFlow<BrowseUiState> = serverId
-        .flatMapLatest { sid -> if (sid == null) flowOf(BrowseUiState(kind, name)) else stateFor(sid) }
+        // Signed out (on the way to the sign-in): nothing to load, so no endless "loading".
+        .flatMapLatest { sid -> if (sid == null) flowOf(BrowseUiState(kind, name, loaded = true)) else stateFor(sid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrowseUiState(kind, name))
 
     fun setKinds(kinds: Set<LibraryKind>) {

@@ -79,7 +79,8 @@ class LibraryViewModel @Inject constructor(
     val state: StateFlow<LibraryUiState> = accountStore.account
         .map { it?.serverId }
         .distinctUntilChanged()
-        .flatMapLatest { sid -> if (sid == null) flowOf(LibraryUiState()) else stateFor(sid) }
+        // Signed out (on the way to the sign-in): nothing to load, so no endless "loading".
+        .flatMapLatest { sid -> if (sid == null) flowOf(LibraryUiState(loaded = true)) else stateFor(sid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     fun selectTab(t: LibraryTab) {

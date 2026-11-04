@@ -70,9 +70,9 @@ class SearchViewModelTest {
 
     private val searchCalls = mutableListOf<String>()
 
-    private fun vm(recent: RecentSearches = RecentSearches(store("r"))): SearchViewModel {
+    private fun vm(recent: RecentSearches = RecentSearches(store("r")), signedIn: Boolean = true): SearchViewModel {
         val accounts = FakeAccountStore()
-        accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        if (signedIn) accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
         val factory = viewModelFactory {
             initializer {
@@ -152,6 +152,13 @@ class SearchViewModelTest {
         v.setQuery("   "); v.submit()     // blank is never stored
         val s = v.await { it.recent.size == 8 && it.recent.first() == "QUERY 5" }
         assertEquals(listOf("QUERY 5", "query 10", "query 9", "query 8", "query 7", "query 6", "query 4", "query 3"), s.recent)
+    }
+
+    @Test fun signedOut_aQueryIsSearched_withNothingFound_notLoadingForever() = runTest {
+        val v = vm(signedIn = false)
+        v.setQuery("momo")
+        val s = v.await { it.searched }
+        assertTrue(!s.hasResults && s.resultsFor == "momo")
     }
 
     @Test fun search_noMatch_isSearchedAndEmpty() = runTest {

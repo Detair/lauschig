@@ -97,7 +97,8 @@ class SearchViewModel(
     private var focusPending = true
 
     val state: StateFlow<SearchUiState> = combine(
-        query, serverId.flatMapLatest { sid -> if (sid == null) flowOf(Results()) else resultsFor(sid) }, recent.queries,
+        // Signed out (on the way to the sign-in): every query has been searched and found nothing, no endless "loading".
+        query, serverId.flatMapLatest { sid -> if (sid == null) query.map { Results(query = it.trim()) } else resultsFor(sid) }, recent.queries,
     ) { q, r, recents ->
         SearchUiState(
             q, r.available, r.selected, recents, r.query, r.titles, r.authors, r.narrators, r.series, r.genres, r.tags,
