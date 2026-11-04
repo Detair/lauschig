@@ -133,9 +133,10 @@ fun achievementProgress(s: AchievementState, spoken: Boolean = false): String? {
             // Under an hour in minutes ("20 Min. / 1 Std."), else whole hours ("37 / 50 Std.").
             (if (value < 3600) statsDuration(value) else floor(value / 3600).toInt().toString()) to stringResource(R.string.achievement_unit_hours, hours(next))
         AchievementMeasure.DURATION -> statsDuration(value) to stringResource(R.string.achievement_unit_hours, hours(next))
-        AchievementMeasure.DAYS -> count(value) to pluralStringResource(R.plurals.stats_days, target, target)
-        AchievementMeasure.BOOKS -> count(value) to pluralStringResource(R.plurals.stats_books, target, target)
-        AchievementMeasure.SERIES -> count(value) to pluralStringResource(R.plurals.stats_series, target, target)
+        // Said "12 von 30 Tagen": German wants the dative there.
+        AchievementMeasure.DAYS -> count(value) to pluralStringResource(if (spoken) R.plurals.achievement_spoken_days else R.plurals.stats_days, target, target)
+        AchievementMeasure.BOOKS -> count(value) to pluralStringResource(if (spoken) R.plurals.achievement_spoken_books else R.plurals.stats_books, target, target)
+        AchievementMeasure.SERIES -> count(value) to pluralStringResource(if (spoken) R.plurals.achievement_spoken_series else R.plurals.stats_series, target, target)
         AchievementMeasure.SESSIONS -> count(value) to pluralStringResource(R.plurals.achievement_unit_sessions, target, target)
         AchievementMeasure.GENRES -> count(value) to pluralStringResource(R.plurals.achievement_unit_genres, target, target)
         AchievementMeasure.NONE -> return null

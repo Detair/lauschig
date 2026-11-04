@@ -702,6 +702,8 @@
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
         <item>A small card on Start shows how much you listened this week</item>
+        <item>Achievements: from 1 to 1000 hours, days in a row, finished books and series, and a few special ones – each with its date</item>
+        <item>A new achievement is announced once on Start; the statistics show the latest ones</item>
         <item>The title to continue is a large card on Start with its own play button</item>
         <item>The cover tints the details page and the “continue” card</item>
         <item>The player slides up from the mini player and back down</item>
@@ -784,4 +786,17 @@
     <string name="stats_achievements_all">All (%1$d/%2$d)</string>
     <string name="stats_achievements_all_spoken">All achievements, %1$d of %2$d reached</string>
     <string name="stats_achievements_none">No achievements yet</string>
+    <!-- After "… of": the same words as on the card in English. -->
+    <plurals name="achievement_spoken_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="achievement_spoken_books">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <plurals name="achievement_spoken_series">
+        <item quantity="one">%d series</item>
+        <item quantity="other">%d series</item>
+    </plurals>
 </resources>

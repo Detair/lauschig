@@ -702,6 +702,8 @@
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
         <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
+        <item>Erfolge: von 1 bis 1000 Stunden, Tage am Stück, beendete Bücher und Serien und ein paar besondere – jeweils mit Datum</item>
+        <item>Ein neuer Erfolg wird einmal auf der Startseite gemeldet; die Statistik zeigt die neuesten</item>
         <item>Der Titel zum Weiterhören ist eine große Karte auf der Startseite, mit eigener Wiedergabetaste</item>
         <item>Das Cover färbt die Detailseite und die Weiterhören-Karte ein</item>
         <item>Der Player gleitet aus dem Mini-Player nach oben und wieder zurück</item>
@@ -784,4 +786,17 @@
     <string name="stats_achievements_all">Alle (%1$d/%2$d)</string>
     <string name="stats_achievements_all_spoken">Alle Erfolge, %1$d von %2$d erreicht</string>
     <string name="stats_achievements_none">Noch keine Erfolge</string>
+    <!-- Nach „… von“: Dativ. -->
+    <plurals name="achievement_spoken_days">
+        <item quantity="one">%d Tag</item>
+        <item quantity="other">%d Tagen</item>
+    </plurals>
+    <plurals name="achievement_spoken_books">
+        <item quantity="one">%d Buch</item>
+        <item quantity="other">%d Büchern</item>
+    </plurals>
+    <plurals name="achievement_spoken_series">
+        <item quantity="one">%d Serie</item>
+        <item quantity="other">%d Serien</item>
+    </plurals>
 </resources>
