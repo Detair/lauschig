@@ -36,7 +36,9 @@
   - `CarButtons`: Android Auto Transport-Controls anpassen.
 - [ ] **1.3 UI (PlayerScreen & SettingsScreen):**
   - `SettingsScreen`: Neue Zeilen in der Wiedergabe-Sektion mit `ChoiceRow` für Zurückspringen und Vorspringen.
-  - `PlayerScreen`: Buttons für Replay/Forward zeigen die Sekundenzahl dynamisch (oder passende Icons `Replay10`, `Replay15`, `Forward30`, etc.) mit Barrierefreiheits-Texten („X Sekunden zurückspringen“ / „X Sekunden vorspringen“).
+  - `PlayerScreen`: 
+    - Buttons für Replay/Forward zeigen die Sekundenzahl dynamisch (oder passende Icons `Replay10`, `Replay15`, `Forward30`, etc.) mit Barrierefreiheits-Texten („X Sekunden zurückspringen“ / „X Sekunden vorspringen“).
+    - **Aktions-Buttons konsistent & selbsterklärend:** Das alte 4+3-Raster wird durch einheitliche Tasten ersetzt, bei denen **jeder Button dieselbe Anatomie** besitzt: Einheitliches Icon + klarer Funktionsname + aktueller Wert (z. B. `[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`). Der Sleep-Timer ist dadurch sofort als solcher erkennbar und zeigt bei Aktivität seine Restzeit warm leuchtend an.
   - Strings in `values/strings.xml` und `values-de/strings.xml`.
   - Tests: `PlayerScreenTest`, `SettingsScreenTest`.
 
