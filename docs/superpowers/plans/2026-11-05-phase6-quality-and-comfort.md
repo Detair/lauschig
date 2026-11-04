@@ -19,6 +19,7 @@
 | **Diagnose-Log teilen („Familien-Support“)** | Fehleranalyse bei Familienmitgliedern ohne technisches Wissen scheitert an `adb logcat`. | Ringpuffer-/Datei-Logger (Token und Passwörter maskiert). In Einstellungen → Über Lauschig: Knopf „Diagnose-Log teilen“ via Android ShareSheet (`FileProvider` + `Intent.ACTION_SEND`). |
 | **Automatisches Aufräumen beendeter Titel** | Beendete Downloads verbleiben auf dem Gerät, bis man manuell aufräumt. | Einstellung `autoDeleteFinished`: *Nie (Standard)*, *Sofort*, *Nach 3 Tagen*, *Nach 7 Tagen*. Ausführung im Hintergrund durch `CleanupWorker` bzw. nach Abschluss eines Buchs. |
 | **Warmes Nacht-Farbschema** | Das aktuelle Dark-Theme nutzt kühles Nachtblau (`#18213A`), was nachts im Bett blendet und die Augen reizt. | Warmes Farb-Preset *„Kaminfeuer & Bernstein“*: Warmes Mokka-Anthrazit (`#161311`), samtweiches Creme-Weiß (`#F4ECE1`) und warmer Honig-Bernstein-Akzent (`#F5BA42`). Wählbar in den Einstellungen unter *Erscheinungsbild*. |
+| **Player-Tastenleiste** | Das alte 4+3 Raster ist unruhig; Sleep-Timer und Tempo waren isoliert uneinheitlich. | **Entscheidung Fabian (2026-11-04): Variante B.** Drei symmetrische Regler oben (`[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`) plus ein großzügiges horizontales Auszieh-Banner für Inhalte (`Kapitel, Warteschlange & Notizen`). Jeder Button besitzt dieselbe Anatomie (Icon + Name + Wert). |
 
 ---
 
@@ -38,7 +39,9 @@
   - `SettingsScreen`: Neue Zeilen in der Wiedergabe-Sektion mit `ChoiceRow` für Zurückspringen und Vorspringen.
   - `PlayerScreen`: 
     - Buttons für Replay/Forward zeigen die Sekundenzahl dynamisch (oder passende Icons `Replay10`, `Replay15`, `Forward30`, etc.) mit Barrierefreiheits-Texten („X Sekunden zurückspringen“ / „X Sekunden vorspringen“).
-    - **Aktions-Buttons konsistent & selbsterklärend:** Das alte 4+3-Raster wird durch einheitliche Tasten ersetzt, bei denen **jeder Button dieselbe Anatomie** besitzt: Einheitliches Icon + klarer Funktionsname + aktueller Wert (z. B. `[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`). Der Sleep-Timer ist dadurch sofort als solcher erkennbar und zeigt bei Aktivität seine Restzeit warm leuchtend an.
+    - **Aktions-Buttons (Variante B – Fabians Wahl):** Das alte 4+3-Raster wird durch **Variante B** ersetzt:
+      - Oben 3 gleichwertige Kacheln: `[⚡ TEMPO / 1.25×]`, `[🌙 SLEEP / 30 Min.]`, `[🎙️ KLANG / +3 dB]`. Jeder Button hat dieselbe 3-teilige Anatomie (Icon + Name + Wert). Der Sleep-Timer ist unmissverständlich klar und zeigt bei Aktivität seine Restzeit warm leuchtend an (inaktiv: „Aus“).
+      - Darunter ein breites, horizontales Banner: `[📑 Kapitel & Wiedergabeliste / Aktuell: Kap. X / N >]`, das das ausziehbare Multi-Tab-Sheet (Kapitel, Warteschlange, Lesezeichen) öffnet.
   - Strings in `values/strings.xml` und `values-de/strings.xml`.
   - Tests: `PlayerScreenTest`, `SettingsScreenTest`.
 
