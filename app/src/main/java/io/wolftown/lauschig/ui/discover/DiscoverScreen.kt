@@ -1,17 +1,5 @@
 package io.wolftown.lauschig.ui.discover
 
-import androidx.compose.material3.CircularProgressIndicator
-import io.wolftown.lauschig.ui.common.kindFilterActive
-import io.wolftown.lauschig.ui.common.FilterEmptyState
-import io.wolftown.lauschig.ui.theme.Spacing
-import io.wolftown.lauschig.ui.common.SectionTitle
-import io.wolftown.lauschig.ui.common.EmptyState
-import io.wolftown.lauschig.ui.common.LoadingState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Explore
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,16 +13,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,16 +49,22 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
-import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.SectionTitle
 import io.wolftown.lauschig.ui.common.coverModel
+import io.wolftown.lauschig.ui.common.kindFilterActive
 import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.theme.Spacing
 
 @Composable
 fun DiscoverRoute(
@@ -138,7 +138,7 @@ fun DiscoverScreen(
         if (state.recent.isNotEmpty()) {
             header("recentHeader", R.string.discover_recent)
             full("recent") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap)) {
                     items(state.recent, key = { it.key }) { item ->
                         CoverTile(
                             item, Modifier.width(TILE_WIDTH), onClick = { onOpenItem(item.id) },
@@ -151,7 +151,7 @@ fun DiscoverScreen(
         if (state.series.isNotEmpty()) {
             header("seriesHeader", R.string.discover_series)
             full("series") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap)) {
                     items(state.series, key = { it.name }) { SeriesTileView(it) { onOpenBrowse(BrowseKind.SERIES, it.name) } }
                 }
             }
@@ -159,7 +159,7 @@ fun DiscoverScreen(
         if (state.genres.isNotEmpty()) {
             header("genresHeader", R.string.discover_genres)
             full("genres") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     state.genres.forEach { g -> AssistChip(onClick = { onOpenBrowse(BrowseKind.GENRE, g.name) }, label = { Text(g.name) }) }
                 }
             }
@@ -167,7 +167,7 @@ fun DiscoverScreen(
         if (state.tags.isNotEmpty()) {
             header("tagsHeader", R.string.discover_tags)
             full("tags") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     state.tags.forEach { t -> AssistChip(onClick = { onOpenBrowse(BrowseKind.TAG, t.name) }, label = { Text(t.name) }) }
                 }
             }
@@ -175,7 +175,7 @@ fun DiscoverScreen(
         if (state.authors.isNotEmpty()) {
             header("authorsHeader", R.string.discover_authors)
             full("authors") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap)) {
                     items(state.authors, key = { it.name }) { AuthorTileView(it) { onOpenBrowse(BrowseKind.AUTHOR, it.name) } }
                 }
             }

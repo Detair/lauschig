@@ -1,6 +1,5 @@
 package io.wolftown.lauschig.ui.nav
 
-import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -9,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -16,8 +16,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.compose.runtime.getValue
+import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.cleanup.CleanupRoute
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
@@ -25,13 +26,12 @@ import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
-import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
-import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
-import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
-import io.wolftown.lauschig.playback.PlayableKey
-import io.wolftown.lauschig.ui.library.LibraryRoute
+import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
+import io.wolftown.lauschig.ui.downloads.DownloadsRoute
+import io.wolftown.lauschig.ui.library.LibraryRoute
+import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute

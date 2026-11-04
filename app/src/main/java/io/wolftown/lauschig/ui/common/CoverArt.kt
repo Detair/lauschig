@@ -50,8 +50,8 @@ fun CoverArt(
     }
 }
 
-/** The hairline of [CoverArt] (drawn over the content), in dark themes only. */
-private fun Modifier.coverOutline(shape: Shape, scheme: ColorScheme): Modifier =
+/** The hairline of [CoverArt] (drawn over the content), in dark themes only; also for stand-ins drawn like a cover. */
+internal fun Modifier.coverOutline(shape: Shape, scheme: ColorScheme): Modifier =
     if (scheme.isDark) border(Dp.Hairline, scheme.outlineVariant.copy(alpha = 0.4f), shape) else this
 
 /**

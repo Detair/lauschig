@@ -1,14 +1,12 @@
 package io.wolftown.lauschig.ui.player
 
-import io.wolftown.lauschig.ui.theme.coverTintTarget
-import io.wolftown.lauschig.ui.theme.controlColorOn
-import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -16,11 +14,11 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import io.wolftown.lauschig.ui.common.ProgressLine
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,10 +31,12 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.ProgressLine
 import io.wolftown.lauschig.ui.common.coverModel
+import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
+import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.coverTintTarget
 
 /** Height/width of the Play/Pause hit area, shared with the full player's secondary buttons' minimum. */
 val MiniToggleSize = 56.dp

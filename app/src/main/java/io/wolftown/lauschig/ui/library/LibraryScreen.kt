@@ -1,26 +1,7 @@
 package io.wolftown.lauschig.ui.library
 
-import io.wolftown.lauschig.ui.common.kindFilterActive
-import io.wolftown.lauschig.ui.common.FilterEmptyState
-import io.wolftown.lauschig.ui.common.StatePage
-import io.wolftown.lauschig.ui.theme.Spacing
-import io.wolftown.lauschig.ui.common.SectionTitle
-import androidx.compose.ui.platform.testTag
-import androidx.compose.material.icons.rounded.Downloading
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CollectionsBookmark
-import androidx.compose.material.icons.rounded.DownloadForOffline
-import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.ui.graphics.vector.ImageVector
-import io.wolftown.lauschig.ui.common.EmptyState
-import io.wolftown.lauschig.ui.common.LoadingState
-import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
-import io.wolftown.lauschig.local.DeviceTab
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,17 +10,25 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CollectionsBookmark
+import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material3.Icon
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -47,13 +36,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.CollectionKind
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.local.DeviceTab
 import io.wolftown.lauschig.ui.collections.CollectionListTab
 import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.LoadingState
+import io.wolftown.lauschig.ui.common.SectionTitle
+import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.common.TagFilterChip
+import io.wolftown.lauschig.ui.common.kindFilterActive
+import io.wolftown.lauschig.ui.theme.Spacing
 
 @StringRes
 private fun LibraryTab.label(): Int = when (this) {

@@ -1,7 +1,5 @@
 package io.wolftown.lauschig.ui.browse
 
-import io.wolftown.lauschig.ui.theme.Spacing
-import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,10 +20,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.FilterListOff
-import io.wolftown.lauschig.ui.common.EmptyState
-import io.wolftown.lauschig.ui.common.LoadingState
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.FilterListOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,15 +56,21 @@ import io.wolftown.lauschig.rmab.RmabStatus
 import io.wolftown.lauschig.rmab.RmabViewModel
 import io.wolftown.lauschig.rmab.label
 import io.wolftown.lauschig.rmab.tileIcon
-import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.EmptyState
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.SectionTitle
+import io.wolftown.lauschig.ui.common.coverOutline
 import io.wolftown.lauschig.ui.detail.Description
 import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.theme.Spacing
 
 @Composable
 fun BrowseRoute(
@@ -207,7 +209,7 @@ private fun MissingTile(entry: BrowseEntry.Missing, status: RmabStatus?, onOpen:
     val click = if (volume == null) Modifier else Modifier.clickable(role = Role.Button) { onOpen(volume) }
     Column(Modifier.testTag("missingVolume").then(click).semantics(mergeDescendants = true) { if (volume != null) contentDescription = description }) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp))
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(CoverShapes.Tile).coverOutline(CoverShapes.Tile, MaterialTheme.colorScheme)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -237,6 +239,6 @@ private fun MissingTile(entry: BrowseEntry.Missing, status: RmabStatus?, onOpen:
                 }
             }
         }
-        Text(hint, style = MaterialTheme.typography.bodySmall, color = grey, modifier = Modifier.padding(top = 4.dp))
+        Text(hint, style = MaterialTheme.typography.bodySmall, color = grey, modifier = Modifier.padding(top = 6.dp))
     }
 }
