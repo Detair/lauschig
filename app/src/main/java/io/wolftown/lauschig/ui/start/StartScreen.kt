@@ -72,6 +72,8 @@ import io.wolftown.lauschig.ui.common.SeeAllButton
 import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.extras.listenedText
+import io.wolftown.lauschig.ui.review.YearReviewCard
+import io.wolftown.lauschig.ui.review.YearReviewCardViewModel
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.stats.StatsCard
 import io.wolftown.lauschig.ui.stats.BarChart
@@ -106,15 +108,20 @@ fun StartRoute(
     snackbarHost: SnackbarHostState? = null,
     /** „Ansehen“ on that notice. */
     onOpenAchievements: (() -> Unit)? = null,
+    /** The year-in-review card (December and January). */
+    onOpenReview: (year: Int) -> Unit = {},
     viewModel: StartViewModel = hiltViewModel(),
     notices: AchievementNoticeViewModel = hiltViewModel(),
+    reviewCard: YearReviewCardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playingId by viewModel.playingId.collectAsStateWithLifecycle()
     val stats by viewModel.statsCard.collectAsStateWithLifecycle()
+    val review by reviewCard.card.collectAsStateWithLifecycle()
     // "This week" may have moved on while the screen was away (midnight, Monday, another zone).
-    LifecycleResumeEffect(viewModel) {
+    LifecycleResumeEffect(viewModel, reviewCard) {
         viewModel.onResume()
+        reviewCard.onResume()
         onPauseOrDispose {}
     }
     if (snackbarHost != null) {
@@ -135,6 +142,7 @@ fun StartRoute(
             state, onOpen = onOpen, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary,
             onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f), playingId = playingId, onPlayPause = viewModel::playOrPause,
             stats = stats, onOpenStats = onOpenStats,
+            review = review, onOpenReview = onOpenReview, onHideReview = reviewCard::hide,
         )
     }
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpen) }
@@ -144,6 +152,7 @@ fun StartRoute(
  * Tap opens the details, the play button plays, long-press opens the actions menu. The first "continue" title is a
  * large card with its own play/pause button ([onPlayPause]; pause while it is [playingId]); the others stay in the row.
  * Below them a small [stats] card (this week, the streak) opens the statistics; it is null while nothing was heard lately.
+ * In December and January a card invites to the [review] of the year (hidden per year with its X).
  */
 @Composable
 fun StartScreen(
@@ -158,6 +167,10 @@ fun StartScreen(
     onPlayPause: (itemId: String) -> Unit = onPlay,
     stats: StatsCard? = null,
     onOpenStats: () -> Unit = {},
+    /** The year the year-in-review card offers (December and January), null without one. */
+    review: Int? = null,
+    onOpenReview: (year: Int) -> Unit = {},
+    onHideReview: (year: Int) -> Unit = {},
 ) {
     if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty() && state.newEpisodes.isEmpty()) {
         StatePage(modifier) { padding ->
@@ -192,6 +205,15 @@ fun StartScreen(
         if (stats != null) {
             item(key = "stats", contentType = "stats") {
                 StartStatsCard(stats, onOpenStats, Modifier.padding(horizontal = Spacing.gutter).padding(top = if (hero != null) Spacing.l else Spacing.section))
+            }
+        }
+        if (review != null) {
+            item(key = "review", contentType = "review") {
+                YearReviewCard(
+                    review, onOpen = { onOpenReview(review) }, onHide = { onHideReview(review) },
+                    modifier = Modifier.padding(horizontal = Spacing.gutter).padding(top = if (hero != null || stats != null) Spacing.m else Spacing.section),
+                    maxWidth = HERO_MAX_WIDTH,
+                )
             }
         }
         section("episodes", R.string.start_new_episodes, state.newEpisodes, null, onOpen, onPlay, onMenu)

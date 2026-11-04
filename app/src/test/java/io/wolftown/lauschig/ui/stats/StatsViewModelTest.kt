@@ -223,6 +223,21 @@ class StatsViewModelTest {
         assertEquals(week.achievements, vm.await { it.period == StatsPeriod.YEAR }.achievements)
     }
 
+    @Test fun theYearInReview_isOfferedInYearForAYearWithAnHour_onlyThere() = runTest {
+        session("1", "2026-10-01T20:00", 3600.0) // this year: an hour
+        session("2", "2025-06-01T20:00", 3599.0) // last year: a second short
+        val vm = vm()
+
+        assertEquals(null, vm.await { it.summary != null }.reviewYear) // not in a week
+        vm.setPeriod(StatsPeriod.YEAR)
+        assertEquals(2026, vm.await { it.period == StatsPeriod.YEAR }.reviewYear)
+        vm.previous()
+        val last = vm.await { it.summary?.range?.start == d("2025-01-01") }
+        assertEquals(null, last.reviewYear)
+        vm.setPeriod(StatsPeriod.ALL)
+        assertEquals(null, vm.await { it.period == StatsPeriod.ALL }.reviewYear)
+    }
+
     @Test fun aPastPeriod_showsItsLongestRunAndItsDays_neverTodaysStreak() = runTest {
         // Last week: Tuesday to Thursday in a row, and Saturday; this week: yesterday and today.
         for ((i, day) in listOf("2026-10-27", "2026-10-28", "2026-10-29", "2026-10-31", "2026-11-03", "2026-11-04").withIndex()) {

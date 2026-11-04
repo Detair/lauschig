@@ -66,7 +66,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -95,6 +95,7 @@ fun AppNavHost(
                 StatsRoute(
                     onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) },
                     onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } },
+                    onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } },
                 )
             }
         }

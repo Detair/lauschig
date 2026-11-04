@@ -886,4 +886,9 @@
     <string name="review_fact_type">Listening type</string>
     <string name="review_empty">No year in review for %1$d yet</string>
     <string name="review_empty_hint">It begins with an hour of listening in that year.</string>
+    <string name="review_open">View year in review %1$d</string>
+    <string name="review_card_title">Your year in review %1$d</string>
+    <string name="review_card_text">Your %1$d in listening, slide by slide</string>
+    <string name="review_card_open">View</string>
+    <string name="review_card_hide">Hide year in review</string>
 </resources>

@@ -886,4 +886,9 @@
     <string name="review_fact_type">Hörtyp</string>
     <string name="review_empty">Für %1$d gibt es noch keinen Jahresrückblick</string>
     <string name="review_empty_hint">Er beginnt mit einer Stunde Hörzeit in diesem Jahr.</string>
+    <string name="review_open">Jahresrückblick %1$d ansehen</string>
+    <string name="review_card_title">Dein Jahresrückblick %1$d</string>
+    <string name="review_card_text">Dein Hörjahr %1$d in ein paar Folien</string>
+    <string name="review_card_open">Ansehen</string>
+    <string name="review_card_hide">Jahresrückblick ausblenden</string>
 </resources>

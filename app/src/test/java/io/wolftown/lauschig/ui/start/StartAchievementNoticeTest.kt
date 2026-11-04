@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.sync.InMemorySyncStamps
+import io.wolftown.lauschig.ui.review.YearReviewCardViewModel
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.SnackbarHost
@@ -114,12 +116,15 @@ class StartAchievementNoticeTest {
                 clock = { 2_000L }, dispatcher = UnconfinedTestDispatcher(),
             ),
         )
+        val reviewCard = viewModels.own(
+            YearReviewCardViewModel(accounts, StatsSessions(db.listeningSessionDao(), db.sessionDao()), calendar, InMemorySyncStamps(), { 0L }, UnconfinedTestDispatcher()),
+        )
         var opened = 0
         rule.setContent {
             LauschigTheme {
                 val host = androidx.compose.runtime.remember { SnackbarHostState() }
                 Box {
-                    StartRoute(onOpenItem = {}, snackbarHost = host, onOpenAchievements = { opened++ }, viewModel = start, notices = notices)
+                    StartRoute(onOpenItem = {}, snackbarHost = host, onOpenAchievements = { opened++ }, viewModel = start, notices = notices, reviewCard = reviewCard)
                     SnackbarHost(host)
                 }
             }

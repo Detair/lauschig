@@ -275,4 +275,15 @@ class StatsScreenTest {
         rule.onNodeWithTag("statsLoadNow").performClick()
         assertEquals(3, loadNow)
     }
+
+    @Test fun aYearWithAReview_offersIt_otherwiseNot() {
+        var opened = 0
+        var state by mutableStateOf(listened.copy(period = StatsPeriod.YEAR, reviewYear = 2026))
+        rule.setContent { LauschigTheme { StatsScreen(state, onBack = {}, onOpenReview = { opened = it }) } }
+        rule.onNodeWithTag("statsList").performScrollToNode(hasTestTag("statsReview"))
+        rule.onNodeWithTag("statsReview").assertTextEquals("View year in review 2026").performClick()
+        assertEquals(2026, opened)
+        state = state.copy(reviewYear = null)
+        rule.onNodeWithTag("statsReview").assertDoesNotExist()
+    }
 }
