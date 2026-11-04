@@ -74,7 +74,8 @@ class AchievementNoticeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun noticeFor(sid: String): Flow<AchievementNotice?> {
-        val reached = source.observe(sid, zone).map { data -> data.achievements().flatMap { it.keys } }.distinctUntilChanged()
+        // Every data change is a new look (not only a changed set): the progress sync that settles the history may change no tier.
+        val reached = source.observe(sid, zone).map { data -> data.achievements().flatMap { it.keys } }
         return combine(reached, seen.observeAll(sid), historyLoad(sid), ::Triple)
             .map { (keys, rows, history) ->
                 val hasBaseline = rows.any { it.id == AchievementSeenEntity.BASELINE_ID }
