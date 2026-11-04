@@ -707,6 +707,9 @@
         <item>The player slides up from the mini player and back down</item>
         <item>Calm colours of Lauschig’s own when dynamic colours are off</item>
         <item>Loading and empty pages say plainly what is going on</item>
+        <item>Android Auto: covers load reliably and the list no longer jumps</item>
+        <item>Tablets: the details move into the right pane when you rotate; own landscape layouts for details and player</item>
+        <item>After signing in with another account, the previous account’s downloads stay reachable</item>
     </string-array>
     <string name="stats_tile_period_longest">Longest streak</string>
     <string name="stats_tile_active_days">Days listened</string>

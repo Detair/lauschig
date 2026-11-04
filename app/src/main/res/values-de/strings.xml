@@ -707,6 +707,9 @@
         <item>Der Player gleitet aus dem Mini-Player nach oben und wieder zurück</item>
         <item>Ruhige eigene Farben, wenn dynamische Farben aus sind</item>
         <item>Lade- und Leerseiten sagen klar, was gerade passiert</item>
+        <item>Android Auto: Cover laden zuverlässig, die Liste springt nicht mehr</item>
+        <item>Tablets: Beim Drehen wandern die Details in den rechten Bereich; eigene Querformat-Ansichten für Details und Player</item>
+        <item>Nach der Anmeldung mit einem anderen Konto bleiben die Downloads des vorherigen erreichbar</item>
     </string-array>
     <string name="stats_tile_period_longest">Längste Serie</string>
     <string name="stats_tile_active_days">Hörtage</string>
