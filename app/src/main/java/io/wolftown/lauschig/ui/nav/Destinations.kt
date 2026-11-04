@@ -27,3 +27,5 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 @Serializable data object Stats
 /** Achievements („Erfolge“), from the statistics and from the notice on Start. */
 @Serializable data object AchievementsPage
+/** The year in review („Jahresrückblick“) of [year], a story over the whole window (from Stats and Start). */
+@Serializable data class YearReviewPage(val year: Int)

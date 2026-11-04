@@ -23,6 +23,7 @@ import io.wolftown.lauschig.stats.PeriodRange
 import io.wolftown.lauschig.stats.PeriodSummary
 import io.wolftown.lauschig.stats.StatsPeriod
 import io.wolftown.lauschig.stats.StatsSessions
+import io.wolftown.lauschig.stats.YearReview
 import io.wolftown.lauschig.sync.ListeningSessionSync
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CancellationException
@@ -102,6 +103,8 @@ data class StatsUiState(
     val today: LocalDate? = null,
     /** The latest achievements and the count (not tied to the period); null without data. */
     val achievements: AchievementsPreview? = null,
+    /** In „Jahr“: the shown year when it has a review (an hour of listening, [YearReview.MIN_YEAR_SEC]); else null. */
+    val reviewYear: Int? = null,
 )
 
 /**
@@ -283,6 +286,7 @@ class StatsViewModel(
             topAuthors = summary.topAuthors,
             finishedSeries = if (sel.period == StatsPeriod.ALL) d.series else emptyList(),
             achievements = d.achievements,
+            reviewYear = range.start.year.takeIf { sel.period == StatsPeriod.YEAR && summary.totalSec >= YearReview.MIN_YEAR_SEC },
         )
     }
 

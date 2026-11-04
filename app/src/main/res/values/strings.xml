@@ -704,6 +704,8 @@
         <item>A small card on Start shows how much you listened this week</item>
         <item>Achievements: from 1 to 1000 hours, days in a row, finished books and series, and a few special ones – each with its date</item>
         <item>A new achievement is announced once on Start; the statistics show the latest ones</item>
+        <item>Year in review: your year of listening as a story – hours, days, top titles, finished books, achievements, your type</item>
+        <item>From December, Start invites you to your year in review; Statistics offers it under “Year” for each year you listened</item>
         <item>The title to continue is a large card on Start with its own play button</item>
         <item>The cover tints the details page and the “continue” card</item>
         <item>The player slides up from the mini player and back down</item>
@@ -808,4 +810,96 @@
         <item quantity="other">%d series</item>
     </plurals>
     <string name="stats_achievement_open">View achievement</string>
+    <!-- Year in review -->
+    <string name="review_slide_position">Slide %1$d of %2$d</string>
+    <string name="review_next">Next slide</string>
+    <string name="review_previous">Previous slide</string>
+    <string name="review_close">Close year in review</string>
+    <string name="review_title">Year in review %1$d</string>
+    <string name="review_opening_title">Your %1$d in listening</string>
+    <plurals name="review_hours_listened">
+        <item quantity="one">hour listened</item>
+        <item quantity="other">hours listened</item>
+    </plurals>
+    <plurals name="review_titles">
+        <item quantity="one">with %d title</item>
+        <item quantity="other">with %d titles</item>
+    </plurals>
+    <string name="review_incomplete">Not all listening sessions are loaded yet</string>
+    <string name="review_days_title">Days of listening</string>
+    <plurals name="review_days_unit">
+        <item quantity="one">day with listening</item>
+        <item quantity="other">days with listening</item>
+    </plurals>
+    <plurals name="review_streak">
+        <item quantity="one">Longest streak: %1$d day in a row, up to %2$s</item>
+        <item quantity="other">Longest streak: %1$d days in a row, up to %2$s</item>
+    </plurals>
+    <string name="review_rhythm_title">Your rhythm</string>
+    <string name="review_top_month">your strongest month – %1$s</string>
+    <string name="review_weekday">Favourite day: %1$s</string>
+    <string name="review_time_morning">Mostly in the morning</string>
+    <string name="review_time_afternoon">Mostly in the afternoon</string>
+    <string name="review_time_evening">Mostly in the evening</string>
+    <string name="review_time_night">Mostly at night</string>
+    <string name="review_time_commute_morning">Mostly on the way, in the morning</string>
+    <string name="review_time_commute_evening">Mostly on the way home</string>
+    <string name="review_top_titles_title">Most listened</string>
+    <!-- Spoken: "1. The Beginning, 12 h 5 min" -->
+    <string name="review_rank_spoken">%1$d. %2$s, %3$s</string>
+    <string name="review_author_title">Your top author</string>
+    <string name="review_narrator">Favourite voice: %1$s, %2$s</string>
+    <string name="review_finished_title">Heard to the end</string>
+    <plurals name="review_books_unit">
+        <item quantity="one">book finished</item>
+        <item quantity="other">books finished</item>
+    </plurals>
+    <plurals name="review_series_completed">
+        <item quantity="one">and %d series completed</item>
+        <item quantity="other">and %d series completed</item>
+    </plurals>
+    <string name="review_book_first">First: %1$s, %2$s</string>
+    <string name="review_book_last">Last: %1$s, %2$s</string>
+    <string name="review_book_only">%1$s, %2$s</string>
+    <string name="review_achievements_title">Achievements %1$d</string>
+    <plurals name="review_achievements_unit">
+        <item quantity="one">achievement reached</item>
+        <item quantity="other">achievements reached</item>
+    </plurals>
+    <string name="review_type_title">Your listening type</string>
+    <string name="review_type_night_owl">Night owl</string>
+    <string name="review_type_early_bird">Early bird</string>
+    <string name="review_type_commuter">Commuter</string>
+    <string name="review_type_weekend">Weekend listener</string>
+    <string name="review_type_marathon">Marathon listener</string>
+    <string name="review_why_window">%1$s of your listening started between %2$s and %3$s</string>
+    <string name="review_why_commuter">%1$s of your listening: on weekdays, %2$s</string>
+    <string name="review_why_weekend">%1$s of your listening was at the weekend</string>
+    <plurals name="review_why_marathon">
+        <item quantity="one">On %1$d day at least %2$s</item>
+        <item quantity="other">On %1$d days at least %2$s</item>
+    </plurals>
+    <string name="review_closing_title">%1$d at a glance</string>
+    <string name="review_fact_time">Listening time</string>
+    <string name="review_fact_days">Days</string>
+    <string name="review_fact_finished">Finished</string>
+    <string name="review_fact_title">Top title</string>
+    <string name="review_fact_author">Top author</string>
+    <string name="review_fact_type">Listening type</string>
+    <string name="review_empty">No year in review yet for %1$d</string>
+    <string name="review_empty_hint">It begins with an hour of listening in that year.</string>
+    <string name="review_open">View year in review %1$d</string>
+    <string name="review_card_title">Your year in review %1$d</string>
+    <string name="review_card_text">Your %1$d in listening, slide by slide</string>
+    <string name="review_card_open">View</string>
+    <string name="review_card_hide">Hide year in review</string>
+    <plurals name="review_series_unit">
+        <item quantity="one">series completed</item>
+        <item quantity="other">series completed</item>
+    </plurals>
+    <plurals name="review_achievements_more">
+        <item quantity="one">and %d more</item>
+        <item quantity="other">and %d more</item>
+    </plurals>
+    <string name="review_paused">Paused</string>
 </resources>

@@ -56,6 +56,9 @@ fun BarChart(
     barColor: Color = statsBarColor(MaterialTheme.colorScheme),
     currentColor: Color = MaterialTheme.colorScheme.primary,
     baselineColor: Color = MaterialTheme.colorScheme.outlineVariant,
+    /** The labels' colour; the current bar's label is in [currentLabelColor] (and bold). */
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    currentLabelColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     Column(modifier.clearAndSetSemantics { if (description != null) contentDescription = description }) {
         Canvas(Modifier.fillMaxWidth().height(height)) {
@@ -95,7 +98,7 @@ fun BarChart(
                             Text(
                                 label,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (i == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (i == current) currentLabelColor else labelColor,
                                 fontWeight = if (i == current) FontWeight.Bold else null,
                                 maxLines = 1,
                                 softWrap = false,

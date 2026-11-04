@@ -704,6 +704,8 @@
         <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
         <item>Erfolge: von 1 bis 1000 Stunden, Tage am Stück, beendete Bücher und Serien und ein paar besondere – jeweils mit Datum</item>
         <item>Ein neuer Erfolg wird einmal auf der Startseite gemeldet; die Statistik zeigt die neuesten</item>
+        <item>Jahresrückblick: dein Hörjahr als Story – Stunden, Hörtage, Lieblingstitel, beendete Bücher, Erfolge, dein Hörtyp</item>
+        <item>Ab Dezember lädt die Startseite zum Jahresrückblick ein; die Statistik zeigt ihn unter „Jahr“ für jedes Hörjahr</item>
         <item>Der Titel zum Weiterhören ist eine große Karte auf der Startseite, mit eigener Wiedergabetaste</item>
         <item>Das Cover färbt die Detailseite und die Weiterhören-Karte ein</item>
         <item>Der Player gleitet aus dem Mini-Player nach oben und wieder zurück</item>
@@ -808,4 +810,96 @@
         <item quantity="other">%d Serien</item>
     </plurals>
     <string name="stats_achievement_open">Erfolg ansehen</string>
+    <!-- Jahresrückblick -->
+    <string name="review_slide_position">Folie %1$d von %2$d</string>
+    <string name="review_next">Nächste Folie</string>
+    <string name="review_previous">Vorherige Folie</string>
+    <string name="review_close">Jahresrückblick schließen</string>
+    <string name="review_title">Jahresrückblick %1$d</string>
+    <string name="review_opening_title">Dein Hörjahr %1$d</string>
+    <plurals name="review_hours_listened">
+        <item quantity="one">Stunde gehört</item>
+        <item quantity="other">Stunden gehört</item>
+    </plurals>
+    <plurals name="review_titles">
+        <item quantity="one">mit %d Titel</item>
+        <item quantity="other">mit %d Titeln</item>
+    </plurals>
+    <string name="review_incomplete">Noch nicht alle Hörsitzungen geladen</string>
+    <string name="review_days_title">Hörtage</string>
+    <plurals name="review_days_unit">
+        <item quantity="one">Tag mit Hörzeit</item>
+        <item quantity="other">Tage mit Hörzeit</item>
+    </plurals>
+    <plurals name="review_streak">
+        <item quantity="one">Längste Serie: %1$d Tag am Stück, bis %2$s</item>
+        <item quantity="other">Längste Serie: %1$d Tage am Stück, bis %2$s</item>
+    </plurals>
+    <string name="review_rhythm_title">Dein Rhythmus</string>
+    <string name="review_top_month">dein stärkster Monat – %1$s</string>
+    <string name="review_weekday">Lieblingstag: %1$s</string>
+    <string name="review_time_morning">Meist morgens</string>
+    <string name="review_time_afternoon">Meist nachmittags</string>
+    <string name="review_time_evening">Meist abends</string>
+    <string name="review_time_night">Meist nachts</string>
+    <string name="review_time_commute_morning">Meist morgens auf dem Weg</string>
+    <string name="review_time_commute_evening">Meist auf dem Heimweg</string>
+    <string name="review_top_titles_title">Am meisten gehört</string>
+    <!-- Gesprochen: „1. Der Anfang, 12 Std. 5 Min.“ -->
+    <string name="review_rank_spoken">%1$d. %2$s, %3$s</string>
+    <string name="review_author_title">Am meisten gehört von</string>
+    <string name="review_narrator">Lieblingsstimme: %1$s, %2$s</string>
+    <string name="review_finished_title">Zu Ende gehört</string>
+    <plurals name="review_books_unit">
+        <item quantity="one">Buch beendet</item>
+        <item quantity="other">Bücher beendet</item>
+    </plurals>
+    <plurals name="review_series_completed">
+        <item quantity="one">und %d Serie komplett</item>
+        <item quantity="other">und %d Serien komplett</item>
+    </plurals>
+    <string name="review_book_first">Das erste: %1$s, %2$s</string>
+    <string name="review_book_last">Das letzte: %1$s, %2$s</string>
+    <string name="review_book_only">%1$s, %2$s</string>
+    <string name="review_achievements_title">Erfolge %1$d</string>
+    <plurals name="review_achievements_unit">
+        <item quantity="one">Erfolg erreicht</item>
+        <item quantity="other">Erfolge erreicht</item>
+    </plurals>
+    <string name="review_type_title">Dein Hörtyp</string>
+    <string name="review_type_night_owl">Nachteule</string>
+    <string name="review_type_early_bird">Frühaufsteher</string>
+    <string name="review_type_commuter">Pendler</string>
+    <string name="review_type_weekend">Wochenendhörer</string>
+    <string name="review_type_marathon">Marathonhörer</string>
+    <string name="review_why_window">%1$s deiner Hörzeit begann zwischen %2$s und %3$s Uhr</string>
+    <string name="review_why_commuter">%1$s deiner Hörzeit: werktags %2$s Uhr</string>
+    <string name="review_why_weekend">%1$s deiner Hörzeit am Wochenende</string>
+    <plurals name="review_why_marathon">
+        <item quantity="one">An %1$d Tag mindestens %2$s</item>
+        <item quantity="other">An %1$d Tagen mindestens %2$s</item>
+    </plurals>
+    <string name="review_closing_title">%1$d auf einen Blick</string>
+    <string name="review_fact_time">Hörzeit</string>
+    <string name="review_fact_days">Hörtage</string>
+    <string name="review_fact_finished">Beendet</string>
+    <string name="review_fact_title">Meistgehörter Titel</string>
+    <string name="review_fact_author">Meistgehört von</string>
+    <string name="review_fact_type">Hörtyp</string>
+    <string name="review_empty">Für %1$d gibt es noch keinen Jahresrückblick</string>
+    <string name="review_empty_hint">Er beginnt mit einer Stunde Hörzeit in diesem Jahr.</string>
+    <string name="review_open">Jahresrückblick %1$d ansehen</string>
+    <string name="review_card_title">Dein Jahresrückblick %1$d</string>
+    <string name="review_card_text">Dein Hörjahr %1$d in ein paar Folien</string>
+    <string name="review_card_open">Ansehen</string>
+    <string name="review_card_hide">Jahresrückblick ausblenden</string>
+    <plurals name="review_series_unit">
+        <item quantity="one">Serie komplett</item>
+        <item quantity="other">Serien komplett</item>
+    </plurals>
+    <plurals name="review_achievements_more">
+        <item quantity="one">und %d weiterer</item>
+        <item quantity="other">und %d weitere</item>
+    </plurals>
+    <string name="review_paused">Pausiert</string>
 </resources>
