@@ -34,6 +34,7 @@ import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
+import io.wolftown.lauschig.ui.review.YearReviewRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
@@ -98,6 +99,8 @@ fun AppNavHost(
             }
         }
         composable<AchievementsPage> { ReadableWidth { AchievementsRoute(onBack = { navController.popBackStack() }) } }
+        // Over the whole window: the frame hides its tabs and the mini player (see isOnYearReview); the story centres itself.
+        composable<YearReviewPage> { YearReviewRoute(onClose = { navController.popBackStack() }) }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).
@@ -190,6 +193,11 @@ fun NavHostController.showSignIn() {
 @Composable
 fun NavHostController.isOnSetup(): Boolean =
     currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
+
+/** The year in review is shown: a story over the whole window, without the frame's tabs and mini player. */
+@Composable
+fun NavHostController.isOnYearReview(): Boolean =
+    currentBackStackEntryAsState().value?.destination?.hasRoute<YearReviewPage>() == true
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {

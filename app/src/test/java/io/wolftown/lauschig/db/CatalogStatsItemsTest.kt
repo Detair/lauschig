@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** The statistics read only the columns they use of a title – no description, tags or narrators. */
+/** The statistics read only the columns they use of a title – no description or tags (the narrator for the year in review). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CatalogStatsItemsTest {
@@ -37,7 +37,7 @@ class CatalogStatsItemsTest {
         val item = items.single().toEntity(s)
         assertEquals(
             ItemEntity(
-                s, "a", "lib", "Band Eins", author = "Anna", seriesName = "Reihe", seriesSequence = "1", seriesSortKey = 1.0,
+                s, "a", "lib", "Band Eins", author = "Anna", narrator = "Nina", seriesName = "Reihe", seriesSequence = "1", seriesSortKey = 1.0,
                 durationSec = 3600.0, coverUpdatedAt = 7, genres = listOf("Krimi", "Humor"),
             ),
             item,

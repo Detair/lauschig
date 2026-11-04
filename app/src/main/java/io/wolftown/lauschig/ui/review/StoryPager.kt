@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +76,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -96,6 +98,9 @@ private const val CLOSE_FLING_DP_PER_SEC = 1_200f
 
 /** The widest the story gets (tablets, landscape): centred, never stretched. */
 val STORY_MAX_WIDTH = 560.dp
+
+/** The room a slide has (inside the pager, before it scrolls): a wide one lays its parts side by side. */
+val LocalStoryViewport = staticCompositionLocalOf { DpSize(360.dp, 640.dp) }
 
 /** A slide's colours: its background and the colour of everything on it. */
 @Immutable
@@ -323,6 +328,7 @@ fun StoryPager(
                             )
                         },
                 ) {
+                    val viewport = DpSize(maxWidth, maxHeight)
                     val scroll = rememberScrollState()
                     LaunchedEffect(index) { scroll.scrollTo(0) }
                     Column(
@@ -348,9 +354,11 @@ fun StoryPager(
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Crossfade(index, animationSpec = tween(if (motion.animations) 250 else 0), label = "storySlide") { shown ->
-                            val entrance = remember(shown) { state.firstShow(shown) } && motion.animations
-                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { content(shown, entrance) }
+                        CompositionLocalProvider(LocalStoryViewport provides viewport) {
+                            Crossfade(index, animationSpec = tween(if (motion.animations) 250 else 0), label = "storySlide") { shown ->
+                                val entrance = remember(shown) { state.firstShow(shown) } && motion.animations
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { content(shown, entrance) }
+                            }
                         }
                     }
                 }

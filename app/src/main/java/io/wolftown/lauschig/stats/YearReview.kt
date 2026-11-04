@@ -46,8 +46,8 @@ sealed interface ReviewSlide {
     /** Books finished in the year, series completed in it, the first and the last finished book (the same for one). */
     data class Finished(val books: Int, val series: Int, val first: FinishedBook, val last: FinishedBook) : ReviewSlide
 
-    /** Tiers reached in the year ([tiers] in all) and up to [YearReview.ACHIEVEMENTS_SHOWN] of them, newest first. */
-    data class Achieved(val tiers: Int, val shown: List<ReachedTier>) : ReviewSlide
+    /** Tiers reached in [year] ([tiers] in all) and up to [YearReview.ACHIEVEMENTS_SHOWN] of them, newest first. */
+    data class Achieved(val year: Int, val tiers: Int, val shown: List<ReachedTier>) : ReviewSlide
 
     /** The strongest pattern: [share] of the year's time it holds; [days] with a marathon (for [ListenerType.MARATHON]). */
     data class Personality(val type: ListenerType, val share: Double, val days: Int) : ReviewSlide
@@ -167,7 +167,7 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
                 if (topTitles.isNotEmpty()) add(ReviewSlide.TopTitles(topTitles))
                 people?.let(::add)
                 if (books.isNotEmpty()) add(ReviewSlide.Finished(books.size, seriesDone, books.first(), books.last()))
-                if (reached.isNotEmpty()) add(ReviewSlide.Achieved(reached.size, shownTiers(reached)))
+                if (reached.isNotEmpty()) add(ReviewSlide.Achieved(year, reached.size, shownTiers(reached)))
                 personality?.let(::add)
                 add(
                     ReviewSlide.Closing(

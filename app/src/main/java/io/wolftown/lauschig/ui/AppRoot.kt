@@ -34,6 +34,7 @@ import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.closePlayer
 import io.wolftown.lauschig.ui.nav.currentTab
 import io.wolftown.lauschig.ui.nav.isOnSetup
+import io.wolftown.lauschig.ui.nav.isOnYearReview
 import io.wolftown.lauschig.ui.nav.navigateToTab
 import io.wolftown.lauschig.ui.nav.openDetailsFromPlayer
 import io.wolftown.lauschig.ui.nav.rememberPlayerLayer
@@ -135,6 +136,7 @@ fun AppRoot(
     }
 
     val onSetup = navController.isOnSetup()
+    val onReview = navController.isOnYearReview()
     // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
     val playerLayer = rememberPlayerLayer(navController)
     val playerCovers = playerLayer.coversFrame
@@ -159,7 +161,7 @@ fun AppRoot(
                 // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
                 modifier = Modifier.underPlayer(playerCovers),
                 miniPlayer = {
-                    if (!onSetup && !playerCovers) {
+                    if (!onSetup && !playerCovers && !onReview) {
                         MiniPlayer(
                             playerState,
                             onToggle = viewModel.player::togglePlayPause,
@@ -169,7 +171,8 @@ fun AppRoot(
                     }
                 },
                 // The full player covers the whole window (its buttons stay above the fold); it has its own close.
-                showBottomBar = !onSetup && !playerCovers,
+                // The year in review covers the frame too (a story over the whole window).
+                showBottomBar = !onSetup && !playerCovers && !onReview,
                 navigationRail = rememberNavigationRail(),
                 showOfflineBanner = !onSetup,
                 showReauthBanner = showReauth,
