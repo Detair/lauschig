@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,9 +98,10 @@ fun AchievementsScreen(state: AchievementsUiState, onBack: () -> Unit, modifier:
                         modifier = Modifier.padding(bottom = Spacing.xs),
                     )
                 }
-                items(rows, key = { row -> row.joinToString { it.achievement.id } }, contentType = { "row" }) { row ->
+                // A row by its first achievement, each card by its own id: a card keeps its state when the order moves.
+                items(rows, key = { row -> row.first().achievement.id }, contentType = { "row" }) { row ->
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).testTag("achievementRow"), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        row.forEach { AchievementCard(it, Modifier.weight(1f).fillMaxHeight()) }
+                        row.forEach { card -> key(card.achievement.id) { AchievementCard(card, Modifier.weight(1f).fillMaxHeight()) } }
                         repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }

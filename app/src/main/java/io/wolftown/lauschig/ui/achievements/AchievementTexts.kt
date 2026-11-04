@@ -33,8 +33,11 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.stats.Achievement
 import io.wolftown.lauschig.stats.AchievementMeasure
 import io.wolftown.lauschig.stats.AchievementState
+import io.wolftown.lauschig.stats.Achievements
+import io.wolftown.lauschig.stats.ListeningStats
 import io.wolftown.lauschig.ui.stats.statsDuration
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlin.math.floor
@@ -68,23 +71,38 @@ fun achievementName(a: Achievement, tier: Int): String {
     }
 }
 
-/** What it takes, in one plain line. */
+/** What it takes, in one plain line; its numbers and times come from the rule ([Achievements]), not the text. */
 @Composable
-fun achievementDescription(a: Achievement): String = stringResource(
-    when (a) {
-        Achievement.HOURS -> R.string.achievement_hours_desc
-        Achievement.STREAK -> R.string.achievement_streak_desc
-        Achievement.BOOKS -> R.string.achievement_books_desc
-        Achievement.SERIES -> R.string.achievement_series_desc
-        Achievement.MARATHON -> R.string.achievement_marathon_desc
-        Achievement.NIGHT_OWL -> R.string.achievement_night_owl_desc
-        Achievement.EARLY_BIRD -> R.string.achievement_early_bird_desc
-        Achievement.WEEKEND -> R.string.achievement_weekend_desc
-        Achievement.ONE_GO -> R.string.achievement_one_go_desc
-        Achievement.COMMUTER -> R.string.achievement_commuter_desc
-        Achievement.GENRES -> R.string.achievement_genres_desc
-    },
-)
+fun achievementDescription(a: Achievement): String {
+    @Composable fun minutes(sec: Double) = (sec / 60).roundToInt().let { pluralStringResource(R.plurals.achievement_minutes, it, it) }
+    @Composable fun hours(sec: Double) = (sec / 3600).roundToInt().let { pluralStringResource(R.plurals.achievement_hours, it, it) }
+    val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(LocalConfiguration.current.locales[0])
+    fun range(w: Pair<LocalTime, LocalTime>) = "${w.first.format(time)}–${w.second.format(time)}"
+    return when (a) {
+        Achievement.HOURS -> stringResource(R.string.achievement_hours_desc)
+        Achievement.STREAK -> stringResource(R.string.achievement_streak_desc, minutes(ListeningStats.ACTIVE_DAY_SEC))
+        Achievement.BOOKS -> stringResource(R.string.achievement_books_desc)
+        Achievement.SERIES -> stringResource(R.string.achievement_series_desc)
+        Achievement.MARATHON -> stringResource(R.string.achievement_marathon_desc, hours(a.tiers.single()))
+        Achievement.NIGHT_OWL, Achievement.EARLY_BIRD -> {
+            val window = if (a == Achievement.NIGHT_OWL) Achievements.NIGHT_WINDOW else Achievements.EARLY_WINDOW
+            stringResource(R.string.achievement_window_desc, minutes(Achievements.WINDOW_SESSION_SEC), window.first.format(time), window.second.format(time))
+        }
+        Achievement.WEEKEND -> stringResource(R.string.achievement_weekend_desc, hours(a.tiers.single()))
+        Achievement.ONE_GO -> stringResource(R.string.achievement_one_go_desc, hours(Achievements.ONE_GO_MS / 1000.0))
+        Achievement.COMMUTER -> {
+            val n = a.tiers.single().roundToInt()
+            stringResource(
+                R.string.achievement_commuter_desc, pluralStringResource(R.plurals.achievement_unit_sessions, n, n), minutes(Achievements.WINDOW_SESSION_SEC),
+                Achievements.COMMUTE_WINDOWS.joinToString(" ${stringResource(R.string.achievement_or)} ") { range(it) },
+            )
+        }
+        Achievement.GENRES -> {
+            val n = a.tiers.single().roundToInt()
+            stringResource(R.string.achievement_genres_desc, pluralStringResource(R.plurals.achievement_unit_genres, n, n), minutes(Achievements.GENRE_TITLE_SEC))
+        }
+    }
+}
 
 fun Achievement.icon(): ImageVector = when (this) {
     Achievement.HOURS -> Icons.Rounded.Schedule
@@ -119,7 +137,7 @@ fun AchievementBadge(a: Achievement, unlocked: Boolean, modifier: Modifier = Mod
 /** "Stufe 3 von 7" for a reached tier of a tiered achievement; null otherwise. */
 @Composable
 fun achievementTierLine(s: AchievementState): String? =
-    if (s.achievement.tiered && s.unlocked) stringResource(R.string.achievement_tier, s.tier, s.achievement.tiers.size) else null
+    if (s.achievement.leveled && s.unlocked) stringResource(R.string.achievement_tier, s.tier, s.achievement.tiers.size) else null
 
 /** The progress to the next tier, shown ("37 / 50 Std.") and spoken ("37 von 50 Std."); null without one. */
 @Composable

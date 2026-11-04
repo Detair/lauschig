@@ -26,4 +26,4 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 /** Listening statistics (from Start and Settings). */
 @Serializable data object Stats
 /** Achievements („Erfolge“), from the statistics and from the notice on Start. */
-@Serializable data object Achievements
+@Serializable data object AchievementsPage

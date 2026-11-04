@@ -758,16 +758,24 @@
     <string name="achievements_title">Achievements</string>
     <string name="achievements_summary">Reached: %1$d of %2$d</string>
     <string name="achievement_hours_desc">Hours you have listened in total</string>
-    <string name="achievement_streak_desc">Days in a row with at least a minute</string>
+    <string name="achievement_streak_desc">Days in a row with at least %1$s</string>
     <string name="achievement_books_desc">Books you have heard to the end</string>
     <string name="achievement_series_desc">Series with every volume finished</string>
-    <string name="achievement_marathon_desc">4 hours on one day</string>
-    <string name="achievement_night_owl_desc">10 minutes, started between midnight and 4 a.m.</string>
-    <string name="achievement_early_bird_desc">10 minutes, started between 4 and 6 a.m.</string>
-    <string name="achievement_weekend_desc">5 hours over one Saturday and Sunday</string>
-    <string name="achievement_one_go_desc">A book finished within 72 hours of starting it</string>
-    <string name="achievement_commuter_desc">20 weekday sessions of 10 minutes, started 6–9 a.m. or 4–7 p.m.</string>
-    <string name="achievement_genres_desc">Titles of 5 genres, each heard for 30 minutes</string>
+    <string name="achievement_marathon_desc">%1$s on one day</string>
+    <string name="achievement_window_desc">%1$s, started between %2$s and %3$s</string>
+    <string name="achievement_weekend_desc">%1$s over one Saturday and Sunday</string>
+    <string name="achievement_one_go_desc">A book finished within %1$s of starting it</string>
+    <string name="achievement_commuter_desc">%1$s on weekdays, %2$s each, started %3$s</string>
+    <string name="achievement_genres_desc">Titles of %1$s, each heard for %2$s</string>
+    <string name="achievement_or">or</string>
+    <plurals name="achievement_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="achievement_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
     <string name="achievement_tier">Level %1$d of %2$d</string>
     <string name="achievement_progress">%1$s / %2$s</string>
     <string name="achievement_progress_spoken">%1$s of %2$s</string>

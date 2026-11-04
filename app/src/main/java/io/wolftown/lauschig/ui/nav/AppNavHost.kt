@@ -65,7 +65,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(Achievements) { launchSingleTop = true } }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -93,11 +93,11 @@ fun AppNavHost(
             ReadableWidth {
                 StatsRoute(
                     onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) },
-                    onOpenAchievements = { navController.navigate(Achievements) { launchSingleTop = true } },
+                    onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } },
                 )
             }
         }
-        composable<Achievements> { ReadableWidth { AchievementsRoute(onBack = { navController.popBackStack() }) } }
+        composable<AchievementsPage> { ReadableWidth { AchievementsRoute(onBack = { navController.popBackStack() }) } }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).

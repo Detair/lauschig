@@ -25,6 +25,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 
 /** The achievements grid: locked, unlocked, tiers with their progress, and what TalkBack says for each card. */
 @RunWith(RobolectricTestRunner::class)
@@ -33,6 +37,9 @@ class AchievementsScreenTest {
     @get:Rule val rule = createComposeRule()
 
     private fun d(text: String) = LocalDate.parse(text)
+
+    /** An hour as the locale writes a time ("4:00 AM"). */
+    private fun t(hour: Int) = LocalTime.of(hour, 0).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(Locale.US))
 
     private val hours = AchievementState(Achievement.HOURS, listOf(d("2026-01-02"), d("2026-03-12")), 37.5 * 3600)
     private val series = AchievementState(Achievement.SERIES, listOf(d("2025-01-01"), d("2025-06-01"), d("2026-02-01")), 11.0)
@@ -72,8 +79,8 @@ class AchievementsScreenTest {
 
     @Test fun lockedCards_nameTheirGoal_showTheirProgress_andSaySo() {
         show(state.copy(cards = listOf(streak, owl, firstHour, marathon)))
-        rule.onNodeWithTag("achievement:streak").assertTextEquals("3 days in a row", "Days in a row with at least a minute", "2 of 3 days", "Not reached yet")
-        rule.onNodeWithTag("achievement:night_owl").assertTextEquals("Night owl", "10 minutes, started between midnight and 4 a.m.", "Not reached yet")
+        rule.onNodeWithTag("achievement:streak").assertTextEquals("3 days in a row", "Days in a row with at least 1 minute", "2 of 3 days", "Not reached yet")
+        rule.onNodeWithTag("achievement:night_owl").assertTextEquals("Night owl", "10 minutes, started between ${t(0)} and ${t(4)}", "Not reached yet")
         rule.onNodeWithTag("achievement:hours").assertTextEquals("1 hour listened", "Hours you have listened in total", "20 min of 1 h", "Not reached yet")
         rule.onNodeWithTag("achievement:marathon").assertTextEquals("Marathon", "4 hours on one day", "2 h 10 min of 4 h", "Not reached yet")
         rule.onNodeWithTag("badge:night_owl:locked", useUnmergedTree = true).assertExists()
@@ -91,6 +98,23 @@ class AchievementsScreenTest {
         }
         rule.waitForIdle()
         assertEquals(listOf("37 / 50 h", "20 min / 1 h", "2 h 10 min / 4 h", "2 / 3 days", "3 / 5 books", null, null, "4 / 20 sessions", "1 / 5 genres"), shown.take(9))
+    }
+
+    @Test fun descriptions_takeTheirNumbersFromTheRules() {
+        val texts = mutableListOf<String>()
+        rule.setContent { LauschigTheme { Achievement.entries.forEach { texts += achievementDescription(it) } } }
+        rule.waitForIdle()
+        assertEquals(
+            listOf(
+                "Hours you have listened in total", "Days in a row with at least 1 minute", "Books you have heard to the end",
+                "Series with every volume finished", "4 hours on one day", "10 minutes, started between ${t(0)} and ${t(4)}",
+                "10 minutes, started between ${t(4)} and ${t(6)}", "5 hours over one Saturday and Sunday",
+                "A book finished within 72 hours of starting it",
+                "20 sessions on weekdays, 10 minutes each, started ${t(6)}–${t(9)} or ${t(16)}–${t(19)}",
+                "Titles of 5 genres, each heard for 30 minutes",
+            ),
+            texts.take(Achievement.entries.size),
+        )
     }
 
     @Test fun header_countsTheReachedTiers_backGoesBack() {

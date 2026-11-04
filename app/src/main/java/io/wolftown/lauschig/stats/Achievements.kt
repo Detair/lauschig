@@ -14,6 +14,13 @@ enum class AchievementMeasure { HOURS, DAYS, BOOKS, SERIES, DURATION, SESSIONS, 
 /**
  * The catalogue („Erfolge“). [id] is stored (`achievement_seen`): never renamed, never renumbered. [tiers] are the
  * thresholds of the measure in its own unit (seconds for listening time, else a count); one tier is a single achievement.
+ * **Tiers are append-only**: the seen table stores a tier's index, so a threshold may only be added at the end –
+ * inserting one would shift the indices and tell everyone their seen tiers again (a test pins them all).
+ *
+ * A book only the progress marks finished counts on the day its progress last changed (`lastUpdate`): no stored state
+ * and no clock, but a later progress write (played again, a position moved on another device) can move that day – and
+ * the day of the books or series tier it carries – forward. Whether a tier is reached, and so the notice, never depends
+ * on it.
  */
 enum class Achievement(val id: String, val tiers: List<Double>, val measure: AchievementMeasure) {
     /** Total listening time. */
@@ -50,7 +57,11 @@ enum class Achievement(val id: String, val tiers: List<Double>, val measure: Ach
     GENRES("genres", listOf(5.0), AchievementMeasure.GENRES),
     ;
 
-    val tiered: Boolean get() = tiers.size > 1
+    /** Counts towards a threshold and shows its progress (all but the three single events). */
+    val tiered: Boolean get() = measure != AchievementMeasure.NONE
+
+    /** More than one tier: the card says which one („Stufe 2 von 5“). */
+    val leveled: Boolean get() = tiers.size > 1
 
     companion object {
         fun byId(id: String): Achievement? = entries.firstOrNull { it.id == id }
@@ -80,7 +91,10 @@ data class TierInputs(
     val items: Map<String, ItemEntity>,
 )
 
-/** One reached tier (1-based), as the seen table keys it. */
+/**
+ * One reached tier (1-based), as the seen table keys it. Tier 0 is never a reached tier: the table's baseline row
+ * (`AchievementSeenEntity.BASELINE_ID`) uses it.
+ */
 data class AchievementKey(val id: String, val tier: Int)
 
 /** An achievement as the data has it now. */

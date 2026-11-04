@@ -44,11 +44,27 @@ class AchievementsTest {
             listOf("hours", "streak", "books", "series", "marathon", "night_owl", "early_bird", "weekend", "one_go", "commuter", "genres"),
             Achievement.entries.map { it.id },
         )
-        assertEquals(listOf(1, 10, 50, 100, 250, 500, 1000).map { it * 3600.0 }, Achievement.HOURS.tiers)
-        assertEquals(listOf(3.0, 7.0, 30.0, 100.0, 365.0), Achievement.STREAK.tiers)
-        assertEquals(listOf(1.0, 5.0, 10.0, 25.0, 50.0, 100.0), Achievement.BOOKS.tiers)
-        assertEquals(listOf(1.0, 5.0, 10.0), Achievement.SERIES.tiers)
+        // The seen table stores a tier's index: tiers are append-only. Changing any of these must be a deliberate act.
+        assertEquals(
+            mapOf(
+                "hours" to listOf(1, 10, 50, 100, 250, 500, 1000).map { it * 3600.0 },
+                "streak" to listOf(3.0, 7.0, 30.0, 100.0, 365.0),
+                "books" to listOf(1.0, 5.0, 10.0, 25.0, 50.0, 100.0),
+                "series" to listOf(1.0, 5.0, 10.0),
+                "marathon" to listOf(4 * 3600.0),
+                "night_owl" to listOf(1.0),
+                "early_bird" to listOf(1.0),
+                "weekend" to listOf(5 * 3600.0),
+                "one_go" to listOf(1.0),
+                "commuter" to listOf(20.0),
+                "genres" to listOf(5.0),
+            ),
+            Achievement.entries.associate { it.id to it.tiers },
+        )
         assertEquals(28, Achievements.TOTAL_TIERS)
+        // A progress line for every one that counts towards something; "Stufe x von y" only with more than one tier.
+        assertEquals(setOf(Achievement.NIGHT_OWL, Achievement.EARLY_BIRD, Achievement.ONE_GO), Achievement.entries.filterNot { it.tiered }.toSet())
+        assertEquals(setOf(Achievement.HOURS, Achievement.STREAK, Achievement.BOOKS, Achievement.SERIES), Achievement.entries.filter { it.leveled }.toSet())
         assertEquals(Achievement.NIGHT_OWL, Achievement.byId("night_owl"))
         assertNull(Achievement.byId("gone"))
         // Nothing listened: every one locked, in catalogue order.

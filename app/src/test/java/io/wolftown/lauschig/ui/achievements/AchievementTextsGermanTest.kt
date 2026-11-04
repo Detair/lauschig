@@ -61,6 +61,23 @@ class AchievementTextsGermanTest {
         )
     }
 
+    @Test fun descriptions_inGerman_withTheRulesNumbers() {
+        val texts = mutableListOf<String>()
+        rule.setContent { LauschigTheme { Achievement.entries.forEach { texts += achievementDescription(it) } } }
+        rule.waitForIdle()
+        assertEquals(
+            listOf(
+                "Stunden, die du insgesamt gehört hast", "Tage in Folge mit mindestens 1 Minute", "Bücher, die du bis zum Ende gehört hast",
+                "Serien, von denen du jeden Band beendet hast", "4 Stunden an einem Tag", "10 Minuten, begonnen zwischen 00:00 und 04:00 Uhr",
+                "10 Minuten, begonnen zwischen 04:00 und 06:00 Uhr", "5 Stunden an einem Samstag und Sonntag",
+                "Ein Buch binnen 72 Stunden nach dem Anfang beendet",
+                "20 Sitzungen werktags zu je 10 Minuten, begonnen 06:00–09:00 oder 16:00–19:00 Uhr",
+                "Titel aus 5 Genres, jeder 30 Minuten gehört",
+            ),
+            texts.take(Achievement.entries.size),
+        )
+    }
+
     @Test fun aCard_inGerman() {
         val state = AchievementsUiState(
             loading = false, unlockedTiers = 2,
@@ -70,7 +87,7 @@ class AchievementTextsGermanTest {
         rule.onNodeWithText("Erfolge").assertExists()
         rule.onNodeWithText("2 von 28 erreicht").assertExists()
         rule.onNodeWithTag("achievement:streak").assertTextEquals(
-            "7 Tage am Stück", "Tage in Folge mit mindestens einer Minute", "Stufe 2 von 5", "12 von 30 Tagen", "Seit 12. März 2026",
+            "7 Tage am Stück", "Tage in Folge mit mindestens 1 Minute", "Stufe 2 von 5", "12 von 30 Tagen", "Seit 12. März 2026",
         )
     }
 
