@@ -143,7 +143,7 @@ fun StartScreen(
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.l)) {
         val hero = state.continueItems.firstOrNull()
         if (hero != null) {
-            item(key = "h-continue", contentType = "header") { StartSectionHeader(R.string.start_continue, onOpenLibrary, Modifier.testTag("seeAll-continue")) }
+            item(key = "h-continue", contentType = "header") { StartSectionHeader(R.string.start_continue, onOpenLibrary, "seeAll-continue") }
             item(key = "hero", contentType = "hero") {
                 ContinueHero(
                     hero, playing = hero.id == playingId, onOpen = onOpen, onPlayPause = onPlayPause, onMenu = onMenu,
@@ -166,16 +166,16 @@ private fun LazyListScope.section(
     onOpen: (String) -> Unit, onPlay: (String) -> Unit, onMenu: (ItemSummary) -> Unit,
 ) {
     if (items.isEmpty()) return
-    item(key = "h-$key", contentType = "header") { StartSectionHeader(titleRes, onSeeAll, Modifier.testTag("seeAll-$key")) }
+    item(key = "h-$key", contentType = "header") { StartSectionHeader(titleRes, onSeeAll, "seeAll-$key") }
     item(key = key, contentType = "row") { TileRow(items, onOpen, onPlay, onMenu) }
 }
 
 @Composable
-private fun StartSectionHeader(textRes: Int, onSeeAll: (() -> Unit)?, seeAllModifier: Modifier) {
+private fun StartSectionHeader(textRes: Int, onSeeAll: (() -> Unit)?, seeAllTag: String) {
     SectionHeader(
         stringResource(textRes),
         Modifier.padding(start = Spacing.gutter, end = Spacing.xs, top = Spacing.section),
-        action = onSeeAll?.let { { SeeAllButton(it, seeAllModifier) } },
+        action = onSeeAll?.let { { SeeAllButton(it, Modifier.testTag(seeAllTag)) } },
     )
 }
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,18 +44,15 @@ fun CoverArt(
     shape: Shape = CoverShapes.Tile,
     initialsStyle: TextStyle = MaterialTheme.typography.titleLarge,
 ) {
-    Box(modifier.clip(shape).coverOutline(shape)) {
+    Box(modifier.clip(shape).coverOutline(shape, MaterialTheme.colorScheme)) {
         Initials(title, initialsStyle)
         if (model != null) AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 }
 
 /** The hairline of [CoverArt] (drawn over the content), in dark themes only. */
-@Composable
-fun Modifier.coverOutline(shape: Shape): Modifier {
-    val scheme = MaterialTheme.colorScheme
-    return if (scheme.isDark) border(Dp.Hairline, scheme.outlineVariant.copy(alpha = 0.4f), shape) else this
-}
+private fun Modifier.coverOutline(shape: Shape, scheme: ColorScheme): Modifier =
+    if (scheme.isDark) border(Dp.Hairline, scheme.outlineVariant.copy(alpha = 0.4f), shape) else this
 
 /**
  * The stand-in for a missing cover: a gentle two-tone gradient picked from the title (always the same for the same
