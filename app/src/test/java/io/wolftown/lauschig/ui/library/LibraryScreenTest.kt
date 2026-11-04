@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.library
 
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -43,7 +44,20 @@ class LibraryScreenTest {
         val state = LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
         rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
         rule.onNodeWithText("Nothing here yet").assertIsDisplayed()
+        rule.onNodeWithText("Titles you start listening to show up here.").assertIsDisplayed()
         rule.onNodeWithText("Audiobooks").assertDoesNotExist()
+    }
+
+    @Test fun notLoadedYet_showsNoEmptyHint() {
+        rule.setContent { LauschigTheme { LibraryScreen(LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = false), {}, {}, {}) } }
+        rule.onNodeWithText("Nothing here yet").assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
+    }
+
+    @Test fun emptySeriesTab_saysWhatWouldShowUp() {
+        val state = LibraryUiState(tab = LibraryTab.Series, availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
+        rule.onNodeWithText("Titles that belong to a series show up here, sorted by series.").assertIsDisplayed()
     }
 
     @Test fun collectionsTab_showsTheListSlot_insteadOfChips() {

@@ -2,6 +2,13 @@ package io.wolftown.lauschig.ui.discover
 
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.common.SectionTitle
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,7 +75,7 @@ fun DiscoverRoute(
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     DiscoverScreen(
         state, viewModel::setKinds, viewModel::setSort, onOpenItem, onOpenBrowse,
-        modifier = modifier, onPlay = actions::play, onMenu = { menuFor = it },
+        modifier = modifier, onPlay = actions::play, onMenu = { menuFor = it }, onRefresh = viewModel::refreshLibrary,
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
@@ -84,6 +91,7 @@ fun DiscoverScreen(
     modifier: Modifier = Modifier,
     onPlay: (itemId: String) -> Unit = {},
     onMenu: (ItemSummary) -> Unit = {},
+    onRefresh: () -> Unit = {},
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
@@ -93,13 +101,21 @@ fun DiscoverScreen(
         modifier = modifier.fillMaxSize(),
     ) {
         full("kinds") { KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(horizontal = 0.dp)) }
-        if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
+        if (state.loading) {
+            full("loading") { LoadingState() }
+        } else if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
             state.authors.isEmpty() && state.all.isEmpty()
         ) {
             full("empty") {
-                Text(
-                    stringResource(R.string.discover_empty), style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(vertical = 24.dp).testTag("discoverEmpty"),
+                EmptyState(
+                    Icons.Rounded.Explore, stringResource(R.string.discover_empty), Modifier.testTag("discoverEmpty"),
+                    supporting = stringResource(R.string.discover_empty_hint),
+                    action = {
+                        FilledTonalButton(onClick = onRefresh, modifier = Modifier.testTag("refreshLibrary")) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(stringResource(R.string.library_refresh), Modifier.padding(start = Spacing.s))
+                        }
+                    },
                 )
             }
         }

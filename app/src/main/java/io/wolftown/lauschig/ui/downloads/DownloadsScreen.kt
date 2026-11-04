@@ -22,6 +22,11 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.ui.graphics.vector.ImageVector
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -154,9 +159,9 @@ fun DownloadsScreen(
         }
         HorizontalDivider(Modifier.padding(top = 8.dp))
         when {
-            !state.loaded -> Unit
-            state.total == 0 -> Empty(stringResource(R.string.downloads_empty))
-            state.entries.isEmpty() -> Empty(stringResource(R.string.downloads_no_match))
+            !state.loaded -> LoadingState()
+            state.total == 0 -> Empty(Icons.Rounded.DownloadForOffline, stringResource(R.string.downloads_empty), stringResource(R.string.downloads_empty_hint))
+            state.entries.isEmpty() -> Empty(Icons.Rounded.SearchOff, stringResource(R.string.downloads_no_match))
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 items(state.entries, key = { it.key }) { e ->
                     EntryRow(e, ::size, onOpen = { onOpenItem(e.key) }, actions, onDelete = { confirmDelete = e.key })
@@ -192,10 +197,8 @@ private fun DownloadSort.label(): Int = when (this) {
 }
 
 @Composable
-private fun Empty(text: String) {
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyLarge)
-    }
+private fun Empty(icon: ImageVector, headline: String, supporting: String? = null) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState(icon, headline, supporting = supporting) }
 }
 
 @Composable

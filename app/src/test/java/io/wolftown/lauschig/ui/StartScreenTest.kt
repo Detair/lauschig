@@ -37,9 +37,17 @@ class StartScreenTest {
     fun empty_showsHint() {
         var library = 0
         rule.setContent { LauschigTheme { StartScreen(StartUiState(), onOpen = {}, onPlay = {}, onOpenLibrary = { library++ }) } }
-        rule.onNodeWithText("Nothing listened to yet – have a look in the library").assertIsDisplayed()
+        rule.onNodeWithText("Nothing listened to yet").assertIsDisplayed()
+        rule.onNodeWithText("Start a title in the library, and you can pick it up again here.").assertIsDisplayed()
         rule.onNodeWithText("Go to library").performClick()
         assertEquals(1, library)
+    }
+
+    @Test
+    fun loading_showsNeitherSectionsNorTheEmptyHint() {
+        rule.setContent { LauschigTheme { StartScreen(StartUiState(loading = true), onOpen = {}, onPlay = {}) } }
+        rule.onNodeWithText("Nothing listened to yet").assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
     }
 
     @Test

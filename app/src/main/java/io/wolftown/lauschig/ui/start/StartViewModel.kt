@@ -69,7 +69,7 @@ class StartViewModel(
             serverId = account?.serverId
             if (account == null) flowOf(StartUiState()) else stateFor(account.serverId)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StartUiState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StartUiState(loading = true))
 
     /** Catalog-derived data that does not depend on playback progress, recomputed only when the catalog changes. */
     private class CatalogView(val recent: List<ItemEntity>, val seriesGroups: List<List<ItemEntity>>, val podcasts: Map<String, ItemEntity>?)

@@ -19,6 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -132,11 +135,14 @@ fun SearchScreen(
                 }
             } else if (state.searched && !state.hasResults) {
                 full("empty") {
-                    Text(
-                        stringResource(R.string.search_nothing_found, state.resultsFor),
-                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp),
+                    EmptyState(
+                        Icons.Rounded.SearchOff, stringResource(R.string.search_nothing_found, state.resultsFor), Modifier.testTag("searchEmpty"),
+                        supporting = stringResource(R.string.search_nothing_found_hint),
                     )
                 }
+            } else if (!state.searched && !state.hasResults) {
+                // The first search for this query is still running.
+                full("loading") { LoadingState() }
             } else {
                 if (state.titles.isNotEmpty()) {
                     header("titlesHeader", R.string.search_titles)

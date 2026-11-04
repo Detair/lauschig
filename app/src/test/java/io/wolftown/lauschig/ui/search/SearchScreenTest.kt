@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.search
 
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -54,6 +55,13 @@ class SearchScreenTest {
     @Test fun searchScreen_noMatch_showsHint() {
         show(SearchUiState(query = "zzz", resultsFor = "zzz", searched = true))
         rule.onNodeWithText("Nothing found for “zzz”").assertIsDisplayed()
+        rule.onNodeWithText("Check the spelling, or try a shorter word.").assertIsDisplayed()
+    }
+
+    @Test fun searchScreen_firstSearchRunning_showsNoHintYet() {
+        show(SearchUiState(query = "zzz"))
+        rule.onNodeWithText("Nothing found", substring = true).assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
     }
 
     @Test fun searchScreen_emptyField_showsRecentChips() {

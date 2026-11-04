@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.discover
 
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -62,8 +64,22 @@ class DiscoverScreenTest {
         assertEquals(listOf(DiscoverSort.DURATION), picked)
     }
 
-    @Test fun discoverScreen_emptyCatalog_showsHint() {
-        rule.setContent { LauschigTheme { DiscoverScreen(DiscoverUiState(), {}, {}, {}, { _, _ -> }) } }
+    @Test fun discoverScreen_emptyCatalog_showsHint_andRefreshes() {
+        var refreshed = 0
+        rule.setContent { LauschigTheme { DiscoverScreen(DiscoverUiState(), {}, {}, {}, { _, _ -> }, onRefresh = { refreshed++ }) } }
         rule.onNodeWithText("Nothing here yet", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("The library loads the next time your server is reachable.").assertIsDisplayed()
+        rule.onNodeWithText("Refresh library").performClick()
+        assertEquals(1, refreshed)
+    }
+
+    @Test fun discoverScreen_whileLoading_saysNothingIsThere_never() {
+        rule.setContent { LauschigTheme { DiscoverScreen(DiscoverUiState(loading = true), {}, {}, {}, { _, _ -> }) } }
+        rule.onNodeWithTag("discoverEmpty").assertDoesNotExist()
+        rule.onNodeWithText("Nothing here yet", substring = true).assertDoesNotExist()
+        // A quiet indicator, once loading takes a moment.
+        rule.onNodeWithTag("loadingState").assertExists()
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithContentDescription("Loading…").assertExists()
     }
 }

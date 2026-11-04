@@ -14,6 +14,7 @@ import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.ui.browse.AuthorInfoCache
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
@@ -56,6 +57,8 @@ data class DiscoverUiState(
     val tags: List<Facet> = emptyList(),
     val authors: List<AuthorTile> = emptyList(),
     val all: List<ItemSummary> = emptyList(),
+    /** The first data is not there yet (show neither content nor "nothing here"). */
+    val loading: Boolean = false,
 )
 
 /** Store-like overview of the whole catalog, straight from Room (the optional author images are the only online extra). */
@@ -75,15 +78,17 @@ class DiscoverViewModel(
     private val catalog: Catalog,
     /** Where the grouping, sorting and tile mapping run; tests pass a test dispatcher. */
     private val dispatcher: CoroutineDispatcher,
+    /** Starts a library sync now (the empty page's "Refresh library"). */
+    private val requestSync: () -> Unit = {},
 ) : ViewModel() {
 
     @Inject constructor(
         accountStore: AccountStore, catalogDao: CatalogDao, itemDao: ItemDao, libraryDao: LibraryDao, progressDao: ProgressDao,
         downloadDao: DownloadDao, covers: CoverPathCache, prefs: FilterPreferences, discoverPrefs: DiscoverPreferences,
-        authorInfo: AuthorInfoCache, catalog: Catalog,
+        authorInfo: AuthorInfoCache, catalog: Catalog, sync: SyncTrigger,
     ) : this(
         accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, discoverPrefs, authorInfo, catalog,
-        Dispatchers.Default,
+        Dispatchers.Default, sync::syncNow,
     )
 
     private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
@@ -94,11 +99,13 @@ class DiscoverViewModel(
 
     val state: StateFlow<DiscoverUiState> = serverId
         .flatMapLatest { sid -> if (sid == null) flowOf(DiscoverUiState()) else stateFor(sid) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverUiState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverUiState(loading = true))
 
     fun setKinds(kinds: Set<LibraryKind>) {
         viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
     }
+
+    fun refreshLibrary() = requestSync()
 
     fun setSort(sort: DiscoverSort) {
         viewModelScope.launch { discoverPrefs.setSort(sort) }

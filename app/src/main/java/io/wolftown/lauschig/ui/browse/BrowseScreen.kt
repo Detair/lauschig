@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FilterListOff
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
@@ -129,9 +132,12 @@ fun BrowseScreen(
                     }
                 }
             }
+            if (!state.loaded && state.entries.isEmpty()) {
+                item(key = "loading", span = { GridItemSpan(maxLineSpan) }, contentType = "loading") { LoadingState() }
+            }
             if (state.loaded && state.entries.isEmpty()) {
                 item(key = "empty", span = { GridItemSpan(maxLineSpan) }, contentType = "empty") {
-                    Text(stringResource(R.string.browse_empty), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp))
+                    EmptyState(Icons.Rounded.FilterListOff, stringResource(R.string.browse_empty))
                 }
             }
             items(state.entries, key = { it.key() }, contentType = { if (it is BrowseEntry.Tile) "tile" else "missing" }) { entry ->

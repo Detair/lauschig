@@ -20,7 +20,8 @@
     <string name="start_next_in_series">Next in your series</string>
     <string name="start_recently_added">New on the server</string>
     <string name="start_see_all">See all</string>
-    <string name="start_empty">Nothing listened to yet – have a look in the library</string>
+    <string name="start_empty">Nothing listened to yet</string>
+    <string name="start_empty_hint">Start a title in the library, and you can pick it up again here.</string>
     <string name="start_progress_percent">%1$d %%</string>
     <string name="start_continue_left">%1$s left</string>
     <string name="setup_title">Connect to Audiobookshelf</string>
@@ -51,6 +52,12 @@
     <string name="library_tab_downloaded">Downloaded</string>
     <string name="library_tab_series">Series</string>
     <string name="library_empty">Nothing here yet</string>
+    <string name="library_empty_in_progress">Titles you start listening to show up here.</string>
+    <string name="library_empty_finished">Titles you have heard to the end show up here.</string>
+    <string name="library_empty_downloaded">Download a title to listen without a connection.</string>
+    <string name="library_empty_series">Titles that belong to a series show up here, sorted by series.</string>
+    <string name="library_refresh">Refresh library</string>
+    <string name="state_loading">Loading…</string>
     <string name="filter_all">All</string>
     <string name="filter_audiobooks">Audiobooks</string>
     <string name="filter_radio_plays">Radio plays</string>
@@ -171,6 +178,7 @@
     <string name="search_genres">Genres</string>
     <string name="search_tags">Tags</string>
     <string name="search_nothing_found">Nothing found for “%s”</string>
+    <string name="search_nothing_found_hint">Check the spelling, or try a shorter word.</string>
     <string name="discover_recent">Recently added</string>
     <string name="discover_series">Series</string>
     <string name="discover_genres">Genres</string>
@@ -191,7 +199,8 @@
         <item quantity="one">Show all %d title</item>
         <item quantity="other">Show all %d titles</item>
     </plurals>
-    <string name="discover_empty">Nothing here yet – the library loads the next time the server is reachable</string>
+    <string name="discover_empty">Nothing here yet</string>
+    <string name="discover_empty_hint">The library loads the next time your server is reachable.</string>
     <string name="missing_not_in_library">Not in the library</string>
     <string name="missing_tile_description">Volume %s, not in the library</string>
     <string name="missing_by">By %s</string>
@@ -375,8 +384,9 @@
     <string name="downloads_sort_size">Size</string>
     <string name="downloads_sort_added">Date added</string>
     <string name="downloads_sort_played">Recently played</string>
-    <string name="downloads_empty">No downloads yet.</string>
-    <string name="downloads_no_match">No download matches the search.</string>
+    <string name="downloads_empty">No downloads yet</string>
+    <string name="downloads_empty_hint">Downloaded titles play without a connection.</string>
+    <string name="downloads_no_match">No download matches the search</string>
     <string name="downloads_delete_finished">Delete heard (%1$d · %2$s)</string>
     <string name="downloads_delete_finished_title">Delete heard downloads?</string>
     <plurals name="downloads_delete_finished_message">

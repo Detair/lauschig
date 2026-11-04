@@ -150,6 +150,13 @@ class DiscoverViewModelTest {
         assertEquals(DiscoverSort.DURATION, vm().await { it.all.size == 3 }.sort)
     }
 
+    @Test fun discover_isLoading_untilTheFirstCatalogIsRead_thenEmpty() = runTest {
+        val v = vm()
+        assertTrue("starts loading, not empty", v.state.value.loading)
+        val empty = v.await { !it.loading }
+        assertTrue(empty.all.isEmpty() && empty.recent.isEmpty())
+    }
+
     @Test fun discover_itemsWithoutMetadata_listedOnlyInAllTitles() = runTest {
         seed(item("1", "Nackt", added = 0))
         val s = vm().await { it.all.isNotEmpty() }

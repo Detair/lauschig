@@ -83,12 +83,19 @@ class DownloadsScreenTest {
 
     @Test fun empty() {
         rule.setContent { LauschigTheme { DownloadsScreen(DownloadsUiState(loaded = true), {}, {}, DownloadsActions()) } }
-        rule.onNodeWithText("No downloads yet.").assertIsDisplayed()
+        rule.onNodeWithText("No downloads yet").assertIsDisplayed()
+        rule.onNodeWithText("Downloaded titles play without a connection.").assertIsDisplayed()
+    }
+
+    @Test fun notLoadedYet_showsNoEmptyHint() {
+        rule.setContent { LauschigTheme { DownloadsScreen(DownloadsUiState(loaded = false), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithText("No downloads yet").assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
     }
 
     @Test fun noMatch_keepsTheSearchField() {
         rule.setContent { LauschigTheme { DownloadsScreen(state.copy(entries = emptyList(), query = "xyz"), {}, {}, DownloadsActions()) } }
-        rule.onNodeWithText("No download matches the search.").assertIsDisplayed()
+        rule.onNodeWithText("No download matches the search").assertIsDisplayed()
         rule.onNodeWithTag("downloadsSearch").assertIsDisplayed()
     }
 

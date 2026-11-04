@@ -5,6 +5,13 @@ import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CollectionsBookmark
+import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.ui.graphics.vector.ImageVector
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
 import io.wolftown.lauschig.local.DeviceTab
@@ -54,6 +61,14 @@ private fun LibraryTab.label(): Int = when (this) {
     LibraryTab.Collections -> R.string.library_tab_collections
     LibraryTab.Playlists -> R.string.library_tab_playlists
     LibraryTab.Device -> R.string.library_tab_device
+}
+
+/** The empty tab's icon and its line about what would show up there. */
+private fun emptyHint(tab: LibraryTab): Pair<ImageVector, Int> = when (tab) {
+    LibraryTab.Finished -> Icons.Rounded.TaskAlt to R.string.library_empty_finished
+    LibraryTab.Downloaded -> Icons.Rounded.DownloadForOffline to R.string.library_empty_downloaded
+    LibraryTab.Series -> Icons.Rounded.CollectionsBookmark to R.string.library_empty_series
+    else -> Icons.Rounded.Headphones to R.string.library_empty_in_progress
 }
 
 @Composable
@@ -126,12 +141,13 @@ fun LibraryScreen(
             }
         }
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()
-        if (empty && state.loaded) {
-            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.bodyLarge)
+        when {
+            empty && !state.loaded -> LoadingState()
+            empty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val (icon, hint) = emptyHint(state.tab)
+                EmptyState(icon, stringResource(R.string.library_empty), Modifier.testTag("libraryEmpty"), supporting = stringResource(hint))
             }
-        } else {
-            LibraryGrid(state, tile)
+            else -> LibraryGrid(state, tile)
         }
     }
 }

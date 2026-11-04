@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +53,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
+import androidx.compose.material.icons.rounded.Headphones
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.ProgressLine
@@ -73,6 +75,8 @@ data class StartUiState(
     val downloaded: List<ItemSummary> = emptyList(),
     /** Episode tiles: podcast cover, episode title, id = episode key. Empty without a podcast library. */
     val newEpisodes: List<ItemSummary> = emptyList(),
+    /** The first data is not there yet (show neither sections nor "nothing listened to"). */
+    val loading: Boolean = false,
 )
 
 @Composable
@@ -121,14 +125,17 @@ fun StartScreen(
     onPlayPause: (itemId: String) -> Unit = onPlay,
 ) {
     if (state.continueItems.isEmpty() && state.nextInSeries.isEmpty() && state.recentlyAdded.isEmpty() && state.downloaded.isEmpty() && state.newEpisodes.isEmpty()) {
-        Column(
-            modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.start_empty), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-            Button(onClick = onOpenLibrary, modifier = Modifier.padding(top = 16.dp).testTag("openLibrary")) {
-                Text(stringResource(R.string.start_open_library))
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (state.loading) {
+                LoadingState()
+            } else {
+                EmptyState(
+                    Icons.Rounded.Headphones, stringResource(R.string.start_empty),
+                    supporting = stringResource(R.string.start_empty_hint),
+                    action = {
+                        Button(onClick = onOpenLibrary, modifier = Modifier.testTag("openLibrary")) { Text(stringResource(R.string.start_open_library)) }
+                    },
+                )
             }
         }
         return
