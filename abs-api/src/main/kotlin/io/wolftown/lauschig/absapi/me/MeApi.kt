@@ -42,6 +42,10 @@ interface MeApi {
     @DELETE("api/me/item/{itemId}/bookmark/{time}")
     suspend fun deleteBookmark(@Path("itemId") itemId: String, @Path("time") time: String)
 
+    /** Every listening session of the user, [page] 0-based, newest `updatedAt` first. */
+    @GET("api/me/listening-sessions")
+    suspend fun listeningSessions(@Query("itemsPerPage") itemsPerPage: Int, @Query("page") page: Int): UserListeningSessionsPage
+
     @GET("api/me/item/listening-sessions/{itemId}")
     suspend fun itemListeningSessions(
         @Path("itemId") itemId: String,

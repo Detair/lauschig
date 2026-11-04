@@ -98,6 +98,7 @@ private class RecordingMe : MeApi {
     override suspend fun deleteBookmark(itemId: String, time: String) { calls += "delete $itemId" }
     override suspend fun itemListeningSessions(itemId: String, itemsPerPage: Int, page: Int) = ListeningSessionsPage().also { calls += "history $itemId" }
     override suspend fun episodeListeningSessions(itemId: String, episodeId: String, itemsPerPage: Int, page: Int) = ListeningSessionsPage().also { calls += "history $itemId" }
+    override suspend fun listeningSessions(itemsPerPage: Int, page: Int) = io.wolftown.lauschig.absapi.me.UserListeningSessionsPage().also { calls += "listening-sessions $page" }
 }
 
 private class RecordingLibrary(private val serverItems: List<String>) : LibraryApi {

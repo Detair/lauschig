@@ -8,6 +8,7 @@ import io.wolftown.lauschig.absapi.me.BookmarkDto
 import io.wolftown.lauschig.absapi.me.BookmarksResponse
 import io.wolftown.lauschig.absapi.me.ListeningSessionsPage
 import io.wolftown.lauschig.absapi.me.MeApi
+import io.wolftown.lauschig.absapi.me.UserListeningSessionsPage
 
 /** Test base: the bookmark and session calls fail unless a test overrides them. */
 abstract class StubMeApi : MeApi {
@@ -17,6 +18,7 @@ abstract class StubMeApi : MeApi {
     override suspend fun deleteBookmark(itemId: String, time: String): Unit = error("unused")
     override suspend fun itemListeningSessions(itemId: String, itemsPerPage: Int, page: Int): ListeningSessionsPage = error("unused")
     override suspend fun episodeListeningSessions(itemId: String, episodeId: String, itemsPerPage: Int, page: Int): ListeningSessionsPage = error("unused")
+    override suspend fun listeningSessions(itemsPerPage: Int, page: Int): UserListeningSessionsPage = error("unused")
 }
 
 /** Test base: collections and playlists fail unless a test overrides them. */
