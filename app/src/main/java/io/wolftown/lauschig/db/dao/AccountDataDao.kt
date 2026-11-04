@@ -26,6 +26,7 @@ abstract class AccountDataDao {
     @Query("DELETE FROM history_sessions WHERE serverId = :serverId") protected abstract suspend fun historySessions(serverId: String)
     @Query("DELETE FROM collections WHERE serverId = :serverId") protected abstract suspend fun collections(serverId: String)
     @Query("DELETE FROM collection_entries WHERE serverId = :serverId") protected abstract suspend fun collectionEntries(serverId: String)
+    @Query("DELETE FROM listening_sessions WHERE serverId = :serverId") protected abstract suspend fun listeningSessions(serverId: String)
 
     /** All rows of [serverId] in one transaction: observers see the account either complete or gone. */
     @Transaction
@@ -45,6 +46,7 @@ abstract class AccountDataDao {
         historySessions(serverId)
         collections(serverId)
         collectionEntries(serverId)
+        listeningSessions(serverId)
     }
 
     /** True if [serverId] has a row in any of [SERVER_TABLES]. */
@@ -63,7 +65,8 @@ abstract class AccountDataDao {
              OR EXISTS(SELECT 1 FROM queue WHERE serverId = :serverId)
              OR EXISTS(SELECT 1 FROM history_sessions WHERE serverId = :serverId)
              OR EXISTS(SELECT 1 FROM collections WHERE serverId = :serverId)
-             OR EXISTS(SELECT 1 FROM collection_entries WHERE serverId = :serverId)""",
+             OR EXISTS(SELECT 1 FROM collection_entries WHERE serverId = :serverId)
+             OR EXISTS(SELECT 1 FROM listening_sessions WHERE serverId = :serverId)""",
     )
     abstract suspend fun hasRows(serverId: String): Boolean
 
@@ -76,6 +79,7 @@ abstract class AccountDataDao {
         val SERVER_TABLES = listOf(
             "libraries", "items", "chapters", "audio_files", "progress", "local_sessions", "downloads", "episodes",
             "external_series", "title_audio", "bookmarks", "queue", "history_sessions", "collections", "collection_entries",
+            "listening_sessions",
         )
     }
 }

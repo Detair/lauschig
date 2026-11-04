@@ -255,4 +255,37 @@ class MigrationTest {
             room.close()
         }
     }
+
+    @Test fun v8ToV9_keepsData_andAddsAWorkingListeningSessionsTable() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v9.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/8.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty, hideFromContinue) VALUES ('s', 'a', 12.5, 100.0, 0, 7, 1, 0)")
+            db.execSQL("INSERT INTO local_sessions (id, serverId, itemId, startTimeSec, currentTimeSec, timeListeningSec, startedAt, updatedAt, synced) VALUES ('sess', 's', 'a', 0.0, 5.0, 5.0, 1, 2, 0)")
+            db.execSQL("INSERT INTO history_sessions (serverId, id, itemKey, startedAt, updatedAt, startTimeSec, currentTimeSec, timeListeningSec, deviceName) VALUES ('s', 'h', 'a', 1, 2, 0.0, 5.0, 5.0, NULL)")
+            db.version = 8
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            assertEquals(12.5, room.progressDao().get("s", "a")!!.currentTimeSec, 0.0)
+            assertEquals(listOf("sess"), room.sessionDao().observeAll("s").first().map { it.id })
+            assertEquals(listOf("h"), room.historyDao().observeForKey("s", "a").first().map { it.id })
+            val dao = room.listeningSessionDao()
+            assertEquals(emptyList<Any>(), dao.observeAll("s").first())
+            dao.upsertAll(listOf(io.wolftown.lauschig.db.entities.ListeningSessionEntity("s", "x", "a", "T", null, 1, 2, 30.0, 100.0, 40.0)))
+            assertEquals(30.0, dao.observeAll("s").first().single().timeListeningSec, 0.0)
+        } finally {
+            room.close()
+        }
+    }
 }
