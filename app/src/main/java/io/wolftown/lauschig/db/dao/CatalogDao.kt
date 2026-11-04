@@ -12,12 +12,14 @@ import kotlinx.coroutines.flow.Flow
  */
 data class CatalogVersion(val count: Int, val updatedAt: Long, val covers: Long, val added: Long)
 
-/** What the statistics and achievements read of a title: names, series, duration, cover version, genres. */
+/** What the statistics, achievements and the year in review read of a title: names, series, duration, cover version, genres. */
 data class StatsItem(
     val id: String,
     val libraryId: String,
     val title: String,
     val author: String?,
+    /** The year in review names the most heard narrator. */
+    val narrator: String?,
     val seriesName: String?,
     val seriesSequence: String?,
     val seriesSortKey: Double?,
@@ -27,7 +29,7 @@ data class StatsItem(
 ) {
     /** As a title of [serverId] with only these columns (the rest at their defaults). */
     fun toEntity(serverId: String) = ItemEntity(
-        serverId, id, libraryId, title, author = author, seriesName = seriesName, seriesSequence = seriesSequence,
+        serverId, id, libraryId, title, author = author, narrator = narrator, seriesName = seriesName, seriesSequence = seriesSequence,
         seriesSortKey = seriesSortKey, durationSec = durationSec, coverUpdatedAt = coverUpdatedAt, genres = genres,
     )
 }
@@ -43,9 +45,9 @@ interface CatalogDao {
     @Query("SELECT * FROM items WHERE serverId = :serverId")
     fun observeAll(serverId: String): Flow<List<ItemEntity>>
 
-    /** The columns of [StatsItem] only – no description, tags or narrators (read again on every catalog change). */
+    /** The columns of [StatsItem] only – no description or tags (read again on every catalog change). */
     @Query(
-        """SELECT id, libraryId, title, author, seriesName, seriesSequence, seriesSortKey, durationSec, coverUpdatedAt, genres
+        """SELECT id, libraryId, title, author, narrator, seriesName, seriesSequence, seriesSortKey, durationSec, coverUpdatedAt, genres
              FROM items WHERE serverId = :serverId""",
     )
     fun observeForStats(serverId: String): Flow<List<StatsItem>>

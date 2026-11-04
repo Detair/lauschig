@@ -207,4 +207,30 @@ class StartScreenTest {
         stats = null
         rule.onNodeWithTag("statsCard").assertDoesNotExist()
     }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w400dp-h2400dp")
+    fun yearReviewCard_underTheStatsCard_opensTheReview_itsXHidesIt() {
+        val calls = mutableListOf<String>()
+        var review by androidx.compose.runtime.mutableStateOf<Int?>(2026)
+        val state = StartUiState(continueItems = listOf(summary("a", "Book A")), downloaded = listOf(summary("d", "Book D")))
+        rule.setContent {
+            LauschigTheme {
+                StartScreen(state, onOpen = {}, onPlay = {}, review = review, onOpenReview = { calls += "open:$it" }, onHideReview = { calls += "hide:$it" })
+            }
+        }
+        val card = rule.onNodeWithTag("reviewCard", useUnmergedTree = true).assertIsDisplayed()
+        // The text is one button ("View"); the X is its own, "Hide year in review".
+        val open = rule.onNodeWithText("Your year in review 2026", substring = true)
+        open.assertTextEquals("Your year in review 2026", "Your 2026 in listening, slide by slide")
+        assertEquals("View", open.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].label)
+        open.performClick()
+        rule.onNodeWithContentDescription("Hide year in review").performClick()
+        assertEquals(listOf("open:2026", "hide:2026"), calls)
+        val hero = rule.onNodeWithTag("continueHero").fetchSemanticsNode().boundsInRoot
+        assertTrue(hero.bottom <= card.fetchSemanticsNode().boundsInRoot.top)
+
+        review = null
+        rule.onNodeWithTag("reviewCard", useUnmergedTree = true).assertDoesNotExist()
+    }
 }

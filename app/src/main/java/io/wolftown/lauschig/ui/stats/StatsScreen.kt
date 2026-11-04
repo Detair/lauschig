@@ -3,6 +3,7 @@ package io.wolftown.lauschig.ui.stats
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -86,6 +88,7 @@ fun StatsRoute(
     onBack: () -> Unit,
     onOpenItem: (itemId: String) -> Unit,
     onOpenAchievements: () -> Unit = {},
+    onOpenReview: (year: Int) -> Unit = {},
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -96,7 +99,7 @@ fun StatsRoute(
     }
     StatsScreen(
         state, onBack, onPeriod = viewModel::setPeriod, onPrevious = viewModel::previous, onNext = viewModel::next,
-        onOpenItem = onOpenItem, onLoadNow = viewModel::loadHistoryNow, onOpenAchievements = onOpenAchievements,
+        onOpenItem = onOpenItem, onLoadNow = viewModel::loadHistoryNow, onOpenAchievements = onOpenAchievements, onOpenReview = onOpenReview,
     )
 }
 
@@ -120,6 +123,8 @@ fun StatsScreen(
     /** Reads the whole history now, also on mobile data (the user's explicit choice for this one run). */
     onLoadNow: () -> Unit = {},
     onOpenAchievements: () -> Unit = {},
+    /** „Jahresrückblick 2026 ansehen“ in „Jahr“ for a year with a review ([StatsUiState.reviewYear]). */
+    onOpenReview: (year: Int) -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().testTag("statsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,6 +176,15 @@ fun StatsScreen(
             }
             item(key = "tiles", contentType = "tiles") {
                 Tiles(state, Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl))
+            }
+            state.reviewYear?.let { year ->
+                item(key = "review", contentType = "review") {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = Spacing.l), contentAlignment = Alignment.Center) {
+                        FilledTonalButton(onClick = { onOpenReview(year) }, modifier = Modifier.testTag("statsReview")) {
+                            Text(stringResource(R.string.review_open, year), textAlign = TextAlign.Center)
+                        }
+                    }
+                }
             }
             state.achievements?.let { achievements(it, onOpenAchievements) }
             // A finished book's day names its year in "all time" and whenever it is not this year.

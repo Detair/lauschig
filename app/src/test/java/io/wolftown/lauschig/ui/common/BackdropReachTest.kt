@@ -17,6 +17,11 @@ class BackdropReachTest {
         assertEquals(0.dp, backdropReach(insets, LayoutDirection.Ltr, bannerShown = true).top)
     }
 
+    @Test fun overTheNavigationBar_onlyWithoutTheFramesBarsThere() {
+        assertEquals(0.dp, backdropReach(insets, LayoutDirection.Ltr, bannerShown = false).bottom)
+        assertEquals(48.dp, backdropReach(insets, LayoutDirection.Ltr, bannerShown = false, barsBelow = false).bottom)
+    }
+
     @Test fun rightToLeft_sidesFollowTheScreen() {
         val r = backdropReach(insets, LayoutDirection.Rtl, bannerShown = false)
         assertEquals(30.dp, r.left)

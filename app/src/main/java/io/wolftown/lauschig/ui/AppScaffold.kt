@@ -143,7 +143,7 @@ fun AppScaffold(
 
     val body: @Composable (PaddingValues) -> Unit = { inner ->
         // A page's backdrop may reach over the status bar only while no banner sits between them.
-        val reach = backdropReach(inner, LocalLayoutDirection.current, bannerShown = showReauthBanner || banner != null)
+        val reach = backdropReach(inner, LocalLayoutDirection.current, bannerShown = showReauthBanner || banner != null, barsBelow = showBottomBar)
         Column(Modifier.fillMaxSize().padding(inner)) {
             FrameBanners(banner, showReauthBanner, onReauth, onOpenConnection)
             Box(Modifier.weight(1f).fillMaxWidth()) {
