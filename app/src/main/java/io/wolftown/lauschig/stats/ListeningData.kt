@@ -56,7 +56,9 @@ class ListeningDataSource @Inject constructor(
     private class Raw(val rows: SessionRows, val progress: List<ProgressEntity>, val items: Map<String, ItemEntity>, val groups: List<List<ItemEntity>>, val zone: ZoneId)
 
     fun observe(serverId: String, zone: Flow<ZoneId>): Flow<ListeningData> {
-        val catalogView = combine(catalogDao.observeAll(serverId), libraries.observeAll(serverId)) { items, libs ->
+        // Only the columns the statistics use (no description): this is read again on every catalog change.
+        val titles = catalogDao.observeForStats(serverId).map { rows -> rows.map { it.toEntity(serverId) } }
+        val catalogView = combine(titles, libraries.observeAll(serverId)) { items, libs ->
             val podcastLibs = libs.filter { it.effectiveKind == LibraryKind.PODCAST }.mapTo(HashSet()) { it.id }
             items.associateBy { it.id } to catalog.seriesGroups(items.filter { it.libraryId !in podcastLibs })
         }
