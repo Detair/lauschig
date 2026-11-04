@@ -25,22 +25,24 @@ import io.wolftown.lauschig.settings.ThemeMode
 /*
  * Lauschig's own calm palette for when the wallpaper's colours are not used (Android below 12, or "dynamic colour" off):
  * a night-blue evening with a honey-amber light in dark, morning mist with a deeper amber in light; slate as the
- * secondary, moss as the tertiary colour. Every M3 role is set (no baseline purple left), the surface containers step
- * in one direction, and the on-colours keep WCAG AA on their roles (see ColorSchemeTest).
+ * secondary, moss as the tertiary colour (in light one shade darker, so they read as text on every container). Every
+ * M3 role is set (no baseline purple left), the surface containers step in one direction, text roles keep WCAG AA on
+ * the surface and every container, the on-colours on their roles, and the colour containers (the inactive slider track
+ * is secondaryContainer) stand out from the surface by at least 1.3:1 (see ColorSchemeTest).
  */
 internal val LauschigLightColors = lightColorScheme(
     primary = Color(0xFF8A5A00),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFFFDEAD),
+    primaryContainer = Color(0xFFFFCB80),
     onPrimaryContainer = Color(0xFF2B1A00),
     inversePrimary = Color(0xFFF0B44C),
-    secondary = Color(0xFF5B6B8C),
+    secondary = Color(0xFF4F5E7D),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFDAE2FF),
+    secondaryContainer = Color(0xFFC8D2F0),
     onSecondaryContainer = Color(0xFF172140),
-    tertiary = Color(0xFF4F7A64),
+    tertiary = Color(0xFF436B57),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFC6EDD3),
+    tertiaryContainer = Color(0xFFAEDDBD),
     onTertiaryContainer = Color(0xFF0A2618),
     background = Color(0xFFEEF1F6),
     onBackground = Color(0xFF191C24),
@@ -59,9 +61,9 @@ internal val LauschigLightColors = lightColorScheme(
     outlineVariant = Color(0xFFC3C8D5),
     scrim = Color(0xFF000000),
     surfaceBright = Color(0xFFF7F9FC),
-    surfaceContainer = Color(0xFFE4E8EF),
-    surfaceContainerHigh = Color(0xFFDEE3EB),
-    surfaceContainerHighest = Color(0xFFD8DDE7),
+    surfaceContainer = Color(0xFFE5E9F0),
+    surfaceContainerHigh = Color(0xFFE1E5ED),
+    surfaceContainerHighest = Color(0xFFDDE2EA),
     surfaceContainerLow = Color(0xFFE9EDF3),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceDim = Color(0xFFD3D8E1),

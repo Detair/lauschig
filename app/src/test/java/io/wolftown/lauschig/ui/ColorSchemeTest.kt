@@ -10,6 +10,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import io.wolftown.lauschig.ui.theme.contrastRatio
+import io.wolftown.lauschig.ui.theme.toHsl
 
 class ColorSchemeTest {
     private val dynamicDark = darkColorScheme(primary = Color(0xFF00FF00), surfaceContainer = Color(0xFF223322))
@@ -26,8 +27,29 @@ class ColorSchemeTest {
         assertEquals(Color(0xFFF0B44C), LauschigDarkColors.primary)
         assertEquals(Color(0xFFEEF1F6), LauschigLightColors.background)
         assertEquals(Color(0xFF8A5A00), LauschigLightColors.primary)
-        assertEquals(Color(0xFF5B6B8C), LauschigLightColors.secondary)
-        assertEquals(Color(0xFF4F7A64), LauschigLightColors.tertiary)
+        // Slate and moss as they are in the dark containers, one shade darker as light text roles (same hue).
+        assertEquals(Color(0xFF5B6B8C), LauschigDarkColors.secondaryContainer)
+        assertEquals(Color(0xFF4F7A64), LauschigDarkColors.tertiaryContainer)
+        assertEquals(Color(0xFF5B6B8C).toHsl().first, LauschigLightColors.secondary.toHsl().first, 3f)
+        assertEquals(Color(0xFF4F7A64).toHsl().first, LauschigLightColors.tertiary.toHsl().first, 3f)
+    }
+
+    @Test fun fallback_textRoles_keepWcagAA_onTheSurfaceAndEveryContainer() {
+        for (s in listOf(LauschigLightColors, LauschigDarkColors)) {
+            val backgrounds = listOf(s.surface, s.surfaceContainerLow, s.surfaceContainer, s.surfaceContainerHigh, s.surfaceContainerHighest)
+            for (text in listOf(s.primary, s.secondary, s.tertiary, s.onSurface, s.onSurfaceVariant, s.error)) {
+                backgrounds.forEach { bg -> assertTrue("$text on $bg: ${contrastRatio(text, bg)}", contrastRatio(text, bg) >= 4.5) }
+            }
+        }
+    }
+
+    @Test fun fallback_colourContainers_standOutFromTheSurface() {
+        for (s in listOf(LauschigLightColors, LauschigDarkColors)) {
+            // secondaryContainer is also the slider's inactive track.
+            listOf(s.primaryContainer, s.secondaryContainer, s.tertiaryContainer).forEach {
+                assertTrue("$it on ${s.surface}: ${contrastRatio(it, s.surface)}", contrastRatio(it, s.surface) >= 1.3)
+            }
+        }
     }
 
     @Test fun fallback_onColours_keepWcagAA() {
