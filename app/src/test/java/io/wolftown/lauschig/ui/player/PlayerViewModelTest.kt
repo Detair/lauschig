@@ -61,6 +61,17 @@ class PlayerViewModelTest {
         assertEquals("05:00", s.bookTotalText)
     }
 
+    @Test fun authorAndSeries_followTheLoadedTitle() = runTest {
+        val metas = mapOf("b1" to PlayerMeta("Autorin", "Saga", "3"), "b2" to PlayerMeta("Jemand"))
+        val v = viewModels.own(PlayerViewModel(player, metaOf = { flowOf(metas[it]) }) { flowOf(emptyList()) })
+        player.state.value = playing(125.0)
+        val s = v.state.first { it.itemId == "b1" && it.author != null }
+        assertEquals(Triple("Autorin", "Saga", "3"), Triple(s.author, s.seriesName, s.seriesSequence))
+        player.state.value = playing(10.0).copy(itemId = "b2")
+        val other = v.state.first { it.itemId == "b2" && it.author == "Jemand" }
+        assertEquals(null, other.seriesName)
+    }
+
     @Test fun speedPresets_applyToController() = runTest {
         val v = vm()
         for (p in listOf(1.0f, 1.25f, 1.5f, 2.0f)) v.setSpeed(p)

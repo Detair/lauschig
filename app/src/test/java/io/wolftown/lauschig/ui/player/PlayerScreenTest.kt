@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -48,6 +49,21 @@ class PlayerScreenTest {
         rule.onNodeWithContentDescription("Next chapter").performClick()
         assertEquals(listOf("t", "s-30", "s30", "p", "n"), calls)
         rule.onNodeWithText("02:05 / 05:00").assertExists()
+    }
+
+    @Test fun underTheTitle_authorAndSeriesWithVolume() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(author = "Autorin", seriesName = "Saga", seriesSequence = "3"), {}) } }
+        rule.onNodeWithTag("playerSubtitle").assertTextEquals("Autorin · Saga · Book 3")
+    }
+
+    @Test fun underTheTitle_anAuthorNamedLikeTheSeries_isSaidOnce() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(author = "Die drei ???", seriesName = "Die drei ???", seriesSequence = "1"), {}) } }
+        rule.onNodeWithTag("playerSubtitle").assertTextEquals("Die drei ??? · Book 1")
+    }
+
+    @Test fun underTheTitle_nothingKnown_noLine() {
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}) } }
+        rule.onNodeWithTag("playerSubtitle").assertDoesNotExist()
     }
 
     @Test fun speedSheet_presetApplies_andChapterSheetSeeks() {

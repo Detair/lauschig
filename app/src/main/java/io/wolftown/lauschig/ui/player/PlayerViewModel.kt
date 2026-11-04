@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.StreamLoad
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -26,6 +27,9 @@ import kotlin.math.roundToInt
 
 /** Minimal chapter data the player needs; [startSec]/[endSec] are book-wide. */
 data class ChapterInfo(val title: String, val startSec: Double, val endSec: Double)
+
+/** Who and which series a loaded title belongs to (for an episode: its podcast as [author]). */
+data class PlayerMeta(val author: String?, val seriesName: String? = null, val seriesSequence: String? = null)
 
 @Immutable
 data class PlayerScreenState(
@@ -50,6 +54,10 @@ data class PlayerScreenState(
     val downloadThrottled: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
     val error: Int? = null,
+    /** The quieter line under the title (see [PlayerMeta]); null while unknown. */
+    val author: String? = null,
+    val seriesName: String? = null,
+    val seriesSequence: String? = null,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -57,21 +65,40 @@ data class PlayerScreenState(
 @HiltViewModel
 class PlayerViewModel(
     private val player: PlayerController,
+    metaOf: (itemId: String) -> Flow<PlayerMeta?> = { flowOf(null) },
     chaptersOf: (itemId: String) -> Flow<List<ChapterInfo>>,
 ) : ViewModel() {
 
     @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao) :
-        this(player, { itemId ->
-            accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
-                if (sid == null) flowOf(emptyList())
-                else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
-            }
-        })
+        this(
+            player,
+            metaOf = { itemId ->
+                val key = PlayableKey.parse(itemId)
+                accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
+                    // An episode's row is its podcast's: the podcast is the quieter line.
+                    if (sid == null) flowOf(null)
+                    else itemDao.observeItemRow(sid, key.libraryItemId).map { row ->
+                        row?.let { if (key.episodeId != null) PlayerMeta(it.title) else PlayerMeta(it.author, it.seriesName, it.seriesSequence) }
+                    }
+                }
+            },
+            chaptersOf = { itemId ->
+                accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
+                    if (sid == null) flowOf(emptyList())
+                    else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
+                }
+            },
+        )
+
+    private val loadedId = player.state.map { it.itemId }.distinctUntilChanged()
 
     private val chapters: Flow<List<ChapterInfo>> =
-        player.state.map { it.itemId }.distinctUntilChanged().flatMapLatest { id -> if (id == null) flowOf(emptyList()) else chaptersOf(id) }
+        loadedId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else chaptersOf(id) }
 
-    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters) { p, chs ->
+    private val meta: Flow<PlayerMeta?> =
+        loadedId.flatMapLatest { id -> if (id == null) flowOf(null) else metaOf(id) }.distinctUntilChanged()
+
+    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, m ->
         // Without chapter data the whole book acts as one chapter.
         val start = if (p.chapterIndex >= 0) p.chapterStartSec else 0.0
         val end = if (p.chapterIndex >= 0 && p.chapterEndSec > start) p.chapterEndSec else p.durationSec
@@ -102,6 +129,9 @@ class PlayerViewModel(
                 ChapterRow(i, c.title, len, cur, if (cur) inChapter.coerceAtMost(len) else null)
             },
             error = p.error,
+            author = m?.author,
+            seriesName = m?.seriesName,
+            seriesSequence = m?.seriesSequence,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 

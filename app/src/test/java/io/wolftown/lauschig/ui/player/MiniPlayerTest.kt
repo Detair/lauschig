@@ -2,7 +2,14 @@ package io.wolftown.lauschig.ui.player
 
 import io.wolftown.lauschig.playback.StreamLoad
 import android.app.Application
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -41,6 +48,18 @@ class MiniPlayerTest {
         rule.onNodeWithContentDescription("Pause").assertHeightIsAtLeast(56.dp)
         rule.onNodeWithText("The Book").performClick()
         assertEquals(1, opened)
+    }
+
+    @Test fun miniPlayer_progressLine_runsAlongTheTopEdge() {
+        rule.setContent { LauschigTheme { MiniPlayer(loaded.copy(chapterIndex = 1), {}, {}) } }
+        val bar = rule.onNodeWithTag("miniPlayer").fetchSemanticsNode().boundsInRoot
+        val line = rule.onNodeWithTag("miniProgress", useUnmergedTree = true)
+        line.assertExists().assertHeightIsEqualTo(2.dp)
+        // Chapter progress: 25 of 100 s.
+        line.assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(0.25f, 0f..1f)))
+        val bounds = line.fetchSemanticsNode().boundsInRoot
+        assertEquals(bar.top, bounds.top, 0.5f)
+        assertEquals(bar.width, bounds.width, 0.5f)
     }
 
     @Test fun miniPlayer_hiddenWhenNothingLoaded() {

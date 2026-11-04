@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -92,12 +93,13 @@ internal fun Color.toHsl(): Triple<Float, Float, Float> {
 
 /**
  * [base] tinted with the cover of [model] (see [coverTintOver]), cross-fading in [TINT_FADE_MS]; [base] itself while
- * the swatch loads, without a cover or offline without a local cover – never a wrong colour in between.
+ * the swatch loads, without a cover or offline without a local cover – never a wrong colour in between. A [State], so
+ * a caller that only draws with it (a gradient) reads it in the draw phase and skips recomposing during the fade.
  */
 @Composable
-fun animateCoverTint(model: Any?, base: Color): Color {
+fun animateCoverTint(model: Any?, base: Color): State<Color> {
     val swatch = rememberCoverSwatch(model)
     val scheme = MaterialTheme.colorScheme
     val target = if (swatch == null) base else remember(swatch, base, scheme) { coverTintOver(base, swatch, scheme) }
-    return animateColorAsState(target, tween(TINT_FADE_MS), label = "coverTint").value
+    return animateColorAsState(target, tween(TINT_FADE_MS), label = "coverTint")
 }

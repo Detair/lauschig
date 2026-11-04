@@ -11,9 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.height
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -22,7 +20,6 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,13 +100,9 @@ fun CoverTile(
                 StatusBadge(Icons.Rounded.DownloadDone, stringResource(R.string.cover_offline_available), Modifier.align(Alignment.TopEnd))
             }
             if (item.progress > 0f && !item.isFinished) {
-                LinearProgressIndicator(
-                    progress = { item.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).testTag("coverProgress"),
-                    trackColor = Color.Black.copy(alpha = 0.3f),
-                    strokeCap = StrokeCap.Butt,
-                    gapSize = 0.dp,
-                    drawStopIndicator = {},
+                ProgressLine(
+                    { item.progress }, Modifier.align(Alignment.BottomStart).testTag("coverProgress"),
+                    thickness = 3.dp, trackColor = Color.Black.copy(alpha = 0.3f),
                 )
             }
         }
