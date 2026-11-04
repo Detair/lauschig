@@ -167,12 +167,15 @@ private var SemanticsPropertyReceiver.segmentState by SegmentStateKey
  */
 @Stable
 class StoryState(
-    val count: Int,
+    count: Int,
     index: Int = 0,
     progress: Float = 0f,
     shown: Set<Int> = emptySet(),
     private val onPlace: (index: Int, shown: Set<Int>) -> Unit = { _, _ -> },
 ) {
+    /** How many slides; changes only by [relocate]. */
+    var count by mutableIntStateOf(count)
+        private set
     var index by mutableIntStateOf(index.coerceIn(0, (count - 1).coerceAtLeast(0)))
         private set
     var progress by mutableFloatStateOf(progress)
@@ -204,6 +207,18 @@ class StoryState(
 
     /** True the first time slide [i] is shown: its entrance plays then, never again. */
     fun firstShow(i: Int): Boolean = shown.add(i).also { if (it) onPlace(index, shownSlides) }
+
+    /**
+     * The story was rebuilt: now [count] slides, standing on [index] with [shown] played (the caller maps the old place
+     * onto the new slides). The running time of the slide stays.
+     */
+    fun relocate(count: Int, index: Int, shown: Set<Int>) {
+        this.count = count
+        this.index = index.coerceIn(0, (count - 1).coerceAtLeast(0))
+        this.shown.clear()
+        shown.filterTo(this.shown) { it in 0 until count }
+        onPlace(this.index, shownSlides)
+    }
 }
 
 /**
@@ -255,7 +270,7 @@ fun StoryPager(
     val running = motion.autoAdvance && lifecycle.isAtLeast(Lifecycle.State.RESUMED) && !held && !keyPaused && !pulled
 
     // Frame time, not an animation: a removed animator scale would finish an animation at once.
-    LaunchedEffect(index, running, duration) {
+    LaunchedEffect(state, index, running, duration) {
         if (!running) return@LaunchedEffect
         var last = withFrameMillis { it }
         while (state.progress < 1f) {

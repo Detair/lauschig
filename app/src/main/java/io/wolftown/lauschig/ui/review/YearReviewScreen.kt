@@ -12,13 +12,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.EmptyState
 import io.wolftown.lauschig.ui.common.LoadingState
@@ -27,8 +25,9 @@ import io.wolftown.lauschig.ui.theme.rememberCoverSwatch
 
 @Composable
 fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltViewModel()) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    YearReviewScreen(state, onClose, story = { viewModel.story(it) }, motion = rememberStoryMotion())
+    // Read from the view model's snapshot: the slides and their story's place change together.
+    val page = viewModel.page
+    YearReviewScreen(page.state, onClose, story = page.story, motion = rememberStoryMotion())
 }
 
 /**
@@ -40,8 +39,8 @@ fun YearReviewRoute(onClose: () -> Unit, viewModel: YearReviewViewModel = hiltVi
 fun YearReviewScreen(
     state: YearReviewUiState,
     onClose: () -> Unit,
-    /** Where the story of so many slides stands (the view model keeps it, see [YearReviewViewModel.story]). */
-    story: (count: Int) -> StoryState,
+    /** Where the story stands on these slides (the view model keeps it with them, see [YearReviewViewModel.page]). */
+    story: StoryState?,
     modifier: Modifier = Modifier,
     motion: StoryMotion = StoryMotion(),
 ) {
@@ -69,7 +68,7 @@ fun YearReviewScreen(
     review.slides.mapNotNull { it.leadItemId }.distinct().forEach { id ->
         key(id) { rememberCoverSwatch(reviewCoverModel(id, state.covers), state.covers[id]?.version ?: 0) }
     }
-    val place = story(review.slides.size)
+    val place = checkNotNull(story) { "a review is shown with its story's place" }
     StoryPager(
         place, onClose, title = stringResource(R.string.review_title, review.year),
         colors = { reviewSlideColors(review.slides[it], state.covers) },
@@ -77,7 +76,8 @@ fun YearReviewScreen(
         modifier = modifier,
         motion = motion,
     ) { i, entrance ->
-        val slide = review.slides[i]
+        // A slide fading out after the slides were rebuilt may stand beyond the new ones.
+        val slide = review.slides.getOrNull(i) ?: return@StoryPager
         CompositionLocalProvider(LocalSlideBackground provides reviewSlideColors(slide, state.covers).background) {
             ReviewSlideContent(slide, state.covers, entrance)
         }

@@ -18,6 +18,7 @@ import io.wolftown.lauschig.stats.CalendarNow
 import io.wolftown.lauschig.stats.FakeStatsCalendar
 import io.wolftown.lauschig.stats.ListeningDataSource
 import io.wolftown.lauschig.stats.ReviewSlide
+import io.wolftown.lauschig.stats.SlideKind
 import io.wolftown.lauschig.stats.StatsSessions
 import io.wolftown.lauschig.sync.HistoryLoad
 import io.wolftown.lauschig.ui.common.CoverPathCache
@@ -120,47 +121,74 @@ class YearReviewViewModelTest {
         assertTrue(opening.incomplete)
     }
 
-    @Test fun builtOnce_listeningMeanwhileChangesNothingUnderTheReader_theHistoryNoteFollowsLive() = runTest {
+    private suspend fun YearReviewViewModel.until(p: (YearReviewUiState) -> Boolean) =
+        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    private val YearReviewUiState.opening get() = review!!.slides.first() as ReviewSlide.Opening
+
+    @Test fun whenTheHistoryCompletes_everyNumberIsBuiltAgain_andTheNoteGoes() = runTest {
         session("1", "2026-03-02T20:00", 3600.0)
         history.value = HistoryLoad.LOADING
         val vm = vm()
-        val first = vm.loaded()
-        assertTrue((first.review!!.slides.first() as ReviewSlide.Opening).incomplete)
-        // Two more hours arrive; Room has them (the next read would see them) …
+        val partial = vm.loaded()
+        assertTrue(partial.opening.incomplete)
+        assertEquals(3600.0, partial.opening.totalSec, 0.0)
+        // The full read brings two more hours, then the history is complete: the totals follow, the note goes.
         session("2", "2026-03-03T20:00", 7200.0)
-        db.listeningSessionDao().observeAll(sid).first { it.size == 2 }
-        // … and the history completes: the note goes – a new state, built from the same slides.
         history.value = HistoryLoad.NONE
-        val now = withContext(Dispatchers.Default.limitedParallelism(1)) {
-            withTimeout(10_000) { vm.state.first { (it.review?.slides?.first() as? ReviewSlide.Opening)?.incomplete == false } }
-        }
-        assertEquals(3600.0, (now.review!!.slides.first() as ReviewSlide.Opening).totalSec, 0.0)
-        assertEquals(first.review!!.slides.drop(1), now.review.slides.drop(1))
-        assertEquals(first.covers, now.covers)
-        // Loading again (a failed read, a Wi-Fi wait): the note is back.
+        val complete = vm.until { !it.opening.incomplete && it.opening.totalSec == 10800.0 }
+        assertEquals(10800.0, (complete.review!!.slides.last() as ReviewSlide.Closing).totalSec, 0.0)
+        // A later change of the cache (a title playing, a sync) is built in as well; a failed read brings the note back.
+        session("3", "2026-03-04T20:00", 1800.0)
+        vm.until { it.opening.totalSec == 12600.0 }
         history.value = HistoryLoad.INCOMPLETE
-        withContext(Dispatchers.Default.limitedParallelism(1)) {
-            withTimeout(10_000) { vm.state.first { (it.review?.slides?.first() as? ReviewSlide.Opening)?.incomplete == true } }
-        }
+        vm.until { it.opening.incomplete }
     }
 
-    @Test fun theStorysPlace_staysWithTheViewModel_andOutlivesTheProcessInTheSavedState() = runTest {
-        val saved = SavedStateHandle()
-        val vm = vm(savedState = saved)
-        val place = vm.story(9)
+    @Test fun aRebuild_keepsThePlaceOnTheSameKindOfSlide_andThePlayedEntrances() = runTest {
+        session("1", "2026-03-02T20:00", 3600.0) // one title on one day: opening, author, the first hour, closing
+        val vm = vm()
+        vm.loaded()
+        val place = vm.page.story!!
+        assertEquals(listOf(SlideKind.OPENING, SlideKind.TOP_PEOPLE, SlideKind.ACHIEVED, SlideKind.CLOSING), vm.page.state.review!!.kinds)
         place.firstShow(0)
         place.next()
         place.firstShow(1)
-        place.next()
-        assertTrue(vm.story(9) === place)
-        // The process ends; a new view model on the same saved state goes on there, without replaying the entrances.
-        val again = vm(savedState = saved).story(9)
-        assertEquals(2, again.index)
-        assertEquals(setOf(0, 1), again.shownSlides)
-        assertFalse(again.firstShow(1))
-        assertTrue(again.firstShow(2))
-        // Another story (the year has other slides now): from the start.
-        assertEquals(0, vm(savedState = saved).story(8).index)
+        // Two more days and a second title: days and top titles appear before the author.
+        session("2", "2026-03-03T20:00", 1800.0, item = "a2")
+        session("3", "2026-03-04T20:00", 1800.0, item = "a2")
+        vm.until { it.review!!.slides.size == 6 }
+        assertEquals(
+            listOf(SlideKind.OPENING, SlideKind.DAYS, SlideKind.TOP_TITLES, SlideKind.TOP_PEOPLE, SlideKind.ACHIEVED, SlideKind.CLOSING),
+            vm.page.state.review!!.kinds,
+        )
+        assertTrue(vm.page.story === place)
+        assertEquals(6, place.count)
+        assertEquals(3, place.index) // still the author
+        assertEquals(setOf(0, 3), place.shownSlides)
+    }
+
+    @Test fun thePlace_outlivesTheProcess_onTheSameKindOfSlide_evenWhenTheYearHasOtherSlidesThen() = runTest {
+        val saved = SavedStateHandle()
+        session("1", "2026-03-02T20:00", 3600.0)
+        val first = vm(savedState = saved)
+        first.loaded()
+        first.page.story!!.apply { firstShow(0); next(); firstShow(1) } // on the author
+        viewModels.clear() // the process ends
+        // Meanwhile the year got more: the rebuilt story has other slides.
+        session("2", "2026-03-03T20:00", 1800.0, item = "a2")
+        session("3", "2026-03-04T20:00", 1800.0, item = "a2")
+        val again = vm(savedState = saved)
+        again.loaded()
+        val place = again.page.story!!
+        assertEquals(
+            listOf(SlideKind.OPENING, SlideKind.DAYS, SlideKind.TOP_TITLES, SlideKind.TOP_PEOPLE, SlideKind.ACHIEVED, SlideKind.CLOSING),
+            again.page.state.review!!.kinds,
+        )
+        assertEquals(3, place.index)
+        assertEquals(setOf(0, 3), place.shownSlides)
+        assertFalse(place.firstShow(3))
+        assertTrue(place.firstShow(1))
     }
 
     @Test fun aYearBelowAnHour_orNoAccount_hasNoReview() = runTest {

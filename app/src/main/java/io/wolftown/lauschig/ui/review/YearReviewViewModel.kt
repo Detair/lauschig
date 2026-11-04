@@ -1,14 +1,20 @@
 package io.wolftown.lauschig.ui.review
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.stats.ListeningData
 import io.wolftown.lauschig.stats.ListeningDataSource
 import io.wolftown.lauschig.stats.ReviewSlide
+import io.wolftown.lauschig.stats.SlideKind
 import io.wolftown.lauschig.stats.StatsCalendar
 import io.wolftown.lauschig.stats.YearReview
 import io.wolftown.lauschig.stats.zones
@@ -18,18 +24,19 @@ import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.nav.YearReviewPage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @Immutable
@@ -42,13 +49,35 @@ data class YearReviewUiState(
     val covers: Map<String, ReviewCover> = emptyMap(),
 )
 
+/** What the page shows and where its story stands – always replaced together, so the place belongs to these slides. */
+class ReviewPage(val state: YearReviewUiState, val story: StoryState?)
+
+/** A story's place on given slides: the slide it stands on and the ones whose entrance has played. */
+internal data class StoryPlace(val index: Int, val shown: Set<Int>)
+
 /**
- * The year in review of [year], from Room only (offline-first, like the statistics). The slides are built **once** when
- * the page opens: the story does not change under the reader (a title playing meanwhile, a sync writing pages); opened
- * again, it is new. Only the opening's „Noch nicht alle Hörsitzungen geladen“ follows the account's history live (5A's
- * "loading" / "loads on Wi-Fi" / "failed"): it goes once the history is complete.
+ * The place on the slides [from] (standing on [index], [shown] played) mapped onto the rebuilt slides [to]: the same
+ * kind of slide where it still exists, else the slide that now follows in the fixed order (the last one at the end);
+ * the played entrances follow their kinds. Without a known kind (an index beyond [from]) the position, kept in range.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
+internal fun relocate(from: List<SlideKind>, index: Int, shown: Set<Int>, to: List<SlideKind>): StoryPlace {
+    if (to.isEmpty()) return StoryPlace(0, emptySet())
+    val kind = from.getOrNull(index)
+    val at = when {
+        kind == null -> index.coerceIn(0, to.lastIndex)
+        kind in to -> to.indexOf(kind)
+        else -> to.indexOfFirst { it.ordinal > kind.ordinal }.takeIf { it >= 0 } ?: to.lastIndex
+    }
+    val played = shown.mapNotNullTo(HashSet()) { from.getOrNull(it) }
+    return StoryPlace(at, to.indices.filterTo(HashSet()) { to[it] in played })
+}
+
+/**
+ * The year in review of [year], from Room only (offline-first, like the statistics). Its numbers follow the data: when
+ * the history finishes loading (the opening's „Noch nicht alle Hörsitzungen geladen“ goes) or the cache changes (a sync,
+ * a title playing), every slide is built again – the story keeps its place on the same kind of slide (see [relocate]),
+ * and entrances that played do not play again.
+ */
 @HiltViewModel
 class YearReviewViewModel(
     private val year: Int,
@@ -66,67 +95,88 @@ class YearReviewViewModel(
         sync: ListeningSessionSync, covers: CoverPathCache,
     ) : this(savedState.toRoute<YearReviewPage>().year, accounts, source, calendar, sync::historyLoad, covers, Dispatchers.Default, savedState)
 
-    private class Built(val serverId: String?, val state: YearReviewUiState)
+    private val _state = MutableStateFlow(YearReviewUiState(year))
 
-    val state: StateFlow<YearReviewUiState> = flow { emit(load()) }
-        .flatMapLatest { built ->
-            val sid = built.serverId
-            if (sid == null || built.state.review == null) flowOf(built.state)
-            else historyLoad(sid).map { it != HistoryLoad.NONE }.distinctUntilChanged().map { built.state.withIncomplete(it) }
-        }
-        .flowOn(dispatcher)
-        // Lazily, not while subscribed: back from the background the story is the same one (and in the same place).
-        .stateIn(viewModelScope, SharingStarted.Lazily, YearReviewUiState(year))
+    /** The page's data as it is built (tests and anything that does not draw the story). */
+    val state: StateFlow<YearReviewUiState> = _state.asStateFlow()
+
+    /** For the page: the data with its story's place, replaced in one snapshot (never a place of other slides). */
+    var page by mutableStateOf(ReviewPage(YearReviewUiState(year), null))
+        private set
 
     private var story: StoryState? = null
+    private var storyKinds: List<SlideKind> = emptyList()
+
+    init {
+        viewModelScope.launch {
+            builds().flowOn(dispatcher).distinctUntilChanged().collect { built ->
+                Snapshot.withMutableSnapshot {
+                    page = ReviewPage(built, built.review?.let { place(it.kinds) })
+                }
+                _state.value = built
+            }
+        }
+    }
+
+    /** The review again whenever the cached data or the history's state changes (bursts are computed once). */
+    private fun builds(): Flow<YearReviewUiState> = flow {
+        val sid = accounts.account.first()?.serverId
+        if (sid == null) {
+            emit(YearReviewUiState(year, loading = false))
+            return@flow
+        }
+        val incomplete = historyLoad(sid).map { it != HistoryLoad.NONE }.distinctUntilChanged()
+        emitAll(
+            combine(source.observe(sid, calendar.zones()), incomplete, ::Pair)
+                .conflate()
+                .map { (data, notAll) -> build(sid, data, notAll) },
+        )
+    }
+
+    private fun build(sid: String, data: ListeningData, incomplete: Boolean): YearReviewUiState {
+        val review = YearReview.build(year, data.sessions, data.finished, data.seriesGroups, data.achievements(), data.items, data.zone, incomplete)
+        val ids = review?.slides.orEmpty().flatMapTo(LinkedHashSet()) { it.coverIds() }
+        return YearReviewUiState(
+            year, loading = false, review = review,
+            covers = ids.associateWith { id -> ReviewCover(covers.pathFor(sid, id), data.items[id]?.coverUpdatedAt ?: 0) },
+        )
+    }
 
     /**
      * The story's place lives here, not in the page's remembered state: turning the device switches the frame between
      * the tab bar and the navigation rail, which composes the navigation host along another path – a page's remembered
-     * state does not come along, the view model does. The slide and the entrances played are also written to the
-     * route's [SavedStateHandle], so the story goes on where it was after the system ended the process (the running
-     * time of the slide starts again).
+     * state does not come along, the view model does. The slides' kinds, the slide and the entrances played are also
+     * written to the route's [SavedStateHandle]: after the system ended the process the story goes on at the same kind
+     * of slide, even when the rebuilt year has other slides (the running time of the slide starts again).
      */
-    fun story(count: Int): StoryState = story?.takeIf { it.count == count } ?: run {
-        val saved = savedState.get<Int>(KEY_COUNT) == count
-        StoryState(
-            count,
-            index = if (saved) savedState.get<Int>(KEY_INDEX) ?: 0 else 0,
-            shown = if (saved) savedState.get<IntArray>(KEY_SHOWN)?.toSet().orEmpty() else emptySet(),
-            onPlace = { index, shown ->
-                savedState[KEY_COUNT] = count
-                savedState[KEY_INDEX] = index
-                savedState[KEY_SHOWN] = shown.toIntArray()
-            },
-        ).also { story = it }
+    private fun place(kinds: List<SlideKind>): StoryState {
+        story?.let { s ->
+            if (kinds != storyKinds) {
+                val moved = relocate(storyKinds, s.index, s.shownSlides, kinds)
+                storyKinds = kinds
+                s.relocate(kinds.size, moved.index, moved.shown)
+            }
+            return s
+        }
+        val savedKinds = savedState.get<IntArray>(KEY_KINDS)?.toList()?.mapNotNull { SlideKind.entries.getOrNull(it) }
+        val start = if (savedKinds == null) StoryPlace(0, emptySet())
+        else relocate(savedKinds, savedState.get<Int>(KEY_INDEX) ?: 0, savedState.get<IntArray>(KEY_SHOWN)?.toSet().orEmpty(), kinds)
+        storyKinds = kinds
+        save(start.index, start.shown)
+        return StoryState(kinds.size, start.index, shown = start.shown, onPlace = ::save).also { story = it }
     }
 
-    private suspend fun load(): Built {
-        val sid = accounts.account.first()?.serverId ?: return Built(null, YearReviewUiState(year, loading = false))
-        val data = source.observe(sid, calendar.zones()).first()
-        val incomplete = historyLoad(sid).first() != HistoryLoad.NONE
-        val review = YearReview.build(year, data.sessions, data.finished, data.seriesGroups, data.achievements(), data.items, data.zone, incomplete)
-        val ids = review?.slides.orEmpty().flatMapTo(LinkedHashSet()) { it.coverIds() }
-        return Built(
-            sid,
-            YearReviewUiState(
-                year, loading = false, review = review,
-                covers = ids.associateWith { id -> ReviewCover(covers.pathFor(sid, id), data.items[id]?.coverUpdatedAt ?: 0) },
-            ),
-        )
+    private fun save(index: Int, shown: Set<Int>) {
+        savedState[KEY_KINDS] = storyKinds.map { it.ordinal }.toIntArray()
+        savedState[KEY_INDEX] = index
+        savedState[KEY_SHOWN] = shown.toIntArray()
     }
 
     private companion object {
-        const val KEY_COUNT = "story_count"
+        const val KEY_KINDS = "story_kinds"
         const val KEY_INDEX = "story_index"
         const val KEY_SHOWN = "story_shown"
     }
-}
-
-/** The same slides, the opening saying [incomplete] (the history is still loading) or not. */
-private fun YearReviewUiState.withIncomplete(incomplete: Boolean): YearReviewUiState {
-    val review = review ?: return this
-    return copy(review = review.copy(slides = review.slides.map { if (it is ReviewSlide.Opening) it.copy(incomplete = incomplete) else it }))
 }
 
 /** The titles whose covers a slide shows. */

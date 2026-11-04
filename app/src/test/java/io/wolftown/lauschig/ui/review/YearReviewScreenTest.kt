@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.ui.review
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
@@ -75,7 +77,7 @@ class YearReviewScreenTest {
         rule.setContent {
             LauschigTheme {
                 val content = @androidx.compose.runtime.Composable {
-                    YearReviewScreen(YearReviewUiState(2026, loading = loading, review = review), onClose = { closed++ }, story = ::place, motion = motion)
+                    YearReviewScreen(YearReviewUiState(2026, loading = loading, review = review), onClose = { closed++ }, story = review?.let { place(it.slides.size) }, motion = motion)
                 }
                 if (fontScale == null) content() else CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) { content() }
             }
@@ -139,6 +141,23 @@ class YearReviewScreenTest {
         val spoken = spokenSlides(2)
         assertEquals("Slide 1 of 3. Your 2026 in listening. 2 hours listened.", spoken[0])
         assertEquals("Slide 2 of 3. Heard to the end. 1 series completed.", spoken[1])
+    }
+
+    @Test fun aRebuildWithFewerSlides_whileTheLastOneFadesOut_neverReachesBeyondThem() {
+        val three = YearReview(2026, listOf(ReviewSlide.Opening(2026, 2 * H, 1, true), FULL.slides[4], ReviewSlide.Closing(2026, 2 * H, 1, 0, null, null, null)))
+        val two = YearReview(2026, listOf(ReviewSlide.Opening(2026, 3 * H, 1, false), ReviewSlide.Closing(2026, 3 * H, 1, 0, null, null, null)))
+        val story = StoryState(3, index = 2)
+        var state by androidx.compose.runtime.mutableStateOf(YearReviewUiState(2026, loading = false, review = three))
+        rule.setContent {
+            LauschigTheme { YearReviewScreen(state, onClose = {}, story = story, motion = StoryMotion(autoAdvance = false, animations = true)) }
+        }
+        rule.waitForIdle()
+        // As the view model does it: the slides and the place in one snapshot; the closing moves from 3 to 2.
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            story.relocate(2, 1, emptySet())
+            state = state.copy(review = two)
+        }
+        rule.onNodeWithTag("storySlide").assertContentDescriptionEquals("Slide 2 of 2. 2026 at a glance. Listening time: 3 h 0 min. Days: 1 day.")
     }
 
     @Test fun theBigNumberCountsUpOnce_whenAnimationsAreOn() {
@@ -210,7 +229,7 @@ class YearReviewScreenGermanTest {
 
     @Test fun slides_inGerman() {
         rule.setContent {
-            LauschigTheme { YearReviewScreen(YearReviewUiState(2026, loading = false, review = YearReviewScreenTest.FULL), onClose = {}, story = { place }, motion = StoryMotion(false, false)) }
+            LauschigTheme { YearReviewScreen(YearReviewUiState(2026, loading = false, review = YearReviewScreenTest.FULL), onClose = {}, story = place, motion = StoryMotion(false, false)) }
         }
         fun spoken() = rule.onNodeWithTag("storySlide").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.ContentDescription].single()
         assertEquals("Folie 1 von 9. Dein Hörjahr 2026. 47 Stunden gehört, mit 12 Titeln. Noch nicht alle Hörsitzungen geladen.", spoken())
