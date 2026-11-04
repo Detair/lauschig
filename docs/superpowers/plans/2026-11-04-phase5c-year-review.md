@@ -157,3 +157,29 @@ a thin 2025 (1 h 11 min on two days: opening, author, achievement, closing – n
 2026 by keyboard (arrows, space pausing and resuming), its rhythm ("Meist morgens auf dem Weg"), achievements (5 = five
 badges) and type (Pendler) slides; screenshots `fx-*` and `contact-fx-*`. Test sessions removed from the server
 (48 again, progress unchanged), the app's rows, achievement rows and sync stamps restored; no emulator setting changed.
+
+## Fix round 2 (re-review of fix round 1, controller's rulings)
+
+- **N1** The review is built again whenever the cached data or the history's state changes (Room flows + `historyLoad`,
+  conflated): when the full read finishes while the story is open, the opening's hours and every slide show the
+  complete year as the note goes. The place stays on the same kind of slide (`relocate`), played entrances stay played;
+  the view model swaps the slides and the place in one snapshot (`YearReviewViewModel.page`), and a slide fading out
+  beyond fewer new slides draws nothing. Supersedes "built once" from the first notes.
+- **N2** Listener-type shares are compared in thousandths (`SHARE_STEP`), also against their thresholds; equal steps go
+  by the listed order. 200 shuffles of fractional data give one type (the test failed without the steps).
+- **N3** With touch exploration the story root is neither focusable nor asks for focus (`StoryMotion.keys`).
+- **N4** Key repeats are ignored: a held arrow moves one slide, a held space pauses once.
+- **N5** While paused (space, or a press held past the long-press time) a pause mark („Pausiert“ / "Paused") sits beside
+  the segments in room kept for it; the next arrow goes on and ends a keyboard pause.
+- **N6** The saved place stores the slides' kinds: after a process death the story goes on at the same kind of slide,
+  else the one that now follows in the fixed order.
+- **N7** Night owl and early bird need 20 % (was 30 % / 25 %): their windows are the achievements' four and two hours, and
+  three half hours a week there among an hour a day are about 21 %. Tests at 20.0 % and 19.9 %.
+
+Verification: full `testDebugUnitTest :abs-api:test lintDebug assembleDebug` green (1515 tests, lint 0 errors, 15
+warnings, none new). Emulator: the keyboard pause mark (space shows it, an arrow ends it and the time runs again,
+`fx2-01/02`); a rebuild after the history completed: with the server paused the opening said "60 hours … Not all
+listening sessions are loaded yet", after unpausing the background sync read the missing 20 sessions and the open
+story showed "65 hours" without the note, still on the opening (`fx2-03/04`, `contact-fx2-rebuild.png`). Test
+sessions removed from the server (48, progress unchanged), the app's rows, achievement rows and sync stamps restored,
+abs-test running again; no emulator setting changed.
