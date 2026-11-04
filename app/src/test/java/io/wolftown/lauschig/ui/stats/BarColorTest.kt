@@ -25,4 +25,18 @@ class BarColorTest {
             assertTrue("primary ${contrastRatio(scheme.primary, scheme.surface)}", contrastRatio(scheme.primary, scheme.surface) >= 3.0)
         }
     }
+
+    @Test fun theStartCardsSparkline_keeps3to1_onTheCardsContainer() {
+        val schemes = listOf(false to false, true to false, true to true).map { (dark, black) ->
+            colorSchemeFor(dark = dark, pureBlack = black, dynamicColor = false, sdkInt = 35) { if (it) dynamicDark else dynamicLight }
+        } + listOf(dynamicLight, dynamicDark)
+        for (scheme in schemes) {
+            val card = scheme.surfaceContainer
+            val bar = statsBarColor(scheme, card)
+            assertTrue("bar ${contrastRatio(bar, card)}", contrastRatio(bar, card) >= 3.0)
+        }
+        for (scheme in schemes.take(3)) {
+            assertTrue("primary ${contrastRatio(scheme.primary, scheme.surfaceContainer)}", contrastRatio(scheme.primary, scheme.surfaceContainer) >= 3.0)
+        }
+    }
 }

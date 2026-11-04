@@ -72,6 +72,7 @@ import io.wolftown.lauschig.ui.extras.listenedText
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.stats.StatsCard
 import io.wolftown.lauschig.ui.stats.BarChart
+import io.wolftown.lauschig.ui.stats.statsBarColor
 import io.wolftown.lauschig.ui.stats.statsDuration
 import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
 import io.wolftown.lauschig.ui.theme.controlColorOn
@@ -330,9 +331,11 @@ private fun StartStatsCard(card: StatsCard, onOpen: () -> Unit, modifier: Modifi
                     )
                 }
             }
+            // Plain bars keep 3:1 against the card's own colour, not the page's.
             BarChart(
                 card.days.map { it.seconds }, card.days.indexOfFirst { it.current }.takeIf { it >= 0 }, description = null,
                 modifier = Modifier.padding(start = Spacing.l).width(112.dp), height = 40.dp,
+                barColor = statsBarColor(MaterialTheme.colorScheme, MaterialTheme.colorScheme.surfaceContainer),
             )
         }
     }

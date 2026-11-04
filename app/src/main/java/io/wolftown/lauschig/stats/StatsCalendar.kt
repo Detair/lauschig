@@ -12,17 +12,19 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import java.time.DayOfWeek
-import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.time.temporal.WeekFields
 import java.util.Locale
 import javax.inject.Inject
@@ -39,20 +41,11 @@ interface StatsCalendar {
     val changes: Flow<Unit>
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SystemStatsCalendar @Inject constructor(@ApplicationContext private val context: Context) : StatsCalendar {
     override fun now(): CalendarNow {
         val zone = ZoneId.systemDefault()
         return CalendarNow(LocalDate.now(zone), zone, firstDayOfWeek(Locale.getDefault()))
-    }
-
-    private val midnight: Flow<Unit> = flow {
-        while (true) {
-            val zone = ZoneId.systemDefault()
-            val now = ZonedDateTime.now(zone)
-            val next = now.toLocalDate().plusDays(1).atStartOfDay(zone)
-            delay(Duration.between(now, next).toMillis() + MIDNIGHT_SLACK_MS)
-            emit(Unit)
-        }
     }
 
     private val broadcasts: Flow<Unit> = callbackFlow {
@@ -72,10 +65,34 @@ class SystemStatsCalendar @Inject constructor(@ApplicationContext private val co
         awaitClose { context.unregisterReceiver(receiver) }
     }
 
-    override val changes: Flow<Unit> = merge(midnight, broadcasts)
+    /** A broadcast says so at once and re-arms the midnight timer for the new time or zone. */
+    override val changes: Flow<Unit> = broadcasts.map { true }.onStart { emit(false) }
+        .flatMapLatest { changed ->
+            flow {
+                if (changed) emit(Unit)
+                while (true) {
+                    awaitMidnight(System::currentTimeMillis, ZoneId::systemDefault)
+                    emit(Unit)
+                }
+            }
+        }
+}
 
-    private companion object {
-        const val MIDNIGHT_SLACK_MS = 1_000L
+/** Longest single wait of [awaitMidnight]: after it the wall clock is read again. */
+internal const val MIDNIGHT_STEP_MS = 15 * 60 * 1000L
+
+/**
+ * Returns once the wall clock ([wallClock], epoch ms) has passed the next local midnight in [zone]. Waits in steps of at
+ * most [MIDNIGHT_STEP_MS] and reads the wall clock after each, so a clock change or time spent asleep (a delay counts
+ * uptime) shifts it by at most one step.
+ */
+internal suspend fun awaitMidnight(wallClock: () -> Long, zone: () -> ZoneId) {
+    val z = zone()
+    val target = Instant.ofEpochMilli(wallClock()).atZone(z).toLocalDate().plusDays(1).atStartOfDay(z).toInstant().toEpochMilli()
+    while (true) {
+        val left = target - wallClock()
+        if (left < 0) return
+        delay(minOf(left + 1, MIDNIGHT_STEP_MS))
     }
 }
 
