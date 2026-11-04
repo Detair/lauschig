@@ -139,7 +139,7 @@ class YearReviewScreenTest {
 
     @Test fun aYearWithoutAnHour_saysSo_andCloses() {
         show(null)
-        rule.onNodeWithText("No year in review for 2026 yet").assertIsDisplayed()
+        rule.onNodeWithText("No year in review yet for 2026").assertIsDisplayed()
         rule.onNodeWithTag("storyClose").performClick()
         assertEquals(1, closed)
         rule.onAllNodesWithTag("story").assertCountEquals(0)
@@ -148,7 +148,7 @@ class YearReviewScreenTest {
     @Test fun whileLoading_noSlides_butAClose() {
         show(null, loading = true)
         rule.onAllNodesWithTag("story").assertCountEquals(0)
-        rule.onAllNodesWithText("No year in review for 2026 yet").assertCountEquals(0)
+        rule.onAllNodesWithText("No year in review yet for 2026").assertCountEquals(0)
         rule.onNodeWithTag("storyClose").assertIsDisplayed()
     }
 

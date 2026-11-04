@@ -56,7 +56,8 @@ class StoryPagerTest {
             description = { "Text $it" },
             motion = motion,
         ) { i, entrance ->
-            remember { entrances += i to entrance }
+            // Once per composition of a slide (what the pager hands it then).
+            remember { entrances.add(i to entrance) }
             Text("Slide $i")
         }
     }

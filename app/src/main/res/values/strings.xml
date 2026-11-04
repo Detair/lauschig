@@ -704,6 +704,8 @@
         <item>A small card on Start shows how much you listened this week</item>
         <item>Achievements: from 1 to 1000 hours, days in a row, finished books and series, and a few special ones – each with its date</item>
         <item>A new achievement is announced once on Start; the statistics show the latest ones</item>
+        <item>Year in review: your year of listening as a story – hours, days, top titles, finished books, achievements, your type</item>
+        <item>From December, Start invites you to your year in review; Statistics offers it under “Year” for each year you listened</item>
         <item>The title to continue is a large card on Start with its own play button</item>
         <item>The cover tints the details page and the “continue” card</item>
         <item>The player slides up from the mini player and back down</item>
@@ -884,7 +886,7 @@
     <string name="review_fact_title">Top title</string>
     <string name="review_fact_author">Top author</string>
     <string name="review_fact_type">Listening type</string>
-    <string name="review_empty">No year in review for %1$d yet</string>
+    <string name="review_empty">No year in review yet for %1$d</string>
     <string name="review_empty_hint">It begins with an hour of listening in that year.</string>
     <string name="review_open">View year in review %1$d</string>
     <string name="review_card_title">Your year in review %1$d</string>
