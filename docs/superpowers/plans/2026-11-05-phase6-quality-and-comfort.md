@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, dynamic speech compression, and core performance optimizations (Coil disk cache, Room database indexes, recomposition throttling).
+**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, dynamic speech compression, core performance optimizations (Coil disk cache, Room database indexes, recomposition throttling), and incremental multi-module architecture.
 
 **Branch:** `phase-6` (branched from `main` after PR #16 / Phase 5C).
 
@@ -22,6 +22,7 @@
 | **Player-Tastenleiste** | Das alte 4+3 Raster ist unruhig; Sleep-Timer und Tempo waren isoliert uneinheitlich. | **Entscheidung Fabian (2026-11-04): Variante B.** Drei symmetrische Regler oben (`[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`) plus ein großzügiges horizontales Auszieh-Banner für Inhalte (`Kapitel, Warteschlange & Notizen`). Jeder Button besitzt dieselbe Anatomie (Icon + Name + Wert). |
 | **Dynamik-Kompressor & Sprachfokus** | Ältere Hörspiele haben teils extreme Lautstärkesprünge (Flüstern vs. laute Soundeffekte/Musik), was nachts im Bett aufschreckt. | Sanfter Nacht-Kompressor via Androids `DynamicsProcessing` (ab API 28 / minSdk). Begrenzt laute Pegelspitzen und hebt leise Sprache verständlich an. Ein/Aus-Schalter im [🎙️ Klang]-Sheet. |
 | **Performance: Caching & Indizes** | Coil hat keinen DiskCache (Cover werden nach Neustart neu geladen); Room-Queries machen Full Table Scans; Recomposition-Spikes bei Playback-Ticks. | (1) 150 MB Coil DiskCache in `context.cacheDir`. (2) Compound-Indizes auf `progress(serverId, isFinished, lastUpdate)`, `downloads(serverId, state)` und `items(serverId, seriesName, seriesSortKey)`. (3) Throttling von `observeAll`-Listen während Playback. |
+| **Schrittweise Modularisierung** | Monolithisches `:app`-Modul mit >95.000 Zeilen verlangsamt KSP, Hilt und Gradle-Builds spürbar. | Schrittweiser Auszug: (1) `:core:model` (reine Datenmodelle), (2) `:core:database` (Room-Entities, DAOs, Migrations getrennt von Compose), (3) `:core:playback` (ExoPlayer & Media3 Service). |
 
 ---
 
@@ -160,6 +161,26 @@
 - [ ] **9.3 Recomposition & Playback-Throttling:**
   - `LibraryViewModel`: `progressDao.observeAll(sid)` während aktiver Wiedergabe leicht throttlen/debouncen (`debounce(1_500L)`), damit nicht jeder Sekunden-Tick des Players die gesamte Bibliotheksliste neu berechnet.
   - Tests: Recomposition- und Emissions-Zähler in `LibraryViewModelTest`.
+
+---
+
+### Task 10: Schrittweise Modularisierung (Build-Zeiten & Entflechtung)
+- [ ] **10.1 Vorbereitung & Modul `:core:model`:**
+  - Anlegen von `core/model/build.gradle.kts` (reines Kotlin- oder leichtes Android-Modul).
+  - Umzug zustandsloser Datenklassen (`ItemSummary`, `PlayableKey`, `Timeline`, Enums).
+  - Verifikation: `:app` und `:abs-api` kompilieren sauber gegen `:core:model`.
+- [ ] **10.2 Modul `:core:database`:**
+  - Anlegen von `core/database/build.gradle.kts` mit Room + KSP.
+  - Umzug von `LauschigDatabase`, `Converters`, DAOs und Entities.
+  - Trennt Room-KSP-Kompilierung vom Compose-Compiler im `:app`-Modul.
+  - Verifikation: Datenbank-Tests laufen isoliert in `:core:database`.
+- [ ] **10.3 Modul `:core:playback`:**
+  - Anlegen von `core/playback/build.gradle.kts` mit Media3, ExoPlayer und Audio-Effekten (`DynamicsProcessing`, `LoudnessEnhancer`).
+  - Umzug von `PlaybackService`, `PlayerController`, `SleepTimer`, `CarSafePlayer`.
+  - Hilt-Bindings anpassen.
+- [ ] **10.4 Verifikation & Build-Zeiten:**
+  - Verifikation: Alle 1.492+ Tests grün.
+  - Benchmark der Gradle-Build-Zeiten vor und nach der Modularisierung.
 
 ---
 
