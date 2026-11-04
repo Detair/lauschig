@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import kotlinx.coroutines.flow.onStart
 import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
@@ -7,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.StreamLoad
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -26,6 +28,12 @@ import kotlin.math.roundToInt
 
 /** Minimal chapter data the player needs; [startSec]/[endSec] are book-wide. */
 data class ChapterInfo(val title: String, val startSec: Double, val endSec: Double)
+
+/**
+ * Who and which series a loaded title belongs to (for an episode: its podcast as [author]), and its cover's server
+ * version (`coverUpdatedAt`), which the player's cover URL carries like the tiles' do.
+ */
+data class PlayerMeta(val author: String?, val seriesName: String? = null, val seriesSequence: String? = null, val coverVersion: Long = 0)
 
 @Immutable
 data class PlayerScreenState(
@@ -50,6 +58,12 @@ data class PlayerScreenState(
     val downloadThrottled: Boolean = false,
     val chapters: List<ChapterRow> = emptyList(),
     val error: Int? = null,
+    /** The quieter line under the title (see [PlayerMeta]); null while unknown. */
+    val author: String? = null,
+    val seriesName: String? = null,
+    val seriesSequence: String? = null,
+    /** The cover's server version (see [PlayerMeta]); null until this title's row is read (no server cover until then). */
+    val coverVersion: Long? = null,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -57,21 +71,50 @@ data class PlayerScreenState(
 @HiltViewModel
 class PlayerViewModel(
     private val player: PlayerController,
+    metaOf: (itemId: String) -> Flow<PlayerMeta?> = { flowOf(null) },
     chaptersOf: (itemId: String) -> Flow<List<ChapterInfo>>,
 ) : ViewModel() {
 
     @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao) :
-        this(player, { itemId ->
-            accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
-                if (sid == null) flowOf(emptyList())
-                else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
-            }
-        })
+        this(
+            player,
+            metaOf = { itemId ->
+                val key = PlayableKey.parse(itemId)
+                accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
+                    // An episode's row is its podcast's: the podcast is the quieter line.
+                    if (sid == null) flowOf(null)
+                    else itemDao.observeItemRow(sid, key.libraryItemId).map { row ->
+                        when {
+                            row == null -> PlayerMeta(null)
+                            key.episodeId != null -> PlayerMeta(row.title, coverVersion = row.coverUpdatedAt)
+                            else -> PlayerMeta(row.author, row.seriesName, row.seriesSequence, row.coverUpdatedAt)
+                        }
+                    }
+                }
+            },
+            chaptersOf = { itemId ->
+                accountStore.account.map { DeviceLibrary.serverFor(it?.serverId, itemId) }.distinctUntilChanged().flatMapLatest { sid ->
+                    if (sid == null) flowOf(emptyList())
+                    else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
+                }
+            },
+        )
+
+    private val loadedId = player.state.map { it.itemId }.distinctUntilChanged()
 
     private val chapters: Flow<List<ChapterInfo>> =
-        player.state.map { it.itemId }.distinctUntilChanged().flatMapLatest { id -> if (id == null) flowOf(emptyList()) else chaptersOf(id) }
+        loadedId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else chaptersOf(id) }
 
-    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters) { p, chs ->
+    /**
+     * The loaded title's meta, tagged with the title it belongs to: on a change of title it is "none" until the new
+     * title's row is read, so the new title is never shown with the previous one's author or cover version.
+     */
+    private val meta: Flow<Pair<String?, PlayerMeta?>> = loadedId.flatMapLatest { id ->
+        if (id == null) flowOf(null to null) else metaOf(id).map { id to it }.onStart { emit(id to null) }
+    }.distinctUntilChanged()
+
+    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, (metaFor, meta) ->
+        val m = meta.takeIf { metaFor == p.itemId }
         // Without chapter data the whole book acts as one chapter.
         val start = if (p.chapterIndex >= 0) p.chapterStartSec else 0.0
         val end = if (p.chapterIndex >= 0 && p.chapterEndSec > start) p.chapterEndSec else p.durationSec
@@ -102,6 +145,10 @@ class PlayerViewModel(
                 ChapterRow(i, c.title, len, cur, if (cur) inChapter.coerceAtMost(len) else null)
             },
             error = p.error,
+            author = m?.author,
+            seriesName = m?.seriesName,
+            seriesSequence = m?.seriesSequence,
+            coverVersion = m?.coverVersion,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 

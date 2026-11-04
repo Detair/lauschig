@@ -27,6 +27,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -65,9 +66,12 @@ class LibraryViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm(prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") })): LibraryViewModel {
+    private fun vm(
+        prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
+        signedIn: Boolean = true,
+    ): LibraryViewModel {
         val store = FakeAccountStore()
-        store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        if (signedIn) store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao()))
     }
 
@@ -85,6 +89,10 @@ class LibraryViewModelTest {
         db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, id, t, 100.0, fin, last, false)))
 
     private suspend fun LibraryViewModel.await(p: (LibraryUiState) -> Boolean) = withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { state.first(p) } }
+
+    @Test fun signedOut_isLoaded_notLoadingForever() = runTest {
+        assertTrue(vm(signedIn = false).await { it.loaded }.items.isEmpty())
+    }
 
     @Test fun seriesTab_ordersBySequence_unknownLast() = runTest {
         libs()
@@ -104,6 +112,18 @@ class LibraryViewModelTest {
         assertEquals(listOf("another", "saga"), s.series.map { it.name.lowercase() })
         assertEquals(listOf("Alpha", "Zeta", "Beta", "Mid"), s.series.last().items.map { it.title })
         assertFalse(s.series.flatMap { it.items }.any { it.title == "Solo" })
+    }
+
+    @Test fun theFilterIsBlamed_onlyWhenItHidesTheTabsTitles() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("book", "lib1"), item("play", "lib2")))
+        listen("book") // only the audiobook is in progress
+        val vm = vm()
+        vm.await { it.items.size == 1 }
+        vm.setKinds(setOf(LibraryKind.HOERSPIEL))
+        assertTrue("the radio-play filter hides the one title in progress", vm.await { it.items.isEmpty() }.hiddenByFilter)
+        vm.selectTab(LibraryTab.Finished)
+        assertFalse("nothing is finished at all: not the filter's doing", vm.await { it.tab == LibraryTab.Finished }.hiddenByFilter)
     }
 
     @Test fun kindFilter_hoerspieleOnly_hidesAudiobooks() = runTest {

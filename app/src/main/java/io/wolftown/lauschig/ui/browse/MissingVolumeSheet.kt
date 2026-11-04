@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +23,8 @@ import androidx.core.text.HtmlCompat
 import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.external.MissingVolume
+import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.common.coverOutline
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -37,9 +38,10 @@ fun MissingVolumeSheet(volume: MissingVolume, onDismiss: () -> Unit, actions: @C
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Audible's cover (no title placeholder: the volume is not in the library); shaped like every cover.
                 AsyncImage(
                     model = v.coverUrl, contentDescription = null, contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(112.dp).clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.size(112.dp).clip(CoverShapes.Tile).coverOutline(CoverShapes.Tile, MaterialTheme.colorScheme),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(v.title, style = MaterialTheme.typography.titleMedium)

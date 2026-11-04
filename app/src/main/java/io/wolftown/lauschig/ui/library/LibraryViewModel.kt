@@ -58,6 +58,8 @@ data class LibraryUiState(
     val availableTags: List<Facet> = emptyList(),
     /** The tag filter, null for all; a chosen tag the tab does not have counts as null. */
     val selectedTag: String? = null,
+    /** The tab has titles, but the kind or tag filter hides all of them (the empty page says so and offers a reset). */
+    val hiddenByFilter: Boolean = false,
 )
 
 /** Library data straight from Room; the connection state only decides dimming/cover source in the UI. */
@@ -79,7 +81,8 @@ class LibraryViewModel @Inject constructor(
     val state: StateFlow<LibraryUiState> = accountStore.account
         .map { it?.serverId }
         .distinctUntilChanged()
-        .flatMapLatest { sid -> if (sid == null) flowOf(LibraryUiState()) else stateFor(sid) }
+        // Signed out (on the way to the sign-in): nothing to load, so no endless "loading".
+        .flatMapLatest { sid -> if (sid == null) flowOf(LibraryUiState(loaded = true)) else stateFor(sid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     fun selectTab(t: LibraryTab) {
@@ -127,10 +130,14 @@ class LibraryViewModel @Inject constructor(
                 val visible = if (selected == null) inTab else inTab.filter { i -> i.tags.any { it.trim().equals(selected, ignoreCase = true) } }
                 val activeIds = active.toHashSet()
                 fun ItemEntity.summary() = toSummary(covers, byId[id], id in downloadedIds, id in activeIds)
+                // Blame the filter only when it hides titles the tab has (Series reads its titles already kind-filtered,
+                // so there only the tag can be blamed).
+                val unfiltered = if (t == LibraryTab.Series) inTab else items
+                val hidden = visible.isEmpty() && unfiltered.isNotEmpty()
                 if (t == LibraryTab.Series) {
-                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true, tags, selected)
+                    LibraryUiState(t, f.available, f.selected, emptyList(), groupSeries(visible).map { (n, l) -> SeriesGroup(n, l.map { it.summary() }) }, true, tags, selected, hidden)
                 } else {
-                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true, tags, selected)
+                    LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true, tags, selected, hidden)
                 }
             }.flowOn(Dispatchers.Default).distinctUntilChanged()
         }

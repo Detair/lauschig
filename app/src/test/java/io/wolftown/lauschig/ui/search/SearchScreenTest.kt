@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.search
 
+import io.wolftown.lauschig.db.entities.LibraryKind
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -54,6 +56,27 @@ class SearchScreenTest {
     @Test fun searchScreen_noMatch_showsHint() {
         show(SearchUiState(query = "zzz", resultsFor = "zzz", searched = true))
         rule.onNodeWithText("Nothing found for “zzz”").assertIsDisplayed()
+        rule.onNodeWithText("Check the spelling, or try a shorter word.").assertIsDisplayed()
+    }
+
+    @Test fun searchScreen_noMatchUnderAFilter_offersTheReset() {
+        val kinds = mutableListOf<Set<LibraryKind>>()
+        val state = SearchUiState(
+            query = "zzz", resultsFor = "zzz", searched = true,
+            availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.AUDIOBOOK),
+            hiddenByFilter = true,
+        )
+        rule.setContent { LauschigTheme { SearchScreen(state, {}, {}, { kinds += it }, {}, {}, { _, _ -> }) } }
+        rule.onNodeWithText("Nothing found for “zzz”").assertIsDisplayed()
+        rule.onNodeWithText("No titles with this filter").assertIsDisplayed()
+        rule.onNodeWithText("Reset filter").performClick()
+        assertEquals(listOf(emptySet<LibraryKind>()), kinds)
+    }
+
+    @Test fun searchScreen_firstSearchRunning_showsNoHintYet() {
+        show(SearchUiState(query = "zzz"))
+        rule.onNodeWithText("Nothing found", substring = true).assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
     }
 
     @Test fun searchScreen_emptyField_showsRecentChips() {

@@ -69,7 +69,7 @@ class StartViewModel(
             serverId = account?.serverId
             if (account == null) flowOf(StartUiState()) else stateFor(account.serverId)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StartUiState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StartUiState(loading = true))
 
     /** Catalog-derived data that does not depend on playback progress, recomputed only when the catalog changes. */
     private class CatalogView(val recent: List<ItemEntity>, val seriesGroups: List<List<ItemEntity>>, val podcasts: Map<String, ItemEntity>?)
@@ -146,8 +146,17 @@ class StartViewModel(
 
     private data class Four<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
+    /** The loaded title while it plays, else null (the "continue" card shows pause for it). */
+    val playingId: StateFlow<String?> = player.state.map { p -> p.itemId?.takeIf { p.isPlaying } }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     fun play(itemId: String) {
         DeviceLibrary.serverFor(serverId, itemId)?.let { player.play(it, itemId) }
+    }
+
+    /** The "continue" card's button: pauses or resumes [itemId] when it is the loaded title, else starts it. */
+    fun playOrPause(itemId: String) {
+        if (player.state.value.itemId == itemId) player.togglePlayPause() else play(itemId)
     }
 
     companion object {

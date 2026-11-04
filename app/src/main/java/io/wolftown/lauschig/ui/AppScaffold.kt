@@ -2,12 +2,21 @@ package io.wolftown.lauschig.ui
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
@@ -19,36 +28,31 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.Row
-import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
+import io.wolftown.lauschig.ui.common.backdropReach
 import kotlinx.coroutines.delay
 
 /** The four top-level tabs; their order, visibility and the start screen are the user's (`TabLayout`). */
@@ -127,16 +131,23 @@ fun AppScaffold(
     onOpenConnection: () -> Unit = {},
     onTabSelected: (TopLevelTab) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    /** False while a layer above the frame (the player) shows the snackbars instead. */
+    showSnackbars: Boolean = true,
+    /** The connection hint; a caller that shows it elsewhere too (the player layer) passes its own, so both agree. */
+    connectionBanner: ConnectionBanner? = rememberConnectionBanner(connection, connectionChecking),
     content: @Composable (PaddingValues) -> Unit,
 ) {
     // Derived, so going online hides the banner in the same composition (no effect round trip).
-    val banner = rememberConnectionBanner(connection, connectionChecking).takeIf { showOfflineBanner }
+    val banner = connectionBanner.takeIf { showOfflineBanner }
 
     val body: @Composable (PaddingValues) -> Unit = { inner ->
+        // A page's backdrop may reach over the status bar only while no banner sits between them.
+        val reach = backdropReach(inner, LocalLayoutDirection.current, bannerShown = showReauthBanner || banner != null)
         Column(Modifier.fillMaxSize().padding(inner)) {
-            if (showReauthBanner) ReauthBanner(onReauth)
-            banner?.let { ConnectionHint(it, onOpenConnection) }
-            Box(Modifier.weight(1f).fillMaxWidth()) { content(PaddingValues()) }
+            FrameBanners(banner, showReauthBanner, onReauth, onOpenConnection)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                CompositionLocalProvider(LocalBackdropReach provides reach) { content(PaddingValues()) }
+            }
         }
     }
     if (navigationRail) {
@@ -161,7 +172,7 @@ fun AppScaffold(
             val sides = if (showBottomBar) WindowInsetsSides.Vertical + WindowInsetsSides.End else WindowInsetsSides.Vertical + WindowInsetsSides.Horizontal
             Scaffold(
                 modifier = Modifier.weight(1f),
-                snackbarHost = { SnackbarHost(snackbarHostState) },
+                snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
                 contentWindowInsets = safe.only(sides),
                 // Without a bottom bar the mini player keeps clear of the navigation bar itself.
                 bottomBar = { Column(Modifier.windowInsetsPadding(safe.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))) { miniPlayer() } },
@@ -172,7 +183,7 @@ fun AppScaffold(
     }
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { if (showSnackbars) SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (showBottomBar) Column {
                 miniPlayer()
@@ -190,6 +201,13 @@ fun AppScaffold(
         },
         content = body,
     )
+}
+
+/** The banners on top of a page: "sign in again" first, then the offline / connecting hint. */
+@Composable
+fun FrameBanners(banner: ConnectionBanner?, showReauthBanner: Boolean, onReauth: () -> Unit, onOpenConnection: () -> Unit) {
+    if (showReauthBanner) ReauthBanner(onReauth)
+    banner?.let { ConnectionHint(it, onOpenConnection) }
 }
 
 @Composable

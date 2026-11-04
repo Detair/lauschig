@@ -20,8 +20,10 @@
     <string name="start_next_in_series">Als Nächstes in deinen Serien</string>
     <string name="start_recently_added">Neu auf dem Server</string>
     <string name="start_see_all">Alle</string>
-    <string name="start_empty">Noch nichts gehört – schau doch mal in die Bibliothek</string>
+    <string name="start_empty">Noch nichts gehört</string>
+    <string name="start_empty_hint">Fang in der Bibliothek einen Titel an – hier geht es dann weiter.</string>
     <string name="start_progress_percent">%1$d %%</string>
+    <string name="start_continue_left">noch %1$s</string>
     <string name="setup_title">Mit Audiobookshelf verbinden</string>
     <string name="setup_intro">Gib die Serveradresse ein. Du kannst eine lokale Adresse für zu Hause und eine öffentliche für unterwegs angeben.</string>
     <string name="setup_local_address">Lokale Adresse (optional)</string>
@@ -50,6 +52,15 @@
     <string name="library_tab_downloaded">Heruntergeladen</string>
     <string name="library_tab_series">Serien</string>
     <string name="library_empty">Noch nichts da</string>
+    <string name="library_empty_in_progress">Hier erscheinen Titel, die du angefangen hast.</string>
+    <string name="library_empty_finished">Hier erscheinen Titel, die du zu Ende gehört hast.</string>
+    <string name="library_empty_downloaded">Lade einen Titel herunter, um ihn ohne Verbindung zu hören.</string>
+    <string name="library_empty_series">Hier erscheinen Titel, die zu einer Serie gehören – nach Serien sortiert.</string>
+    <string name="library_refresh">Bibliothek aktualisieren</string>
+    <string name="library_refreshing">Bibliothek wird aktualisiert…</string>
+    <string name="filter_empty">Keine Titel mit diesem Filter</string>
+    <string name="filter_reset">Filter zurücksetzen</string>
+    <string name="state_loading">Wird geladen…</string>
     <string name="filter_all">Alle</string>
     <string name="filter_audiobooks">Hörbücher</string>
     <string name="filter_radio_plays">Hörspiele</string>
@@ -170,6 +181,7 @@
     <string name="search_genres">Genres</string>
     <string name="search_tags">Tags</string>
     <string name="search_nothing_found">Nichts gefunden für „%s“</string>
+    <string name="search_nothing_found_hint">Prüf die Schreibweise oder versuch ein kürzeres Wort.</string>
     <string name="discover_recent">Neu hinzugefügt</string>
     <string name="discover_series">Serien</string>
     <string name="discover_genres">Genres</string>
@@ -190,7 +202,8 @@
         <item quantity="one">Alle %d Titel anzeigen</item>
         <item quantity="other">Alle %d Titel anzeigen</item>
     </plurals>
-    <string name="discover_empty">Noch nichts da – die Bibliothek wird beim nächsten Verbinden geladen</string>
+    <string name="discover_empty">Noch nichts da</string>
+    <string name="discover_empty_hint">Die Bibliothek wird geladen, sobald dein Server erreichbar ist.</string>
     <string name="missing_not_in_library">Nicht in der Bibliothek</string>
     <string name="missing_tile_description">Band %s, nicht in der Bibliothek</string>
     <string name="missing_by">Von %s</string>
@@ -374,8 +387,9 @@
     <string name="downloads_sort_size">Größe</string>
     <string name="downloads_sort_added">Hinzugefügt</string>
     <string name="downloads_sort_played">Zuletzt gehört</string>
-    <string name="downloads_empty">Noch keine Downloads.</string>
-    <string name="downloads_no_match">Kein Download passt zur Suche.</string>
+    <string name="downloads_empty">Noch keine Downloads</string>
+    <string name="downloads_empty_hint">Heruntergeladene Titel spielen auch ohne Verbindung.</string>
+    <string name="downloads_no_match">Kein Download passt zur Suche</string>
     <string name="downloads_delete_finished">Gehörte löschen (%1$d · %2$s)</string>
     <string name="downloads_delete_finished_title">Gehörte Downloads löschen?</string>
     <plurals name="downloads_delete_finished_message">

@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -60,6 +59,8 @@ data class SearchUiState(
     val tags: List<Facet> = emptyList(),
     /** True once a search for a non-blank query has completed. */
     val searched: Boolean = false,
+    /** Nothing found, but the kind filter hides what the whole catalog would have (the hint says so, with a reset). */
+    val hiddenByFilter: Boolean = false,
 ) {
     val hasResults: Boolean
         get() = titles.isNotEmpty() || authors.isNotEmpty() || narrators.isNotEmpty() || series.isNotEmpty() || genres.isNotEmpty() || tags.isNotEmpty()
@@ -97,11 +98,13 @@ class SearchViewModel(
     private var focusPending = true
 
     val state: StateFlow<SearchUiState> = combine(
-        query, serverId.flatMapLatest { sid -> if (sid == null) flowOf(Results()) else resultsFor(sid) }, recent.queries,
+        // Signed out (on the way to the sign-in): every query has been searched and found nothing, no endless "loading".
+        query, serverId.flatMapLatest { sid -> if (sid == null) query.map { Results(query = it.trim()) } else resultsFor(sid) }, recent.queries,
     ) { q, r, recents ->
         SearchUiState(
             q, r.available, r.selected, recents, r.query, r.titles, r.authors, r.narrators, r.series, r.genres, r.tags,
             searched = r.query.isNotBlank(),
+            hiddenByFilter = r.hiddenByFilter,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState())
 
@@ -131,8 +134,8 @@ class SearchViewModel(
         val dev = DeviceLibrary.SERVER_ID
         // The device library has no kind: its titles are searched while the filter is "all".
         val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced, catalogDao.observeAll(dev)) { all, f, q, device ->
-            Input(f, q, all.filter { it.libraryId in f.libraryIds }, if (f.selected.isEmpty()) device else emptyList())
-        }.mapLatest { (f, q, visible, device) ->
+            Input(f, q, all.filter { it.libraryId in f.libraryIds }, if (f.selected.isEmpty()) device else emptyList(), all)
+        }.mapLatest { (f, q, visible, device, all) ->
             // Runs on [dispatcher] via the flowOn below; a newer query/catalog cancels a search still in flight.
             // Device titles add titles only: their people and genres have no entity page (those list the server's catalog).
             val found = when {
@@ -140,10 +143,12 @@ class SearchViewModel(
                 device.isEmpty() -> search(visible, q)
                 else -> search(visible, q).let { r -> r.copy(titles = r.titles + search(device, q).titles) }
             }
-            Hits(f, q, found)
+            // Blame the kind filter only when the unfiltered catalog would have found something.
+            val hidden = found.isEmpty && q.isNotEmpty() && visible.size < all.size && !search(all, q).isEmpty
+            Hits(f, q, found, hidden)
         }
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)
-        return combine(hits, itemState, progressDao.observeAll(dev)) { (f, q, found), (progress, downloaded, active), deviceProgress ->
+        return combine(hits, itemState, progressDao.observeAll(dev)) { (f, q, found, hidden), (progress, downloaded, active), deviceProgress ->
             // Device ids (`local:…`) never collide with server ids, so one map serves both.
             val byId = progress.associateBy { it.itemId } + deviceProgress.associateBy { it.itemId }
             val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
@@ -152,14 +157,14 @@ class SearchViewModel(
             Results(
                 f.available, f.selected, q,
                 found.titles.map { it.toSummary(covers, byId[it.id], it.id in downloadedIds || DeviceLibrary.isLocal(it.serverId), it.id in activeIds) },
-                found.authors, found.narrators, found.series, found.genres, found.tags,
+                found.authors, found.narrators, found.series, found.genres, found.tags, hidden,
             )
         }.flowOn(dispatcher)
     }
 
-    private data class Input(val filter: KindFilterState, val query: String, val visible: List<ItemEntity>, val device: List<ItemEntity>)
+    private data class Input(val filter: KindFilterState, val query: String, val visible: List<ItemEntity>, val device: List<ItemEntity>, val all: List<ItemEntity>)
 
-    private data class Hits(val filter: KindFilterState, val query: String, val found: SearchResult)
+    private data class Hits(val filter: KindFilterState, val query: String, val found: SearchResult, val hiddenByFilter: Boolean)
 
     private data class Results(
         val available: Set<LibraryKind> = emptySet(),
@@ -171,6 +176,7 @@ class SearchViewModel(
         val series: List<Facet> = emptyList(),
         val genres: List<Facet> = emptyList(),
         val tags: List<Facet> = emptyList(),
+        val hiddenByFilter: Boolean = false,
     )
 
     companion object {

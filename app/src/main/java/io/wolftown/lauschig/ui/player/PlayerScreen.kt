@@ -1,40 +1,32 @@
 package io.wolftown.lauschig.ui.player
 
-import io.wolftown.lauschig.local.DeviceLibrary
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.History
-import io.wolftown.lauschig.ui.extras.BookmarksSheet
-import io.wolftown.lauschig.ui.extras.HistorySheet
-import io.wolftown.lauschig.ui.extras.QueueSheet
 import androidx.compose.material.icons.rounded.Forward30
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
@@ -42,6 +34,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
@@ -52,44 +45,63 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material3.rememberModalBottomSheetState
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.math.abs
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.playback.PlayableKey
+import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.DownloadIconButton
 import io.wolftown.lauschig.ui.common.FinishedCard
-import io.wolftown.lauschig.ui.common.ProgressMenuButton
-import io.wolftown.lauschig.ui.common.Initials
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
-import io.wolftown.lauschig.ui.common.QuickDownload
-import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.ProgressMenuButton
+import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.detail.chapterItems
+import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
+import io.wolftown.lauschig.ui.extras.BookmarksSheet
+import io.wolftown.lauschig.ui.extras.HistorySheet
+import io.wolftown.lauschig.ui.extras.QueueSheet
+import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
+import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.coverTintTarget
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -223,6 +235,21 @@ fun PlayerScreen(
     val hasChapters = state.chapters.isNotEmpty()
     val loaded = state.itemId != null
     val detailsLabel = stringResource(R.string.player_open_details)
+    // A server cover only once this title's version is known, so it is not requested twice.
+    val art = state.itemId?.let { id ->
+        if (state.coverPath == null && state.coverVersion == null) null
+        else coverModel(LocalServerBaseUrl.current, id, state.coverPath, state.coverVersion ?: 0)
+    }
+    val surface = MaterialTheme.colorScheme.surface
+    // The signature: the cover's tint at the top, fading into the surface at 60 % of the height.
+    val scheme = MaterialTheme.colorScheme
+    val tintTarget = coverTintTarget(art, state.coverVersion ?: 0, surface)
+    val tint = animateColorAsState(tintTarget, tween(TINT_FADE_MS), label = "playerTint")
+    // The controls (play button, slider, "downloaded") stay primary only where primary keeps 3:1 on the tint at the top.
+    val playerScheme = remember(scheme, tintTarget) {
+        if (scheme.controlColorOn(tintTarget) == scheme.primary) scheme else scheme.copy(primary = scheme.onSurface, onPrimary = scheme.surface)
+    }
+    val tabular = remember { TextStyle(fontFeatureSettings = "tnum") }
 
     val topBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -239,11 +266,16 @@ fun PlayerScreen(
         }
     }
     val cover: @Composable () -> Unit = {
-        val model = coverModel(LocalServerBaseUrl.current, state.itemId.orEmpty(), state.coverPath, 0)
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = detailsLabel, onClick = onOpenDetails).testTag("playerCover")) {
-            Initials(state.title)
-            if (model != null) AsyncImage(model, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
+        CoverArt(
+            art, state.title,
+            Modifier.fillMaxSize()
+                .shadow(16.dp, CoverShapes.Player, ambientColor = CoverShadow, spotColor = CoverShadow)
+                .clip(CoverShapes.Player)
+                .clickable(onClickLabel = detailsLabel, onClick = onOpenDetails)
+                .testTag("playerCover"),
+            shape = CoverShapes.Player,
+            initialsStyle = MaterialTheme.typography.displaySmall,
+        )
     }
     val info: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth()) {
@@ -255,10 +287,17 @@ fun PlayerScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().clickable(onClickLabel = detailsLabel, onClick = onOpenDetails),
             )
+            playerSubtitle(state)?.let {
+                Text(
+                    it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp).testTag("playerSubtitle"),
+                )
+            }
             state.chapterTitle?.let {
                 Text(
-                    it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(),
+                    it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
             state.error?.let {
@@ -300,17 +339,17 @@ fun PlayerScreen(
             // Chapter elapsed and length at the ends, the position in the whole book between them.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 val shownElapsed = dragging?.let { io.wolftown.lauschig.ui.detail.formatClock(it * state.chapterDurationSec) } ?: state.chapterElapsedText
-                Text(shownElapsed, style = MaterialTheme.typography.labelLarge)
+                Text(shownElapsed, style = MaterialTheme.typography.labelLarge.merge(tabular))
                 Text(
                     stringResource(R.string.player_book_time, state.bookElapsedText, state.bookTotalText),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.merge(tabular),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp).testTag("bookTime"),
                 )
-                Text(state.chapterTotalText, style = MaterialTheme.typography.labelLarge)
+                Text(state.chapterTotalText, style = MaterialTheme.typography.labelLarge.merge(tabular))
             }
         }
     }
@@ -361,63 +400,79 @@ fun PlayerScreen(
         }
     }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val viewport = constraints.maxHeight
-        val viewportDp = maxHeight
-        // End side of the wide layouts: top bar, title, progress and transport controls, centred in the height that is
-        // left; [withActions] adds the action area under them.
-        val endSide: @Composable RowScope.(withActions: Boolean) -> Unit = { withActions ->
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                Column(Modifier.heightIn(min = viewportDp)) {
-                    topBar()
-                    Spacer(Modifier.weight(1f))
-                    info()
-                    progress()
-                    controls()
-                    finished()
-                    Spacer(Modifier.weight(1f))
-                    if (withActions) actions()
+    // The gradient reaches under the status bar and the side insets where the frame allows it (never over a banner).
+    val reach = LocalBackdropReach.current
+    val density = LocalDensity.current
+    MaterialTheme(colorScheme = playerScheme) {
+        BoxWithConstraints(
+            modifier.fillMaxSize().drawBehind {
+                val top = with(density) { reach.top.toPx() }
+                val left = with(density) { reach.left.toPx() }
+                val right = with(density) { reach.right.toPx() }
+                drawRect(
+                    Brush.verticalGradient(0f to tint.value, 0.6f to surface, startY = -top, endY = size.height),
+                    topLeft = Offset(-left, -top),
+                    size = Size(size.width + left + right, size.height + top),
+                )
+            },
+        ) {
+            val viewport = constraints.maxHeight
+            val viewportDp = maxHeight
+            // End side of the wide layouts: top bar, title, progress and transport controls, centred in the height that is
+            // left; [withActions] adds the action area under them.
+            val endSide: @Composable RowScope.(withActions: Boolean) -> Unit = { withActions ->
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    Column(Modifier.heightIn(min = viewportDp)) {
+                        topBar()
+                        Spacer(Modifier.weight(1f))
+                        info()
+                        progress()
+                        controls()
+                        finished()
+                        Spacer(Modifier.weight(1f))
+                        if (withActions) actions()
+                    }
                 }
             }
-        }
-        if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
-            if (actionGridUnderTransport(maxHeight)) {
-                // Tablets in landscape: the cover alone on the start side, as large as fits and centred; everything
-                // else, the action area last, on the end side.
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(minOf(maxWidth, maxHeight - 32.dp, 560.dp))) { cover() }
+            if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
+                if (actionGridUnderTransport(maxHeight)) {
+                    // Tablets in landscape: the cover alone on the start side, as large as fits and centred; everything
+                    // else, the action area last, on the end side.
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(minOf(maxWidth, maxHeight - 32.dp, 560.dp))) { cover() }
+                        }
+                        endSide(true)
                     }
-                    endSide(true)
+                } else {
+                    // Phones in landscape: cover with the action area under it on the start side, the rest beside it (the
+                    // end side has no room left for the action area).
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                            CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
+                        }
+                        endSide(false)
+                    }
                 }
             } else {
-                // Phones in landscape: cover with the action area under it on the start side, the rest beside it (the
-                // end side has no room left for the action area).
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                        CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
-                    }
-                    endSide(false)
+                val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+                    CoverFitColumn(
+                        viewport, MIN_COVER, maxCover,
+                        header = topBar,
+                        cover = cover,
+                        body = {
+                            Column(Modifier.fillMaxWidth()) {
+                                info()
+                                progress()
+                                controls()
+                                finished()
+                                actions()
+                            }
+                        },
+                        modifier = Modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp),
+                    )
                 }
-            }
-        } else {
-            val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
-            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-                CoverFitColumn(
-                    viewport, MIN_COVER, maxCover,
-                    header = topBar,
-                    cover = cover,
-                    body = {
-                        Column(Modifier.fillMaxWidth()) {
-                            info()
-                            progress()
-                            controls()
-                            finished()
-                            actions()
-                        }
-                    },
-                    modifier = Modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp),
-                )
             }
         }
     }
@@ -438,6 +493,22 @@ fun PlayerScreen(
             }
         }
     }
+}
+
+/** The cover's soft shadow. */
+private val CoverShadow = Color.Black.copy(alpha = 0.35f)
+
+/**
+ * The quieter line under the player's title: the author and the series with its volume, as the detail page shows them
+ * ("Autorin · Saga · Band 3"); an author who is the series' own name ("Die drei ???") is said once.
+ */
+@Composable
+internal fun playerSubtitle(state: PlayerScreenState): String? {
+    val series = state.seriesName?.takeIf { it.isNotBlank() }?.let { name ->
+        state.seriesSequence?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.detail_series_band, name, it) } ?: name
+    }
+    val author = state.author?.takeIf { it.isNotBlank() && it != state.seriesName }
+    return listOfNotNull(author, series).joinToString(" · ").ifEmpty { null }
 }
 
 /**

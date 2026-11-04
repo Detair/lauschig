@@ -22,6 +22,8 @@ data class ItemSummary(
     val isDownloading: Boolean = false,
     /** Server `coverUpdatedAt`; appended to the cover URL so a changed cover bypasses the image cache. */
     val coverVersion: Long = 0,
+    /** What is left to hear of a started, unfinished title; null when unknown or not started. */
+    val remainingSec: Double? = null,
 ) {
     /** Stable lazy-list key, unique across servers. */
     val key: String get() = "$serverId:$id"

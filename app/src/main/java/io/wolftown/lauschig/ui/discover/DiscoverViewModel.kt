@@ -1,5 +1,10 @@
 package io.wolftown.lauschig.ui.discover
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +19,7 @@ import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
+import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.ui.browse.AuthorInfoCache
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
@@ -56,6 +62,10 @@ data class DiscoverUiState(
     val tags: List<Facet> = emptyList(),
     val authors: List<AuthorTile> = emptyList(),
     val all: List<ItemSummary> = emptyList(),
+    /** The first data is not there yet (show neither content nor "nothing here"). */
+    val loading: Boolean = false,
+    /** The catalog has titles, but the kind filter hides all of them. */
+    val hiddenByFilter: Boolean = false,
 )
 
 /** Store-like overview of the whole catalog, straight from Room (the optional author images are the only online extra). */
@@ -75,15 +85,19 @@ class DiscoverViewModel(
     private val catalog: Catalog,
     /** Where the grouping, sorting and tile mapping run; tests pass a test dispatcher. */
     private val dispatcher: CoroutineDispatcher,
+    /** Starts a library sync now (the empty page's "Refresh library"). */
+    private val requestSync: () -> Unit = {},
+    /** Whether such a sync is waiting or running. */
+    private val syncRunning: Flow<Boolean> = flowOf(false),
 ) : ViewModel() {
 
     @Inject constructor(
         accountStore: AccountStore, catalogDao: CatalogDao, itemDao: ItemDao, libraryDao: LibraryDao, progressDao: ProgressDao,
         downloadDao: DownloadDao, covers: CoverPathCache, prefs: FilterPreferences, discoverPrefs: DiscoverPreferences,
-        authorInfo: AuthorInfoCache, catalog: Catalog,
+        authorInfo: AuthorInfoCache, catalog: Catalog, sync: SyncTrigger,
     ) : this(
         accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, discoverPrefs, authorInfo, catalog,
-        Dispatchers.Default,
+        Dispatchers.Default, sync::syncNow, sync.nowRunning(),
     )
 
     private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
@@ -94,10 +108,29 @@ class DiscoverViewModel(
 
     val state: StateFlow<DiscoverUiState> = serverId
         .flatMapLatest { sid -> if (sid == null) flowOf(DiscoverUiState()) else stateFor(sid) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverUiState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoverUiState(loading = true))
 
     fun setKinds(kinds: Set<LibraryKind>) {
         viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
+    }
+
+    private val _refreshing = MutableStateFlow(false)
+
+    /** A refresh started here is under way: until the sync has run (or [REFRESH_TIMEOUT_MS], e.g. offline). */
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /** Starts a library sync unless one is already waiting or running (it is not restarted), and shows it. */
+    fun refreshLibrary() {
+        if (_refreshing.value) return
+        _refreshing.value = true
+        viewModelScope.launch {
+            try {
+                if (!syncRunning.first()) requestSync()
+                withTimeoutOrNull(REFRESH_TIMEOUT_MS) { syncRunning.dropWhile { !it }.first { !it } }
+            } finally {
+                _refreshing.value = false
+            }
+        }
     }
 
     fun setSort(sort: DiscoverSort) {
@@ -110,7 +143,7 @@ class DiscoverViewModel(
      */
     private fun stateFor(sid: String): Flow<DiscoverUiState> {
         val sections = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), discoverPrefs.sort) { all, f, sort ->
-            sections(f, sort, all.filter { it.libraryId in f.libraryIds })
+            sections(f, sort, all.filter { it.libraryId in f.libraryIds }, unfiltered = all.size)
         }.flowOn(dispatcher)
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)
         val authorIds = authorInfo.authors.map { known ->
@@ -130,6 +163,7 @@ class DiscoverViewModel(
                 tags = s.tags,
                 authors = s.authors.map { AuthorTile(it.name, it.count, images[AuthorInfoCache.key(sid, it.name)]) },
                 all = s.all.map { it.summary() },
+                hiddenByFilter = s.hiddenByFilter,
             )
         }.flowOn(dispatcher)
     }
@@ -143,9 +177,10 @@ class DiscoverViewModel(
         val tags: List<Facet>,
         val authors: List<Facet>,
         val all: List<ItemEntity>,
+        val hiddenByFilter: Boolean,
     )
 
-    private fun sections(filter: KindFilterState, sort: DiscoverSort, visible: List<ItemEntity>): Sections {
+    private fun sections(filter: KindFilterState, sort: DiscoverSort, visible: List<ItemEntity>, unfiltered: Int): Sections {
         val facets = catalog.facets(visible)
         val byId = visible.associateBy { it.id }
         val recent = visible.filter { it.addedAt > 0 }
@@ -157,6 +192,7 @@ class DiscoverViewModel(
             tags = facets.tags,
             authors = facets.authors.take(ROW_LIMIT),
             all = sorted(visible, sort),
+            hiddenByFilter = visible.isEmpty() && unfiltered > 0,
         )
     }
 
@@ -177,5 +213,6 @@ class DiscoverViewModel(
     companion object {
         const val SCREEN = "discover"
         const val ROW_LIMIT = 20
+        const val REFRESH_TIMEOUT_MS = 60_000L
     }
 }

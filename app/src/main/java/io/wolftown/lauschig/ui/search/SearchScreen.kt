@@ -17,10 +17,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,11 +45,16 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.catalog.Facet
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverTile
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.LoadingState
+import io.wolftown.lauschig.ui.common.SectionTitle
 import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.theme.Spacing
 
 @Composable
 fun SearchRoute(
@@ -109,32 +114,42 @@ fun SearchScreen(
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSubmit(); focusManager.clearFocus() }),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focus),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter, vertical = Spacing.s).focusRequester(focus),
         )
-        KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(bottom = 8.dp))
+        KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(bottom = Spacing.s))
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.l),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+            verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (state.query.isBlank()) {
                 if (state.recent.isNotEmpty()) {
                     header("recentHeader", R.string.search_recent)
                     full("recent") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                             state.recent.forEach { AssistChip(onClick = { onRecent(it) }, label = { Text(it) }) }
                         }
                     }
                 }
-            } else if (state.searched && !state.hasResults) {
+            } else if (state.searched && !state.hasResults && state.hiddenByFilter) {
                 full("empty") {
-                    Text(
-                        stringResource(R.string.search_nothing_found, state.resultsFor),
-                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp),
+                    FilterEmptyState(
+                        onReset = { onKinds(emptySet()) }, Modifier.testTag("searchEmpty"),
+                        headline = stringResource(R.string.search_nothing_found, state.resultsFor),
                     )
                 }
+            } else if (state.searched && !state.hasResults) {
+                full("empty") {
+                    EmptyState(
+                        Icons.Rounded.SearchOff, stringResource(R.string.search_nothing_found, state.resultsFor), Modifier.testTag("searchEmpty"),
+                        supporting = stringResource(R.string.search_nothing_found_hint),
+                    )
+                }
+            } else if (!state.searched && !state.hasResults) {
+                // The first search for this query is still running.
+                full("loading") { LoadingState() }
             } else {
                 if (state.titles.isNotEmpty()) {
                     header("titlesHeader", R.string.search_titles)
@@ -165,7 +180,7 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 }
 
 private fun LazyGridScope.header(key: String, title: Int) = full(key) {
-    Text(stringResource(title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    SectionTitle(stringResource(title), Modifier.padding(top = Spacing.s))
 }
 
 private const val TITLES_COLLAPSED = 6
@@ -179,7 +194,7 @@ private fun LazyGridScope.facets(
     if (list.isEmpty()) return
     header("${key}Header", title)
     full(key) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
             val shown = if (expanded) list else list.take(FACETS_COLLAPSED)
             shown.forEach { f -> AssistChip(onClick = { onOpen(kind, f.name) }, label = { Text("${f.name} · ${f.count}") }) }
             if (shown.size < list.size) {

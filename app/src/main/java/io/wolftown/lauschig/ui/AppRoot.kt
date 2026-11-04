@@ -2,44 +2,51 @@ package io.wolftown.lauschig.ui
 
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import io.wolftown.lauschig.MainActivity
-import io.wolftown.lauschig.settings.Appearance
-import io.wolftown.lauschig.ui.adaptive.rememberNavigationRail
-import io.wolftown.lauschig.whatsnew.WhatsNewSheet
-import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
-import io.wolftown.lauschig.ui.nav.Cleanup
-import io.wolftown.lauschig.ui.nav.ConnectionStatus
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.runtime.CompositionLocalProvider
+import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.links.LinkTarget
+import io.wolftown.lauschig.links.LinkViewModel
+import io.wolftown.lauschig.settings.Appearance
+import io.wolftown.lauschig.ui.adaptive.rememberNavigationRail
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
 import io.wolftown.lauschig.ui.nav.AppNavHost
-import io.wolftown.lauschig.ui.nav.route
-import io.wolftown.lauschig.ui.nav.currentTab
-import io.wolftown.lauschig.ui.nav.Player
-import io.wolftown.lauschig.ui.nav.Setup
-import io.wolftown.lauschig.ui.nav.isOnPlayer
-import io.wolftown.lauschig.ui.nav.isOnSetup
-import io.wolftown.lauschig.ui.player.MiniPlayer
-import io.wolftown.lauschig.ui.nav.navigateToTab
-import io.wolftown.lauschig.ui.nav.showSignIn
-import io.wolftown.lauschig.links.LinkTarget
-import io.wolftown.lauschig.links.LinkViewModel
 import io.wolftown.lauschig.ui.nav.Browse
 import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.nav.Cleanup
+import io.wolftown.lauschig.ui.nav.ConnectionStatus
 import io.wolftown.lauschig.ui.nav.ItemDetail
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalResources
-import kotlinx.coroutines.launch
-import androidx.navigation.NavDestination.Companion.hasRoute
+import io.wolftown.lauschig.ui.nav.Player
+import io.wolftown.lauschig.ui.nav.PlayerOverlay
+import io.wolftown.lauschig.ui.nav.Setup
+import io.wolftown.lauschig.ui.nav.closePlayer
+import io.wolftown.lauschig.ui.nav.currentTab
+import io.wolftown.lauschig.ui.nav.isOnSetup
+import io.wolftown.lauschig.ui.nav.navigateToTab
+import io.wolftown.lauschig.ui.nav.openDetailsFromPlayer
+import io.wolftown.lauschig.ui.nav.rememberPlayerLayer
+import io.wolftown.lauschig.ui.nav.route
+import io.wolftown.lauschig.ui.nav.showSignIn
+import io.wolftown.lauschig.ui.nav.underPlayer
+import io.wolftown.lauschig.ui.player.MiniPlayer
+import io.wolftown.lauschig.ui.player.PlayerRoute
+import io.wolftown.lauschig.ui.player.PlayerViewModel
+import io.wolftown.lauschig.whatsnew.WhatsNewSheet
+import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What to do with a request from outside (a notification, a widget tap, a link) right now. */
@@ -68,6 +75,7 @@ fun AppRoot(
     /** The chosen start screen (where the first sign-in leads). */
     startTab: TopLevelTab = TopLevelTab.Start,
     viewModel: AppViewModel = hiltViewModel(),
+    playerViewModel: PlayerViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
     linkRequest: String? = null,
@@ -127,40 +135,66 @@ fun AppRoot(
     }
 
     val onSetup = navController.isOnSetup()
-    val onPlayer = navController.isOnPlayer()
+    // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
+    val playerLayer = rememberPlayerLayer(navController)
+    val playerCovers = playerLayer.coversFrame
+    val playerUp = playerLayer.up
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
+    // The same (activity-wide) view model as the player layer's: its state knows the loaded title's cover version.
+    val playerScreen by playerViewModel.state.collectAsStateWithLifecycle()
     val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection, checking)
+    // One banner state for the frame and the player layer, so both show the same hint at the same time.
+    val connectionBanner = rememberConnectionBanner(connection, checking)
+    val showReauth = needsReauth && !onSetup
+    val onReauth = { navController.navigate(Setup) { launchSingleTop = true } }
+    val onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme(appearance) {
             WindowBackground()
             AppScaffold(
                 connection = connection,
+                // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
+                modifier = Modifier.underPlayer(playerCovers),
                 miniPlayer = {
-                    if (!onSetup && !onPlayer) {
+                    if (!onSetup && !playerCovers) {
                         MiniPlayer(
                             playerState,
                             onToggle = viewModel.player::togglePlayPause,
                             onOpen = { navController.navigate(Player) { launchSingleTop = true } },
+                            coverVersion = playerScreen.coverVersion.takeIf { playerScreen.itemId == playerState.itemId },
                         )
                     }
                 },
-                // The full player uses the whole window (its buttons stay above the fold); it has its own close.
-                showBottomBar = !onSetup && !onPlayer,
+                // The full player covers the whole window (its buttons stay above the fold); it has its own close.
+                showBottomBar = !onSetup && !playerCovers,
                 navigationRail = rememberNavigationRail(),
                 showOfflineBanner = !onSetup,
-                showReauthBanner = needsReauth && !onSetup,
-                onReauth = { navController.navigate(Setup) { launchSingleTop = true } },
+                showReauthBanner = showReauth,
+                onReauth = onReauth,
                 connectionChecking = checking,
-                onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } },
+                onOpenConnection = onOpenConnection,
                 selectedTab = navController.currentTab(),
                 tabs = tabs,
                 onTabSelected = navController::navigateToTab,
                 snackbarHostState = snackbarHost,
+                showSnackbars = !playerUp,
+                connectionBanner = connectionBanner,
             ) {
                 AppNavHost(navController, startDestination, homeRoute = startTab.route())
+            }
+            PlayerOverlay(
+                playerLayer.slide,
+                banner = connectionBanner.takeIf { !onSetup },
+                showReauthBanner = showReauth,
+                onReauth = onReauth,
+                onOpenConnection = onOpenConnection,
+                snackbarHostState = snackbarHost,
+                onClose = navController::closePlayer,
+            ) {
+                PlayerRoute(onClose = navController::closePlayer, onOpenDetails = navController::openDetailsFromPlayer)
             }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {

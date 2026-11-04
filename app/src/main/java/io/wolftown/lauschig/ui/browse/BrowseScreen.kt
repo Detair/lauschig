@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.FilterListOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,15 +56,21 @@ import io.wolftown.lauschig.rmab.RmabStatus
 import io.wolftown.lauschig.rmab.RmabViewModel
 import io.wolftown.lauschig.rmab.label
 import io.wolftown.lauschig.rmab.tileIcon
+import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.CoverTile
-import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.EmptyState
 import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.KindFilterChips
+import io.wolftown.lauschig.ui.common.LoadingState
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.SectionTitle
+import io.wolftown.lauschig.ui.common.coverOutline
 import io.wolftown.lauschig.ui.detail.Description
 import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.theme.Spacing
 
 @Composable
 fun BrowseRoute(
@@ -109,16 +116,16 @@ fun BrowseScreen(
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(bottom = 8.dp))
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.l),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+            verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Header(state) }
             if (state.series.isNotEmpty()) {
                 item(key = "series", span = { GridItemSpan(maxLineSpan) }, contentType = "series") {
                     Column {
-                        Text(stringResource(R.string.browse_series_row), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                        SectionTitle(stringResource(R.string.browse_series_row))
                         FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             state.series.forEach { s ->
                                 AssistChip(onClick = { onOpenBrowse(BrowseKind.SERIES, s.name) }, label = { Text(s.name) })
@@ -127,9 +134,12 @@ fun BrowseScreen(
                     }
                 }
             }
+            if (!state.loaded && state.entries.isEmpty()) {
+                item(key = "loading", span = { GridItemSpan(maxLineSpan) }, contentType = "loading") { LoadingState() }
+            }
             if (state.loaded && state.entries.isEmpty()) {
                 item(key = "empty", span = { GridItemSpan(maxLineSpan) }, contentType = "empty") {
-                    Text(stringResource(R.string.browse_empty), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp))
+                    EmptyState(Icons.Rounded.FilterListOff, stringResource(R.string.browse_empty))
                 }
             }
             items(state.entries, key = { it.key() }, contentType = { if (it is BrowseEntry.Tile) "tile" else "missing" }) { entry ->
@@ -178,13 +188,11 @@ private fun AuthorImage(state: BrowseUiState) {
     val url = remember(base, author.id) {
         base.newBuilder().addPathSegments("api/authors").addPathSegment(author.id).addPathSegment("image").build().toString()
     }
-    Box(Modifier.size(96.dp).clip(CircleShape).testTag("authorImage")) {
-        Initials(state.name)
-        AsyncImage(
-            model = url, contentDescription = stringResource(R.string.browse_author_image, state.name),
-            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-        )
-    }
+    val description = stringResource(R.string.browse_author_image, state.name)
+    CoverArt(
+        url, state.name, Modifier.size(96.dp).testTag("authorImage").semantics { contentDescription = description },
+        shape = CircleShape, initialsStyle = MaterialTheme.typography.headlineSmall,
+    )
 }
 
 /** Greyed stand-in for a volume number the library lacks; with Audible data it shows the cover and opens the details. */
@@ -201,7 +209,7 @@ private fun MissingTile(entry: BrowseEntry.Missing, status: RmabStatus?, onOpen:
     val click = if (volume == null) Modifier else Modifier.clickable(role = Role.Button) { onOpen(volume) }
     Column(Modifier.testTag("missingVolume").then(click).semantics(mergeDescendants = true) { if (volume != null) contentDescription = description }) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp))
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(CoverShapes.Tile).coverOutline(CoverShapes.Tile, MaterialTheme.colorScheme)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -231,6 +239,6 @@ private fun MissingTile(entry: BrowseEntry.Missing, status: RmabStatus?, onOpen:
                 }
             }
         }
-        Text(hint, style = MaterialTheme.typography.bodySmall, color = grey, modifier = Modifier.padding(top = 4.dp))
+        Text(hint, style = MaterialTheme.typography.bodySmall, color = grey, modifier = Modifier.padding(top = 6.dp))
     }
 }

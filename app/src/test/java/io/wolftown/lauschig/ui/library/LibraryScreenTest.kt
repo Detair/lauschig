@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui.library
 
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -43,7 +49,50 @@ class LibraryScreenTest {
         val state = LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
         rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
         rule.onNodeWithText("Nothing here yet").assertIsDisplayed()
+        rule.onNodeWithText("Titles you start listening to show up here.").assertIsDisplayed()
         rule.onNodeWithText("Audiobooks").assertDoesNotExist()
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w800dp-h360dp", fontScale = 2.0f)
+    fun emptyState_inPhoneLandscapeAtLargeText_scrollsIntoView() {
+        val state = LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
+        // About the height left under the tabs with the mini player in phone landscape.
+        rule.setContent { LauschigTheme { Box(Modifier.height(170.dp)) { LibraryScreen(state, {}, {}, {}) } } }
+        rule.onNodeWithText("Titles you start listening to show up here.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun emptyOnlyBecauseOfTheTag_saysSo_andResetsKindsAndTag() {
+        val kinds = mutableListOf<Set<LibraryKind>>()
+        val tags = mutableListOf<String?>()
+        val state = LibraryUiState(
+            availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true, availableTags = listOf(io.wolftown.lauschig.catalog.Facet("Krimi", 2, "1")),
+            selectedTag = "Krimi", hiddenByFilter = true,
+        )
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, { kinds += it }, {}, onTag = { tags += it }) } }
+        rule.onNodeWithText("No titles with this filter").assertIsDisplayed()
+        rule.onNodeWithText("Titles you start listening to show up here.").assertDoesNotExist()
+        rule.onNodeWithText("Reset filter").performClick()
+        assertEquals(listOf(emptySet<LibraryKind>()), kinds)
+        assertEquals(listOf<String?>(null), tags)
+    }
+
+    @Test fun emptyTabWithAFilterSet_isNotBlamedOnTheFilter() {
+        val state = LibraryUiState(availableKinds = both, selectedKinds = setOf(LibraryKind.HOERSPIEL), loaded = true, hiddenByFilter = false)
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
+        rule.onNodeWithText("Titles you start listening to show up here.").assertIsDisplayed()
+        rule.onNodeWithText("No titles with this filter").assertDoesNotExist()
+    }
+
+    @Test fun notLoadedYet_showsNoEmptyHint() {
+        rule.setContent { LauschigTheme { LibraryScreen(LibraryUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = false), {}, {}, {}) } }
+        rule.onNodeWithText("Nothing here yet").assertDoesNotExist()
+        rule.onNodeWithTag("loadingState").assertExists()
+    }
+
+    @Test fun emptySeriesTab_saysWhatWouldShowUp() {
+        val state = LibraryUiState(tab = LibraryTab.Series, availableKinds = setOf(LibraryKind.AUDIOBOOK), loaded = true)
+        rule.setContent { LauschigTheme { LibraryScreen(state, {}, {}, {}) } }
+        rule.onNodeWithText("Titles that belong to a series show up here, sorted by series.").assertIsDisplayed()
     }
 
     @Test fun collectionsTab_showsTheListSlot_insteadOfChips() {

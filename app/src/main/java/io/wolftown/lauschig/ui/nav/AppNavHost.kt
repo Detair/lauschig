@@ -1,7 +1,14 @@
 package io.wolftown.lauschig.ui.nav
 
-import io.wolftown.lauschig.ui.downloads.DownloadsRoute
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -9,8 +16,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.compose.runtime.getValue
+import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.cleanup.CleanupRoute
+import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.settings.NavigationSettingsRoute
 import io.wolftown.lauschig.settings.SettingsRoute
 import io.wolftown.lauschig.ui.TopLevelTab
@@ -18,14 +26,12 @@ import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
 import io.wolftown.lauschig.ui.browse.BrowseRoute
-import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
-import io.wolftown.lauschig.admin.ServerAdminRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
-import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
-import io.wolftown.lauschig.playback.PlayableKey
-import io.wolftown.lauschig.ui.library.LibraryRoute
-import io.wolftown.lauschig.ui.player.PlayerRoute
+import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
+import io.wolftown.lauschig.ui.downloads.DownloadsRoute
+import io.wolftown.lauschig.ui.library.LibraryRoute
+import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
@@ -45,7 +51,15 @@ fun AppNavHost(
 ) {
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
-    NavHost(navController, startDestination = startDestination, modifier = modifier) {
+    NavHost(
+        navController, startDestination = startDestination, modifier = modifier,
+        // The navigation library's own fades everywhere, except that the page under the player stays put while the
+        // player (PlayerOverlay) slides over it and is there at once when the player slides away.
+        enterTransition = { fadeIn(tween(DEFAULT_FADE_MS)) },
+        exitTransition = { if (targetState.destination.hasRoute<Player>()) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(DEFAULT_FADE_MS)) },
+        popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
+        popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
+    ) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
             ReadableWidth {
@@ -106,12 +120,13 @@ fun AppNavHost(
                 onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
             )
         }
-        composable<Player> {
-            PlayerRoute(
-                onClose = { navController.popBackStack() },
-                // The details replace the player, so "back" from them returns to where the player was opened from.
-                onOpenDetails = { id -> navController.navigate(ItemDetail(PlayableKey.parse(id).libraryItemId)) { popUpTo<Player> { inclusive = true } } },
-            )
+        // The player itself is PlayerOverlay, a layer above the whole frame (see AppRoot); this destination draws nothing.
+        // Its fade-in (of nothing) lasts as long as the player's slide, which keeps the page beneath until it is covered.
+        composable<Player>(
+            enterTransition = { fadeIn(tween(PLAYER_SLIDE_MS + 50)) },
+            popExitTransition = { ExitTransition.None },
+        ) {
+            Box(Modifier.fillMaxSize())
         }
         composable<Setup> {
             ReadableWidth {
@@ -119,6 +134,19 @@ fun AppNavHost(
             }
         }
     }
+}
+
+/** The navigation library's default cross-fade, kept for every page but the player. */
+private const val DEFAULT_FADE_MS = 700
+
+/** The player's own actions, used by [PlayerOverlay]: close, and details that replace the player. */
+fun NavHostController.closePlayer() {
+    popBackStack()
+}
+
+/** The details replace the player, so "back" from them returns to where the player was opened from. */
+fun NavHostController.openDetailsFromPlayer(itemId: String) {
+    navigate(ItemDetail(PlayableKey.parse(itemId).libraryItemId)) { popUpTo<Player> { inclusive = true } }
 }
 
 /**
@@ -147,10 +175,6 @@ fun NavHostController.showSignIn() {
 @Composable
 fun NavHostController.isOnSetup(): Boolean =
     currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
-
-@Composable
-fun NavHostController.isOnPlayer(): Boolean =
-    currentBackStackEntryAsState().value?.destination?.hasRoute<Player>() == true
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {

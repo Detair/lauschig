@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.discover
 
+import kotlinx.coroutines.flow.MutableStateFlow
 import io.wolftown.lauschig.TestViewModels
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -69,7 +70,7 @@ class DiscoverViewModelTest {
     private val filterStore = store("f")
     private val discoverStore = store("d")
 
-    private fun vm(): DiscoverViewModel {
+    private fun vm(requestSync: () -> Unit = {}, syncRunning: kotlinx.coroutines.flow.Flow<Boolean> = flowOf(false)): DiscoverViewModel {
         val accounts = FakeAccountStore()
         accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
@@ -78,7 +79,7 @@ class DiscoverViewModelTest {
                 DiscoverViewModel(
                     accounts, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers,
                     FilterPreferences(filterStore), DiscoverPreferences(discoverStore), AuthorInfoCache(flowOf(null)) { emptyList() },
-                    Catalog(), UnconfinedTestDispatcher(),
+                    Catalog(), UnconfinedTestDispatcher(), requestSync, syncRunning,
                 )
             }
         }
@@ -148,6 +149,39 @@ class DiscoverViewModelTest {
 
         // A fresh view model (new app start) over the same stored preference starts with the saved sort.
         assertEquals(DiscoverSort.DURATION, vm().await { it.all.size == 3 }.sort)
+    }
+
+    @Test fun refresh_startsOneSync_showsItUntilItHasRun_andNeverRestartsIt() = runTest {
+        var syncs = 0
+        val running = MutableStateFlow(false)
+        val v = vm(requestSync = { syncs++; running.value = true }, syncRunning = running)
+        v.refreshLibrary()
+        v.refreshing.first { it }
+        v.refreshLibrary() // a second tap while it runs
+        assertEquals(1, syncs)
+        running.value = false
+        v.refreshing.first { !it }
+        // A sync that is already waiting (offline) or running is not started again.
+        running.value = true
+        v.refreshLibrary()
+        assertEquals(1, syncs)
+    }
+
+    @Test fun discover_isLoading_untilTheFirstCatalogIsRead_thenEmpty() = runTest {
+        val v = vm()
+        assertTrue("starts loading, not empty", v.state.value.loading)
+        val empty = v.await { !it.loading }
+        assertTrue(empty.all.isEmpty() && empty.recent.isEmpty())
+        assertTrue("an empty catalog is not the filter's doing", !empty.hiddenByFilter)
+    }
+
+    @Test fun discover_aKindFilterThatHidesEverything_isNamedAsTheReason() = runTest {
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(sid, "lib1", "Books", "book", 0), LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)))
+        db.itemDao().upsertFromList(listOf(item("1", "Buch", "lib1")))
+        val v = vm()
+        v.await { it.all.size == 1 }
+        v.setKinds(setOf(LibraryKind.HOERSPIEL))
+        assertTrue(v.await { it.all.isEmpty() && !it.loading }.hiddenByFilter)
     }
 
     @Test fun discover_itemsWithoutMetadata_listedOnlyInAllTitles() = runTest {

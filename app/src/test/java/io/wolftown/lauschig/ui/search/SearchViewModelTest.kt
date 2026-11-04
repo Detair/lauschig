@@ -70,9 +70,9 @@ class SearchViewModelTest {
 
     private val searchCalls = mutableListOf<String>()
 
-    private fun vm(recent: RecentSearches = RecentSearches(store("r"))): SearchViewModel {
+    private fun vm(recent: RecentSearches = RecentSearches(store("r")), signedIn: Boolean = true): SearchViewModel {
         val accounts = FakeAccountStore()
-        accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+        if (signedIn) accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
         val factory = viewModelFactory {
             initializer {
@@ -154,6 +154,13 @@ class SearchViewModelTest {
         assertEquals(listOf("QUERY 5", "query 10", "query 9", "query 8", "query 7", "query 6", "query 4", "query 3"), s.recent)
     }
 
+    @Test fun signedOut_aQueryIsSearched_withNothingFound_notLoadingForever() = runTest {
+        val v = vm(signedIn = false)
+        v.setQuery("momo")
+        val s = v.await { it.searched }
+        assertTrue(!s.hasResults && s.resultsFor == "momo")
+    }
+
     @Test fun search_noMatch_isSearchedAndEmpty() = runTest {
         seed(item("1", "Alpha"))
         val v = vm()
@@ -172,6 +179,22 @@ class SearchViewModelTest {
         assertEquals(listOf("Nur ein Titel"), s.titles.map { it.title })
         assertTrue(s.authors.isEmpty() && s.narrators.isEmpty() && s.series.isEmpty() && s.genres.isEmpty() && s.tags.isEmpty())
     }
+    @Test fun search_nothingFound_namesTheKindFilter_onlyWhenItHidesMatches() = runTest {
+        seed(item("1", "Momo im Kino"))
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(sid, "lib2", "Hörspiele", "book", 1)))
+        val v = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.collect {} }
+        v.setKinds(setOf(io.wolftown.lauschig.db.entities.LibraryKind.HOERSPIEL))
+        v.setQuery("momo")
+        advanceTimeBy(250)
+        val hidden = v.await { it.resultsFor == "momo" && it.selectedKinds.isNotEmpty() }
+        assertTrue("the audiobook matches, the radio-play filter hides it", !hidden.hasResults && hidden.hiddenByFilter)
+        v.setQuery("zzz")
+        advanceTimeBy(250)
+        val none = v.await { it.resultsFor == "zzz" }
+        assertTrue("nothing matches anywhere: not the filter's doing", !none.hasResults && !none.hiddenByFilter)
+    }
+
     @Test fun search_findsDeviceTitles_asTitlesOnly_whileTheFilterIsAll() = runTest {
         val dev = io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID
         val local = io.wolftown.lauschig.local.DeviceLibrary.titleId("content://tree/x", "dir:a")

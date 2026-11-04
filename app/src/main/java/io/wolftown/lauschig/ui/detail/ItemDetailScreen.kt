@@ -2,26 +2,22 @@ package io.wolftown.lauschig.ui.detail
 
 import android.text.format.Formatter
 import android.widget.Toast
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.runtime.LaunchedEffect
-import io.wolftown.lauschig.db.entities.BookmarkEntity
-import io.wolftown.lauschig.history.History
-import io.wolftown.lauschig.ui.extras.BookmarkNoteDialog
-import io.wolftown.lauschig.ui.extras.TitleExtrasViewModel
-import io.wolftown.lauschig.ui.extras.titleExtrasSections
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -36,16 +32,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,17 +62,25 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.admin.ItemAdminMenu
 import io.wolftown.lauschig.catalog.Catalog
-import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.db.entities.BookmarkEntity
+import io.wolftown.lauschig.history.History
+import io.wolftown.lauschig.ui.adaptive.LocalReadableGutter
+import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.FinishedCard
-import io.wolftown.lauschig.ui.common.Initials
-import io.wolftown.lauschig.ui.common.ProgressMenuButton
+import io.wolftown.lauschig.ui.common.LocalBackdropReach
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.coverModel
+import io.wolftown.lauschig.ui.extras.BookmarkNoteDialog
+import io.wolftown.lauschig.ui.extras.TitleExtrasViewModel
+import io.wolftown.lauschig.ui.extras.titleExtrasSections
+import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.theme.animateCoverTint
 
 @Composable
 fun ItemDetailRoute(
@@ -157,12 +174,30 @@ fun ItemDetailScreen(
     extras: LazyListScope.() -> Unit = {},
 ) {
     val settledOffline = LocalOfflineDimming.current
+    val model = if (state.found) coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion) else null
+    val surface = MaterialTheme.colorScheme.surface
+    val tint = animateCoverTint(model, state.coverVersion, surface)
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    // The tint reaches under the status bar where the frame allows it (never over a banner) and, on a wide window that
+    // centres this page, into the free sides.
+    val reachTop = with(density) { LocalBackdropReach.current.top.toPx() }
+    val gutter = LocalReadableGutter.current
+    // Where the header's texts start, measured, so the backdrop fades out above them whatever the header's layout.
+    val marks = remember { HeaderMarks() }
     // The window (or pane) this page has, not the page's own height: the list below scrolls and has no bounds.
     BoxWithConstraints(modifier.fillMaxSize()) {
         val sideCover = if (headerBesideCover(maxWidth, maxHeight)) sideCoverSize(maxWidth, maxHeight) else null
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().drawBehind {
+                // The page draws beyond its bounds here (under the status bar, into the gutters); the navigation host and
+                // the frame do not clip it, see LocalBackdropReach.
+                drawHeaderTint(listState, marks, tint.value, surface, reachTop, gutter?.px ?: 0f)
+            },
+            state = listState,
+        ) {
             item("back") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().onSizeChanged { marks.backRowHeight = it.height }, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
                     Spacer(Modifier.weight(1f))
                     topActions()
@@ -174,7 +209,7 @@ fun ItemDetailScreen(
                 }
                 return@LazyColumn
             }
-            item("header") { Header(state, sideCover, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
+            item("header") { Header(state, sideCover, marks, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
             item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
             extras()
             item("chapters-title") {
@@ -199,18 +234,55 @@ fun ItemDetailScreen(
     }
 }
 
+/** The column's cover: as wide as the window up to this. */
+private val COLUMN_COVER_MAX = 280.dp
+
+/** Measured while laying out the header, read while drawing its backdrop. */
+@Stable
+private class HeaderMarks {
+    var backRowHeight by mutableIntStateOf(0)
+
+    /** The title's top inside the header item; NaN until laid out. */
+    var titleTop by mutableFloatStateOf(Float.NaN)
+
+    /** The header item's coordinates, to measure the title against (no state: only read in the title's callback). */
+    var header: LayoutCoordinates? = null
+}
+
+/** How far above the title the backdrop has faded out completely. */
+private val TINT_FADE_ABOVE_TITLE = 8.dp
+
+/**
+ * The header's backdrop, moving with the list: the cover's [tint] from under the status bar (or from the page's top
+ * below a banner, see `LocalBackdropReach`), fading into the [surface] just above the title – below the cover in the
+ * column, behind the back row when the cover sits beside the texts. Nothing once the header has scrolled away.
+ */
+private fun DrawScope.drawHeaderTint(list: LazyListState, marks: HeaderMarks, tint: Color, surface: Color, reachTop: Float, reachSide: Float) {
+    if (tint == surface || marks.titleTop.isNaN()) return
+    val items = list.layoutInfo.visibleItemsInfo
+    val header = items.firstOrNull { it.key == "header" } ?: return
+    val pageTop = (items.firstOrNull { it.key == "back" }?.offset ?: (header.offset - marks.backRowHeight)).toFloat()
+    val end = header.offset + marks.titleTop - TINT_FADE_ABOVE_TITLE.toPx()
+    if (end <= 0f) return
+    drawRect(
+        Brush.verticalGradient(0f to tint, 1f to surface, startY = pageTop - reachTop, endY = end),
+        topLeft = Offset(-reachSide, -reachTop),
+        size = Size(size.width + 2 * reachSide, end + reachTop),
+    )
+}
+
 /** [sideCover]: the cover's size when it sits beside the texts (see [headerBesideCover]); null puts it above them. */
 @Composable
-private fun Header(state: ItemDetailUiState, sideCover: Dp?, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun Header(state: ItemDetailUiState, sideCover: Dp?, marks: HeaderMarks, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    Column(Modifier.fillMaxWidth().onGloballyPositioned { marks.header = it }.padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (sideCover == null) {
             Cover(state)
-            HeaderTexts(state, titleTop = 16.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse)
+            HeaderTexts(state, titleTop = 16.dp, marks, onPrimary, onDownload, onPause, onDelete, onOpenBrowse)
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Cover(state, sideCover)
                 // The primary action and the download controls stay with the title, so they are above the fold.
-                Column(Modifier.weight(1f)) { HeaderTexts(state, titleTop = 0.dp, onPrimary, onDownload, onPause, onDelete, onOpenBrowse) }
+                Column(Modifier.weight(1f)) { HeaderTexts(state, titleTop = 0.dp, marks, onPrimary, onDownload, onPause, onDelete, onOpenBrowse) }
             }
         }
         state.description?.let { Description(it) }
@@ -218,8 +290,13 @@ private fun Header(state: ItemDetailUiState, sideCover: Dp?, onPrimary: () -> Un
 }
 
 @Composable
-private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
-    Text(state.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth().padding(top = titleTop))
+private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, marks: HeaderMarks, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    Text(
+        state.title, style = MaterialTheme.typography.headlineSmall,
+        modifier = Modifier.fillMaxWidth().padding(top = titleTop).onGloballyPositioned { title ->
+            marks.header?.takeIf { it.isAttached }?.let { marks.titleTop = it.localPositionOf(title, Offset.Zero).y }
+        },
+    )
     state.subtitle?.let {
         Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
     }
@@ -236,14 +313,15 @@ private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, onPrimary: () ->
 @Composable
 private fun Cover(state: ItemDetailUiState, side: Dp? = null) {
     val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion)
-    val shape = if (side != null) Modifier.size(side) else Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f)
-    Box(shape.clip(RoundedCornerShape(12.dp)).testTag("cover")) {
-        Initials(state.title)
-        if (model != null) {
-            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
-    }
+    val size = if (side != null) Modifier.size(side) else Modifier.widthIn(max = COLUMN_COVER_MAX).fillMaxWidth().aspectRatio(1f)
+    CoverArt(
+        model, state.title,
+        size.shadow(8.dp, CoverShapes.Tile, ambientColor = CoverShadow, spotColor = CoverShadow).testTag("cover"),
+        initialsStyle = MaterialTheme.typography.headlineLarge,
+    )
 }
+
+private val CoverShadow = Color.Black.copy(alpha = 0.3f)
 
 private class ChipSpec(val label: String, val target: Pair<BrowseKind, String>)
 

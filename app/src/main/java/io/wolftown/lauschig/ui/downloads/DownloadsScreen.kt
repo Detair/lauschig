@@ -4,7 +4,6 @@ import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,10 +17,12 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -51,6 +53,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.download.DownloadSort
+import io.wolftown.lauschig.ui.common.EmptyState
+import io.wolftown.lauschig.ui.common.LoadingState
+import io.wolftown.lauschig.ui.common.StatePage
 
 @Composable
 fun DownloadsRoute(onBack: () -> Unit, onOpenItem: (key: String) -> Unit, viewModel: DownloadsViewModel = hiltViewModel()) {
@@ -154,9 +159,9 @@ fun DownloadsScreen(
         }
         HorizontalDivider(Modifier.padding(top = 8.dp))
         when {
-            !state.loaded -> Unit
-            state.total == 0 -> Empty(stringResource(R.string.downloads_empty))
-            state.entries.isEmpty() -> Empty(stringResource(R.string.downloads_no_match))
+            !state.loaded -> StatePage { LoadingState(verticalPadding = it) }
+            state.total == 0 -> Empty(Icons.Rounded.DownloadForOffline, stringResource(R.string.downloads_empty), stringResource(R.string.downloads_empty_hint))
+            state.entries.isEmpty() -> Empty(Icons.Rounded.SearchOff, stringResource(R.string.downloads_no_match))
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 items(state.entries, key = { it.key }) { e ->
                     EntryRow(e, ::size, onOpen = { onOpenItem(e.key) }, actions, onDelete = { confirmDelete = e.key })
@@ -192,10 +197,8 @@ private fun DownloadSort.label(): Int = when (this) {
 }
 
 @Composable
-private fun Empty(text: String) {
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyLarge)
-    }
+private fun Empty(icon: ImageVector, headline: String, supporting: String? = null) {
+    StatePage { EmptyState(icon, headline, supporting = supporting, verticalPadding = it) }
 }
 
 @Composable
