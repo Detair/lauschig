@@ -647,4 +647,49 @@
     <string name="downloads_previous_confirm_title">Delete the data of %1$s?</string>
     <string name="downloads_previous_confirm_message">The downloads (%1$s) and changes of this account that are not on the server yet are deleted from this device.</string>
     <string name="downloads_previous_confirm_message_data">The changes of this account that are not on the server yet are deleted from this device.</string>
+    <string name="stats_title">Statistics</string>
+    <string name="stats_period_week">Week</string>
+    <string name="stats_period_month">Month</string>
+    <string name="stats_period_year">Year</string>
+    <string name="stats_period_all">All time</string>
+    <string name="stats_previous">Previous period</string>
+    <string name="stats_next">Next period</string>
+    <string name="stats_since">Since %1$s</string>
+    <plurals name="stats_active_days">
+        <item quantity="one">on %1$d day</item>
+        <item quantity="other">on %1$d days</item>
+    </plurals>
+    <string name="stats_period_nothing">Nothing listened in this period</string>
+    <string name="stats_tile_streak">Streak</string>
+    <string name="stats_tile_longest">Best streak</string>
+    <string name="stats_tile_finished">Finished</string>
+    <plurals name="stats_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="stats_books">
+        <item quantity="one">%1$d book</item>
+        <item quantity="other">%1$d books</item>
+    </plurals>
+    <plurals name="stats_series">
+        <item quantity="one">%1$d series</item>
+        <item quantity="other">%1$d series</item>
+    </plurals>
+    <plurals name="stats_series_volumes">
+        <item quantity="one">%1$d volume</item>
+        <item quantity="other">%1$d volumes</item>
+    </plurals>
+    <string name="stats_section_finished">Finished books</string>
+    <string name="stats_section_top_titles">Most listened</string>
+    <string name="stats_section_top_authors">Authors</string>
+    <string name="stats_section_series">Finished series</string>
+    <string name="stats_finished_earlier">earlier</string>
+    <string name="stats_unknown_title">Unknown title</string>
+    <string name="stats_empty">Nothing listened yet</string>
+    <string name="stats_empty_hint">Once you listen, you will see here how much – also offline.</string>
+    <string name="stats_unreached">The server could not be reached. Listening on other devices shows up once it is.</string>
+    <string name="stats_chart_days">Listening time per day: %1$s</string>
+    <string name="stats_chart_months">Listening time per month: %1$s</string>
+    <string name="stats_chart_years">Listening time per year: %1$s</string>
+    <string name="stats_chart_entry">%1$s %2$s</string>
 </resources>

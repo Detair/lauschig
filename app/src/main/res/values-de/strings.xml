@@ -647,4 +647,49 @@
     <string name="downloads_previous_confirm_title">Daten von %1$s löschen?</string>
     <string name="downloads_previous_confirm_message">Die Downloads (%1$s) und noch nicht übertragene Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
     <string name="downloads_previous_confirm_message_data">Die noch nicht übertragenen Änderungen dieses Kontos werden vom Gerät gelöscht.</string>
+    <string name="stats_title">Statistik</string>
+    <string name="stats_period_week">Woche</string>
+    <string name="stats_period_month">Monat</string>
+    <string name="stats_period_year">Jahr</string>
+    <string name="stats_period_all">Gesamt</string>
+    <string name="stats_previous">Vorheriger Zeitraum</string>
+    <string name="stats_next">Nächster Zeitraum</string>
+    <string name="stats_since">Seit %1$s</string>
+    <plurals name="stats_active_days">
+        <item quantity="one">an %1$d Tag</item>
+        <item quantity="other">an %1$d Tagen</item>
+    </plurals>
+    <string name="stats_period_nothing">In diesem Zeitraum nichts gehört</string>
+    <string name="stats_tile_streak">Am Stück</string>
+    <string name="stats_tile_longest">Rekord</string>
+    <string name="stats_tile_finished">Beendet</string>
+    <plurals name="stats_days">
+        <item quantity="one">%1$d Tag</item>
+        <item quantity="other">%1$d Tage</item>
+    </plurals>
+    <plurals name="stats_books">
+        <item quantity="one">%1$d Buch</item>
+        <item quantity="other">%1$d Bücher</item>
+    </plurals>
+    <plurals name="stats_series">
+        <item quantity="one">%1$d Serie</item>
+        <item quantity="other">%1$d Serien</item>
+    </plurals>
+    <plurals name="stats_series_volumes">
+        <item quantity="one">%1$d Band</item>
+        <item quantity="other">%1$d Bände</item>
+    </plurals>
+    <string name="stats_section_finished">Beendete Bücher</string>
+    <string name="stats_section_top_titles">Am meisten gehört</string>
+    <string name="stats_section_top_authors">Autorinnen und Autoren</string>
+    <string name="stats_section_series">Beendete Serien</string>
+    <string name="stats_finished_earlier">früher</string>
+    <string name="stats_unknown_title">Unbekannter Titel</string>
+    <string name="stats_empty">Noch nichts gehört</string>
+    <string name="stats_empty_hint">Sobald du hörst, siehst du hier, wie viel – auch ohne Verbindung.</string>
+    <string name="stats_unreached">Der Server war nicht erreichbar. Was auf anderen Geräten gehört wurde, kommt dazu, sobald er es ist.</string>
+    <string name="stats_chart_days">Hörzeit pro Tag: %1$s</string>
+    <string name="stats_chart_months">Hörzeit pro Monat: %1$s</string>
+    <string name="stats_chart_years">Hörzeit pro Jahr: %1$s</string>
+    <string name="stats_chart_entry">%1$s %2$s</string>
 </resources>

@@ -35,6 +35,7 @@ import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
+import io.wolftown.lauschig.ui.stats.StatsRoute
 
 /**
  * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
@@ -83,6 +84,9 @@ fun AppNavHost(
             }
         }
         composable<Cleanup> { ReadableWidth { CleanupRoute(onBack = { navController.popBackStack() }) } }
+        composable<Stats> {
+            ReadableWidth { StatsRoute(onBack = { navController.popBackStack() }, onOpenItem = { navController.navigate(ItemDetail(it)) }) }
+        }
         // Library and Search are the ListDetailPane hosts (see isPaneHost): keep them in step.
         composable<Library> { host ->
             // Wide windows: the details of a title open beside the library (see ListDetailPane).
