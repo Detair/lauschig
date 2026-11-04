@@ -1,6 +1,14 @@
 package io.wolftown.lauschig.ui.nav
 
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -45,7 +53,15 @@ fun AppNavHost(
 ) {
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
-    NavHost(navController, startDestination = startDestination, modifier = modifier) {
+    NavHost(
+        navController, startDestination = startDestination, modifier = modifier,
+        // The navigation library's own fades everywhere, except that the page under the player stays put while the
+        // player slides over it (see the Player destination).
+        enterTransition = { fadeIn(tween(DEFAULT_FADE_MS)) },
+        exitTransition = { if (targetState.destination.hasRoute<Player>()) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(DEFAULT_FADE_MS)) },
+        popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
+        popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
+    ) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }) }
         composable<Settings> {
             ReadableWidth {
@@ -106,7 +122,11 @@ fun AppNavHost(
                 onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
             )
         }
-        composable<Player> {
+        // The app's one moment of motion: the full player rises from the mini player and sinks back into it.
+        composable<Player>(
+            enterTransition = { slideInVertically(playerSlide()) { it } },
+            popExitTransition = { slideOutVertically(playerSlide()) { it } },
+        ) {
             PlayerRoute(
                 onClose = { navController.popBackStack() },
                 // The details replace the player, so "back" from them returns to where the player was opened from.
@@ -120,6 +140,15 @@ fun AppNavHost(
         }
     }
 }
+
+/** The navigation library's default cross-fade, kept for every page but the player. */
+private const val DEFAULT_FADE_MS = 700
+
+/** The player's slide: 300 ms with Material's standard easing (the system's "remove animations" makes it instant). */
+private const val PLAYER_SLIDE_MS = 300
+private val StandardEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+
+private fun <T> playerSlide() = tween<T>(PLAYER_SLIDE_MS, easing = StandardEasing)
 
 /**
  * After a sign-in. Re-auth (opened on top of the app): just go back. First setup: Setup is replaced by the user's start
