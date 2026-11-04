@@ -32,9 +32,16 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Early development (phase 1: offline core). Not usable yet.
+Version 0.3.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). What works:
 
-The design spec and phase 1 plan (German) live in [`docs/superpowers/specs/2026-10-31-lauschig-design.md`](docs/superpowers/specs/2026-10-31-lauschig-design.md) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
+- Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
+- Browsing by series, authors, narrators, genres, tags and collections; podcasts; search; single sign-on (OIDC).
+- Player with chapters, per-title speed and volume boost, sleep timer, bookmarks, listening history and a queue;
+  books and folders that exist only on the device.
+- Android Auto, voice search, a home-screen widget, links from the Audiobookshelf web app, phone and tablet layouts.
+- Listening statistics, achievements and a year in review, computed on the device.
+
+The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
 ## Tech
 
