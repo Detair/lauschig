@@ -147,6 +147,22 @@ class StatsScreenTest {
     }
 
     @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h1600dp-mdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun tiles_shareOneLine_andAreNoTallerThanTheirText() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        val tiles = listOf("tileStreak", "tileLongest", "tileFinished").map { tag ->
+            val node = rule.onNodeWithTag(tag).fetchSemanticsNode()
+            val texts = rule.onAllNodes(hasAnyAncestor(hasTestTag(tag)) and hasTextExactly(), useUnmergedTree = true).fetchSemanticsNodes()
+            val textBottom = texts.maxOf { it.positionInRoot.y + it.size.height }
+            // Below the last line only the tile's own padding (12 dp; 1 px = 1 dp here).
+            assertTrue("$tag: ${node.positionInRoot.y + node.size.height - textBottom} px below its text", node.positionInRoot.y + node.size.height - textBottom <= 12.5f)
+            node.positionInRoot.y
+        }
+        assertEquals(1, tiles.distinct().size)
+    }
+
+    @Test
     @Config(sdk = [35], qualifiers = "w360dp-h800dp", fontScale = 2.0f)
     @GraphicsMode(GraphicsMode.Mode.NATIVE) // real text measuring
     fun atDoubleFontSize_nothingIsCutOff() {

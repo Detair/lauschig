@@ -3,10 +3,7 @@ package io.wolftown.lauschig.ui.stats
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -280,29 +279,46 @@ private fun PeriodChart(summary: PeriodSummary, modifier: Modifier = Modifier) {
     BarChart(bars.map { it.seconds }, bars.indexOfFirst { it.current }.takeIf { it >= 0 }, description, modifier, labels = labels)
 }
 
-/**
- * The streak now, the longest one and the books finished in the period, side by side; a tile that would have to break
- * its words (large text) moves to the next line, and the tiles of a line share its width and height.
- */
-@OptIn(ExperimentalLayoutApi::class)
+/** The streak now, the longest one and the books finished in the period. */
 @Composable
 private fun Tiles(state: StatsUiState, modifier: Modifier = Modifier) {
-    FlowRow(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
-        verticalArrangement = Arrangement.spacedBy(Spacing.s),
-        maxItemsInEachRow = 3,
-    ) {
+    TileLine(modifier.fillMaxWidth()) {
         val books = state.finished.size
-        val tile = Modifier.weight(1f).fillMaxRowHeight()
-        Tile(R.string.stats_tile_streak, pluralStringResource(R.plurals.stats_days, state.streaks.current, state.streaks.current), tile.testTag("tileStreak"))
-        Tile(R.string.stats_tile_longest, pluralStringResource(R.plurals.stats_days, state.streaks.longest, state.streaks.longest), tile.testTag("tileLongest"))
+        Tile(R.string.stats_tile_streak, pluralStringResource(R.plurals.stats_days, state.streaks.current, state.streaks.current), Modifier.testTag("tileStreak"))
+        Tile(R.string.stats_tile_longest, pluralStringResource(R.plurals.stats_days, state.streaks.longest, state.streaks.longest), Modifier.testTag("tileLongest"))
         // All time also counts the finished series (they have no date, so no other period does).
         val series = state.finishedSeries.size.takeIf { state.period == StatsPeriod.ALL }
         Tile(
-            R.string.stats_tile_finished, pluralStringResource(R.plurals.stats_books, books, books), tile.testTag("tileFinished"),
+            R.string.stats_tile_finished, pluralStringResource(R.plurals.stats_books, books, books), Modifier.testTag("tileFinished"),
             extra = series?.let { pluralStringResource(R.plurals.stats_series, it, it) },
         )
+    }
+}
+
+/**
+ * The tiles side by side in equal widths and one height – unless a tile would have to break a word there (large text,
+ * narrow window): then each takes the full width, one below the other.
+ */
+@Composable
+private fun TileLine(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { measurables, constraints ->
+        val gap = Spacing.s.roundToPx()
+        val width = constraints.maxWidth
+        val share = ((width - gap * (measurables.size - 1)) / measurables.size.coerceAtLeast(1)).coerceAtLeast(0)
+        // The min intrinsic width is the widest word (plus padding): what cannot wrap any further.
+        val sideBySide = measurables.all { it.minIntrinsicWidth(Constraints.Infinity) <= share }
+        if (sideBySide) {
+            val height = measurables.maxOf { it.minIntrinsicHeight(share) }
+            val placeables = measurables.map { it.measure(Constraints.fixed(share, height)) }
+            layout(width, height) { placeables.forEachIndexed { i, p -> p.placeRelative(i * (share + gap), 0) } }
+        } else {
+            val placeables = measurables.map { it.measure(Constraints(minWidth = width, maxWidth = width)) }
+            val height = placeables.sumOf { it.height } + gap * (placeables.size - 1).coerceAtLeast(0)
+            layout(width, height) {
+                var y = 0
+                placeables.forEach { p -> p.placeRelative(0, y); y += p.height + gap }
+            }
+        }
     }
 }
 
