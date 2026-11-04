@@ -56,14 +56,6 @@ class SyncWorker @AssistedInject constructor(
         } catch (_: Exception) {
             // Best effort: the cached collections stay, the next run tries again.
         }
-        try {
-            // After the progress sync, so the sessions this device just uploaded come back with the server's.
-            listeningSync.syncIfDue(serverId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Best effort: the statistics keep their cache, the next run tries again.
-        }
         if (ok) {
             try {
                 autoDownloader.run(serverId)
@@ -72,6 +64,15 @@ class SyncWorker @AssistedInject constructor(
             } catch (_: Exception) {
                 // Best effort: the next successful sync tries again.
             }
+        }
+        try {
+            // Last: a long first run of the statistics must not hold back new episodes. After the progress sync, so
+            // the sessions this device just uploaded are on the server when the newest ones are read.
+            listeningSync.syncIfDue(serverId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Best effort: the statistics keep their cache, the next run tries again.
         }
         return if (ok) Result.success() else Result.retry()
     }
