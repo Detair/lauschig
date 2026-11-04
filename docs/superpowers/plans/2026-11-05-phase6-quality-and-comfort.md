@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, and optional auto-cleanup of completed downloads.
+**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, and dynamic speech compression.
 
 **Branch:** `phase-6` (branched from `main` after PR #16 / Phase 5C).
 
@@ -20,6 +20,7 @@
 | **Automatisches Aufräumen beendeter Titel** | Beendete Downloads verbleiben auf dem Gerät, bis man manuell aufräumt. | Einstellung `autoDeleteFinished`: *Nie (Standard)*, *Sofort*, *Nach 3 Tagen*, *Nach 7 Tagen*. Ausführung im Hintergrund durch `CleanupWorker` bzw. nach Abschluss eines Buchs. |
 | **Warmes Nacht-Farbschema** | Das aktuelle Dark-Theme nutzt kühles Nachtblau (`#18213A`), was nachts im Bett blendet und die Augen reizt. | Warmes Farb-Preset *„Kaminfeuer & Bernstein“*: Warmes Mokka-Anthrazit (`#161311`), samtweiches Creme-Weiß (`#F4ECE1`) und warmer Honig-Bernstein-Akzent (`#F5BA42`). Wählbar in den Einstellungen unter *Erscheinungsbild*. |
 | **Player-Tastenleiste** | Das alte 4+3 Raster ist unruhig; Sleep-Timer und Tempo waren isoliert uneinheitlich. | **Entscheidung Fabian (2026-11-04): Variante B.** Drei symmetrische Regler oben (`[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`) plus ein großzügiges horizontales Auszieh-Banner für Inhalte (`Kapitel, Warteschlange & Notizen`). Jeder Button besitzt dieselbe Anatomie (Icon + Name + Wert). |
+| **Dynamik-Kompressor & Sprachfokus** | Ältere Hörspiele haben teils extreme Lautstärkesprünge (Flüstern vs. laute Soundeffekte/Musik), was nachts im Bett aufschreckt. | Sanfter Nacht-Kompressor via Androids `DynamicsProcessing` (ab API 28 / minSdk). Begrenzt laute Pegelspitzen und hebt leise Sprache verständlich an. Ein/Aus-Schalter im [🎙️ Klang]-Sheet. |
 
 ---
 
@@ -127,6 +128,19 @@
   - `colorSchemeFor(dark, pureBlack, tone)` bindet die warme Farbpalette ein.
   - UI-Auswahl in `AppearanceSection`.
   - Tests: `ColorSchemeTest`, `AppearanceSectionTest`.
+
+---
+
+### Task 8: Audio-Dynamikkompressor & Sprachfokus (Nachtmodus-Klang)
+- [ ] **8.1 Kompressor-Engine in `PlaybackComfort`:**
+  - `android.media.audiofx.DynamicsProcessing` (ab Android 9 / API 28, exakt Lauschigs `minSdk`).
+  - Sanfter Single-Band / MBC-Kompressor mit Limiter (sanfter Anlauf, dämpft laute Soundeffekte/Musik und hebt leises Flüstern an).
+  - Klasse `AudioCompressor`: bindet sich wie `AudioBoost` an `exo.audioSessionId`.
+  - Tests: Aktivierung, Deaktivierung, Session-ID-Wechsel, sauberes Release ohne Memory Leaks.
+- [ ] **8.2 Settings & UI im [🎙️ KLANG]-Sheet:**
+  - `PlaybackSettings`: `val speechCompressor: Flow<Boolean>` (Default `false`).
+  - Schalter im `Klang`-Sheet (Button `[🎙️ KLANG]`): *„Sprachfokus & Nacht-Kompression“* (Untertitel: *„Dämpft laute Geräusche und hebt leise Stimmen an – ideal zum Einschlafen“*).
+  - Tests: `PlaybackSettingsTest`, `ComfortViewModelTest`.
 
 ---
 
