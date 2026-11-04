@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, and dynamic speech compression.
+**Goal:** Implement the post-Phase-5 quality, performance, and user-comfort improvements identified during the project review: configurable asymmetric seek intervals, consistent player buttons (Variant B), search facet caching, sleep timer audio warning, external storage (SD card) support, family support diagnostic log sharing, optional auto-cleanup of completed downloads, a warm night theme, dynamic speech compression, and core performance optimizations (Coil disk cache, Room database indexes, recomposition throttling).
 
 **Branch:** `phase-6` (branched from `main` after PR #16 / Phase 5C).
 
@@ -21,6 +21,7 @@
 | **Warmes Nacht-Farbschema** | Das aktuelle Dark-Theme nutzt kühles Nachtblau (`#18213A`), was nachts im Bett blendet und die Augen reizt. | Warmes Farb-Preset *„Kaminfeuer & Bernstein“*: Warmes Mokka-Anthrazit (`#161311`), samtweiches Creme-Weiß (`#F4ECE1`) und warmer Honig-Bernstein-Akzent (`#F5BA42`). Wählbar in den Einstellungen unter *Erscheinungsbild*. |
 | **Player-Tastenleiste** | Das alte 4+3 Raster ist unruhig; Sleep-Timer und Tempo waren isoliert uneinheitlich. | **Entscheidung Fabian (2026-11-04): Variante B.** Drei symmetrische Regler oben (`[⚡ Tempo / 1.25×]`, `[🌙 Sleep / 30 Min.]`, `[🎙️ Klang / +3 dB]`) plus ein großzügiges horizontales Auszieh-Banner für Inhalte (`Kapitel, Warteschlange & Notizen`). Jeder Button besitzt dieselbe Anatomie (Icon + Name + Wert). |
 | **Dynamik-Kompressor & Sprachfokus** | Ältere Hörspiele haben teils extreme Lautstärkesprünge (Flüstern vs. laute Soundeffekte/Musik), was nachts im Bett aufschreckt. | Sanfter Nacht-Kompressor via Androids `DynamicsProcessing` (ab API 28 / minSdk). Begrenzt laute Pegelspitzen und hebt leise Sprache verständlich an. Ein/Aus-Schalter im [🎙️ Klang]-Sheet. |
+| **Performance: Caching & Indizes** | Coil hat keinen DiskCache (Cover werden nach Neustart neu geladen); Room-Queries machen Full Table Scans; Recomposition-Spikes bei Playback-Ticks. | (1) 150 MB Coil DiskCache in `context.cacheDir`. (2) Compound-Indizes auf `progress(serverId, isFinished, lastUpdate)`, `downloads(serverId, state)` und `items(serverId, seriesName, seriesSortKey)`. (3) Throttling von `observeAll`-Listen während Playback. |
 
 ---
 
@@ -141,6 +142,24 @@
   - `PlaybackSettings`: `val speechCompressor: Flow<Boolean>` (Default `false`).
   - Schalter im `Klang`-Sheet (Button `[🎙️ KLANG]`): *„Sprachfokus & Nacht-Kompression“* (Untertitel: *„Dämpft laute Geräusche und hebt leise Stimmen an – ideal zum Einschlafen“*).
   - Tests: `PlaybackSettingsTest`, `ComfortViewModelTest`.
+
+---
+
+### Task 9: Performance, Caching & Room-Indizes
+- [ ] **9.1 Coil 3 DiskCache:**
+  - `newCoverImageLoader` in `CoverImageLoader.kt` erweitern:
+    - `.diskCache { DiskCache.Builder().directory(context.cacheDir.resolve("coil_covers")).maxSizeBytes(150L * 1024 * 1024).build() }`
+  - Cover laden offline und nach App-Neustart sofort aus dem lokalen Speicher, ohne Netzwerk-Roundtrips.
+  - Tests: `CoverImageLoaderTest` (Verifizieren, dass DiskCache initialisiert ist).
+- [ ] **9.2 Room Compound-Indizes:**
+  - `ProgressEntity`: `@Index(value = ["serverId", "isFinished", "lastUpdate"])`
+  - `DownloadEntity`: `@Index(value = ["serverId", "state"])`
+  - `ItemEntity`: `@Index(value = ["serverId", "seriesName", "seriesSortKey"])`
+  - DB-Version anpassen (AutoMigration von v10 auf v11).
+  - Tests: `DatabaseTest`, Schema-Export verifizieren.
+- [ ] **9.3 Recomposition & Playback-Throttling:**
+  - `LibraryViewModel`: `progressDao.observeAll(sid)` während aktiver Wiedergabe leicht throttlen/debouncen (`debounce(1_500L)`), damit nicht jeder Sekunden-Tick des Players die gesamte Bibliotheksliste neu berechnet.
+  - Tests: Recomposition- und Emissions-Zähler in `LibraryViewModelTest`.
 
 ---
 
