@@ -96,6 +96,16 @@ class StartScreenTest {
     }
 
     @Test
+    @Config(sdk = [35], qualifiers = "de")
+    fun hero_german_saysWhatIsLeft() {
+        val state = StartUiState(continueItems = listOf(summary("a", "Book A").copy(remainingSec = 51 * 60.0 + 20)))
+        rule.setContent { LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}) } }
+        rule.onNodeWithTag("heroLeft", useUnmergedTree = true).assertTextEquals("noch 51 Min.")
+        rule.onNodeWithText("Weiterhören").assertIsDisplayed()
+        rule.onNodeWithText("Alle").assertIsDisplayed()
+    }
+
+    @Test
     fun hero_showsPause_whileItsTitlePlays() {
         val state = StartUiState(continueItems = listOf(summary("a", "Book A")))
         rule.setContent { LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}, playingId = "a") } }
