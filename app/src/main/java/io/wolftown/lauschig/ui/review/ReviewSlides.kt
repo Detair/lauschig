@@ -91,7 +91,7 @@ val ReviewSlide.leadItemId: String?
     get() = when (this) {
         is ReviewSlide.TopTitles -> titles.firstOrNull()?.itemId
         is ReviewSlide.TopPeople -> authorItemId
-        is ReviewSlide.Finished -> last.itemId
+        is ReviewSlide.Finished -> last?.itemId ?: seriesItemId
         else -> null
     }
 
@@ -152,8 +152,31 @@ private fun timeFormat(): DateTimeFormatter = DateTimeFormatter.ofLocalizedTime(
 
 // --- the words of each slide (shown and spoken) -----------------------------------------------------------------------
 
+/** A slide's big number as shown (grouped in the app's locale: „1.234“) – and as spoken. */
+@Composable
+private fun countText(n: Int): String {
+    val locale = appLocale()
+    return remember(locale) { NumberFormat.getIntegerInstance(locale) }.format(n)
+}
+
 @Composable
 private fun hoursUnit(sec: Double): String = hours(sec).let { pluralStringResource(R.plurals.review_hours_listened, it, it) }
+
+/** „mit 12 Titeln“; null without a title the server still names. */
+@Composable
+private fun titlesLine(s: ReviewSlide.Opening): String? =
+    s.titles.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.review_titles, it, it) }
+
+/** The Finished slide's big number: its books, or – when only a series was completed – the series. */
+private fun ReviewSlide.Finished.leadCount(): Int = if (books > 0) books else series
+
+@Composable
+private fun finishedUnit(s: ReviewSlide.Finished): String =
+    if (s.books > 0) pluralStringResource(R.plurals.review_books_unit, s.books) else pluralStringResource(R.plurals.review_series_unit, s.series)
+
+/** „und 2 Erfolge mehr“ under the six shown; null when all are shown. */
+@Composable
+private fun moreLine(s: ReviewSlide.Achieved): String? = s.more.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.review_achievements_more, it, it) }
 
 @Composable
 private fun streakLine(s: ReviewSlide.Days): String? =
@@ -187,9 +210,10 @@ private fun titleName(title: String?): String = title ?: stringResource(R.string
 private fun narratorLine(s: ReviewSlide.TopPeople): String? =
     s.narrator?.let { stringResource(R.string.review_narrator, it.name, statsDuration(it.seconds)) }
 
+/** „und 1 Serie komplett“ under the books; null without a series, or when the series are the big number. */
 @Composable
 private fun seriesLine(s: ReviewSlide.Finished): String? =
-    s.series.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.review_series_completed, it, it) }
+    s.series.takeIf { it > 0 && s.books > 0 }?.let { pluralStringResource(R.plurals.review_series_completed, it, it) }
 
 @Composable
 private fun bookLine(label: Int?, book: FinishedBook): String {
@@ -198,11 +222,14 @@ private fun bookLine(label: Int?, book: FinishedBook): String {
     return if (label == null) stringResource(R.string.review_book_only, name, day) else stringResource(label, name, day)
 }
 
-/** The first and the last finished book, labelled; one line for a single book. */
+/** The first and the last finished book, labelled; one line for a single book, none without a dated book. */
 @Composable
-private fun bookLines(s: ReviewSlide.Finished): List<Pair<FinishedBook, String>> =
-    if (s.first.itemId == s.last.itemId) listOf(s.first to bookLine(null, s.first))
-    else listOf(s.first to bookLine(R.string.review_book_first, s.first), s.last to bookLine(R.string.review_book_last, s.last))
+private fun bookLines(s: ReviewSlide.Finished): List<Pair<FinishedBook, String>> {
+    val first = s.first ?: return emptyList()
+    val last = s.last ?: first
+    return if (first.itemId == last.itemId) listOf(first to bookLine(null, first))
+    else listOf(first to bookLine(R.string.review_book_first, first), last to bookLine(R.string.review_book_last, last))
+}
 
 @Composable
 fun listenerTypeName(type: ListenerType): String = stringResource(
@@ -223,7 +250,7 @@ private fun ListenerType.icon(): ImageVector = when (this) {
     ListenerType.MARATHON -> Icons.AutoMirrored.Rounded.DirectionsRun
 }
 
-/** Why this type, in one line; its numbers and windows come from the rule ([YearReview]). */
+/** Why this type, in one line; its numbers and windows come from the rules ([YearReview], [Achievements]). */
 @Composable
 private fun whyLine(s: ReviewSlide.Personality): String {
     val share = percent(s.share)
@@ -231,8 +258,8 @@ private fun whyLine(s: ReviewSlide.Personality): String {
     fun time(t: LocalTime) = t.format(format)
     val or = stringResource(R.string.achievement_or)
     return when (s.type) {
-        ListenerType.NIGHT_OWL -> stringResource(R.string.review_why_window, share, time(YearReview.NIGHT.first), time(YearReview.NIGHT.second))
-        ListenerType.EARLY_BIRD -> stringResource(R.string.review_why_window, share, time(YearReview.EARLY.first), time(YearReview.EARLY.second))
+        ListenerType.NIGHT_OWL -> Achievements.NIGHT_WINDOW.let { stringResource(R.string.review_why_window, share, time(it.first), time(it.second)) }
+        ListenerType.EARLY_BIRD -> Achievements.EARLY_WINDOW.let { stringResource(R.string.review_why_window, share, time(it.first), time(it.second)) }
         ListenerType.COMMUTER -> stringResource(
             R.string.review_why_commuter, share,
             Achievements.COMMUTE_WINDOWS.joinToString(" $or ") { "${time(it.first)}–${time(it.second)}" },
@@ -266,14 +293,14 @@ fun reviewSlideDescription(slide: ReviewSlide): String = when (slide) {
     is ReviewSlide.Opening -> sentences(
         listOf(
             stringResource(R.string.review_opening_title, slide.year),
-            "${hours(slide.totalSec)} ${hoursUnit(slide.totalSec)}, ${pluralStringResource(R.plurals.review_titles, slide.titles, slide.titles)}",
+            "${countText(hours(slide.totalSec))} ${hoursUnit(slide.totalSec)}" + (titlesLine(slide)?.let { ", $it" } ?: ""),
             if (slide.incomplete) stringResource(R.string.review_incomplete) else null,
         ),
     )
     is ReviewSlide.Days -> sentences(
         listOf(
             stringResource(R.string.review_days_title),
-            "${slide.activeDays} ${pluralStringResource(R.plurals.review_days_unit, slide.activeDays)}",
+            "${countText(slide.activeDays)} ${pluralStringResource(R.plurals.review_days_unit, slide.activeDays)}",
             streakLine(slide),
         ),
     )
@@ -295,14 +322,14 @@ fun reviewSlideDescription(slide: ReviewSlide): String = when (slide) {
     is ReviewSlide.Finished -> sentences(
         listOf(
             stringResource(R.string.review_finished_title),
-            "${slide.books} ${pluralStringResource(R.plurals.review_books_unit, slide.books)}" + (seriesLine(slide)?.let { " $it" } ?: ""),
+            "${countText(slide.leadCount())} ${finishedUnit(slide)}" + (seriesLine(slide)?.let { " $it" } ?: ""),
         ) + bookLines(slide).map { it.second },
     )
     is ReviewSlide.Achieved -> sentences(
         listOf(
             stringResource(R.string.review_achievements_title, slide.year),
-            "${slide.tiers} ${pluralStringResource(R.plurals.review_achievements_unit, slide.tiers)}",
-            slide.shown.map { achievementName(it.achievement, it.tier) }.joinToString(", "),
+            "${countText(slide.count)} ${pluralStringResource(R.plurals.review_achievements_unit, slide.count)}",
+            slide.shown.map { achievementName(it.achievement, it.tier) }.joinToString(", ") + (moreLine(slide)?.let { " $it" } ?: ""),
         ),
     )
     is ReviewSlide.Personality -> sentences(listOf(stringResource(R.string.review_type_title), listenerTypeName(slide.type), whyLine(slide)))
@@ -346,11 +373,9 @@ private fun BigNumber(value: Int, entrance: Boolean) {
     LaunchedEffect(value) {
         if (entrance) shown.animateTo(value.toFloat(), tween(COUNT_UP_MS, easing = FastOutSlowInEasing)) else shown.snapTo(value.toFloat())
     }
-    val locale = appLocale()
-    val format = remember(locale) { NumberFormat.getIntegerInstance(locale) }
     val style = MaterialTheme.typography.displayLarge.merge(Tabular).copy(fontWeight = FontWeight.SemiBold)
     Text(
-        format.format(shown.value.roundToInt()),
+        countText(shown.value.roundToInt()),
         style = style,
         maxLines = 1,
         autoSize = TextAutoSize.StepBased(minFontSize = 28.sp, maxFontSize = style.fontSize * 1.4f, stepSize = 2.sp),
@@ -381,7 +406,7 @@ private fun Opening(s: ReviewSlide.Opening, entrance: Boolean) {
     Overline(stringResource(R.string.review_opening_title, s.year))
     BigNumber(hours(s.totalSec), entrance)
     Text(hoursUnit(s.totalSec), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-    Line(pluralStringResource(R.plurals.review_titles, s.titles, s.titles), Modifier.padding(top = Spacing.s))
+    titlesLine(s)?.let { Line(it, Modifier.padding(top = Spacing.s)) }
     if (s.incomplete) {
         // Said plainly on the first slide: the numbers may still grow.
         Surface(
@@ -503,11 +528,12 @@ private fun TopPeople(s: ReviewSlide.TopPeople, covers: Map<String, ReviewCover>
 @Composable
 private fun Finished(s: ReviewSlide.Finished, covers: Map<String, ReviewCover>, entrance: Boolean) {
     Overline(stringResource(R.string.review_finished_title))
-    BigNumber(s.books, entrance)
-    Text(pluralStringResource(R.plurals.review_books_unit, s.books), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+    BigNumber(s.leadCount(), entrance)
+    Text(finishedUnit(s), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
     seriesLine(s)?.let { Line(it) }
-    Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
-        bookLines(s).forEach { (book, line) ->
+    val books = bookLines(s)
+    if (books.isNotEmpty()) Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+        books.forEach { (book, line) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CoverArt(reviewCoverModel(book.itemId, covers), titleName(book.title), Modifier.size(56.dp), initialsStyle = MaterialTheme.typography.labelLarge)
                 Text(line, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Spacing.m))
@@ -519,8 +545,8 @@ private fun Finished(s: ReviewSlide.Finished, covers: Map<String, ReviewCover>, 
 @Composable
 private fun Achieved(s: ReviewSlide.Achieved, entrance: Boolean) {
     Overline(stringResource(R.string.review_achievements_title, s.year))
-    BigNumber(s.tiers, entrance)
-    Text(pluralStringResource(R.plurals.review_achievements_unit, s.tiers), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+    BigNumber(s.count, entrance)
+    Text(pluralStringResource(R.plurals.review_achievements_unit, s.count), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
     val columns = if (wide()) 3 else 2
     Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(top = Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
         s.shown.chunked(columns).forEach { row ->
@@ -538,6 +564,7 @@ private fun Achieved(s: ReviewSlide.Achieved, entrance: Boolean) {
             }
         }
     }
+    moreLine(s)?.let { Line(it, Modifier.padding(top = Spacing.m)) }
 }
 
 @Composable

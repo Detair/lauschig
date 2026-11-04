@@ -47,16 +47,22 @@ class YearReviewTest {
 
     // --- the review as a whole --------------------------------------------------------------------------------------
 
-    @Test fun belowAnHour_thereIsNoReview_fromAnHourOnlyTheOpeningAndTheClosing() {
+    @Test fun belowAnHour_thereIsNoReview_fromAnHourTheOpening_theAuthor_andTheClosing() {
         assertNull(build(listOf(stat("2026-03-01T10:00", hour - 1))))
         assertNull(build(emptyList()))
         val thin = build(listOf(stat("2026-03-01T10:00", hour)))!!
-        // One day, one title: no days, rhythm, people (an hour is enough for them, but not for a pattern) …
-        assertEquals(
-            listOf(ReviewSlide.Opening::class, ReviewSlide.TopTitles::class, ReviewSlide.TopPeople::class, ReviewSlide.Closing::class),
-            thin.kinds(),
-        )
+        // One day, one title: no days or rhythm (one day), no top titles (one title would only repeat the opening and the
+        // closing), no pattern; the author has their half hour.
+        assertEquals(listOf(ReviewSlide.Opening::class, ReviewSlide.TopPeople::class, ReviewSlide.Closing::class), thin.kinds())
         assertEquals(ReviewSlide.Opening(2026, hour, 1, incomplete = false), thin.slides.first())
+        assertEquals("li_1", (thin.slides.last() as ReviewSlide.Closing).topTitle?.itemId)
+    }
+
+    @Test fun sessionsTheServerNoLongerNames_countNoTitles_andNoTopTitles() {
+        val unnamed = build(listOf(stat("2026-03-01T10:00", hour, item = "", title = null)))!!
+        assertEquals(0, (unnamed.slides.first() as ReviewSlide.Opening).titles)
+        assertNull(unnamed.slide<ReviewSlide.TopTitles>())
+        assertEquals(YearReview.OPENING_TITLE_SEC, ListeningStats.ACTIVE_DAY_SEC, 0.0)
     }
 
     @Test fun aSessionBelongsToTheYearOfItsLocalStartDay_inTheDeviceZone() {
@@ -71,8 +77,22 @@ class YearReviewTest {
         assertNull(build(listOf(eve, newYear), 2027, zone = ZoneOffset.UTC))
     }
 
+    @Test fun aYearBoundsAreLocal_alsoWhereDaylightSavingIsOnAtNewYear_andADstDayIsOneDay() {
+        // Sydney is on summer time (UTC+11) at New Year: 00:30 on 1 January 2027 is 13:30 UTC on 31 December.
+        val sydney = ZoneId.of("Australia/Sydney")
+        val newYear = stat("2027-01-01T00:30", 2 * hour, startMs = at("2027-01-01T00:30", sydney))
+        assertNull(build(listOf(newYear), 2026, zone = sydney))
+        assertEquals(2 * hour, (build(listOf(newYear), 2027, zone = sydney)!!.slides.first() as ReviewSlide.Opening).totalSec, 0.0)
+        assertEquals(2 * hour, (build(listOf(newYear), 2026, zone = ZoneOffset.UTC)!!.slides.first() as ReviewSlide.Opening).totalSec, 0.0)
+        // Berlin's spring-forward day (29 March, 23 hours) and the autumn one (25 October, 25 hours) are one day each.
+        val dst = listOf("2026-03-28T23:30", "2026-03-29T01:30", "2026-03-29T03:30", "2026-03-30T00:30", "2026-10-25T02:30", "2026-10-25T23:30")
+            .map { stat(it, 1200.0) }
+        val days = build(dst)!!.slide<ReviewSlide.Days>()!!
+        assertEquals(ReviewSlide.Days(activeDays = 4, longestStreak = 3, streakEnd = d("2026-03-30")), days)
+    }
+
     @Test fun theSlidesComeInTheirFixedOrder_whenEveryOneHasData() {
-        val sessions = daily("2026-03-02", 10, 2 * hour, time = "23:00", item = "li_a", author = "Anna") +
+        val sessions = daily("2026-03-02", 10, 2 * hour, time = "01:00", item = "li_a", author = "Anna") +
             daily("2026-06-01", 3, hour, time = "10:00", item = "li_b", author = "Ben")
         val finished = listOf(FinishedBook("li_a", "A", "Anna", d("2026-03-11"), finishedAt = at("2026-03-11T23:50")))
         val hours = AchievementState(Achievement.HOURS, listOf(d("2026-03-02"), d("2026-03-06")), 23 * hour)
@@ -113,6 +133,17 @@ class YearReviewTest {
     }
 
     // --- rhythm -----------------------------------------------------------------------------------------------------
+
+    @Test fun rhythm_needsTheDaysSlidesThreeDays_noRhythmOfTwoSessions() {
+        // An hour in March and two in October, on two days: no days slide, so no rhythm either.
+        val two = build(listOf(stat("2026-03-02T10:00", hour), stat("2026-10-05T10:00", hour), stat("2026-10-05T18:00", hour)))!!
+        assertNull(two.slide<ReviewSlide.Days>())
+        assertNull(two.slide<ReviewSlide.Rhythm>())
+        // A third day brings both.
+        val three = build(listOf(stat("2026-03-02T10:00", hour), stat("2026-10-05T10:00", hour), stat("2026-10-06T18:00", hour)))!!
+        assertNotNull(three.slide<ReviewSlide.Days>())
+        assertEquals(Month.OCTOBER, three.slide<ReviewSlide.Rhythm>()!!.topMonth)
+    }
 
     @Test fun rhythm_needsTwoMonths_andAnHourInTheStrongest_noTopMonthOfTwoMinutes() {
         // All in one month: no "top month".
@@ -155,9 +186,31 @@ class YearReviewTest {
         // The same at the weekend is no commute: the morning wins as a part of the day.
         val weekend = (0 until 5).map { stat("${d("2026-03-07").plusDays(7L * it)}T07:30", 2400.0) } + stat("2026-04-01T21:00", 120.0)
         assertEquals(ListeningTime.MORNING, build(weekend)!!.slide<ReviewSlide.Rhythm>()!!.time)
-        // Night: from 22:00 to 5:00.
-        val nights = (0 until 5).map { stat("${d("2026-03-02").plusDays(it.toLong())}T04:59", 1200.0) } + stat("2026-04-01T21:00", 120.0)
+        // Night: the night owl's hours, midnight to 4:00.
+        val nights = (0 until 5).map { stat("${d("2026-03-02").plusDays(it.toLong())}T03:59", 1200.0) } + stat("2026-04-01T21:00", 120.0)
         assertEquals(ListeningTime.NIGHT, build(nights)!!.slide<ReviewSlide.Rhythm>()!!.time)
+    }
+
+    @Test fun theRhythmsWords_andTheTypes_useTheAchievementsWindows_oneStoryForOneHour() {
+        assertEquals(Achievements.NIGHT_WINDOW, YearReview.DAY_PARTS.single { it.first == ListeningTime.NIGHT }.second)
+        assertEquals(Achievements.EARLY_WINDOW.first, YearReview.DAY_PARTS.single { it.first == ListeningTime.MORNING }.second.first)
+        fun at(time: String) = build(daily("2026-03-02", 5, hour, time = time) + stat("2026-04-01T13:00", 120.0))!!
+        // 4:30: the early bird's hour – "mostly in the morning" and an early bird, never "at night".
+        val early = at("04:30")
+        assertEquals(ListeningTime.MORNING, early.slide<ReviewSlide.Rhythm>()!!.time)
+        assertEquals(ListenerType.EARLY_BIRD, early.slide<ReviewSlide.Personality>()!!.type)
+        // 1:00: night on both slides.
+        val night = at("01:00")
+        assertEquals(ListeningTime.NIGHT, night.slide<ReviewSlide.Rhythm>()!!.time)
+        assertEquals(ListenerType.NIGHT_OWL, night.slide<ReviewSlide.Personality>()!!.type)
+        // 23:00: the evening – and no night owl (the achievement counts from midnight too).
+        val late = at("23:00")
+        assertEquals(ListeningTime.EVENING, late.slide<ReviewSlide.Rhythm>()!!.time)
+        assertNull(late.slide<ReviewSlide.Personality>())
+        // 6:30 on weekdays: the commute (with the achievement's windows), not the early bird.
+        val commute = at("06:30")
+        assertEquals(ListeningTime.COMMUTE_MORNING, commute.slide<ReviewSlide.Rhythm>()!!.time)
+        assertEquals(ListenerType.COMMUTER, commute.slide<ReviewSlide.Personality>()!!.type)
     }
 
     private fun localHour(s: StatSession) = java.time.Instant.ofEpochMilli(s.startedAt).atZone(berlin).hour
@@ -218,8 +271,9 @@ class YearReviewTest {
         val series = listOf(vol("li_2", "1"), vol("li_5", "2"))
         val oldSeries = listOf(vol("li_4", "1"), vol("li_1", "2")).map { it.copy(seriesName = "Old") }
         val review = build(sessions, finished = listOf(last, middle, first, lastYear, undated), groups = listOf(series, oldSeries))!!
-        // The undated book counts for its series (as the achievement dates it), not as a book of the year.
-        assertEquals(ReviewSlide.Finished(books = 3, series = 2, first = first, last = last), review.slide<ReviewSlide.Finished>())
+        // The undated book counts for its series (as the achievement dates it), not as a book of the year; the series
+        // completed last ends with "Two" (3 November).
+        assertEquals(ReviewSlide.Finished(books = 3, series = 2, first = first, last = last, seriesItemId = "li_2"), review.slide<ReviewSlide.Finished>())
 
         val one = build(sessions, finished = listOf(middle))!!.slide<ReviewSlide.Finished>()!!
         assertEquals(middle, one.first)
@@ -227,9 +281,21 @@ class YearReviewTest {
         assertNull(build(sessions, finished = listOf(lastYear, undated))!!.slide<ReviewSlide.Finished>())
     }
 
+    @Test fun finished_aSeriesCompletedByProgressDatedBooksAlone_stillHasItsSlide() {
+        val sessions = listOf(stat("2026-02-01T10:00", 2 * hour))
+        val vol = { id: String, n: String -> ItemEntity("srv", id, "lib", id, seriesName = "S", seriesSequence = n, seriesSortKey = n.toDouble()) }
+        val one = FinishedBook("v1", "Eins", null, null, progressDay = d("2026-04-01"))
+        val two = FinishedBook("v2", "Zwei", null, null, progressDay = d("2026-06-01"))
+        val slide = build(sessions, finished = listOf(one, two), groups = listOf(listOf(vol("v1", "1"), vol("v2", "2"))))!!.slide<ReviewSlide.Finished>()
+        assertEquals(ReviewSlide.Finished(books = 0, series = 1, first = null, last = null, seriesItemId = "v2"), slide)
+        // A volume without any day: the series has no day, so no year.
+        val dayless = FinishedBook("v2", "Zwei", null, null, progressDay = null)
+        assertNull(build(sessions, finished = listOf(one, dayless), groups = listOf(listOf(vol("v1", "1"), vol("v2", "2"))))!!.slide<ReviewSlide.Finished>())
+    }
+
     // --- achievements -----------------------------------------------------------------------------------------------
 
-    @Test fun achieved_theTiersOfTheYear_eachAchievementOnce_newestFirst_sixAtMost() {
+    @Test fun achieved_theAchievementsOfTheYear_eachOnceAtItsHighestTier_newestFirst_sixShown() {
         val states = listOf(
             AchievementState(Achievement.HOURS, listOf(d("2025-12-01"), d("2026-02-01"), d("2026-08-01")), 60 * hour),
             AchievementState(Achievement.STREAK, listOf(d("2026-03-01")), 3.0),
@@ -242,8 +308,10 @@ class YearReviewTest {
             AchievementState(Achievement.GENRES, emptyList(), 2.0),
         )
         val achieved = build(listOf(stat("2026-02-01T10:00", 2 * hour)), achievements = states)!!.slide<ReviewSlide.Achieved>()!!
-        // Hours 10 and 50 (not 1, reached in 2025), streak, marathon, four single ones: 8 tiers.
-        assertEquals(8, achieved.tiers)
+        // Hours (10 and 50 h this year: once, at its highest), streak, marathon, four single ones: 7 achievements; the
+        // grid shows six, "1 more".
+        assertEquals(7, achieved.count)
+        assertEquals(1, achieved.more)
         assertEquals(
             listOf(
                 ReachedTier(Achievement.HOURS, 3, d("2026-08-01")),
@@ -263,34 +331,43 @@ class YearReviewTest {
     @Test fun personality_needsFiveHoursOnFiveDays_andAPatternAboveItsShare() {
         // Every evening at 20:00: no pattern reaches its share.
         assertNull(build(daily("2026-03-02", 10, hour))!!.slide<ReviewSlide.Personality>())
-        // Night owl: 23:00 every night – but four nights are no pattern yet.
-        assertNull(build(daily("2026-03-02", 4, 2 * hour, time = "23:00"))!!.slide<ReviewSlide.Personality>())
+        // Night owl: 1:00 every night – but four nights are no pattern yet.
+        assertNull(build(daily("2026-03-02", 4, 2 * hour, time = "01:00"))!!.slide<ReviewSlide.Personality>())
         // Five nights of 59 minutes: not five hours.
-        assertNull(build(daily("2026-03-02", 5, 59 * 60.0, time = "23:00"))!!.slide<ReviewSlide.Personality>())
-        val owl = build(daily("2026-03-02", 5, hour, time = "23:00"))!!.slide<ReviewSlide.Personality>()!!
+        assertNull(build(daily("2026-03-02", 5, 59 * 60.0, time = "01:00"))!!.slide<ReviewSlide.Personality>())
+        val owl = build(daily("2026-03-02", 5, hour, time = "01:00"))!!.slide<ReviewSlide.Personality>()!!
         assertEquals(ReviewSlide.Personality(ListenerType.NIGHT_OWL, 1.0, 0), owl)
-        // Started at 3:59 is still night; 4:00 is early.
+        // Started at 3:59 is still night; 4:00 is early (as the achievements count them).
         assertEquals(ListenerType.NIGHT_OWL, build(daily("2026-03-02", 5, hour, time = "03:59"))!!.slide<ReviewSlide.Personality>()!!.type)
         assertEquals(ListenerType.EARLY_BIRD, build(daily("2026-03-07", 5, hour, time = "04:00"))!!.slide<ReviewSlide.Personality>()!!.type)
     }
 
-    @Test fun personality_theTypeFurthestAboveItsShareWins_tiesInTheTypesOrder() {
-        // Weekend: Saturdays 14:00, 2 h each (8 h of 10 h = 80 % → 1.6 of its 50 %); weekday evenings 2 h (night owl 0).
+    @Test fun personality_theLargestShareAboveItsThresholdWins_tiesInTheTypesOrder() {
+        // Weekend: Saturdays 14:00, 2 h each (8 h of 10 h = 80 %); weekday evenings 2 h.
         val weekend = (0 until 4).map { stat("${d("2026-03-07").plusDays(7L * it)}T14:00", 2 * hour) } +
             daily("2026-03-09", 2, hour)
         assertEquals(ListenerType.WEEKEND, build(weekend)!!.slide<ReviewSlide.Personality>()!!.type)
-        // Night 30 % (1.0 of its share) against weekend 50 % (1.0 of its share): a tie – the night owl comes first.
-        val tie = listOf(
-            stat("2026-03-02T23:00", 3 * hour), // Monday night: 3 h of 10
-            stat("2026-03-07T14:00", 2.5 * hour), stat("2026-03-08T14:00", 2.5 * hour), // the weekend: 5 h of 10
-            stat("2026-03-03T13:00", hour), stat("2026-03-04T13:00", hour), // weekday lunches: 2 h
-        )
-        val type = build(tie)!!.slide<ReviewSlide.Personality>()!!
-        assertEquals(ListenerType.NIGHT_OWL, type.type)
-        assertEquals(0.3, type.share, 1e-9)
+        // Night 45 % (1.5 times its 30 %) against weekend 55 % (1.1 times its 50 %): the larger share wins, the weekend.
+        val larger = daily("2026-03-02", 5, 1.8 * hour, time = "01:00") + // Monday to Friday nights: 9 h
+            listOf(stat("2026-03-07T14:00", 2.75 * hour), stat("2026-03-08T14:00", 2.75 * hour), stat("2026-03-14T14:00", 2.75 * hour), stat("2026-03-15T14:00", 2.75 * hour))
+        val type = build(larger)!!.slide<ReviewSlide.Personality>()!!
+        assertEquals(ListenerType.WEEKEND, type.type)
+        assertEquals(0.55, type.share, 1e-9)
+        // Equal shares: the night owl comes first.
+        val tie = daily("2026-03-02", 5, hour, time = "01:00") + listOf(stat("2026-03-07T14:00", 2.5 * hour), stat("2026-03-08T14:00", 2.5 * hour))
+        assertEquals(ReviewSlide.Personality(ListenerType.NIGHT_OWL, 0.5, 0), build(tie)!!.slide<ReviewSlide.Personality>())
         // Marathon: days of three hours hold 40 %; the slide says on how many days.
         val marathon = daily("2026-05-04", 2, 3 * hour, time = "13:00") + daily("2026-05-11", 4, 1.5 * hour, time = "13:00")
         assertEquals(ReviewSlide.Personality(ListenerType.MARATHON, 0.5, 2), build(marathon)!!.slide<ReviewSlide.Personality>())
+    }
+
+    @Test fun personality_longSaturdays_areAWeekendListener_notAMarathon() {
+        // Six Saturdays of four hours: weekend and marathon both hold everything – the weekend comes first.
+        val saturdays = (0 until 6).map { stat("${d("2026-03-07").plusDays(7L * it)}T14:00", 4 * hour) }
+        assertEquals(ReviewSlide.Personality(ListenerType.WEEKEND, 1.0, 0), build(saturdays)!!.slide<ReviewSlide.Personality>())
+        // Long weekdays besides: then the long days hold more than the weekend.
+        val weekdays = saturdays + daily("2026-04-06", 4, 4 * hour, time = "13:00")
+        assertEquals(ListenerType.MARATHON, build(weekdays)!!.slide<ReviewSlide.Personality>()!!.type)
     }
 
     @Test fun offeredYear_fromDecemberToJanuary_theYearThatEnds() {

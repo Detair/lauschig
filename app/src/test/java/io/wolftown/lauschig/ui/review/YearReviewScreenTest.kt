@@ -58,7 +58,7 @@ class YearReviewScreenTest {
                     FinishedBook("li_a", "Der Anfang", "Anna", LocalDate.of(2026, 1, 12), finishedAt = 1L),
                     FinishedBook("li_c", "Das Ende", "Anna", LocalDate.of(2026, 11, 28), finishedAt = 2L),
                 ),
-                ReviewSlide.Achieved(2026, 9, listOf(ReachedTier(Achievement.HOURS, 3, LocalDate.of(2026, 8, 1)), ReachedTier(Achievement.MARATHON, 1, LocalDate.of(2026, 8, 1)))),
+                ReviewSlide.Achieved(2026, 3, listOf(ReachedTier(Achievement.HOURS, 3, LocalDate.of(2026, 8, 1)), ReachedTier(Achievement.MARATHON, 1, LocalDate.of(2026, 8, 1)))),
                 ReviewSlide.Personality(ListenerType.NIGHT_OWL, 0.38, 0),
                 ReviewSlide.Closing(2026, 47 * H + 1200, 87, 8, anfang, "Anna", ListenerType.NIGHT_OWL),
             ),
@@ -99,8 +99,9 @@ class YearReviewScreenTest {
             "Slide 6 of 9. Heard to the end. 8 books finished and 2 series completed. First: Der Anfang, January 12. Last: Das Ende, November 28.",
             spoken[5],
         )
-        assertEquals("Slide 7 of 9. Achievements 2026. 9 achievements reached. 50 hours listened, Marathon.", spoken[6])
-        assertTrue(spoken[7], spoken[7].startsWith("Slide 8 of 9. Your listening type. Night owl. 38% of your listening started between 10:00"))
+        assertEquals("Slide 7 of 9. Achievements 2026. 3 achievements reached. 50 hours listened, Marathon and 1 more.", spoken[6])
+        // The night owl's window is the achievement's: from midnight to 4:00.
+        assertTrue(spoken[7], spoken[7].startsWith("Slide 8 of 9. Your listening type. Night owl. 38% of your listening started between 12:00"))
         assertEquals(
             "Slide 9 of 9. 2026 at a glance. Listening time: 47 h 20 min. Days: 87 days. Finished: 8 books. Top title: Der Anfang. " +
                 "Top author: Anna. Listening type: Night owl.",
@@ -118,6 +119,22 @@ class YearReviewScreenTest {
         rule.onNodeWithTag("storyNext").performClick()
         // A thin year's closing names only what it has.
         rule.onNodeWithTag("storySlide").assertContentDescriptionEquals("Slide 2 of 2. 2026 at a glance. Listening time: 2 h 0 min. Days: 1 day.")
+    }
+
+    @Test fun noTitleLineWithoutTitles_andASeriesAloneLeadsTheFinishedSlide() {
+        show(
+            YearReview(
+                2026,
+                listOf(
+                    ReviewSlide.Opening(2026, 2 * H, 0, incomplete = false),
+                    ReviewSlide.Finished(books = 0, series = 1, first = null, last = null, seriesItemId = "v2"),
+                    ReviewSlide.Closing(2026, 2 * H, 1, 0, null, null, null),
+                ),
+            ),
+        )
+        val spoken = spokenSlides(2)
+        assertEquals("Slide 1 of 3. Your 2026 in listening. 2 hours listened.", spoken[0])
+        assertEquals("Slide 2 of 3. Heard to the end. 1 series completed.", spoken[1])
     }
 
     @Test fun theBigNumberCountsUpOnce_whenAnimationsAreOn() {
@@ -182,7 +199,7 @@ class YearReviewScreenGermanTest {
             spoken(),
         )
         repeat(2) { rule.onNodeWithTag("storyNext").performClick() }
-        assertEquals("Folie 8 von 9. Dein Hörtyp. Nachteule. 38 % deiner Hörzeit begann zwischen 22:00 und 04:00 Uhr.", spoken())
+        assertEquals("Folie 8 von 9. Dein Hörtyp. Nachteule. 38 % deiner Hörzeit begann zwischen 00:00 und 04:00 Uhr.", spoken())
         rule.onNodeWithTag("storyNext").performClick()
         assertEquals(
             "Folie 9 von 9. 2026 auf einen Blick. Hörzeit: 47 Std. 20 Min. Hörtage: 87 Tage. Beendet: 8 Bücher. Meistgehörter Titel: Der Anfang. " +

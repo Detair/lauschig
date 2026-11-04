@@ -89,7 +89,7 @@ class YearReviewViewModel(
 internal fun ReviewSlide.coverIds(): List<String> = when (this) {
     is ReviewSlide.TopTitles -> titles.map { it.itemId }
     is ReviewSlide.TopPeople -> listOfNotNull(authorItemId)
-    is ReviewSlide.Finished -> listOf(first.itemId, last.itemId)
+    is ReviewSlide.Finished -> listOfNotNull(first?.itemId, last?.itemId, seriesItemId)
     is ReviewSlide.Closing -> listOfNotNull(topTitle?.itemId)
     else -> emptyList()
 }

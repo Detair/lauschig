@@ -893,4 +893,12 @@
     <string name="review_card_text">Your %1$d in listening, slide by slide</string>
     <string name="review_card_open">View</string>
     <string name="review_card_hide">Hide year in review</string>
+    <plurals name="review_series_unit">
+        <item quantity="one">series completed</item>
+        <item quantity="other">series completed</item>
+    </plurals>
+    <plurals name="review_achievements_more">
+        <item quantity="one">and %d more</item>
+        <item quantity="other">and %d more</item>
+    </plurals>
 </resources>

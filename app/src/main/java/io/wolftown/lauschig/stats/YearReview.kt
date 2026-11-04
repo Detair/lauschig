@@ -10,7 +10,10 @@ import java.time.LocalTime
 import java.time.Month
 import java.time.ZoneId
 
-/** When the user mostly listens (the rhythm slide's line): a part of the day, or on the way (weekday commute hours). */
+/**
+ * When the user mostly listens (the rhythm slide's line): a part of the day ([YearReview.DAY_PARTS]), or on the way
+ * (weekday commute hours).
+ */
 enum class ListeningTime { MORNING, AFTERNOON, EVENING, NIGHT, COMMUTE_MORNING, COMMUTE_EVENING }
 
 /** The personality slide's types, in the order a tie is decided. */
@@ -23,7 +26,10 @@ data class ReachedTier(val achievement: Achievement, val tier: Int, val day: Loc
 /** One slide of the year in review; only slides with enough data exist (see [YearReview.build]). */
 @Immutable
 sealed interface ReviewSlide {
-    /** „Dein Hörjahr 2026“: the year's listening and how many titles; [incomplete]: not every session is loaded yet. */
+    /**
+     * „Dein Hörjahr 2026“: the year's listening and how many titles were heard [YearReview.OPENING_TITLE_SEC] at least
+     * (0: the line is left out); [incomplete]: not every session is loaded yet.
+     */
     data class Opening(val year: Int, val totalSec: Double, val titles: Int, val incomplete: Boolean) : ReviewSlide
 
     /** Days with listening and the longest run of them, which ended on [streakEnd] (null for a run below two days). */
@@ -37,17 +43,33 @@ sealed interface ReviewSlide {
         val topMonthSec: Double get() = months[topMonth.value - 1]
     }
 
-    /** The most heard titles (at most [YearReview.TOP_TITLES]), each with its time. */
+    /** The most heard titles (two at least, [YearReview.TOP_TITLES] at most), each with its time. */
     data class TopTitles(val titles: List<TitleTime>) : ReviewSlide
 
     /** The most heard author (with their most heard title, [authorItemId]) and, where the catalog knows it, narrator. */
     data class TopPeople(val author: AuthorTime, val authorItemId: String?, val narrator: AuthorTime?) : ReviewSlide
 
-    /** Books finished in the year, series completed in it, the first and the last finished book (the same for one). */
-    data class Finished(val books: Int, val series: Int, val first: FinishedBook, val last: FinishedBook) : ReviewSlide
+    /**
+     * Books finished in the year (by their dated finish) with the first and the last (the same for one; null without
+     * any), and series completed in it; [seriesItemId] is the last volume of the last series completed (its cover tints
+     * the slide when no book has a date).
+     */
+    data class Finished(
+        val books: Int,
+        val series: Int,
+        val first: FinishedBook?,
+        val last: FinishedBook?,
+        val seriesItemId: String? = null,
+    ) : ReviewSlide
 
-    /** Tiers reached in [year] ([tiers] in all) and up to [YearReview.ACHIEVEMENTS_SHOWN] of them, newest first. */
-    data class Achieved(val year: Int, val tiers: Int, val shown: List<ReachedTier>) : ReviewSlide
+    /**
+     * The achievements with a tier reached in [year] ([count], each achievement once however many of its tiers) and up
+     * to [YearReview.ACHIEVEMENTS_SHOWN] of them – their highest tier of the year – newest first.
+     */
+    data class Achieved(val year: Int, val count: Int, val shown: List<ReachedTier>) : ReviewSlide {
+        /** Reached in the year but not in [shown]. */
+        val more: Int get() = count - shown.size
+    }
 
     /** The strongest pattern: [share] of the year's time it holds; [days] with a marathon (for [ListenerType.MARATHON]). */
     data class Personality(val type: ListenerType, val share: Double, val days: Int) : ReviewSlide
@@ -71,15 +93,21 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
         /** The review exists from one hour of listening in the year (the entry points offer it then). */
         const val MIN_YEAR_SEC = 3600.0
 
-        /** The days slide needs this many days with listening. */
+        /** The days slide and the rhythm slide need this many days with listening. */
         const val MIN_DAYS = 3
 
         /** The weekday and the time of day need this many days with listening (fewer is no pattern). */
         const val PATTERN_DAYS = 5
 
+        /** A title counts for the opening's "with 12 titles" from a minute (as a day counts as heard). */
+        const val OPENING_TITLE_SEC = ListeningStats.ACTIVE_DAY_SEC
+
         /** A title counts among the top titles from ten minutes. */
         const val TITLE_MIN_SEC = 600.0
         const val TOP_TITLES = 5
+
+        /** The top titles need two: one title would only repeat the opening and the closing. */
+        const val MIN_TOP_TITLES = 2
 
         /** An author or narrator is named from half an hour. */
         const val PERSON_MIN_SEC = 1800.0
@@ -95,13 +123,25 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
         /** A marathon day (for the personality): three hours. */
         const val MARATHON_DAY_SEC = 3 * 3600.0
 
-        /** Night: sessions started in [22:00, 04:00). */
-        val NIGHT: Pair<LocalTime, LocalTime> = LocalTime.of(22, 0) to LocalTime.of(4, 0)
+        /**
+         * The parts of the day the rhythm names, by session start: the night is the night owl's window and the morning
+         * begins with the early bird's ([Achievements.NIGHT_WINDOW], [Achievements.EARLY_WINDOW]) – the slides and the
+         * achievements of the same names never disagree about an hour. Ties in this order.
+         */
+        val DAY_PARTS: List<Pair<ListeningTime, Pair<LocalTime, LocalTime>>> = listOf(
+            ListeningTime.MORNING to (Achievements.EARLY_WINDOW.first to LocalTime.NOON),
+            ListeningTime.AFTERNOON to (LocalTime.NOON to LocalTime.of(17, 0)),
+            ListeningTime.EVENING to (LocalTime.of(17, 0) to LocalTime.MIDNIGHT),
+            ListeningTime.NIGHT to Achievements.NIGHT_WINDOW,
+        )
 
-        /** Early: sessions started in [04:00, 07:00). */
-        val EARLY: Pair<LocalTime, LocalTime> = LocalTime.of(4, 0) to LocalTime.of(7, 0)
-
-        /** The share of the year's time each type needs; the type that exceeds its own the most wins. */
+        /**
+         * The share of the year's time each type needs. Its time is what the achievement of the same name counts: night
+         * owl and early bird by session start in [Achievements.NIGHT_WINDOW] and [Achievements.EARLY_WINDOW], commuter
+         * in [Achievements.COMMUTE_WINDOWS] on weekdays; weekend = Saturday and Sunday; marathon = days of
+         * [MARATHON_DAY_SEC]. Of the types above their share, the one with the **largest share** wins (ties in
+         * [ListenerType] order: weekend before marathon when the long days are weekend days).
+         */
         val PERSONALITY_SHARE: Map<ListenerType, Double> = mapOf(
             ListenerType.NIGHT_OWL to 0.30,
             ListenerType.EARLY_BIRD to 0.25,
@@ -152,7 +192,7 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
             val perTitle = titles(inYear)
             val topTitles = perTitle.filter { it.seconds >= TITLE_MIN_SEC }.take(TOP_TITLES)
             val author = topAuthor(inYear)
-            val people = author?.let { a ->
+            val topPeople = author?.let { a ->
                 ReviewSlide.TopPeople(a, authorItem(inYear, a.name), topNarrator(inYear, items)?.takeIf { !it.name.equals(a.name, ignoreCase = true) })
             }
             val books = finished.filter { it.day?.year == year && it.finishedAt != null }.sortedBy { it.finishedAt }
@@ -161,17 +201,19 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
             val personality = personality(inYear, days, zone, activeDays)
 
             val slides = buildList {
-                add(ReviewSlide.Opening(year, total, perTitle.count { it.seconds >= ListeningStats.ACTIVE_DAY_SEC }, incomplete))
+                add(ReviewSlide.Opening(year, total, perTitle.count { it.seconds >= OPENING_TITLE_SEC }, incomplete))
                 if (activeDays >= MIN_DAYS) add(daysSlide(days))
                 rhythm(inYear, days, zone, activeDays)?.let(::add)
-                if (topTitles.isNotEmpty()) add(ReviewSlide.TopTitles(topTitles))
-                people?.let(::add)
-                if (books.isNotEmpty()) add(ReviewSlide.Finished(books.size, seriesDone, books.first(), books.last()))
-                if (reached.isNotEmpty()) add(ReviewSlide.Achieved(year, reached.size, shownTiers(reached)))
+                if (topTitles.size >= MIN_TOP_TITLES) add(ReviewSlide.TopTitles(topTitles))
+                topPeople?.let(::add)
+                if (books.isNotEmpty() || seriesDone.isNotEmpty()) {
+                    add(ReviewSlide.Finished(books.size, seriesDone.size, books.firstOrNull(), books.lastOrNull(), seriesDone.lastOrNull()?.second))
+                }
+                if (reached.isNotEmpty()) add(ReviewSlide.Achieved(year, reached.size, reached.take(ACHIEVEMENTS_SHOWN)))
                 personality?.let(::add)
                 add(
                     ReviewSlide.Closing(
-                        year, total, activeDays, books.size, topTitles.firstOrNull(), people?.author?.name, personality?.type,
+                        year, total, activeDays, books.size, topTitles.firstOrNull(), topPeople?.author?.name, personality?.type,
                     ),
                 )
             }
@@ -221,8 +263,9 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
 
         private fun localStart(s: StatSession, zone: ZoneId) = Instant.ofEpochMilli(s.startedAt).atZone(zone)
 
+        /** [first, second) local time; a window whose end is not after its start runs over midnight. */
         private operator fun Pair<LocalTime, LocalTime>.contains(t: LocalTime): Boolean =
-            if (first <= second) !t.isBefore(first) && t.isBefore(second) else !t.isBefore(first) || t.isBefore(second)
+            if (first < second) !t.isBefore(first) && t.isBefore(second) else !t.isBefore(first) || t.isBefore(second)
 
         private fun commuting(s: StatSession, zone: ZoneId): Pair<LocalTime, LocalTime>? {
             val start = localStart(s, zone)
@@ -230,7 +273,9 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
             return Achievements.COMMUTE_WINDOWS.firstOrNull { start.toLocalTime() in it }
         }
 
+        /** Needs the days slide's [MIN_DAYS], two months with listening and an hour in the strongest one. */
         private fun rhythm(inYear: List<StatSession>, days: Map<LocalDate, Double>, zone: ZoneId, activeDays: Int): ReviewSlide.Rhythm? {
+            if (activeDays < MIN_DAYS) return null
             val months = (1..12).map { m -> days.entries.sumOf { (d, sec) -> if (d.monthValue == m) sec else 0.0 } }
             if (months.count { it >= ListeningStats.ACTIVE_DAY_SEC } < 2) return null
             val top = months.indices.maxBy { months[it] } // the first of equal ones
@@ -252,49 +297,52 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
 
         /**
          * On the way when the weekday commute hours ([Achievements.COMMUTE_WINDOWS]) hold [COMMUTE_SHARE] – in the
-         * morning or on the way back, whichever holds more; otherwise the part of the day with the most listening
-         * (morning 5–12, afternoon 12–17, evening 17–22, night 22–5; ties in that order). By each session's start.
+         * morning or on the way back, whichever holds more; otherwise the part of the day ([DAY_PARTS]) with the most
+         * listening. By each session's start.
          */
         private fun listeningTime(inYear: List<StatSession>, zone: ZoneId): ListeningTime {
             val total = inYear.sumOf { it.listenedSec }
             val commute = HashMap<Pair<LocalTime, LocalTime>, Double>()
-            val parts = DoubleArray(4)
+            val parts = DoubleArray(DAY_PARTS.size)
             for (s in inYear) {
                 commuting(s, zone)?.let { commute.merge(it, s.listenedSec, Double::plus) }
-                val h = localStart(s, zone).hour
-                parts[when (h) { in 5..11 -> 0; in 12..16 -> 1; in 17..21 -> 2; else -> 3 }] += s.listenedSec
+                val t = localStart(s, zone).toLocalTime()
+                val part = DAY_PARTS.indexOfFirst { (_, window) -> t in window }
+                if (part >= 0) parts[part] += s.listenedSec
             }
             if (total > 0 && commute.values.sum() >= COMMUTE_SHARE * total) {
                 val (morning, evening) = Achievements.COMMUTE_WINDOWS
                 return if ((commute[morning] ?: 0.0) >= (commute[evening] ?: 0.0)) ListeningTime.COMMUTE_MORNING else ListeningTime.COMMUTE_EVENING
             }
-            return listOf(ListeningTime.MORNING, ListeningTime.AFTERNOON, ListeningTime.EVENING, ListeningTime.NIGHT)[parts.indices.maxBy { parts[it] }]
+            return DAY_PARTS[parts.indices.maxBy { parts[it] }].first
         }
-
-        /** Series whose last volume was finished in [year], dated as the "series" achievement dates them. */
-        private fun seriesCompletedIn(year: Int, groups: List<List<ItemEntity>>, finished: List<FinishedBook>): Int {
-            val dayOf = finished.associate { it.itemId to (it.day ?: it.progressDay) }
-            return ListeningStats.finishedSeriesGroups(groups, dayOf.keys).count { g ->
-                val volumes = g.map { dayOf[it.id] }
-                null !in volumes && volumes.maxOf { it!! }.year == year
-            }
-        }
-
-        /** Every tier reached on a day of [year] (a tier without a day belongs to no year). */
-        private fun reachedIn(year: Int, states: List<AchievementState>): List<ReachedTier> = states.flatMap { s ->
-            s.reached.mapIndexedNotNull { i, day -> day?.takeIf { it.year == year }?.let { ReachedTier(s.achievement, i + 1, it) } }
-        }
-
-        /** Per achievement its highest tier of the year; the newest first (same day: catalogue order). */
-        private fun shownTiers(reached: List<ReachedTier>): List<ReachedTier> =
-            reached.groupBy { it.achievement }.map { (_, tiers) -> tiers.maxBy { it.tier } }
-                .sortedWith(compareByDescending<ReachedTier> { it.day }.thenBy { it.achievement.ordinal })
-                .take(ACHIEVEMENTS_SHOWN)
 
         /**
-         * The type whose share of the year's time exceeds its own threshold ([PERSONALITY_SHARE]) the most; ties in
+         * The series whose last volume was finished in [year], dated as the "series" achievement dates them (a book's
+         * finishing session, else its progress's day) – in the order they were completed, each with that last volume.
+         */
+        private fun seriesCompletedIn(year: Int, groups: List<List<ItemEntity>>, finished: List<FinishedBook>): List<Pair<LocalDate, String>> {
+            val dayOf = finished.associate { it.itemId to (it.day ?: it.progressDay) }
+            return ListeningStats.finishedSeriesGroups(groups, dayOf.keys).mapNotNull { g ->
+                if (g.any { dayOf[it.id] == null }) return@mapNotNull null
+                val last = g.maxWith(compareBy<ItemEntity> { dayOf[it.id]!! }.thenBy { it.seriesSortKey ?: 0.0 })
+                val day = dayOf[last.id]!!
+                (day to last.id).takeIf { day.year == year }
+            }.sortedBy { it.first }
+        }
+
+        /**
+         * Per achievement with a tier reached on a day of [year] (a tier without a day belongs to no year): its highest
+         * such tier – newest first, the same day in catalogue order.
+         */
+        private fun reachedIn(year: Int, states: List<AchievementState>): List<ReachedTier> = states.mapNotNull { s ->
+            s.reached.withIndex().lastOrNull { (_, day) -> day?.year == year }?.let { (i, day) -> ReachedTier(s.achievement, i + 1, day!!) }
+        }.sortedWith(compareByDescending<ReachedTier> { it.day }.thenBy { it.achievement.ordinal })
+
+        /**
+         * The type with the largest share of the year's time among those above their own [PERSONALITY_SHARE]; ties in
          * [ListenerType] order. Needs [PERSONALITY_MIN_SEC] on [PATTERN_DAYS] days; null when no pattern reaches its
-         * threshold. By each session's start (local time in [zone]); marathon by the days' totals.
+         * share. By each session's start (local time in [zone]); marathon by the days' totals.
          */
         private fun personality(inYear: List<StatSession>, days: Map<LocalDate, Double>, zone: ZoneId, activeDays: Int): ReviewSlide.Personality? {
             val total = days.values.sum()
@@ -306,8 +354,8 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
             for (s in inYear) {
                 val start = localStart(s, zone)
                 val t = start.toLocalTime()
-                if (t in NIGHT) night += s.listenedSec
-                if (t in EARLY) early += s.listenedSec
+                if (t in Achievements.NIGHT_WINDOW) night += s.listenedSec
+                if (t in Achievements.EARLY_WINDOW) early += s.listenedSec
                 if (commuting(s, zone) != null) commute += s.listenedSec
                 if (start.dayOfWeek == DayOfWeek.SATURDAY || start.dayOfWeek == DayOfWeek.SUNDAY) weekend += s.listenedSec
             }
@@ -319,10 +367,9 @@ data class YearReview(val year: Int, val slides: List<ReviewSlide>) {
                 ListenerType.WEEKEND to weekend / total,
                 ListenerType.MARATHON to marathonDays.sum() / total,
             )
-            val best = ListenerType.entries.maxBy { shares.getValue(it) / PERSONALITY_SHARE.getValue(it) }
-            val share = shares.getValue(best)
-            if (share < PERSONALITY_SHARE.getValue(best)) return null
-            return ReviewSlide.Personality(best, share, if (best == ListenerType.MARATHON) marathonDays.size else 0)
+            val best = ListenerType.entries.filter { shares.getValue(it) >= PERSONALITY_SHARE.getValue(it) }
+                .maxByOrNull { shares.getValue(it) } ?: return null // the first of equal ones
+            return ReviewSlide.Personality(best, shares.getValue(best), if (best == ListenerType.MARATHON) marathonDays.size else 0)
         }
     }
 }

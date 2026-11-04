@@ -106,7 +106,8 @@ class YearReviewViewModelTest {
         assertEquals(ReviewSlide.Opening(2026, 5400.0, 1, incomplete = false), review.slides.first())
         val people = review.slides.filterIsInstance<ReviewSlide.TopPeople>().single()
         assertEquals("Nora", people.narrator?.name)
-        assertEquals("Band Eins", review.slides.filterIsInstance<ReviewSlide.TopTitles>().single().titles.single().title)
+        // One title: no top-titles slide; the closing names it, from the catalog.
+        assertEquals("Band Eins", review.slides.filterIsInstance<ReviewSlide.Closing>().single().topTitle?.title)
         assertEquals(mapOf("a1" to ReviewCover(null, 42)), state.covers)
     }
 

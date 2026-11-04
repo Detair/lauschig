@@ -893,4 +893,12 @@
     <string name="review_card_text">Dein Hörjahr %1$d in ein paar Folien</string>
     <string name="review_card_open">Ansehen</string>
     <string name="review_card_hide">Jahresrückblick ausblenden</string>
+    <plurals name="review_series_unit">
+        <item quantity="one">Serie komplett</item>
+        <item quantity="other">Serien komplett</item>
+    </plurals>
+    <plurals name="review_achievements_more">
+        <item quantity="one">und %d weiterer</item>
+        <item quantity="other">und %d weitere</item>
+    </plurals>
 </resources>
