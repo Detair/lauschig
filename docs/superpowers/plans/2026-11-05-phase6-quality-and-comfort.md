@@ -18,6 +18,7 @@
 | **SD-Karten-Auswahl für Downloads** | Downloads liegen fest in `context.filesDir` (interner Flash-Speicher). Große Bibliotheken füllen das Gerät. | `DownloadSettings.storageVolume`: Erkennung sekundärer Volumes via `ContextCompat.getExternalFilesDirs(context, null)`. Bei mehreren Speichermedien Auswahl in den Download-Einstellungen (Intern / SD-Karte). `DownloadFiles` nutzt den konfigurierten Pfad. |
 | **Diagnose-Log teilen („Familien-Support“)** | Fehleranalyse bei Familienmitgliedern ohne technisches Wissen scheitert an `adb logcat`. | Ringpuffer-/Datei-Logger (Token und Passwörter maskiert). In Einstellungen → Über Lauschig: Knopf „Diagnose-Log teilen“ via Android ShareSheet (`FileProvider` + `Intent.ACTION_SEND`). |
 | **Automatisches Aufräumen beendeter Titel** | Beendete Downloads verbleiben auf dem Gerät, bis man manuell aufräumt. | Einstellung `autoDeleteFinished`: *Nie (Standard)*, *Sofort*, *Nach 3 Tagen*, *Nach 7 Tagen*. Ausführung im Hintergrund durch `CleanupWorker` bzw. nach Abschluss eines Buchs. |
+| **Warmes Nacht-Farbschema** | Das aktuelle Dark-Theme nutzt kühles Nachtblau (`#18213A`), was nachts im Bett blendet und die Augen reizt. | Warmes Farb-Preset *„Kaminfeuer & Bernstein“*: Warmes Mokka-Anthrazit (`#161311`), samtweiches Creme-Weiß (`#F4ECE1`) und warmer Honig-Bernstein-Akzent (`#F5BA42`). Wählbar in den Einstellungen unter *Erscheinungsbild*. |
 
 ---
 
@@ -102,6 +103,25 @@
   - `CleanupManager` erweitern: prüft beendete Downloads (`progress.isFinished` und `progress.lastUpdate`).
   - Automatisches Löschen der Audio-Dateien über `DownloadFiles.delete(serverId, itemId)`, Progress und History bleiben natürlich erhalten.
   - Tests: `CleanupTest`.
+
+---
+
+### Task 7: Warmes Nacht-Farbschema (Kaminfeuer & Bernstein)
+- [ ] **7.1 Palette in `LauschigTheme`:**
+  - Neue `ColorScheme`-Definition `LauschigWarmDarkColors`:
+    - `background = Color(0xFF161311)` (warmes tiefes Mokka-Anthrazit statt kaltem `#18213A`)
+    - `surface = Color(0xFF161311)`
+    - `surfaceContainer = Color(0xFF231C18)`
+    - `surfaceContainerHigh = Color(0xFF2B231F)`
+    - `primary = Color(0xFFF5BA42)` (warmes Honig-Bernstein)
+    - `onSurface = Color(0xFFF4ECE1)` (weiches Creme-Weiß statt kaltem `#E2E6F2`)
+    - `onSurfaceVariant = Color(0xFFB8ACA0)` (warmer Zwischenton)
+  - Unit-Test: Kontrastprüfung (mind. 4.5:1 für Text, 3:1 für Steuerelemente).
+- [ ] **7.2 Settings & Auswahllogik:**
+  - `DarkThemeTone` in `UiSettings`: `NIGHT_BLUE` (Standard) vs. `WARM_AMBER`.
+  - `colorSchemeFor(dark, pureBlack, tone)` bindet die warme Farbpalette ein.
+  - UI-Auswahl in `AppearanceSection`.
+  - Tests: `ColorSchemeTest`, `AppearanceSectionTest`.
 
 ---
 
