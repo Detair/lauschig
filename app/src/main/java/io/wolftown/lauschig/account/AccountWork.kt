@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.download.DefaultDownloadManager
+import io.wolftown.lauschig.sync.ListeningSessionSync
 import io.wolftown.lauschig.sync.SyncScheduler
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -25,18 +26,22 @@ fun interface AccountWork {
 
 /**
  * Cancels every sync ([SyncScheduler.ACCOUNT_WORK]; the periodic one comes back with the next `syncNow()`, which every
- * sign-in calls) and the account's downloads: by the download rows and by the server tag of newer download work.
+ * sign-in calls), the account's downloads (by the download rows and by the server tag of newer download work), and a
+ * „Jetzt laden“ read of the listening history, which runs outside WorkManager ([ListeningSessionSync.cancelLoadNow]).
  */
 class WorkManagerAccountWork(
     private val workManager: () -> WorkManager,
     /** Keys of the server's download rows (any state). */
     private val downloadKeys: suspend (serverId: String) -> List<String>,
     private val waitMs: Long = WAIT_MS,
+    /** Account work outside WorkManager. */
+    private val cancelOther: (serverId: String) -> Unit = {},
 ) : AccountWork {
-    @Inject constructor(@ApplicationContext context: Context, downloads: DownloadDao) :
-        this({ WorkManager.getInstance(context) }, downloads::keys)
+    @Inject constructor(@ApplicationContext context: Context, downloads: DownloadDao, listeningSync: ListeningSessionSync) :
+        this({ WorkManager.getInstance(context) }, downloads::keys, WAIT_MS, listeningSync::cancelLoadNow)
 
     override suspend fun cancel(serverId: String) {
+        cancelOther(serverId)
         val wm = workManager()
         val names = SyncScheduler.ACCOUNT_WORK + downloadKeys(serverId).map { DefaultDownloadManager.workName(serverId, it) }
         val tag = DefaultDownloadManager.serverTag(serverId)

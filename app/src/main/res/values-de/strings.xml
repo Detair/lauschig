@@ -721,4 +721,6 @@
     <string name="stats_chart_this_year">dieses Jahr</string>
     <string name="stats_chart_entry_current">%1$s (%2$s) %3$s</string>
     <string name="stats_history_load_now">Jetzt laden</string>
+    <string name="stats_history_failed">Hörhistorie unvollständig – erneut laden</string>
+    <string name="stats_history_retry">Erneut laden</string>
 </resources>

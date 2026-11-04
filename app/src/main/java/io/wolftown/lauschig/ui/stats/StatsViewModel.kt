@@ -31,7 +31,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -109,8 +109,9 @@ data class StatsUiState(
 
 /**
  * The statistics page: everything from Room (offline-first, see [ListeningStats]); for the signed-in account it asks the
- * server once for new sessions after the connection check said online, and reads the whole history on „Jetzt laden“
- * (both cancelled when the stored account changes – for a sign-out that is its last step, when the account is cleared).
+ * server once for new sessions after the connection check said online (cancelled when the stored account changes – for a
+ * sign-out that is its last step, when the account is cleared). „Jetzt laden“ hands a full read to the sync, which runs
+ * it beyond this page and ends it at the start of a sign-out.
  * Opens on the current week; a period switch starts at that period's current one; previous/next never go into
  * the future nor before the first listening. "Today", the zone and the week start come from [calendar] and are read
  * again at midnight, on a time, zone or language change and when the page resumes ([onResume]). A burst of database
@@ -130,6 +131,8 @@ class StatsViewModel(
     private val refresh: suspend (serverId: String, allowMetered: Boolean) -> Unit,
     private val awaitOnline: suspend () -> Boolean,
     private val historyLoad: (serverId: String) -> Flow<HistoryLoad>,
+    /** „Jetzt laden“ for an account: runs outside this page (leaving it does not stop it), see [ListeningSessionSync.loadNow]. */
+    private val loadNow: (serverId: String) -> Unit,
     private val calendar: StatsCalendar,
     private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -141,6 +144,7 @@ class StatsViewModel(
         refresh = { sid, allowMetered -> sync.sync(sid, allowMetered) },
         awaitOnline = { awaitConnectionAnswer(apiProvider.connection, apiProvider.checking, CONNECTION_ANSWER_WAIT_MS) },
         historyLoad = sync::historyLoad,
+        loadNow = { sync.loadNow(it) },
         calendar = calendar,
         dispatcher = Dispatchers.Default,
     )
@@ -173,7 +177,6 @@ class StatsViewModel(
     private val now: StateFlow<CalendarNow> = merge(resumes, calendar.changes).map { calendar.now() }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), calendar.now())
 
-    private val loadNowRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /**
      * The first day with a session, for the bound of [previous]. Written off the main thread whenever the data is
@@ -220,8 +223,6 @@ class StatsViewModel(
                     return@collectLatest
                 }
                 refreshOnce(sid, allowMetered = false)
-                // „Jetzt laden“ for this account: a full read now, whatever the network.
-                loadNowRequests.collect { refreshOnce(sid, allowMetered = true) }
             }
         }
     }
@@ -243,9 +244,9 @@ class StatsViewModel(
         }
     }
 
-    /** „Jetzt laden“: read the whole history now, also over mobile data (one tap, one run). */
+    /** „Jetzt laden“: read the whole history now, also over mobile data (one tap, one run, never dropped). */
     fun loadHistoryNow() {
-        loadNowRequests.tryEmit(Unit)
+        viewModelScope.launch { accounts.account.first()?.serverId?.let(loadNow) }
     }
 
     /** The page is shown again: "today" may have moved on while it was away. */

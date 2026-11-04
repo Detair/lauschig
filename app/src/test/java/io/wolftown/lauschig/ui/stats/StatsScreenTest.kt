@@ -220,12 +220,17 @@ class StatsScreenTest {
         rule.onNodeWithTag("statsLoadNow").assertTextEquals("Load now").performClick()
         assertEquals(1, loadNow)
 
+        state = listened.copy(history = HistoryLoad.FAILED) // the last read failed: not "loads on Wi-Fi"
+        rule.onNodeWithTag("statsHistory").assertTextEquals("Listening history incomplete – load again")
+        rule.onNodeWithTag("statsLoadNow").assertTextEquals("Load again").performClick()
+        assertEquals(2, loadNow)
+
         state = listened
         rule.onNodeWithTag("statsHistory").assertDoesNotExist()
 
         state = StatsUiState(loading = false, refreshing = false, history = HistoryLoad.INCOMPLETE)
         rule.onNodeWithText("Your full listening history loads on Wi-Fi.").assertIsDisplayed()
         rule.onNodeWithTag("statsLoadNow").performClick()
-        assertEquals(2, loadNow)
+        assertEquals(3, loadNow)
     }
 }

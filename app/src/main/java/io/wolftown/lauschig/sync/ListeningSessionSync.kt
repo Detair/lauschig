@@ -23,6 +23,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -35,10 +42,13 @@ enum class HistoryLoad {
     LOADING,
 
     /**
-     * The history is not complete (never read in full, or a full run was interrupted): it loads on an unmetered network,
-     * or now on the user's tap ([ListeningSessionSync.sync] with `allowMetered`).
+     * The history is not complete (never read in full, or a full run stopped when the network turned metered): it loads
+     * on an unmetered network, or now on the user's tap ([ListeningSessionSync.loadNow]).
      */
     INCOMPLETE,
+
+    /** The history is not complete because the last full read failed; the user may try again ([ListeningSessionSync.loadNow]). */
+    FAILED,
 }
 
 /**
@@ -85,6 +95,8 @@ class ListeningSessionSync(
     private val maxPages: Int = MAX_PAGES,
     /** Rows that could not be read are tried again once this changes (an app update). */
     private val appVersion: Long = BuildConfig.VERSION_CODE.toLong(),
+    /** Where [loadNow] runs: the app's lifetime, not a screen's. */
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     @Inject constructor(
         apiProvider: ApiProvider, dao: ListeningSessionDao, localSessions: SessionDao, stamps: SyncStamps,
@@ -92,25 +104,63 @@ class ListeningSessionSync(
     ) : this(apiProvider.meApi, dao, localSessions, stamps, unmetered = { UnmeteredNetwork.isUnmetered(context) })
 
     private val lock = Mutex()
+    /** Full runs reading now, or asked for by [loadNow] and waiting for the connection or the lock. */
     private val running = MutableStateFlow<Set<String>>(emptySet())
     private val incomplete = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    /** Servers whose last full read failed (not: stopped by a metered network). */
+    private val failed = MutableStateFlow<Set<String>>(emptySet())
+    private val loadJobs = ConcurrentHashMap<String, Job>()
 
-    /** Whether [serverId]'s history is incomplete, and whether a full run is reading it now (from the stored state). */
+    /**
+     * Whether [serverId]'s history is incomplete, and whether a full run is reading it now. Read from the stored state
+     * whenever a screen starts to listen (a new account starts from its own stamps, not from what was in memory).
+     */
     fun historyLoad(serverId: String): Flow<HistoryLoad> = flow {
-        if (serverId !in incomplete.value) {
-            val stored = isIncomplete(serverId)
-            incomplete.update { if (serverId in it) it else it + (serverId to stored) }
-        }
+        val stored = isIncomplete(serverId)
+        incomplete.update { it + (serverId to stored) }
         emitAll(
-            combine(incomplete.map { it[serverId] == true }, running.map { serverId in it }) { inc, run ->
+            combine(incomplete.map { it[serverId] == true }, running.map { serverId in it }, failed.map { serverId in it }) { inc, run, fail ->
                 when {
                     !inc -> HistoryLoad.NONE
                     run -> HistoryLoad.LOADING
+                    fail -> HistoryLoad.FAILED
                     else -> HistoryLoad.INCOMPLETE
                 }
             },
         )
     }.distinctUntilChanged()
+
+    /**
+     * „Jetzt laden“: reads the whole history once, over any network (the tap is the consent for this one run). Runs in
+     * the app's lifetime – leaving the statistics page does not stop it – and waits for the connection if there is none;
+     * a second tap while it waits or reads does nothing. [cancelLoadNow] (sign-out) ends it. Returns its job (tests).
+     */
+    fun loadNow(serverId: String): Job? {
+        if (DeviceLibrary.isLocal(serverId)) return null
+        loadJobs[serverId]?.takeIf { it.isActive }?.let { return it }
+        running.update { it + serverId }
+        val job = scope.launch {
+            try {
+                api.first { it != null }
+                sync(serverId, allowMetered = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "listening history not loaded", e)
+            } finally {
+                running.update { it - serverId }
+            }
+        }
+        loadJobs[serverId] = job
+        return job
+    }
+
+    /** Sign-out: ends a [loadNow] run of [serverId] and forgets what is kept in memory about its history. */
+    fun cancelLoadNow(serverId: String) {
+        loadJobs.remove(serverId)?.cancel()
+        incomplete.update { it - serverId }
+        failed.update { it - serverId }
+    }
 
     /** Background variant: at most once per [MIN_INTERVAL_MS] after a run that did all it could. */
     suspend fun syncIfDue(serverId: String) {
@@ -133,8 +183,8 @@ class ListeningSessionSync(
             when (if (open()) fullRun(api, serverId, open) else FullRun.STOPPED) {
                 FullRun.DONE -> Unit
                 FullRun.CAPPED -> return // continues at once next time
-                // Metered: the newest sessions now, the rest on Wi-Fi; done for the throttle, so no probe every 15 min.
-                FullRun.STOPPED -> write(serverId, api.listeningSessions(itemsPerPage = LATER_PAGE, page = 0).sessions)
+                // Metered: the newest sessions now (if any are new), the rest on Wi-Fi; done for the throttle.
+                FullRun.STOPPED -> newestOnly(api, serverId)
             }
         } else {
             val newest = stamps.get(newestKey(serverId))!!
@@ -153,6 +203,34 @@ class ListeningSessionSync(
             if (full && open() && fullRun(api, serverId, open) == FullRun.CAPPED) return
         }
         stamps.set(runKey(serverId), clock())
+    }
+
+    /**
+     * While the history is incomplete on a metered network: one session first (as a later run asks), the newest page
+     * only when something is newer than the cache. When that shows the cache holds the whole list – the server lists
+     * none, the newest page is all of it, or no more than the cache holds – the history is complete without a full run.
+     */
+    private suspend fun newestOnly(api: MeApi, serverId: String) {
+        val probe = api.listeningSessions(itemsPerPage = 1, page = 0)
+        val top = probe.sessions.firstOrNull()?.updatedAt ?: 0L
+        var total = probe.total.toLong()
+        var covered = total == 0L
+        if (!covered && top > (dao.newestUpdatedAt(serverId) ?: 0L)) {
+            val page = api.listeningSessions(itemsPerPage = LATER_PAGE, page = 0)
+            write(serverId, page.sessions)
+            total = page.total.toLong()
+            covered = page.numPages <= 1 && page.sessions.size.toLong() == total
+        }
+        if (!covered) covered = total <= dao.count(serverId) && stamps.get(resumePageKey(serverId))?.let { it == 0L } != false
+        if (!covered) return
+        stamps.set(newestKey(serverId), dao.newestUpdatedAt(serverId) ?: 0L)
+        stamps.set(totalKey(serverId), total)
+        stamps.set(unreadableKey(serverId), 0L)
+        stamps.set(unreadableAppKey(serverId), appVersion)
+        stamps.set(fullKey(serverId), clock())
+        stamps.set(resumePageKey(serverId), 0L)
+        stamps.set(resumeUnreadableKey(serverId), 0L)
+        incomplete.update { it + (serverId to false) }
     }
 
     /** Never read in full, interrupted, or an empty cache although the server lists sessions Lauschig can read. */
@@ -199,6 +277,7 @@ class ListeningSessionSync(
      */
     private suspend fun fullRun(api: MeApi, serverId: String, open: () -> Boolean): FullRun {
         running.update { it + serverId }
+        failed.update { it - serverId }
         try {
             val storedPage = (stamps.get(resumePageKey(serverId)) ?: 0L).toInt()
             val storedTotal = stamps.get(resumeTotalKey(serverId)) ?: 0L
@@ -228,13 +307,16 @@ class ListeningSessionSync(
                 if (result.total.toLong() != runTotal) moved = true
                 val sessions = result.sessions
                 val listed = (result.total - page * FULL_PAGE).coerceIn(0, FULL_PAGE)
-                unreadable += (listed - sessions.size).coerceAtLeast(0)
+                val unreadableHere = (listed - sessions.size).coerceAtLeast(0).toLong()
+                // Stored without this page's: a resume reads it again (the overlap) and counts it then, once.
+                val unreadableBefore = unreadable
+                unreadable += unreadableHere
                 newest = maxOf(newest, write(serverId, sessions))
                 sessions.mapTo(seen) { it.id }
                 page++
                 read++
                 stamps.set(resumePageKey(serverId), page.toLong())
-                stamps.set(resumeUnreadableKey(serverId), unreadable)
+                stamps.set(resumeUnreadableKey(serverId), unreadableBefore)
                 if (page >= result.numPages) break
                 if (read >= maxPages) return FullRun.CAPPED // the stored place continues it next time
                 if (!open()) return FullRun.STOPPED
@@ -251,8 +333,13 @@ class ListeningSessionSync(
             stamps.set(resumeUnreadableKey(serverId), 0L)
             incomplete.update { it + (serverId to false) }
             return FullRun.DONE
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failed.update { it + serverId }
+            throw e
         } finally {
-            running.update { it - serverId }
+            if (loadJobs[serverId]?.isActive != true) running.update { it - serverId }
         }
     }
 

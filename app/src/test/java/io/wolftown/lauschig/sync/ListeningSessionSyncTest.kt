@@ -18,6 +18,7 @@ import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.local.DeviceLibrary
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -52,6 +53,8 @@ class ListeningSessionSyncTest {
         var beforePage: (itemsPerPage: Int, page: Int) -> Unit = { _, _ -> }
         /** A server that sorts by `startedAt` instead (ABS's order is not a contract). */
         var byStart = false
+        /** Where in the list the unreadable rows sit (default: at the end). */
+        var unreadableAt: Int? = null
 
         override suspend fun me() = AbsUser("u", "n", "user")
         override suspend fun updateProgress(itemId: String, u: ProgressUpdate) = error("unused")
@@ -62,9 +65,11 @@ class ListeningSessionSyncTest {
             if (page == failPage && itemsPerPage > 1) throw IOException("down")
             beforePage(itemsPerPage, page)
             val sorted = if (byStart) sessions.sortedByDescending { it.startedAt } else sessions.sortedByDescending { it.updatedAt }
-            val total = sorted.size + unreadable
+            val at = (unreadableAt ?: sorted.size).coerceIn(0, sorted.size)
+            val listing: List<UserListeningSessionDto?> = sorted.take(at) + List(unreadable) { null } + sorted.drop(at)
+            val total = listing.size
             val pages = (total + itemsPerPage - 1) / itemsPerPage
-            return UserListeningSessionsPage(total, pages, page, itemsPerPage, sorted.drop(page * itemsPerPage).take(itemsPerPage))
+            return UserListeningSessionsPage(total, pages, page, itemsPerPage, listing.drop(page * itemsPerPage).take(itemsPerPage).filterNotNull())
         }
     }
 
@@ -73,7 +78,12 @@ class ListeningSessionSyncTest {
             .allowMainThreadQueries().build()
     }
 
-    @After fun tearDown() = db.close()
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+
+    @After fun tearDown() {
+        scope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+        db.close()
+    }
 
     private var unmetered = true
     private var appVersion = 3L
@@ -81,7 +91,7 @@ class ListeningSessionSyncTest {
     private val later = ListeningSessionSync.LATER_PAGE // 20
 
     private fun sync(api: MeApi? = server, maxPages: Int = ListeningSessionSync.MAX_PAGES) =
-        ListeningSessionSync(flowOf(api), db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages, appVersion)
+        ListeningSessionSync(flowOf(api), db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages, appVersion, scope)
 
     /** [n] sessions, one per hour, the newest updated at [newest]. */
     private fun sessions(n: Int, newest: Long = now) = (0 until n).map { i -> session("s$i", updatedAt = newest - i * hour) }
@@ -124,7 +134,7 @@ class ListeningSessionSyncTest {
         val sync = sync()
 
         sync.sync(s)
-        assertEquals(listOf(later to 0), server.asked) // recent numbers fresh, the whole history on Wi-Fi
+        assertEquals(listOf(1 to 0, later to 0), server.asked) // recent numbers fresh, the whole history on Wi-Fi
         assertEquals(20, rows().size)
         assertEquals(HistoryLoad.INCOMPLETE, sync.historyLoad(s).first())
         assertNull(stamps.get("listening_sessions:$s"))
@@ -137,8 +147,13 @@ class ListeningSessionSyncTest {
         // The state is stored, not the last run's: another process (the worker) sees it too.
         assertEquals(HistoryLoad.INCOMPLETE, sync().historyLoad(s).first())
 
+        // Opened again on mobile data, nothing new: the one-session question only, no page.
+        server.asked.clear()
+        sync.sync(s)
+        assertEquals(listOf(1 to 0), server.asked)
+
         unmetered = true
-        now += 16 * 60_000L
+        now += 31 * 60_000L // past the throttle of the last metered run
         sync.syncIfDue(s)
         assertEquals(600, rows().size)
         assertEquals(HistoryLoad.NONE, sync.historyLoad(s).first())
@@ -161,7 +176,7 @@ class ListeningSessionSyncTest {
 
         sync().sync(s)
 
-        assertEquals(listOf(full to 0, full to 1, later to 0), server.asked) // page 2 not asked; the newest page instead
+        assertEquals(listOf(full to 0, full to 1, 1 to 0), server.asked) // page 2 not asked; nothing newer than the cache
         assertNull(stamps.get("listening_sessions:$s"))
         assertEquals(2L, stamps.get("listening_sessions_resume_page:$s"))
         assertEquals(HistoryLoad.INCOMPLETE, history())
@@ -571,5 +586,82 @@ class ListeningSessionSyncTest {
         now += 25 * hour
         sync().sync(s)
         assertEquals(listOf(1 to 0), server.asked) // known + unreadable = total: no reconcile
+    }
+
+    // --- fix round 3 -----------------------------------------------------------------------------------------------------
+
+    @Test fun aSmallHistory_onAMeteredNetwork_isCompleteWithTheNewestPage() = runTest {
+        server.sessions = sessions(12)
+        unmetered = false
+
+        sync().sync(s)
+
+        assertEquals(listOf(1 to 0, later to 0), server.asked)
+        assertEquals(12, rows().size)
+        assertEquals(HistoryLoad.NONE, history()) // nothing left to load on Wi-Fi
+        assertEquals(now, stamps.get("listening_sessions:$s"))
+    }
+
+    @Test fun anAccountWithoutSessions_onAMeteredNetwork_isComplete() = runTest {
+        unmetered = false
+
+        sync().sync(s)
+
+        assertEquals(listOf(1 to 0), server.asked)
+        assertEquals(HistoryLoad.NONE, history())
+    }
+
+    @Test fun loadNow_runsBeyondTheCaller_waitsForTheConnection_onceAtATime_andSignOutEndsIt() = runBlocking {
+        server.sessions = sessions(600)
+        unmetered = false
+        val api = kotlinx.coroutines.flow.MutableStateFlow<MeApi?>(null) // offline at the tap
+        val sync = ListeningSessionSync(api, db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, appVersion = appVersion, scope = scope)
+
+        val job = sync.loadNow(s)!!
+        assertEquals(HistoryLoad.LOADING, sync.historyLoad(s).first()) // the tap shows at once
+        assertTrue(sync.loadNow(s) === job) // a second tap does nothing
+        api.value = server // the connection is back
+        kotlinx.coroutines.withTimeout(10_000) { job.join() }
+
+        assertEquals(listOf(full to 0, full to 1, full to 2), server.asked) // a full read on mobile data, consented
+        assertEquals(HistoryLoad.NONE, sync.historyLoad(s).first())
+
+        // Signed out while a tap still waits for the connection: it ends.
+        api.value = null
+        db.listeningSessionDao().delete(s, rows().map { it.id })
+        stamps.removeServer(s)
+        val waiting = sync.loadNow(s)!!
+        sync.cancelLoadNow(s)
+        kotlinx.coroutines.withTimeout(10_000) { waiting.join() }
+        assertTrue(waiting.isCancelled)
+    }
+
+    @Test fun aFailedFullRead_saysSo_untilARunSucceeds() = runTest {
+        server.sessions = sessions(600)
+        server.failPage = 1
+        val sync = sync()
+        try {
+            sync.sync(s)
+            fail("the failure must reach the caller")
+        } catch (_: IOException) {
+        }
+        assertEquals(HistoryLoad.FAILED, sync.historyLoad(s).first()) // on Wi-Fi: not "loads on Wi-Fi"
+
+        server.failPage = null
+        sync.sync(s)
+        assertEquals(HistoryLoad.NONE, sync.historyLoad(s).first())
+    }
+
+    @Test fun anUnreadableRowOnTheOverlapPage_isCountedOnce() = runTest {
+        server.sessions = sessions(1000)
+        server.unreadable = 1
+        server.unreadableAt = 300 // on page 1, the page a resume reads again
+        server.failPage = 2
+        syncExpectingFailure()
+        server.failPage = null
+
+        sync().sync(s) // resumes at page 1
+
+        assertEquals(1L, stamps.get("listening_sessions_unreadable:$s"))
     }
 }

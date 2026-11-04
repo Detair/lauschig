@@ -120,15 +120,15 @@ fun StatsScreen(
                 if (state.loading || state.refreshing) {
                     LoadingState(verticalPadding = padding)
                 } else {
-                    val incomplete = state.history == HistoryLoad.INCOMPLETE
+                    val note = historyNote(state.history)?.takeIf { state.history != HistoryLoad.LOADING }
                     val hint = when {
-                        incomplete -> R.string.stats_history_wifi
+                        note != null -> note
                         state.unreached -> R.string.stats_unreached
                         else -> R.string.stats_empty_hint
                     }
                     EmptyState(
                         Icons.Rounded.BarChart, stringResource(R.string.stats_empty), supporting = stringResource(hint), verticalPadding = padding,
-                        action = if (incomplete) { { LoadNowButton(onLoadNow) } } else null,
+                        action = if (note != null) { { LoadNowButton(state.history, onLoadNow) } } else null,
                     )
                 }
             }
@@ -147,7 +147,7 @@ fun StatsScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.testTag("statsHistory"),
                         )
-                        if (state.history == HistoryLoad.INCOMPLETE) LoadNowButton(onLoadNow)
+                        if (state.history != HistoryLoad.LOADING) LoadNowButton(state.history, onLoadNow)
                     }
                 }
             }
@@ -174,13 +174,16 @@ fun StatsScreen(
 private fun historyNote(history: HistoryLoad): Int? = when (history) {
     HistoryLoad.LOADING -> R.string.stats_history_loading
     HistoryLoad.INCOMPLETE -> R.string.stats_history_wifi
+    // The last read failed (whatever the network): not "loads on Wi-Fi" while on Wi-Fi.
+    HistoryLoad.FAILED -> R.string.stats_history_failed
     HistoryLoad.NONE -> null
 }
 
-/** „Jetzt laden“: one tap is the consent to read the whole history once over the current network (mobile data too). */
+/** „Jetzt laden“ / „Erneut laden“: one tap is the consent to read the whole history once over the current network. */
 @Composable
-private fun LoadNowButton(onLoadNow: () -> Unit) {
-    TextButton(onClick = onLoadNow, modifier = Modifier.testTag("statsLoadNow")) { Text(stringResource(R.string.stats_history_load_now)) }
+private fun LoadNowButton(history: HistoryLoad, onLoadNow: () -> Unit) {
+    val label = if (history == HistoryLoad.FAILED) R.string.stats_history_retry else R.string.stats_history_load_now
+    TextButton(onClick = onLoadNow, modifier = Modifier.testTag("statsLoadNow")) { Text(stringResource(label)) }
 }
 
 /** Week, month, year, all time: one choice, as one row (the labels shrink a little rather than wrap at large text). */

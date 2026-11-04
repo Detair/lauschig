@@ -81,12 +81,14 @@ class StatsViewModelTest {
     private val calendar = FakeStatsCalendar(CalendarNow(LocalDate.of(2026, 11, 4), berlin, DayOfWeek.MONDAY))
     private val history = MutableStateFlow(HistoryLoad.NONE)
 
+    private val loaded = CopyOnWriteArrayList<String>()
+
     private fun vm(online: suspend () -> Boolean = { true }, refresh: suspend (String, Boolean) -> Unit = { sid, all -> refreshed += if (all) "$sid:all" else sid }): StatsViewModel =
         viewModels.own(
             StatsViewModel(
                 accounts, StatsSessions(db.listeningSessionDao(), db.sessionDao()), db.progressDao(), db.catalogDao(), db.libraryDao(),
                 CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }, Catalog(),
-                refresh = refresh, awaitOnline = online, historyLoad = { history }, calendar = calendar,
+                refresh = refresh, awaitOnline = online, historyLoad = { history }, loadNow = { loaded += it }, calendar = calendar,
                 dispatcher = UnconfinedTestDispatcher(),
             ),
         )
@@ -273,15 +275,16 @@ class StatsViewModelTest {
         vm.await { it.history == HistoryLoad.INCOMPLETE }
     }
 
-    @Test fun loadNow_readsTheWholeHistory_forThisAccount() = runTest {
-        val vm = vm()
-        vm.await { !it.refreshing }
-        assertEquals(listOf(sid), refreshed)
+    @Test fun loadNow_isHandedToTheSync_forThisAccount_evenBeforeTheFirstRefreshEnded() = runTest {
+        val gate = CompletableDeferred<Boolean>()
+        val vm = vm(online = { gate.await() }) // the connection check has not answered yet
+        vm.await { it.refreshing }
 
-        vm.loadHistoryNow()
+        vm.loadHistoryNow() // an early tap is not dropped
 
-        withTimeout(10_000) { while (refreshed.size < 2) kotlinx.coroutines.delay(5) }
-        assertEquals(listOf(sid, "$sid:all"), refreshed)
+        withTimeout(10_000) { while (loaded.isEmpty()) kotlinx.coroutines.delay(5) }
+        assertEquals(listOf(sid), loaded)
+        gate.complete(true)
     }
 
     @Test fun thePage_listensToTheCalendarOnce() = runTest {
