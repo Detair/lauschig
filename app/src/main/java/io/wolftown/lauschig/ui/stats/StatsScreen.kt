@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -489,7 +490,8 @@ private fun LazyListScope.achievements(preview: AchievementsPreview, onOpen: () 
             headlineContent = { Text(achievementName(a.achievement, a.tier), maxLines = 2, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(achievementStatus(a)) },
             leadingContent = { AchievementBadge(a.achievement, a.unlocked, size = 40.dp) },
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+            // TalkBack: "View achievement", a button.
+            modifier = Modifier.fillMaxWidth().clickable(onClickLabel = stringResource(R.string.stats_achievement_open), role = Role.Button, onClick = onOpen),
         )
     }
 }

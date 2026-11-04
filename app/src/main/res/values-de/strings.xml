@@ -807,4 +807,5 @@
         <item quantity="one">%d Serie</item>
         <item quantity="other">%d Serien</item>
     </plurals>
+    <string name="stats_achievement_open">Erfolg ansehen</string>
 </resources>

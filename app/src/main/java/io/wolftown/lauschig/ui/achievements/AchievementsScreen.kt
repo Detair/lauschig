@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
@@ -73,7 +74,7 @@ fun AchievementsScreen(state: AchievementsUiState, onBack: () -> Unit, modifier:
             IconButton(onClick = onBack, modifier = Modifier.testTag("achievementsBack")) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back))
             }
-            Text(stringResource(R.string.achievements_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.achievements_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         }
         if (state.loading) {
             StatePage { padding -> LoadingState(verticalPadding = padding) }

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.toSize
@@ -17,8 +18,10 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasText
@@ -143,6 +146,10 @@ class StatsScreenTest {
         list.performScrollToNode(hasText("Night owl"))
         list.performScrollToNode(hasText("1 book finished"))
         rule.onNodeWithText("Reached").assertIsDisplayed()
+        // TalkBack: a button that says what it does.
+        rule.onNode(hasText("Night owl"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(SemanticsMatcher("click label") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "View achievement" })
         rule.onNodeWithText("Night owl").performClick()
         rule.onNodeWithTag("statsAchievementsAll").performClick()
         assertEquals(listOf("all", "all"), calls)
