@@ -213,7 +213,7 @@ private fun PeriodHead(state: StatsUiState, summary: PeriodSummary, onPrevious: 
 @Composable
 private fun periodLabel(range: PeriodRange): String {
     val context = LocalContext.current
-    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val locale = appLocale()
     return when (range.period) {
         StatsPeriod.WEEK -> {
             // Calendar days, formatted in UTC so no zone shifts them; the end is the last day's noon (inclusive).
@@ -227,6 +227,10 @@ private fun periodLabel(range: PeriodRange): String {
         StatsPeriod.ALL -> stringResource(R.string.stats_since, range.start.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)))
     }
 }
+
+/** The locale the app's texts are in (observable: a change recomposes). */
+@Composable
+private fun appLocale(): Locale = LocalConfiguration.current.locales[0]
 
 /** "5 h 12 min", "40 min", "30 s", and "0 min" for nothing. */
 @Composable
@@ -243,7 +247,7 @@ fun statsDuration(sec: Double): String {
 
 @Composable
 private fun PeriodChart(summary: PeriodSummary, modifier: Modifier = Modifier) {
-    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val locale = appLocale()
     val bars = summary.bars
     val labels: List<String?> = when (summary.unit) {
         BarUnit.DAY -> if (summary.range.period == StatsPeriod.WEEK) bars.map { it.start.dayOfWeek.getDisplayName(DateTextStyle.SHORT, locale) }
@@ -334,7 +338,7 @@ private fun TitleRow(row: StatsTitle, onOpenItem: (String) -> Unit) {
     val name = row.title ?: stringResource(R.string.stats_unknown_title)
     val trailing = when {
         row.seconds != null -> statsDuration(row.seconds)
-        row.day != null -> row.day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(LocalConfiguration.current.locales[0] ?: Locale.getDefault(), "dMMM")))
+        row.day != null -> row.day.format(DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(appLocale(), "dMMM")))
         else -> stringResource(R.string.stats_finished_earlier)
     }
     ListItem(
