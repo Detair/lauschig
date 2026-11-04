@@ -142,7 +142,7 @@ fun StartRoute(
             state, onOpen = onOpen, onPlay = viewModel::play, onMenu = { menuFor = it }, onOpenLibrary = onOpenLibrary,
             onOpenDiscover = onOpenDiscover, modifier = Modifier.weight(1f), playingId = playingId, onPlayPause = viewModel::playOrPause,
             stats = stats, onOpenStats = onOpenStats,
-            review = review, onOpenReview = onOpenReview, onHideReview = reviewCard::hide,
+            review = review.year, onOpenReview = onOpenReview, onHideReview = reviewCard::hide,
         )
     }
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpen) }

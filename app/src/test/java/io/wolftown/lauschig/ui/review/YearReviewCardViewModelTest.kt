@@ -76,15 +76,9 @@ class YearReviewCardViewModelTest {
         YearReviewCardViewModel(accounts, StatsSessions(db.listeningSessionDao(), db.sessionDao()), calendar, stamps, { 7L }, UnconfinedTestDispatcher()),
     )
 
-    private suspend fun YearReviewCardViewModel.await(p: (Int?) -> Boolean): Int? =
-        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { card.first(p) } }
-
-    /** The card after the data was read (a "no card" is only one once Room answered; the state starts with none). */
-    private suspend fun YearReviewCardViewModel.settled(): Int? {
-        card.first()
-        withContext(Dispatchers.Default) { kotlinx.coroutines.delay(300) }
-        return card.value
-    }
+    /** The offered year once [p] holds for the offer (the data read: no sleeping to prove a "none"). */
+    private suspend fun YearReviewCardViewModel.await(p: (YearReviewOffer) -> Boolean = { it.known }): Int? =
+        withContext(Dispatchers.Default.limitedParallelism(1)) { withTimeout(10_000) { card.first { it.known && p(it) } } }.year
 
     private suspend fun session(id: String, start: String, listened: Double) =
         db.listeningSessionDao().upsertAll(listOf(ListeningSessionEntity(sid, id, "li_1", "T", "A", at(start), at(start) + 60_000, listened, 36000.0, 10.0)))
@@ -93,16 +87,18 @@ class YearReviewCardViewModelTest {
         session("1", "2026-05-01T10:00", 3600.0)
         calendar.current = day("2026-11-30")
         val vm = vm()
-        assertNull(vm.settled())
+        assertNull(vm.await())
         calendar.moveTo(day("2026-12-01"))
-        assertEquals(2026, vm.await { it != null })
+        assertEquals(2026, vm.await { it.year != null })
         calendar.moveTo(day("2027-01-31"))
-        assertEquals(2026, vm.await { it == 2026 })
+        assertEquals(2026, vm.await { it.year == 2026 })
         calendar.moveTo(day("2027-02-01"))
-        assertNull(vm.await { it == null })
-        // In December 2027 the year 2027 – without listening in it, nothing.
+        assertNull(vm.await { it.year == null })
+        // In December 2027 the year 2027: nothing until it has an hour.
         calendar.moveTo(day("2027-12-01"))
-        assertNull(vm.settled())
+        assertNull(vm.await())
+        session("2", "2027-06-01T10:00", 3600.0)
+        assertEquals(2027, vm.await { it.year != null })
     }
 
     @Test fun belowAnHour_noCard_untilTheHourIsFull_alsoWithThisDevicesOwnSessions() = runTest {
@@ -111,33 +107,33 @@ class YearReviewCardViewModelTest {
         session("2", "2027-01-02T10:00", 7200.0)
         calendar.current = day("2027-01-05")
         val vm = vm()
-        assertNull(vm.settled())
+        assertNull(vm.await())
         db.sessionDao().upsert(LocalSessionEntity("local", sid, "li_1", 0.0, 600.0, 600.0, at("2026-12-30T21:00"), at("2026-12-30T21:10"), synced = false))
-        assertEquals(2026, vm.await { it != null })
+        assertEquals(2026, vm.await { it.year != null })
     }
 
     @Test fun hidden_goesAtOnce_staysHiddenForThatYear_andComesBackAfterASignOutWithoutKeeping() = runTest {
         session("1", "2026-05-01T10:00", 3600.0)
         val vm = vm()
-        assertEquals(2026, vm.await { it != null })
+        assertEquals(2026, vm.await { it.year != null })
         vm.hide(2026)
-        assertNull(vm.await { it == null })
+        assertNull(vm.await { it.year == null })
         assertNotNull(stamps.get(YearReviewCardViewModel.hiddenKey(2026, sid)))
         assertEquals("year_review_hidden_2026:$sid", YearReviewCardViewModel.hiddenKey(2026, sid))
         // A new screen (an app start) remembers it.
-        assertNull(vm().settled())
+        assertNull(vm().await())
         // Another account on this device has its own card.
         account("bbbbbbbbbbbbbbbb")
         db.listeningSessionDao().upsertAll(listOf(ListeningSessionEntity("bbbbbbbbbbbbbbbb", "9", "li_1", "T", "A", at("2026-06-01T10:00"), at("2026-06-01T11:00"), 3600.0, 36000.0, 10.0)))
-        assertEquals(2026, vm().await { it != null })
+        assertEquals(2026, vm().await { it.year != null })
         // The sign-out without keeping removes the account's stamps: offered again.
         account(sid)
         stamps.removeServer(sid)
-        assertEquals(2026, vm().await { it != null })
+        assertEquals(2026, vm().await { it.year != null })
     }
 
     @Test fun withoutAccount_noCard() = runTest {
         account(null)
-        assertNull(vm().settled())
+        assertNull(vm().await())
     }
 }

@@ -173,13 +173,31 @@ class YearReviewScreenTest {
         rule.onNodeWithTag("storyClose").assertIsDisplayed()
     }
 
-    @Test fun doubleFontSize_everySlideStillComposes() {
+    @Test
+    @Config(sdk = [35], qualifiers = "en-rUS-w360dp-h420dp")
+    fun doubleFontSize_theBigNumbersAndNamesFit_andALongSlideScrollsInsteadOfCutting() {
         show(FULL, fontScale = 2f)
-        // Every slide composes at 200 %; one that does not fit scrolls (the pager owns the scroll), nothing is cut.
-        assertEquals(9, spokenSlides(9).size)
-        rule.onNodeWithTag("reviewFacts", useUnmergedTree = true).assertExists()
-        val range = rule.onNodeWithTag("storySlide").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
-        assertTrue(range.maxValue() > 0f)
+        val big = mutableListOf<String>()
+        var scrolls = 0
+        repeat(9) { i ->
+            if (i > 0) rule.onNodeWithTag("storyNext").performClick()
+            for (tag in listOf("reviewNumber", "reviewName")) {
+                for (node in rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes()) {
+                    val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                    node.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action!!(layouts)
+                    val layout = layouts.single()
+                    // On its lines, within the slide's width: shrunk to fit rather than cut or ellipsized.
+                    assertTrue("$tag on slide ${i + 1} overflows", !layout.hasVisualOverflow && !layout.isLineEllipsized(layout.lineCount - 1))
+                    big += layout.layoutInput.text.text
+                }
+            }
+            val range = rule.onNodeWithTag("storySlide").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
+            if (range.maxValue() > 0f) scrolls++
+        }
+        // Every slide's one big thing was measured (the opening's hours … the type), and at 200 % on a short window (a phone in landscape)
+        // at least one slide is taller than the window – it scrolls.
+        assertEquals(listOf("47", "87", "November", "Anna", "8", "3", "Night owl"), big)
+        assertTrue(scrolls > 0)
     }
 }
 
