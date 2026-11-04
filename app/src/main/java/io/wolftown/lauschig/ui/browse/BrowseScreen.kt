@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.browse
 
+import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -109,16 +111,16 @@ fun BrowseScreen(
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(bottom = 8.dp))
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.l),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+            verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Header(state) }
             if (state.series.isNotEmpty()) {
                 item(key = "series", span = { GridItemSpan(maxLineSpan) }, contentType = "series") {
                     Column {
-                        Text(stringResource(R.string.browse_series_row), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                        SectionTitle(stringResource(R.string.browse_series_row))
                         FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             state.series.forEach { s ->
                                 AssistChip(onClick = { onOpenBrowse(BrowseKind.SERIES, s.name) }, label = { Text(s.name) })

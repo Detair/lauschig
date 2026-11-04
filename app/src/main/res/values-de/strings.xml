@@ -22,6 +22,7 @@
     <string name="start_see_all">Alle</string>
     <string name="start_empty">Noch nichts gehört – schau doch mal in die Bibliothek</string>
     <string name="start_progress_percent">%1$d %%</string>
+    <string name="start_continue_left">noch %1$s</string>
     <string name="setup_title">Mit Audiobookshelf verbinden</string>
     <string name="setup_intro">Gib die Serveradresse ein. Du kannst eine lokale Adresse für zu Hause und eine öffentliche für unterwegs angeben.</string>
     <string name="setup_local_address">Lokale Adresse (optional)</string>

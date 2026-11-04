@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.library
 
+import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.Icons
@@ -138,15 +140,15 @@ fun LibraryScreen(
 private fun LibraryGrid(state: LibraryUiState, tile: @Composable (ItemSummary) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(Spacing.gutter),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+        verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
         modifier = Modifier.fillMaxSize(),
     ) {
         if (state.tab == LibraryTab.Series) {
             state.series.forEach { group ->
                 item(key = "series:${group.name.lowercase()}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    Text(group.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    SectionTitle(group.name, Modifier.padding(top = Spacing.s))
                 }
                 items(group.items, key = ItemSummary::key, contentType = { "tile" }) { tile(it) }
             }

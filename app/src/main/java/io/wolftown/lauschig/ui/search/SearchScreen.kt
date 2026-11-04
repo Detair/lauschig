@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.search
 
+import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -114,9 +116,9 @@ fun SearchScreen(
         KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(bottom = 8.dp))
         LazyVerticalGrid(
             columns = GridCells.Adaptive(120.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.l),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+            verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (state.query.isBlank()) {
@@ -165,7 +167,7 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 }
 
 private fun LazyGridScope.header(key: String, title: Int) = full(key) {
-    Text(stringResource(title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    SectionTitle(stringResource(title), Modifier.padding(top = Spacing.s))
 }
 
 private const val TITLES_COLLAPSED = 6

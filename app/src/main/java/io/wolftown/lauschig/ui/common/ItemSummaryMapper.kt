@@ -55,5 +55,6 @@ fun ItemEntity.toSummary(covers: CoverPathCache, progress: ProgressEntity?, down
         isFinished = progress?.isFinished == true,
         isDownloading = downloading && !downloaded,
         coverVersion = coverUpdatedAt,
+        remainingSec = if (progress != null && !progress.isFinished && duration > 0) (duration - progress.currentTimeSec).coerceAtLeast(0.0) else null,
     )
 }

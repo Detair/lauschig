@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.discover
 
+import io.wolftown.lauschig.ui.theme.Spacing
+import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,9 +87,9 @@ fun DiscoverScreen(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.s, bottom = Spacing.l),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.tileGap),
+        verticalArrangement = Arrangement.spacedBy(Spacing.tileGap),
         modifier = modifier.fillMaxSize(),
     ) {
         full("kinds") { KindFilterChips(state.availableKinds, state.selectedKinds, onKinds, Modifier.padding(horizontal = 0.dp)) }
@@ -162,7 +164,7 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 }
 
 private fun LazyGridScope.header(key: String, title: Int) = full(key) {
-    Text(stringResource(title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    SectionTitle(stringResource(title), Modifier.padding(top = Spacing.s))
 }
 
 private fun DiscoverSort.label() = when (this) {
@@ -176,7 +178,7 @@ private fun DiscoverSort.label() = when (this) {
 private fun AllTitlesHeader(sort: DiscoverSort, onSort: (DiscoverSort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(stringResource(R.string.discover_all), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        SectionTitle(stringResource(R.string.discover_all))
         Box {
             TextButton(onClick = { open = true }) { Text(stringResource(R.string.discover_sort, stringResource(sort.label()))) }
             DropdownMenu(open, onDismissRequest = { open = false }) {
