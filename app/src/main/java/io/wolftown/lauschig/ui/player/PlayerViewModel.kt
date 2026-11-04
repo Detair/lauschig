@@ -28,8 +28,11 @@ import kotlin.math.roundToInt
 /** Minimal chapter data the player needs; [startSec]/[endSec] are book-wide. */
 data class ChapterInfo(val title: String, val startSec: Double, val endSec: Double)
 
-/** Who and which series a loaded title belongs to (for an episode: its podcast as [author]). */
-data class PlayerMeta(val author: String?, val seriesName: String? = null, val seriesSequence: String? = null)
+/**
+ * Who and which series a loaded title belongs to (for an episode: its podcast as [author]), and its cover's server
+ * version (`coverUpdatedAt`), which the player's cover URL carries like the tiles' do.
+ */
+data class PlayerMeta(val author: String?, val seriesName: String? = null, val seriesSequence: String? = null, val coverVersion: Long = 0)
 
 @Immutable
 data class PlayerScreenState(
@@ -58,6 +61,8 @@ data class PlayerScreenState(
     val author: String? = null,
     val seriesName: String? = null,
     val seriesSequence: String? = null,
+    /** The cover's server version (see [PlayerMeta]). */
+    val coverVersion: Long = 0,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -78,7 +83,11 @@ class PlayerViewModel(
                     // An episode's row is its podcast's: the podcast is the quieter line.
                     if (sid == null) flowOf(null)
                     else itemDao.observeItemRow(sid, key.libraryItemId).map { row ->
-                        row?.let { if (key.episodeId != null) PlayerMeta(it.title) else PlayerMeta(it.author, it.seriesName, it.seriesSequence) }
+                        when {
+                            row == null -> PlayerMeta(null)
+                            key.episodeId != null -> PlayerMeta(row.title, coverVersion = row.coverUpdatedAt)
+                            else -> PlayerMeta(row.author, row.seriesName, row.seriesSequence, row.coverUpdatedAt)
+                        }
                     }
                 }
             },
@@ -132,6 +141,7 @@ class PlayerViewModel(
             author = m?.author,
             seriesName = m?.seriesName,
             seriesSequence = m?.seriesSequence,
+            coverVersion = m?.coverVersion ?: 0,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 

@@ -42,7 +42,14 @@ val MiniToggleSize = 56.dp
  * chapter's progress. Renders nothing while no item is loaded.
  */
 @Composable
-fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+fun MiniPlayer(
+    state: PlayerUiState,
+    onToggle: () -> Unit,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** The cover's server version once known (null until then: no server cover yet, so it is not loaded twice). */
+    coverVersion: Long? = 0,
+) {
     if (state.itemId == null) return
     val chapterLength = state.chapterEndSec - state.chapterStartSec
     val progress = if (state.chapterIndex >= 0 && chapterLength > 0) {
@@ -51,8 +58,9 @@ fun MiniPlayer(state: PlayerUiState, onToggle: () -> Unit, onOpen: () -> Unit, m
         (state.positionSec / state.durationSec).toFloat()
     } else 0f
     val openLabel = stringResource(R.string.player_mini_open)
-    val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, 0)
-    val container by animateCoverTint(model, MaterialTheme.colorScheme.surfaceContainerHigh)
+    val model = if (coverVersion == null && state.coverPath == null) null
+    else coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, coverVersion ?: 0)
+    val container by animateCoverTint(model, coverVersion ?: 0, MaterialTheme.colorScheme.surfaceContainerHigh)
     Surface(modifier.fillMaxWidth().testTag("miniPlayer"), color = container) {
         Column {
             ProgressLine({ progress }, Modifier.testTag("miniProgress"))

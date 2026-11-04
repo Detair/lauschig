@@ -170,7 +170,7 @@ fun ItemDetailScreen(
     val settledOffline = LocalOfflineDimming.current
     val model = if (state.found) coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion) else null
     val surface = MaterialTheme.colorScheme.surface
-    val tint = animateCoverTint(model, surface)
+    val tint = animateCoverTint(model, state.coverVersion, surface)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     // The tint reaches under the status bar where the frame allows it (never over a banner) and, on a wide window that

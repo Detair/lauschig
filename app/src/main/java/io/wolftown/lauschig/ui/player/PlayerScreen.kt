@@ -231,10 +231,10 @@ fun PlayerScreen(
     val hasChapters = state.chapters.isNotEmpty()
     val loaded = state.itemId != null
     val detailsLabel = stringResource(R.string.player_open_details)
-    val art = state.itemId?.let { coverModel(LocalServerBaseUrl.current, it, state.coverPath, 0) }
+    val art = state.itemId?.let { coverModel(LocalServerBaseUrl.current, it, state.coverPath, state.coverVersion) }
     val surface = MaterialTheme.colorScheme.surface
     // The signature: the cover's tint at the top, fading into the surface at 60 % of the height.
-    val tint = animateCoverTint(art, surface)
+    val tint = animateCoverTint(art, state.coverVersion, surface)
     val tabular = remember { TextStyle(fontFeatureSettings = "tnum") }
 
     val topBar: @Composable () -> Unit = {

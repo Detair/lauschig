@@ -92,14 +92,31 @@ internal fun Color.toHsl(): Triple<Float, Float, Float> {
 }
 
 /**
- * [base] tinted with the cover of [model] (see [coverTintOver]), cross-fading in [TINT_FADE_MS]; [base] itself while
- * the swatch loads, without a cover or offline without a local cover – never a wrong colour in between. A [State], so
- * a caller that only draws with it (a gradient) reads it in the draw phase and skips recomposing during the fade.
+ * [base] tinted with the cover of [model] (see [coverTintOver]); [base] itself without a cover, offline without a local
+ * cover, or before the first swatch of this slot is known. On a change of cover the previous tint stays until the new
+ * swatch is known (see [rememberCoverSwatch]).
  */
 @Composable
-fun animateCoverTint(model: Any?, base: Color): State<Color> {
-    val swatch = rememberCoverSwatch(model)
+fun coverTintTarget(model: Any?, coverVersion: Long, base: Color): Color {
+    val swatch = rememberCoverSwatch(model, coverVersion)
     val scheme = MaterialTheme.colorScheme
-    val target = if (swatch == null) base else remember(swatch, base, scheme) { coverTintOver(base, swatch, scheme) }
-    return animateColorAsState(target, tween(TINT_FADE_MS), label = "coverTint")
+    return if (swatch == null) base else remember(swatch, base, scheme) { coverTintOver(base, swatch, scheme) }
 }
+
+/**
+ * [coverTintTarget], cross-fading in [TINT_FADE_MS]. A [State], so a caller that only draws with it (a gradient) reads it
+ * in the draw phase and skips recomposing during the fade.
+ */
+@Composable
+fun animateCoverTint(model: Any?, coverVersion: Long, base: Color): State<Color> =
+    animateColorAsState(coverTintTarget(model, coverVersion, base), tween(TINT_FADE_MS), label = "coverTint")
+
+/**
+ * The colour for a control (a filled button, a progress line, a slider) on [background]: the scheme's primary when it
+ * keeps WCAG's 3:1 for non-text against it, else onSurface.
+ */
+fun ColorScheme.controlColorOn(background: Color): Color =
+    if (contrastRatio(primary, background) >= MIN_CONTROL_CONTRAST) primary else onSurface
+
+/** WCAG 2.x non-text contrast (controls, icons that carry meaning). */
+const val MIN_CONTROL_CONTRAST = 3.0

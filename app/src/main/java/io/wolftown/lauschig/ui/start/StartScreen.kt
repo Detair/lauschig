@@ -212,7 +212,7 @@ private fun ContinueHero(
     modifier: Modifier = Modifier,
 ) {
     val model = coverModel(LocalServerBaseUrl.current, item.id, item.coverPath, item.coverVersion)
-    val container by animateCoverTint(model, MaterialTheme.colorScheme.surfaceContainerHigh)
+    val container by animateCoverTint(model, item.coverVersion, MaterialTheme.colorScheme.surfaceContainerHigh)
     val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
     val shape = RoundedCornerShape(16.dp)

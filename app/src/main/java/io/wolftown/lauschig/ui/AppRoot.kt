@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.player.MiniPlayer
+import io.wolftown.lauschig.ui.player.PlayerViewModel
 import io.wolftown.lauschig.ui.nav.navigateToTab
 import io.wolftown.lauschig.ui.nav.showSignIn
 import io.wolftown.lauschig.links.LinkTarget
@@ -75,6 +76,7 @@ fun AppRoot(
     /** The chosen start screen (where the first sign-in leads). */
     startTab: TopLevelTab = TopLevelTab.Start,
     viewModel: AppViewModel = hiltViewModel(),
+    playerViewModel: PlayerViewModel = hiltViewModel(),
     openRequest: String? = null,
     onOpenHandled: () -> Unit = {},
     linkRequest: String? = null,
@@ -141,6 +143,8 @@ fun AppRoot(
     val playerCovers = playerCoversFrame(onPlayer, playerSlide)
     val playerUp = onPlayer || playerSlide.currentState || playerSlide.targetState
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
+    // The same (activity-wide) view model as the player layer's: its state knows the loaded title's cover version.
+    val playerScreen by playerViewModel.state.collectAsStateWithLifecycle()
     val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
@@ -163,6 +167,7 @@ fun AppRoot(
                             playerState,
                             onToggle = viewModel.player::togglePlayPause,
                             onOpen = { navController.navigate(Player) { launchSingleTop = true } },
+                            coverVersion = playerScreen.coverVersion.takeIf { playerScreen.itemId == playerState.itemId },
                         )
                     }
                 },
