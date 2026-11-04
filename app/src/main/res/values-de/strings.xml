@@ -808,4 +808,9 @@
         <item quantity="other">%d Serien</item>
     </plurals>
     <string name="stats_achievement_open">Erfolg ansehen</string>
+    <!-- Jahresrückblick -->
+    <string name="review_slide_position">Folie %1$d von %2$d</string>
+    <string name="review_next">Nächste Folie</string>
+    <string name="review_previous">Vorherige Folie</string>
+    <string name="review_close">Jahresrückblick schließen</string>
 </resources>
