@@ -26,6 +26,7 @@ import io.wolftown.lauschig.stats.FakeStatsCalendar
 import io.wolftown.lauschig.sync.HistoryLoad
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -290,8 +291,17 @@ class StatsViewModelTest {
     @Test fun thePage_listensToTheCalendarOnce() = runTest {
         session("1", "2026-11-03T08:00", 1800.0)
         val vm = vm()
+        // The page is on screen: its state stays collected (the VM stops listening 5 s after the last collector – a
+        // bare await would race that stop against the asynchronous subscription).
+        val onScreen = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         vm.await { it.summary != null }
 
+        // Wait for the subscription, give a second listener the same chance to appear, then there must be exactly one.
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(10_000) { calendar.listenerCount.first { it >= 1 } }
+            kotlinx.coroutines.delay(200)
+        }
         assertEquals(1, calendar.listeners)
+        onScreen.cancel()
     }
 }

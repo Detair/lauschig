@@ -17,6 +17,9 @@ class FakeStatsCalendar(
     /** How many collectors listen to [changes] now (a screen should be one). */
     val listeners: Int get() = changed.subscriptionCount.value
 
+    /** [listeners] as it changes: subscribing happens asynchronously, after the first state may already be out. */
+    val listenerCount: Flow<Int> = changed.subscriptionCount
+
     fun moveTo(next: CalendarNow) {
         current = next
         changed.tryEmit(Unit)
