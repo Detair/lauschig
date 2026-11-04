@@ -1,5 +1,10 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.ui.theme.coverTintTarget
+import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -90,7 +95,6 @@ import androidx.compose.ui.text.TextStyle
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.LocalBackdropReach
-import io.wolftown.lauschig.ui.theme.animateCoverTint
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
@@ -234,7 +238,13 @@ fun PlayerScreen(
     val art = state.itemId?.let { coverModel(LocalServerBaseUrl.current, it, state.coverPath, state.coverVersion) }
     val surface = MaterialTheme.colorScheme.surface
     // The signature: the cover's tint at the top, fading into the surface at 60 % of the height.
-    val tint = animateCoverTint(art, state.coverVersion, surface)
+    val scheme = MaterialTheme.colorScheme
+    val tintTarget = coverTintTarget(art, state.coverVersion, surface)
+    val tint = animateColorAsState(tintTarget, tween(TINT_FADE_MS), label = "playerTint")
+    // The controls (play button, slider, "downloaded") stay primary only where primary keeps 3:1 on the tint at the top.
+    val playerScheme = remember(scheme, tintTarget) {
+        if (scheme.controlColorOn(tintTarget) == scheme.primary) scheme else scheme.copy(primary = scheme.onSurface, onPrimary = scheme.surface)
+    }
     val tabular = remember { TextStyle(fontFeatureSettings = "tnum") }
 
     val topBar: @Composable () -> Unit = {
@@ -389,74 +399,76 @@ fun PlayerScreen(
     // The gradient reaches under the status bar and the side insets where the frame allows it (never over a banner).
     val reach = LocalBackdropReach.current
     val density = LocalDensity.current
-    BoxWithConstraints(
-        modifier.fillMaxSize().drawBehind {
-            val top = with(density) { reach.top.toPx() }
-            val left = with(density) { reach.left.toPx() }
-            val right = with(density) { reach.right.toPx() }
-            drawRect(
-                Brush.verticalGradient(0f to tint.value, 0.6f to surface, startY = -top, endY = size.height),
-                topLeft = Offset(-left, -top),
-                size = Size(size.width + left + right, size.height + top),
-            )
-        },
-    ) {
-        val viewport = constraints.maxHeight
-        val viewportDp = maxHeight
-        // End side of the wide layouts: top bar, title, progress and transport controls, centred in the height that is
-        // left; [withActions] adds the action area under them.
-        val endSide: @Composable RowScope.(withActions: Boolean) -> Unit = { withActions ->
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                Column(Modifier.heightIn(min = viewportDp)) {
-                    topBar()
-                    Spacer(Modifier.weight(1f))
-                    info()
-                    progress()
-                    controls()
-                    finished()
-                    Spacer(Modifier.weight(1f))
-                    if (withActions) actions()
+    MaterialTheme(colorScheme = playerScheme) {
+        BoxWithConstraints(
+            modifier.fillMaxSize().drawBehind {
+                val top = with(density) { reach.top.toPx() }
+                val left = with(density) { reach.left.toPx() }
+                val right = with(density) { reach.right.toPx() }
+                drawRect(
+                    Brush.verticalGradient(0f to tint.value, 0.6f to surface, startY = -top, endY = size.height),
+                    topLeft = Offset(-left, -top),
+                    size = Size(size.width + left + right, size.height + top),
+                )
+            },
+        ) {
+            val viewport = constraints.maxHeight
+            val viewportDp = maxHeight
+            // End side of the wide layouts: top bar, title, progress and transport controls, centred in the height that is
+            // left; [withActions] adds the action area under them.
+            val endSide: @Composable RowScope.(withActions: Boolean) -> Unit = { withActions ->
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    Column(Modifier.heightIn(min = viewportDp)) {
+                        topBar()
+                        Spacer(Modifier.weight(1f))
+                        info()
+                        progress()
+                        controls()
+                        finished()
+                        Spacer(Modifier.weight(1f))
+                        if (withActions) actions()
+                    }
                 }
             }
-        }
-        if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
-            if (actionGridUnderTransport(maxHeight)) {
-                // Tablets in landscape: the cover alone on the start side, as large as fits and centred; everything
-                // else, the action area last, on the end side.
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(minOf(maxWidth, maxHeight - 32.dp, 560.dp))) { cover() }
+            if (maxWidth >= WIDE_MIN_WIDTH && maxWidth > maxHeight) {
+                if (actionGridUnderTransport(maxHeight)) {
+                    // Tablets in landscape: the cover alone on the start side, as large as fits and centred; everything
+                    // else, the action area last, on the end side.
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(minOf(maxWidth, maxHeight - 32.dp, 560.dp))) { cover() }
+                        }
+                        endSide(true)
                     }
-                    endSide(true)
+                } else {
+                    // Phones in landscape: cover with the action area under it on the start side, the rest beside it (the
+                    // end side has no room left for the action area).
+                    Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                            CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
+                        }
+                        endSide(false)
+                    }
                 }
             } else {
-                // Phones in landscape: cover with the action area under it on the start side, the rest beside it (the
-                // end side has no room left for the action area).
-                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                        CoverFitColumn(viewport, MIN_COVER, maxCover = 560.dp, header = { Spacer(Modifier.height(8.dp)) }, cover = cover, body = actions)
-                    }
-                    endSide(false)
+                val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+                    CoverFitColumn(
+                        viewport, MIN_COVER, maxCover,
+                        header = topBar,
+                        cover = cover,
+                        body = {
+                            Column(Modifier.fillMaxWidth()) {
+                                info()
+                                progress()
+                                controls()
+                                finished()
+                                actions()
+                            }
+                        },
+                        modifier = Modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp),
+                    )
                 }
-            }
-        } else {
-            val maxCover = if (maxWidth >= WIDE_MIN_WIDTH) 520.dp else 280.dp
-            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-                CoverFitColumn(
-                    viewport, MIN_COVER, maxCover,
-                    header = topBar,
-                    cover = cover,
-                    body = {
-                        Column(Modifier.fillMaxWidth()) {
-                            info()
-                            progress()
-                            controls()
-                            finished()
-                            actions()
-                        }
-                    },
-                    modifier = Modifier.widthIn(max = 600.dp).padding(horizontal = 16.dp),
-                )
             }
         }
     }

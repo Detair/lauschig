@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui.start
 
+import io.wolftown.lauschig.ui.theme.coverTintTarget
+import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,7 +70,6 @@ import io.wolftown.lauschig.ui.common.SeeAllButton
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.extras.listenedText
 import io.wolftown.lauschig.ui.theme.Spacing
-import io.wolftown.lauschig.ui.theme.animateCoverTint
 import kotlin.math.roundToInt
 
 @androidx.compose.runtime.Immutable
@@ -212,12 +217,18 @@ private fun ContinueHero(
     modifier: Modifier = Modifier,
 ) {
     val model = coverModel(LocalServerBaseUrl.current, item.id, item.coverPath, item.coverVersion)
-    val container by animateCoverTint(model, item.coverVersion, MaterialTheme.colorScheme.surfaceContainerHigh)
+    val scheme = MaterialTheme.colorScheme
+    val target = coverTintTarget(model, item.coverVersion, scheme.surfaceContainerHigh)
+    val container by animateColorAsState(target, tween(TINT_FADE_MS), label = "heroTint")
+    // Primary only where it keeps 3:1 on this card's tint, else the text colour (decided on the tint the card fades to).
+    val control = scheme.controlColorOn(target)
+    val onControl = if (control == scheme.primary) scheme.onPrimary else scheme.surface
     val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
     val shape = RoundedCornerShape(16.dp)
     Surface(
         color = container,
+        contentColor = scheme.onSurface,
         shape = shape,
         modifier = modifier.widthIn(max = HERO_MAX_WIDTH).fillMaxWidth().testTag("continueHero"),
     ) {
@@ -249,13 +260,14 @@ private fun ContinueHero(
                         Text(left, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("heroLeft"))
                         ProgressLine(
                             { item.progress }, Modifier.padding(top = 6.dp, end = Spacing.s).clip(CircleShape).testTag("heroProgress"),
-                            thickness = 4.dp, trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                            thickness = 4.dp, color = control, trackColor = scheme.onSurface.copy(alpha = 0.12f),
                         )
                     }
                     val label = if (playing) stringResource(R.string.player_pause) else stringResource(R.string.cover_play, item.title)
                     FilledIconButton(
                         onClick = { onPlayPause(item.id) },
                         enabled = !unavailable || playing,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = control, contentColor = onControl),
                         modifier = Modifier.size(56.dp).testTag("heroPlay"),
                     ) {
                         Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = label, modifier = Modifier.size(32.dp))

@@ -1,5 +1,10 @@
 package io.wolftown.lauschig.ui.player
 
+import io.wolftown.lauschig.ui.theme.coverTintTarget
+import io.wolftown.lauschig.ui.theme.controlColorOn
+import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,7 +33,6 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
-import io.wolftown.lauschig.ui.theme.animateCoverTint
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.getValue
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
@@ -60,10 +64,13 @@ fun MiniPlayer(
     val openLabel = stringResource(R.string.player_mini_open)
     val model = if (coverVersion == null && state.coverPath == null) null
     else coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, coverVersion ?: 0)
-    val container by animateCoverTint(model, coverVersion ?: 0, MaterialTheme.colorScheme.surfaceContainerHigh)
-    Surface(modifier.fillMaxWidth().testTag("miniPlayer"), color = container) {
+    val scheme = MaterialTheme.colorScheme
+    val target = coverTintTarget(model, coverVersion ?: 0, scheme.surfaceContainerHigh)
+    val container by animateColorAsState(target, tween(TINT_FADE_MS), label = "miniTint")
+    // The tinted bar sets its text colour itself (a blended colour is no theme role) and keeps the line at 3:1.
+    Surface(modifier.fillMaxWidth().testTag("miniPlayer"), color = container, contentColor = scheme.onSurface) {
         Column {
-            ProgressLine({ progress }, Modifier.testTag("miniProgress"))
+            ProgressLine({ progress }, Modifier.testTag("miniProgress"), color = scheme.controlColorOn(target))
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f).heightIn(min = MiniToggleSize).clip(CoverShapes.Mini).clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpen),

@@ -95,6 +95,20 @@ class CoverTintTest {
         assertEquals(0f, greyS, 0.01f)
     }
 
+    @Test fun controls_keepPrimary_onlyWhereItReads3to1() {
+        val scheme = lightColorScheme(primary = Color(0xFF415F91), onSurface = Color(0xFF1A1C20))
+        assertEquals(scheme.primary, scheme.controlColorOn(Color(0xFFF0F2F8)))
+        // A tint close to primary itself: the control falls back to the text colour, which reads.
+        val close = Color(0xFF5A75A6)
+        assertEquals(scheme.onSurface, scheme.controlColorOn(close))
+        assertTrue(contrastRatio(scheme.onSurface, close) >= MIN_CONTROL_CONTRAST)
+        // Every tint of the tested swatches leaves the controls readable one way or the other.
+        for ((name, s) in schemes) for (swatch in swatches) {
+            val bg = coverTintOver(s.surfaceContainerHigh, swatch, s)
+            assertTrue("$name $swatch", contrastRatio(s.controlColorOn(bg), bg) >= MIN_CONTROL_CONTRAST)
+        }
+    }
+
     private fun distance(a: Color, b: Color): Float =
         (a.red - b.red) * (a.red - b.red) + (a.green - b.green) * (a.green - b.green) + (a.blue - b.blue) * (a.blue - b.blue)
 }
