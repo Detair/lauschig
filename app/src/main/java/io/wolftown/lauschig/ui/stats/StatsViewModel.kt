@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -108,8 +109,9 @@ data class StatsUiState(
 
 /**
  * The statistics page: everything from Room (offline-first, see [ListeningStats]); for the signed-in account it asks the
- * server once for new sessions after the connection check said online (cancelled when the account changes or signs
- * out). Opens on the current week; a period switch starts at that period's current one; previous/next never go into
+ * server once for new sessions after the connection check said online, and reads the whole history on „Jetzt laden“
+ * (both cancelled when the stored account changes – for a sign-out that is its last step, when the account is cleared).
+ * Opens on the current week; a period switch starts at that period's current one; previous/next never go into
  * the future nor before the first listening. "Today", the zone and the week start come from [calendar] and are read
  * again at midnight, on a time, zone or language change and when the page resumes ([onResume]). A burst of database
  * writes (a playing title, a sync writing pages) is computed once, off the main thread.
@@ -124,7 +126,8 @@ class StatsViewModel(
     private val libraries: LibraryDao,
     private val covers: CoverPathCache,
     private val catalog: Catalog,
-    private val refresh: suspend (serverId: String) -> Unit,
+    /** Asks the server for new sessions; `allowMetered`: the user asked to read the whole history now. */
+    private val refresh: suspend (serverId: String, allowMetered: Boolean) -> Unit,
     private val awaitOnline: suspend () -> Boolean,
     private val historyLoad: (serverId: String) -> Flow<HistoryLoad>,
     private val calendar: StatsCalendar,
@@ -135,7 +138,7 @@ class StatsViewModel(
         covers: CoverPathCache, catalog: Catalog, sync: ListeningSessionSync, apiProvider: ApiProvider, calendar: StatsCalendar,
     ) : this(
         accounts, sessions, progress, catalogDao, libraries, covers, catalog,
-        refresh = sync::sync,
+        refresh = { sid, allowMetered -> sync.sync(sid, allowMetered) },
         awaitOnline = { awaitConnectionAnswer(apiProvider.connection, apiProvider.checking, CONNECTION_ANSWER_WAIT_MS) },
         historyLoad = sync::historyLoad,
         calendar = calendar,
@@ -166,8 +169,11 @@ class StatsViewModel(
 
     private val serverId = accounts.account.map { it?.serverId }.distinctUntilChanged()
 
-    /** "Today" as of the last midnight, time/zone/language change or resume. */
-    private val now: Flow<CalendarNow> = merge(resumes, calendar.changes).map { calendar.now() }.distinctUntilChanged()
+    /** "Today" as of the last midnight, time/zone/language change or resume – one source for the whole page. */
+    private val now: StateFlow<CalendarNow> = merge(resumes, calendar.changes).map { calendar.now() }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), calendar.now())
+
+    private val loadNowRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /**
      * The first day with a session, for the bound of [previous]. Written off the main thread whenever the data is
@@ -213,22 +219,33 @@ class StatsViewModel(
                     refreshState.value = Refresh(running = false, unreached = false)
                     return@collectLatest
                 }
-                refreshState.value = Refresh(running = true, unreached = false)
-                var reached = false
-                try {
-                    if (awaitOnline()) {
-                        refresh(sid)
-                        reached = true
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "listening sessions not refreshed", e)
-                } finally {
-                    refreshState.value = Refresh(running = false, unreached = !reached)
-                }
+                refreshOnce(sid, allowMetered = false)
+                // „Jetzt laden“ for this account: a full read now, whatever the network.
+                loadNowRequests.collect { refreshOnce(sid, allowMetered = true) }
             }
         }
+    }
+
+    private suspend fun refreshOnce(sid: String, allowMetered: Boolean) {
+        refreshState.value = Refresh(running = true, unreached = false)
+        var reached = false
+        try {
+            if (awaitOnline()) {
+                refresh(sid, allowMetered)
+                reached = true
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "listening sessions not refreshed", e)
+        } finally {
+            refreshState.value = Refresh(running = false, unreached = !reached)
+        }
+    }
+
+    /** „Jetzt laden“: read the whole history now, also over mobile data (one tap, one run). */
+    fun loadHistoryNow() {
+        loadNowRequests.tryEmit(Unit)
     }
 
     /** The page is shown again: "today" may have moved on while it was away. */

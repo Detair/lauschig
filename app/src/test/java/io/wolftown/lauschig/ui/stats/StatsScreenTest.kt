@@ -209,17 +209,23 @@ class StatsScreenTest {
 
     @Test fun whileTheHistoryLoads_orWaitsForWifi_aQuietLineSaysSo() {
         var state by mutableStateOf(listened.copy(history = HistoryLoad.LOADING))
-        rule.setContent { LauschigTheme { StatsScreen(state, onBack = {}) } }
+        var loadNow = 0
+        rule.setContent { LauschigTheme { StatsScreen(state, onBack = {}, onLoadNow = { loadNow++ }) } }
         rule.onNodeWithTag("statsHistory").assertTextEquals("Loading your listening history …")
+        rule.onNodeWithTag("statsLoadNow").assertDoesNotExist() // already loading
         rule.onNodeWithTag("statsTotal").assertIsDisplayed() // the numbers stay usable
 
-        state = listened.copy(history = HistoryLoad.WAITING_FOR_UNMETERED)
+        state = listened.copy(history = HistoryLoad.INCOMPLETE)
         rule.onNodeWithTag("statsHistory").assertTextEquals("Your full listening history loads on Wi-Fi.")
+        rule.onNodeWithTag("statsLoadNow").assertTextEquals("Load now").performClick()
+        assertEquals(1, loadNow)
 
         state = listened
         rule.onNodeWithTag("statsHistory").assertDoesNotExist()
 
-        state = StatsUiState(loading = false, refreshing = false, history = HistoryLoad.WAITING_FOR_UNMETERED)
+        state = StatsUiState(loading = false, refreshing = false, history = HistoryLoad.INCOMPLETE)
         rule.onNodeWithText("Your full listening history loads on Wi-Fi.").assertIsDisplayed()
+        rule.onNodeWithTag("statsLoadNow").performClick()
+        assertEquals(2, loadNow)
     }
 }

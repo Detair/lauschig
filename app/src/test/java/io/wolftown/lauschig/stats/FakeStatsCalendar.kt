@@ -14,6 +14,9 @@ class FakeStatsCalendar(
     override fun now(): CalendarNow = current
     override val changes: Flow<Unit> = changed
 
+    /** How many collectors listen to [changes] now (a screen should be one). */
+    val listeners: Int get() = changed.subscriptionCount.value
+
     fun moveTo(next: CalendarNow) {
         current = next
         changed.tryEmit(Unit)

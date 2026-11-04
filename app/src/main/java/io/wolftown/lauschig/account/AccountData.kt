@@ -47,7 +47,10 @@ interface AccountData {
      */
     suspend fun purge(serverId: String)
 
-    /** The rows only, once more (late writes of a stopping service or worker); idempotent. */
+    /**
+     * The rows and the sync stamps once more (late writes of a stopping service, worker or statistics page – a stamp
+     * left behind would describe rows that are gone); idempotent. Files are the purge's.
+     */
     suspend fun deleteRows(serverId: String)
 
     /** True if [serverId] has any row left. */
@@ -97,6 +100,7 @@ class DeviceAccountData(
 
     override suspend fun deleteRows(serverId: String) {
         require(!DeviceLibrary.isLocal(serverId)) { "the device library is not account data" }
+        stamps.removeServer(serverId)
         dao.deleteServer(serverId)
     }
 

@@ -81,7 +81,7 @@ class StatsViewModelTest {
     private val calendar = FakeStatsCalendar(CalendarNow(LocalDate.of(2026, 11, 4), berlin, DayOfWeek.MONDAY))
     private val history = MutableStateFlow(HistoryLoad.NONE)
 
-    private fun vm(online: suspend () -> Boolean = { true }, refresh: suspend (String) -> Unit = { refreshed += it }): StatsViewModel =
+    private fun vm(online: suspend () -> Boolean = { true }, refresh: suspend (String, Boolean) -> Unit = { sid, all -> refreshed += if (all) "$sid:all" else sid }): StatsViewModel =
         viewModels.own(
             StatsViewModel(
                 accounts, StatsSessions(db.listeningSessionDao(), db.sessionDao()), db.progressDao(), db.catalogDao(), db.libraryDao(),
@@ -171,7 +171,7 @@ class StatsViewModelTest {
 
     @Test fun aFailedRefresh_keepsTheCache_andSaysTheServerWasNotReached() = runTest {
         session("1", "2026-11-03T08:00", 1800.0)
-        val vm = vm(refresh = { throw java.io.IOException("down") })
+        val vm = vm(refresh = { _, _ -> throw java.io.IOException("down") })
 
         val s = vm.await { !it.refreshing && it.summary != null }
         assertTrue(s.unreached)
@@ -239,7 +239,7 @@ class StatsViewModelTest {
     @Test fun theRefresh_belongsToTheAccount_signOutOrAnotherAccountCancelsIt() = runTest {
         val started = CopyOnWriteArrayList<String>()
         val cancelled = CopyOnWriteArrayList<String>()
-        val vm = vm(refresh = { sid ->
+        val vm = vm(refresh = { sid, _ ->
             started += sid
             try {
                 kotlinx.coroutines.awaitCancellation()
@@ -269,7 +269,26 @@ class StatsViewModelTest {
 
         history.value = HistoryLoad.LOADING
         vm.await { it.history == HistoryLoad.LOADING }
-        history.value = HistoryLoad.WAITING_FOR_UNMETERED
-        vm.await { it.history == HistoryLoad.WAITING_FOR_UNMETERED }
+        history.value = HistoryLoad.INCOMPLETE
+        vm.await { it.history == HistoryLoad.INCOMPLETE }
+    }
+
+    @Test fun loadNow_readsTheWholeHistory_forThisAccount() = runTest {
+        val vm = vm()
+        vm.await { !it.refreshing }
+        assertEquals(listOf(sid), refreshed)
+
+        vm.loadHistoryNow()
+
+        withTimeout(10_000) { while (refreshed.size < 2) kotlinx.coroutines.delay(5) }
+        assertEquals(listOf(sid, "$sid:all"), refreshed)
+    }
+
+    @Test fun thePage_listensToTheCalendarOnce() = runTest {
+        session("1", "2026-11-03T08:00", 1800.0)
+        val vm = vm()
+        vm.await { it.summary != null }
+
+        assertEquals(1, calendar.listeners)
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -82,7 +83,10 @@ fun StatsRoute(onBack: () -> Unit, onOpenItem: (itemId: String) -> Unit, viewMod
         viewModel.onResume()
         onPauseOrDispose {}
     }
-    StatsScreen(state, onBack, onPeriod = viewModel::setPeriod, onPrevious = viewModel::previous, onNext = viewModel::next, onOpenItem = onOpenItem)
+    StatsScreen(
+        state, onBack, onPeriod = viewModel::setPeriod, onPrevious = viewModel::previous, onNext = viewModel::next,
+        onOpenItem = onOpenItem, onLoadNow = viewModel::loadHistoryNow,
+    )
 }
 
 /** Tabular figures, so numbers that change keep their width. */
@@ -102,6 +106,8 @@ fun StatsScreen(
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
     onOpenItem: (itemId: String) -> Unit = {},
+    /** Reads the whole history now, also on mobile data (the user's explicit choice for this one run). */
+    onLoadNow: () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().testTag("statsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -114,12 +120,16 @@ fun StatsScreen(
                 if (state.loading || state.refreshing) {
                     LoadingState(verticalPadding = padding)
                 } else {
+                    val incomplete = state.history == HistoryLoad.INCOMPLETE
                     val hint = when {
-                        state.history == HistoryLoad.WAITING_FOR_UNMETERED -> R.string.stats_history_wifi
+                        incomplete -> R.string.stats_history_wifi
                         state.unreached -> R.string.stats_unreached
                         else -> R.string.stats_empty_hint
                     }
-                    EmptyState(Icons.Rounded.BarChart, stringResource(R.string.stats_empty), supporting = stringResource(hint), verticalPadding = padding)
+                    EmptyState(
+                        Icons.Rounded.BarChart, stringResource(R.string.stats_empty), supporting = stringResource(hint), verticalPadding = padding,
+                        action = if (incomplete) { { LoadNowButton(onLoadNow) } } else null,
+                    )
                 }
             }
             return
@@ -129,13 +139,16 @@ fun StatsScreen(
             historyNote(state.history)?.let { note ->
                 // Quiet: the numbers are usable, they may still grow (older sessions arrive page by page, or on Wi-Fi).
                 item(key = "history", contentType = "history") {
-                    Text(
-                        stringResource(note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = Spacing.s).testTag("statsHistory"),
-                    )
+                    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter).padding(top = Spacing.s), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            stringResource(note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.testTag("statsHistory"),
+                        )
+                        if (state.history == HistoryLoad.INCOMPLETE) LoadNowButton(onLoadNow)
+                    }
                 }
             }
             item(key = "head", contentType = "head") {
@@ -160,8 +173,14 @@ fun StatsScreen(
 
 private fun historyNote(history: HistoryLoad): Int? = when (history) {
     HistoryLoad.LOADING -> R.string.stats_history_loading
-    HistoryLoad.WAITING_FOR_UNMETERED -> R.string.stats_history_wifi
+    HistoryLoad.INCOMPLETE -> R.string.stats_history_wifi
     HistoryLoad.NONE -> null
+}
+
+/** „Jetzt laden“: one tap is the consent to read the whole history once over the current network (mobile data too). */
+@Composable
+private fun LoadNowButton(onLoadNow: () -> Unit) {
+    TextButton(onClick = onLoadNow, modifier = Modifier.testTag("statsLoadNow")) { Text(stringResource(R.string.stats_history_load_now)) }
 }
 
 /** Week, month, year, all time: one choice, as one row (the labels shrink a little rather than wrap at large text). */

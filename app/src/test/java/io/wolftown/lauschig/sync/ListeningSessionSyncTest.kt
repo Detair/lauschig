@@ -76,11 +76,12 @@ class ListeningSessionSyncTest {
     @After fun tearDown() = db.close()
 
     private var unmetered = true
+    private var appVersion = 3L
     private val full = ListeningSessionSync.FULL_PAGE // 250
     private val later = ListeningSessionSync.LATER_PAGE // 20
 
     private fun sync(api: MeApi? = server, maxPages: Int = ListeningSessionSync.MAX_PAGES) =
-        ListeningSessionSync(flowOf(api), db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages)
+        ListeningSessionSync(flowOf(api), db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages, appVersion)
 
     /** [n] sessions, one per hour, the newest updated at [newest]. */
     private fun sessions(n: Int, newest: Long = now) = (0 until n).map { i -> session("s$i", updatedAt = newest - i * hour) }
@@ -117,21 +118,74 @@ class ListeningSessionSyncTest {
         assertEquals(now, stamps.get("listening_sessions_run:$s"))
     }
 
-    @Test fun firstRun_onAMeteredNetwork_waitsForWifi_andSaysSo_withoutARequest() = runTest {
+    @Test fun firstRun_onAMeteredNetwork_readsTheNewestPageOnly_saysIncomplete_andRestsForTheThrottle() = runTest {
         server.sessions = sessions(600)
         unmetered = false
         val sync = sync()
 
         sync.sync(s)
-        sync.syncIfDue(s) // the worker 15 minutes later: no run stamp was written, it looks again – still nothing to fetch
+        assertEquals(listOf(later to 0), server.asked) // recent numbers fresh, the whole history on Wi-Fi
+        assertEquals(20, rows().size)
+        assertEquals(HistoryLoad.INCOMPLETE, sync.historyLoad(s).first())
+        assertNull(stamps.get("listening_sessions:$s"))
 
+        server.asked.clear()
+        now += 15 * 60_000L
+        sync.syncIfDue(s) // the worker 15 minutes later: the run counted, no probe every time
         assertEquals(emptyList<Pair<Int, Int>>(), server.asked)
-        assertEquals(HistoryLoad.WAITING_FOR_UNMETERED, sync.historyLoad(s).first())
-        assertNull(stamps.get("listening_sessions_run:$s"))
+
+        // The state is stored, not the last run's: another process (the worker) sees it too.
+        assertEquals(HistoryLoad.INCOMPLETE, sync().historyLoad(s).first())
+
         unmetered = true
+        now += 16 * 60_000L
         sync.syncIfDue(s)
         assertEquals(600, rows().size)
         assertEquals(HistoryLoad.NONE, sync.historyLoad(s).first())
+    }
+
+    @Test fun loadNow_readsTheWholeHistory_onAMeteredNetwork_onceAsked() = runTest {
+        server.sessions = sessions(600)
+        unmetered = false
+
+        sync().sync(s, allowMetered = true)
+
+        assertEquals(listOf(full to 0, full to 1, full to 2), server.asked)
+        assertEquals(600, rows().size)
+        assertEquals(HistoryLoad.NONE, history())
+    }
+
+    @Test fun aNetworkThatTurnsMeteredMidRun_stopsAtItsPlace_withoutStamps() = runTest {
+        server.sessions = sessions(1000)
+        server.beforePage = { size, page -> if (size == full && page == 1) unmetered = false } // left the Wi-Fi
+
+        sync().sync(s)
+
+        assertEquals(listOf(full to 0, full to 1, later to 0), server.asked) // page 2 not asked; the newest page instead
+        assertNull(stamps.get("listening_sessions:$s"))
+        assertEquals(2L, stamps.get("listening_sessions_resume_page:$s"))
+        assertEquals(HistoryLoad.INCOMPLETE, history())
+        server.beforePage = { _, _ -> }
+        unmetered = true
+        server.asked.clear()
+        sync().sync(s)
+        assertEquals(listOf(full to 1, full to 2, full to 3), server.asked)
+        assertEquals(1000, rows().size)
+    }
+
+    @Test fun aResumePlace_isTrustedOnlyWhileTheCacheHoldsWhatItImplies() = runTest {
+        server.sessions = sessions(1000)
+        server.failPage = 2
+        syncExpectingFailure()
+        server.failPage = null
+        // The rows went (deleted once more at sign-out), the place stayed.
+        db.listeningSessionDao().delete(s, rows().map { it.id })
+        server.asked.clear()
+
+        sync().sync(s)
+
+        assertEquals(listOf(full to 0, full to 1, full to 2, full to 3), server.asked) // from the start, not page 1
+        assertEquals(1000, rows().size)
     }
 
     @Test fun whileAFullRunReadsPages_theHistoryIsLoading() = runTest {
@@ -279,7 +333,11 @@ class ListeningSessionSyncTest {
             session("n1", now - 1000)
 
         sync().sync(s)
+        assertEquals(listOf(1 to 0, later to 0), server.asked) // the last full run was an hour ago: the daily limit holds
 
+        server.asked.clear()
+        now += 24 * hour
+        sync().sync(s)
         assertEquals(listOf(1 to 0, later to 0, full to 0), server.asked)
         assertEquals(777.0, rows().single { it.id == "s5" }.timeListeningSec, 0.0)
     }
@@ -317,7 +375,8 @@ class ListeningSessionSyncTest {
         server.asked.clear()
         sync().sync(s)
         assertEquals(listOf(1 to 0), server.asked) // due, but on mobile data: waits for Wi-Fi, quietly
-        assertEquals(HistoryLoad.NONE, history())
+        assertEquals(HistoryLoad.NONE, history()) // the history is complete: no note for a reconcile
+        assertEquals(now, stamps.get("listening_sessions_run:$s")) // and no probe every 15 minutes meanwhile
 
         unmetered = true
         server.asked.clear()
@@ -374,7 +433,7 @@ class ListeningSessionSyncTest {
         assertEquals(601, all.size)
     }
 
-    @Test fun unreadableRows_preventDropping_bringNoDailyFullRun_butAreRetriedAfterAWeek() = runTest {
+    @Test fun unreadableRows_preventDropping_bringNoDailyFullRun_butAreRetriedAfterAnAppUpdate() = runTest {
         server.sessions = sessions(600)
         sync().sync(s)
         // A session the cache holds is now unreadable on the server (a format change): listed, but dropped from its page.
@@ -393,9 +452,18 @@ class ListeningSessionSyncTest {
         assertEquals(listOf(1 to 0), server.asked) // no full run every day for it
 
         server.asked.clear()
-        now += 7 * 24 * hour
+        now += 30 * 24 * hour
         sync().sync(s)
-        assertTrue(server.asked.any { it.first == full }) // retried after a week
+        assertEquals(listOf(1 to 0), server.asked) // no re-download on a timer for one bad row
+
+        server.asked.clear()
+        appVersion = 4 // an app update may read it now
+        sync().sync(s)
+        assertTrue(server.asked.any { it.first == full })
+        server.asked.clear()
+        now += 25 * hour
+        sync().sync(s)
+        assertEquals(listOf(1 to 0), server.asked) // once per version
     }
 
     @Test fun aWholePageThatCannotBeRead_dropsNothing() = runTest {
@@ -454,9 +522,9 @@ class ListeningSessionSyncTest {
         sync(maxPages = 1).sync(s) // whatever runs
 
         val keys = ListeningSessionSync.keys(s)
-        assertEquals(7, keys.size)
+        assertEquals(9, keys.size)
         assertTrue(keys.all { it.endsWith(":$s") })
-        assertTrue(keys.count { stamps.get(it) != null } >= 6)
+        assertTrue(keys.count { stamps.get(it) != null } >= 8)
         stamps.removeServer(s)
         assertTrue(keys.all { stamps.get(it) == null })
     }
@@ -475,5 +543,33 @@ class ListeningSessionSyncTest {
         assertEquals("li_pod~ep_1", byId.getValue("e").itemKey)
         assertEquals("Podcast", byId.getValue("e").title) // the podcast, not the episode: the statistics count items
         assertEquals("", byId.getValue("gone").itemKey)
+    }
+
+    @Test fun anAccountWhoseRowsAreAllUnreadable_isNoFirstSyncAgainAndAgain() = runTest {
+        server.unreadable = 30 // the server lists 30, Lauschig reads none
+        sync().sync(s)
+        assertEquals(0, rows().size)
+        assertEquals(HistoryLoad.NONE, history())
+        server.asked.clear()
+        now += hour
+
+        sync().sync(s)
+
+        assertEquals(listOf(1 to 0), server.asked)
+    }
+
+    @Test fun aResumedRun_countsTheUnreadableRowsOfBothParts() = runTest {
+        server.sessions = sessions(1000)
+        server.unreadable = 1 // listed last, on page 3
+        server.failPage = 3
+        syncExpectingFailure()
+        server.failPage = null
+        sync().sync(s) // resumed: reads pages 2 and 3
+
+        assertEquals(1L, stamps.get("listening_sessions_unreadable:$s"))
+        server.asked.clear()
+        now += 25 * hour
+        sync().sync(s)
+        assertEquals(listOf(1 to 0), server.asked) // known + unreadable = total: no reconcile
     }
 }
