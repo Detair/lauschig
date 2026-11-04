@@ -1,6 +1,5 @@
 package io.wolftown.lauschig.ui
 
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -10,7 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -35,14 +33,15 @@ import io.wolftown.lauschig.ui.nav.PlayerOverlay
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.closePlayer
 import io.wolftown.lauschig.ui.nav.currentTab
-import io.wolftown.lauschig.ui.nav.isOnPlayer
 import io.wolftown.lauschig.ui.nav.isOnSetup
 import io.wolftown.lauschig.ui.nav.navigateToTab
 import io.wolftown.lauschig.ui.nav.openDetailsFromPlayer
-import io.wolftown.lauschig.ui.nav.playerCoversFrame
+import io.wolftown.lauschig.ui.nav.rememberPlayerLayer
 import io.wolftown.lauschig.ui.nav.route
 import io.wolftown.lauschig.ui.nav.showSignIn
+import io.wolftown.lauschig.ui.nav.underPlayer
 import io.wolftown.lauschig.ui.player.MiniPlayer
+import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.player.PlayerViewModel
 import io.wolftown.lauschig.whatsnew.WhatsNewSheet
 import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
@@ -136,12 +135,10 @@ fun AppRoot(
     }
 
     val onSetup = navController.isOnSetup()
-    val onPlayer = navController.isOnPlayer()
     // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
-    val playerSlide = remember { MutableTransitionState(false) }
-    if (playerSlide.targetState != onPlayer) playerSlide.targetState = onPlayer
-    val playerCovers = playerCoversFrame(onPlayer, playerSlide)
-    val playerUp = onPlayer || playerSlide.currentState || playerSlide.targetState
+    val playerLayer = rememberPlayerLayer(navController)
+    val playerCovers = playerLayer.coversFrame
+    val playerUp = playerLayer.up
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
     // The same (activity-wide) view model as the player layer's: its state knows the loaded title's cover version.
     val playerScreen by playerViewModel.state.collectAsStateWithLifecycle()
@@ -159,8 +156,8 @@ fun AppRoot(
             WindowBackground()
             AppScaffold(
                 connection = connection,
-                // Under the player only: unseen, and not for TalkBack either.
-                modifier = if (playerCovers) Modifier.clearAndSetSemantics {} else Modifier,
+                // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
+                modifier = Modifier.underPlayer(playerCovers),
                 miniPlayer = {
                     if (!onSetup && !playerCovers) {
                         MiniPlayer(
@@ -189,15 +186,16 @@ fun AppRoot(
                 AppNavHost(navController, startDestination, homeRoute = startTab.route())
             }
             PlayerOverlay(
-                playerSlide,
+                playerLayer.slide,
                 banner = connectionBanner.takeIf { !onSetup },
                 showReauthBanner = showReauth,
                 onReauth = onReauth,
                 onOpenConnection = onOpenConnection,
                 snackbarHostState = snackbarHost,
                 onClose = navController::closePlayer,
-                onOpenDetails = navController::openDetailsFromPlayer,
-            )
+            ) {
+                PlayerRoute(onClose = navController::closePlayer, onOpenDetails = navController::openDetailsFromPlayer)
+            }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {
                 DownloadPromptDialog(it, viewModel::answerMetered, viewModel::answerContention, viewModel::dismissPrompt)

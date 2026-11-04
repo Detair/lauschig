@@ -177,10 +177,6 @@ fun NavHostController.isOnSetup(): Boolean =
     currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
 
 @Composable
-fun NavHostController.isOnPlayer(): Boolean =
-    currentBackStackEntryAsState().value?.destination?.hasRoute<Player>() == true
-
-@Composable
 fun NavHostController.currentTab(): TopLevelTab? {
     val dest = currentBackStackEntryAsState().value?.destination
     return when {
