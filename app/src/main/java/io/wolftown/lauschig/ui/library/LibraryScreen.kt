@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.library
 
+import io.wolftown.lauschig.ui.common.kindFilterActive
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.common.StatePage
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.common.SectionTitle
@@ -144,6 +146,10 @@ fun LibraryScreen(
         val empty = if (state.tab == LibraryTab.Series) state.series.isEmpty() else state.items.isEmpty()
         when {
             empty && !state.loaded -> StatePage { LoadingState(verticalPadding = it) }
+            // Empty only because of the kind or tag filter: say so, and offer to reset it.
+            empty && (state.selectedTag != null || kindFilterActive(state.availableKinds, state.selectedKinds)) -> StatePage { padding ->
+                FilterEmptyState(onReset = { onKinds(emptySet()); onTag(null) }, Modifier.testTag("libraryEmpty"), verticalPadding = padding)
+            }
             empty -> StatePage { padding ->
                 val (icon, hint) = emptyHint(state.tab)
                 EmptyState(icon, stringResource(R.string.library_empty), Modifier.testTag("libraryEmpty"), supporting = stringResource(hint), verticalPadding = padding)

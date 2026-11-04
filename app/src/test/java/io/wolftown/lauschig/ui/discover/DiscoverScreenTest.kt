@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.discover
 
+import io.wolftown.lauschig.db.entities.LibraryKind
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -71,6 +73,24 @@ class DiscoverScreenTest {
         rule.onNodeWithText("The library loads the next time your server is reachable.").assertIsDisplayed()
         rule.onNodeWithText("Refresh library").performClick()
         assertEquals(1, refreshed)
+    }
+
+    @Test fun discoverScreen_refreshRunning_showsIt_andCannotBeTappedAgain() {
+        var refreshed = 0
+        rule.setContent { LauschigTheme { DiscoverScreen(DiscoverUiState(), {}, {}, {}, { _, _ -> }, onRefresh = { refreshed++ }, refreshing = true) } }
+        rule.onNodeWithText("Refreshing library…").assertIsDisplayed()
+        rule.onNodeWithTag("refreshLibrary").assertIsNotEnabled().performClick()
+        assertEquals(0, refreshed)
+    }
+
+    @Test fun discoverScreen_emptyOnlyBecauseOfTheFilter_saysSo_andResetsIt() {
+        val kinds = mutableListOf<Set<LibraryKind>>()
+        val state = DiscoverUiState(availableKinds = setOf(LibraryKind.AUDIOBOOK, LibraryKind.HOERSPIEL), selectedKinds = setOf(LibraryKind.HOERSPIEL))
+        rule.setContent { LauschigTheme { DiscoverScreen(state, { kinds += it }, {}, {}, { _, _ -> }) } }
+        rule.onNodeWithText("No titles with this filter").assertIsDisplayed()
+        rule.onNodeWithText("Refresh library").assertDoesNotExist()
+        rule.onNodeWithText("Reset filter").performClick()
+        assertEquals(listOf(emptySet<LibraryKind>()), kinds)
     }
 
     @Test fun discoverScreen_whileLoading_saysNothingIsThere_never() {

@@ -57,6 +57,9 @@
     <string name="library_empty_downloaded">Download a title to listen without a connection.</string>
     <string name="library_empty_series">Titles that belong to a series show up here, sorted by series.</string>
     <string name="library_refresh">Refresh library</string>
+    <string name="library_refreshing">Refreshing library…</string>
+    <string name="filter_empty">No titles with this filter</string>
+    <string name="filter_reset">Reset filter</string>
     <string name="state_loading">Loading…</string>
     <string name="filter_all">All</string>
     <string name="filter_audiobooks">Audiobooks</string>

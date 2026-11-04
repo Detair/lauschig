@@ -62,6 +62,9 @@ class SyncScheduler @Inject constructor(
         schedulePeriodic(wm)
     }
 
+    override fun nowRunning(): Flow<Boolean> =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(NOW).map { infos -> infos.any { !it.state.isFinished } }.distinctUntilChanged()
+
     private fun schedulePeriodic(wm: WorkManager) {
         wm.enqueueUniquePeriodicWork(
             PERIODIC, ExistingPeriodicWorkPolicy.KEEP,

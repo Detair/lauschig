@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.search
 
+import io.wolftown.lauschig.ui.common.kindFilterActive
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.common.SectionTitle
 import androidx.compose.foundation.layout.Arrangement
@@ -132,6 +134,13 @@ fun SearchScreen(
                             state.recent.forEach { AssistChip(onClick = { onRecent(it) }, label = { Text(it) }) }
                         }
                     }
+                }
+            } else if (state.searched && !state.hasResults && kindFilterActive(state.availableKinds, state.selectedKinds)) {
+                full("empty") {
+                    FilterEmptyState(
+                        onReset = { onKinds(emptySet()) }, Modifier.testTag("searchEmpty"),
+                        headline = stringResource(R.string.search_nothing_found, state.resultsFor),
+                    )
                 }
             } else if (state.searched && !state.hasResults) {
                 full("empty") {

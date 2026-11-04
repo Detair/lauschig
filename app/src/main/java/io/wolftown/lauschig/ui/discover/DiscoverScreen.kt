@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.ui.discover
 
+import androidx.compose.material3.CircularProgressIndicator
+import io.wolftown.lauschig.ui.common.kindFilterActive
+import io.wolftown.lauschig.ui.common.FilterEmptyState
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.common.SectionTitle
 import io.wolftown.lauschig.ui.common.EmptyState
@@ -72,10 +75,12 @@ fun DiscoverRoute(
     actions: ItemActionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
     DiscoverScreen(
         state, viewModel::setKinds, viewModel::setSort, onOpenItem, onOpenBrowse,
         modifier = modifier, onPlay = actions::play, onMenu = { menuFor = it }, onRefresh = viewModel::refreshLibrary,
+        refreshing = refreshing,
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
@@ -92,6 +97,8 @@ fun DiscoverScreen(
     onPlay: (itemId: String) -> Unit = {},
     onMenu: (ItemSummary) -> Unit = {},
     onRefresh: () -> Unit = {},
+    /** A refresh started from here is running (the button shows it and does not start another). */
+    refreshing: Boolean = false,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
@@ -104,6 +111,10 @@ fun DiscoverScreen(
         if (state.loading) {
             full("loading") { LoadingState() }
         } else if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
+            state.authors.isEmpty() && state.all.isEmpty() && kindFilterActive(state.availableKinds, state.selectedKinds)
+        ) {
+            full("empty") { FilterEmptyState(onReset = { onKinds(emptySet()) }, Modifier.testTag("discoverEmpty")) }
+        } else if (state.recent.isEmpty() && state.series.isEmpty() && state.genres.isEmpty() && state.tags.isEmpty() &&
             state.authors.isEmpty() && state.all.isEmpty()
         ) {
             full("empty") {
@@ -111,9 +122,14 @@ fun DiscoverScreen(
                     Icons.Rounded.Explore, stringResource(R.string.discover_empty), Modifier.testTag("discoverEmpty"),
                     supporting = stringResource(R.string.discover_empty_hint),
                     action = {
-                        FilledTonalButton(onClick = onRefresh, modifier = Modifier.testTag("refreshLibrary")) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(stringResource(R.string.library_refresh), Modifier.padding(start = Spacing.s))
+                        FilledTonalButton(onClick = onRefresh, enabled = !refreshing, modifier = Modifier.testTag("refreshLibrary")) {
+                            if (refreshing) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text(stringResource(R.string.library_refreshing), Modifier.padding(start = Spacing.s))
+                            } else {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text(stringResource(R.string.library_refresh), Modifier.padding(start = Spacing.s))
+                            }
                         }
                     },
                 )

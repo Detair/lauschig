@@ -1,5 +1,10 @@
 package io.wolftown.lauschig.ui.discover
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -80,6 +85,8 @@ class DiscoverViewModel(
     private val dispatcher: CoroutineDispatcher,
     /** Starts a library sync now (the empty page's "Refresh library"). */
     private val requestSync: () -> Unit = {},
+    /** Whether such a sync is waiting or running. */
+    private val syncRunning: Flow<Boolean> = flowOf(false),
 ) : ViewModel() {
 
     @Inject constructor(
@@ -88,7 +95,7 @@ class DiscoverViewModel(
         authorInfo: AuthorInfoCache, catalog: Catalog, sync: SyncTrigger,
     ) : this(
         accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, discoverPrefs, authorInfo, catalog,
-        Dispatchers.Default, sync::syncNow,
+        Dispatchers.Default, sync::syncNow, sync.nowRunning(),
     )
 
     private val serverId: Flow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
@@ -105,7 +112,24 @@ class DiscoverViewModel(
         viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
     }
 
-    fun refreshLibrary() = requestSync()
+    private val _refreshing = MutableStateFlow(false)
+
+    /** A refresh started here is under way: until the sync has run (or [REFRESH_TIMEOUT_MS], e.g. offline). */
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /** Starts a library sync unless one is already waiting or running (it is not restarted), and shows it. */
+    fun refreshLibrary() {
+        if (_refreshing.value) return
+        _refreshing.value = true
+        viewModelScope.launch {
+            try {
+                if (!syncRunning.first()) requestSync()
+                withTimeoutOrNull(REFRESH_TIMEOUT_MS) { syncRunning.dropWhile { !it }.first { !it } }
+            } finally {
+                _refreshing.value = false
+            }
+        }
+    }
 
     fun setSort(sort: DiscoverSort) {
         viewModelScope.launch { discoverPrefs.setSort(sort) }
@@ -184,5 +208,6 @@ class DiscoverViewModel(
     companion object {
         const val SCREEN = "discover"
         const val ROW_LIMIT = 20
+        const val REFRESH_TIMEOUT_MS = 60_000L
     }
 }

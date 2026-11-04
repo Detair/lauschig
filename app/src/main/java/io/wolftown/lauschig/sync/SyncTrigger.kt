@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.sync
 
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.Flow
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -17,6 +19,9 @@ interface SyncTrigger {
 
     /** A full sync in about a minute (after an admin started a library scan, which the server runs in the background). */
     fun syncLibrarySoon() = syncNow()
+
+    /** True while a [syncNow] run is waiting (for a network) or running; "Refresh library" shows it and starts none then. */
+    fun nowRunning(): Flow<Boolean> = flowOf(false)
 }
 
 @Module

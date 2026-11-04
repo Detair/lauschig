@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.ui.common
 
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.rounded.FilterListOff
+import androidx.compose.material.icons.Icons
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -70,6 +73,17 @@ fun StatePage(modifier: Modifier = Modifier, content: @Composable (verticalPaddi
             horizontalAlignment = Alignment.CenterHorizontally,
         ) { content(padding) }
     }
+}
+
+/** "No titles with this filter" with a reset, for a list that is empty only because of its filter. */
+@Composable
+fun FilterEmptyState(onReset: () -> Unit, modifier: Modifier = Modifier, headline: String? = null, verticalPadding: Dp = 48.dp) {
+    EmptyState(
+        Icons.Rounded.FilterListOff, headline ?: stringResource(R.string.filter_empty), modifier,
+        supporting = if (headline != null) stringResource(R.string.filter_empty) else null,
+        action = { OutlinedButton(onClick = onReset, modifier = Modifier.testTag("resetFilter")) { Text(stringResource(R.string.filter_reset)) } },
+        verticalPadding = verticalPadding,
+    )
 }
 
 /** Below this height a [StatePage] uses less padding. */

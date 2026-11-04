@@ -38,6 +38,10 @@ private fun LibraryKind.label(): Int = when (this) {
     LibraryKind.PODCAST -> R.string.filter_podcasts
 }
 
+/** True when [selected] narrows [available] down (the same rule the chips use for "All"). */
+fun kindFilterActive(available: Set<LibraryKind>, selected: Set<LibraryKind>): Boolean =
+    selected.any { it in available } && !available.all { it in selected }
+
 /**
  * "All" plus one chip per kind in [available]. An empty [selected] set (or one
  * containing every available kind) means "All". The kind chips are rendered only when there is something to choose
