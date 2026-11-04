@@ -35,10 +35,11 @@ class StoryMotionTest {
     @Test fun talkBack_turnsAutoAdvanceOff_andOnAgain_whileShown() {
         var motion: StoryMotion? = null
         rule.setContent { motion = rememberStoryMotion() }
-        assertEquals(StoryMotion(autoAdvance = true, animations = true), motion)
+        assertEquals(StoryMotion(autoAdvance = true, animations = true, keys = true), motion)
         shadowOf(manager).setTouchExplorationEnabled(true)
         rule.waitForIdle()
-        assertEquals(StoryMotion(autoAdvance = false, animations = true), motion)
+        // TalkBack: no auto-advance, and no keyboard focus on the story (the buttons and actions are TalkBack's way).
+        assertEquals(StoryMotion(autoAdvance = false, animations = true, keys = false), motion)
         shadowOf(manager).setTouchExplorationEnabled(false)
         rule.waitForIdle()
         assertEquals(StoryMotion(autoAdvance = true, animations = true), motion)

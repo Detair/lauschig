@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -208,6 +209,55 @@ class StoryPagerTest {
         rule.waitForIdle()
         rule.mainClock.advanceTimeBy(7_200)
         assertEquals(1, state.index)
+    }
+
+    @Test fun aHeldKey_actsOnce_andAPauseIsShown_untilSpaceOrAnArrowEndsIt() {
+        val state = StoryState(9)
+        show(state, clock = true)
+        rule.mainClock.advanceTimeByFrame()
+        val story = rule.onNodeWithTag("story")
+        // An arrow held for a second and a half: one slide, not the whole story.
+        story.performKeyInput { keyDown(Key.DirectionRight); advanceEventTime(1_500); keyUp(Key.DirectionRight) }
+        rule.waitForIdle()
+        assertEquals(1, state.index)
+        // A held space pauses once (no flicker) – and says so.
+        story.performKeyInput { keyDown(Key.Spacebar); advanceEventTime(1_000); keyUp(Key.Spacebar) }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(10_000)
+        assertEquals(1, state.index)
+        rule.onNodeWithTag("storyPaused", useUnmergedTree = true).assertContentDescriptionEquals("Paused")
+        // The next arrow goes on and ends the pause.
+        story.performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(2, state.index)
+        rule.onAllNodesWithTag("storyPaused", useUnmergedTree = true).assertCountEquals(0)
+        rule.mainClock.advanceTimeBy(7_200)
+        assertEquals(3, state.index)
+    }
+
+    @Test fun aLongHold_showsThePause_aTapDoesNot() {
+        val state = StoryState(3)
+        show(state, clock = true)
+        val slide = rule.onNodeWithTag("storySlide")
+        slide.performTouchInput { down(center) }
+        rule.mainClock.advanceTimeBy(100)
+        rule.onAllNodesWithTag("storyPaused", useUnmergedTree = true).assertCountEquals(0)
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithTag("storyPaused", useUnmergedTree = true).assertExists()
+        slide.performTouchInput { up() }
+        rule.mainClock.advanceTimeByFrame()
+        rule.onAllNodesWithTag("storyPaused", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test fun withTalkBack_theStoryTakesNoKeyboardFocus_otherwiseItDoes() {
+        show(StoryState(3), StoryMotion(autoAdvance = false, keys = false))
+        rule.onNodeWithTag("story").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Focused))
+    }
+
+    @Test fun withAKeyboard_theStoryHasTheFocus() {
+        show(StoryState(3), StoryMotion(autoAdvance = false))
+        rule.onNodeWithTag("story").assertIsFocused()
     }
 
     @Test fun rightToLeft_theTapZonesAndTheArrowsAreMirrored() {

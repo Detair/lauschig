@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -126,10 +128,12 @@ data class SlideColors(val background: Color, val content: Color)
  * reading) and with the system's animations removed (nothing moves by itself then); the story is navigated by tap, keys
  * and buttons instead. Other assistive services (Switch Access, Voice Access, a password manager) keep auto-advance,
  * with the longer slide time the user asked for ("time to take action"), the slide's click and actions, and the keys.
- * [animations]: the entrance of a slide (a number counting up) and the cross-fades.
+ * [animations]: the entrance of a slide (a number counting up) and the cross-fades. [keys]: the story takes the
+ * keyboard's focus for its arrow and space keys – not with TalkBack, which has the buttons and the slide's actions (an
+ * input-focused container would only be one more silent stop).
  */
 @Immutable
-data class StoryMotion(val autoAdvance: Boolean = true, val animations: Boolean = true)
+data class StoryMotion(val autoAdvance: Boolean = true, val animations: Boolean = true, val keys: Boolean = true)
 
 /**
  * [StoryMotion] as the device has it: TalkBack (touch exploration) followed live; the animator scale ("remove
@@ -151,7 +155,7 @@ fun rememberStoryMotion(): StoryMotion {
         animations = ValueAnimator.areAnimatorsEnabled()
         onPauseOrDispose {}
     }
-    return StoryMotion(autoAdvance = animations && !touchExploration, animations = animations)
+    return StoryMotion(autoAdvance = animations && !touchExploration, animations = animations, keys = !touchExploration)
 }
 
 /** Where a segment of the progress bar stands (for tests; segments say nothing to TalkBack). */
@@ -255,13 +259,15 @@ fun StoryPager(
     val foreground by animateColorAsState(slide.content, tween(fade), label = "storyContent")
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     var held by remember { mutableStateOf(false) }
+    // Held past the long-press time: shown as paused (a tap's short press is not).
+    var holding by remember { mutableStateOf(false) }
     // Space on a keyboard: paused until pressed again.
     var keyPaused by remember { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     // The pull is read where it is drawn; composition only needs to know whether there is one.
     val pulled by remember { derivedStateOf { drag != 0f } }
     val focus = remember { FocusRequester() }
-    LaunchedEffect(focus) { focus.requestFocus() }
+    LaunchedEffect(focus, motion.keys) { if (motion.keys) focus.requestFocus() }
     val density = LocalDensity.current
     val closeAt = with(density) { CLOSE_DRAG.toPx() }
     val closeFling = with(density) { CLOSE_FLING_DP_PER_SEC.dp.toPx() }
@@ -335,15 +341,17 @@ fun StoryPager(
                     drawRect(background, topLeft = Offset(-left, -top), size = Size(size.width + left + right, size.height + top + bottom))
                 }
                 .semantics { paneTitle = title }
-                // Keys (a tablet's keyboard, a D-pad): right/left = next/previous (mirrored right-to-left), space pauses.
-                // Keys a focused button uses itself (space, enter) stay its own.
-                .focusRequester(focus)
-                .focusable()
+                // Keys (a tablet's keyboard, a D-pad): right/left = next/previous (mirrored right-to-left) and end a pause,
+                // space pauses and resumes; a held key does it once. Keys a focused button uses itself (space, enter)
+                // stay its own.
+                .then(if (motion.keys) Modifier.focusRequester(focus).focusable() else Modifier)
                 .onKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    val ours = e.key == Key.DirectionRight || e.key == Key.DirectionLeft || e.key == Key.Spacebar
+                    if (e.nativeKeyEvent.repeatCount > 0) return@onKeyEvent ours
                     when (e.key) {
-                        Key.DirectionRight -> { if (rtl) state.previous() else state.next(); true }
-                        Key.DirectionLeft -> { if (rtl) state.next() else state.previous(); true }
+                        Key.DirectionRight -> { keyPaused = false; if (rtl) state.previous() else state.next(); true }
+                        Key.DirectionLeft -> { keyPaused = false; if (rtl) state.next() else state.previous(); true }
                         Key.Spacebar -> { keyPaused = !keyPaused; true }
                         else -> false
                     }
@@ -357,10 +365,11 @@ fun StoryPager(
                                 tryAwaitRelease()
                             } finally {
                                 held = false
+                                holding = false
                             }
                         },
                         // A long press only pauses; its release moves nothing.
-                        onLongPress = {},
+                        onLongPress = { holding = true },
                         onTap = { at ->
                             val third = size.width / 3f
                             val back = if (rtl) at.x > size.width - third else at.x < third
@@ -374,6 +383,12 @@ fun StoryPager(
             Column(Modifier.widthIn(max = STORY_MAX_WIDTH).fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(start = Spacing.gutter, top = Spacing.s), verticalAlignment = Alignment.CenterVertically) {
                     Segments(state, foreground, Modifier.weight(1f), running = motion.autoAdvance)
+                    // Paused (held, or space): a small mark beside the segments; its room is kept, so nothing moves.
+                    Box(Modifier.padding(start = Spacing.s).size(20.dp), contentAlignment = Alignment.Center) {
+                        if (motion.autoAdvance && (holding || keyPaused)) {
+                            Icon(Icons.Rounded.Pause, stringResource(R.string.review_paused), Modifier.size(20.dp).testTag("storyPaused"))
+                        }
+                    }
                     IconButton(
                         onClick = onClose,
                         colors = IconButtonDefaults.iconButtonColors(contentColor = foreground),

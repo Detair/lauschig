@@ -901,4 +901,5 @@
         <item quantity="one">und %d weiterer</item>
         <item quantity="other">und %d weitere</item>
     </plurals>
+    <string name="review_paused">Pausiert</string>
 </resources>
