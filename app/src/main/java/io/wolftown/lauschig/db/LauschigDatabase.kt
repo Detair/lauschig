@@ -22,6 +22,7 @@ import io.wolftown.lauschig.db.dao.HistoryDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.dao.LocalLibraryDao
 import io.wolftown.lauschig.db.dao.ListeningSessionDao
+import io.wolftown.lauschig.db.dao.AchievementSeenDao
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.BookmarkEntity
 import io.wolftown.lauschig.db.entities.CollectionEntity
@@ -40,6 +41,7 @@ import io.wolftown.lauschig.db.entities.TitleAudioEntity
 import io.wolftown.lauschig.db.entities.LocalFolderEntity
 import io.wolftown.lauschig.db.entities.LocalTitleEntity
 import io.wolftown.lauschig.db.entities.ListeningSessionEntity
+import io.wolftown.lauschig.db.entities.AchievementSeenEntity
 
 @Database(
     entities = [
@@ -47,11 +49,11 @@ import io.wolftown.lauschig.db.entities.ListeningSessionEntity
         ProgressEntity::class, LocalSessionEntity::class, DownloadEntity::class, EpisodeEntity::class,
         ExternalSeriesEntity::class, TitleAudioEntity::class,
         BookmarkEntity::class, QueueEntity::class, HistorySessionEntity::class, CollectionEntity::class, CollectionEntryEntity::class,
-        LocalFolderEntity::class, LocalTitleEntity::class, ListeningSessionEntity::class,
+        LocalFolderEntity::class, LocalTitleEntity::class, ListeningSessionEntity::class, AchievementSeenEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9), AutoMigration(from = 9, to = 10)],
 )
 @TypeConverters(Converters::class)
 abstract class LauschigDatabase : RoomDatabase() {
@@ -72,5 +74,6 @@ abstract class LauschigDatabase : RoomDatabase() {
     abstract fun collectionDao(): CollectionDao
     abstract fun localLibraryDao(): LocalLibraryDao
     abstract fun listeningSessionDao(): ListeningSessionDao
+    abstract fun achievementSeenDao(): AchievementSeenDao
     abstract fun accountDataDao(): AccountDataDao
 }

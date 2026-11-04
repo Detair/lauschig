@@ -288,4 +288,35 @@ class MigrationTest {
             room.close()
         }
     }
+
+    @Test fun v9ToV10_keepsData_andAddsAWorkingAchievementSeenTable() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v10.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/9.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty, hideFromContinue) VALUES ('s', 'a', 12.5, 100.0, 1, 7, 0, 0)")
+            db.execSQL("INSERT INTO listening_sessions (serverId, id, itemKey, title, author, startedAt, updatedAt, timeListeningSec, durationSec, currentTimeSec) VALUES ('s', 'x', 'a', 'T', NULL, 1, 2, 30.0, 100.0, 40.0)")
+            db.version = 9
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            assertEquals(12.5, room.progressDao().get("s", "a")!!.currentTimeSec, 0.0)
+            assertEquals(30.0, room.listeningSessionDao().observeAll("s").first().single().timeListeningSec, 0.0)
+            val dao = room.achievementSeenDao()
+            assertEquals(emptyList<Any>(), dao.observeAll("s").first())
+            dao.insertAll(listOf(io.wolftown.lauschig.db.entities.AchievementSeenEntity("s", "streak", 2, 5)))
+            assertEquals(5L, dao.observeAll("s").first().single().seenAt)
+        } finally {
+            room.close()
+        }
+    }
 }

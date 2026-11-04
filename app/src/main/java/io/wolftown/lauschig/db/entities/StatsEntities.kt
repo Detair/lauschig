@@ -23,3 +23,21 @@ data class ListeningSessionEntity(
     val durationSec: Double,
     val currentTimeSec: Double,
 )
+
+/**
+ * An achievement tier ([tier], 1-based) the account was told about – or that was already reached at the first
+ * evaluation, which marks everything reached then without a word. [seenAt] is epoch ms. The row with [BASELINE_ID]
+ * (tier 0) says that first evaluation took place; without it, the next one is the first. Purged with the account.
+ */
+@Entity(tableName = "achievement_seen", primaryKeys = ["serverId", "id", "tier"])
+data class AchievementSeenEntity(
+    val serverId: String,
+    /** An achievement id (`Achievement.id`) or [BASELINE_ID]. */
+    val id: String,
+    val tier: Int,
+    val seenAt: Long,
+) {
+    companion object {
+        const val BASELINE_ID = "_baseline"
+    }
+}
