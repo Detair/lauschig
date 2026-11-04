@@ -1,5 +1,11 @@
 package io.wolftown.lauschig.ui
 
+import org.robolectric.annotation.GraphicsMode
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -129,14 +135,21 @@ class StartScreenTest {
 
     @Test
     @Config(sdk = [35], qualifiers = "w360dp-h800dp", fontScale = 2.0f)
-    fun hero_atDoubleFontSize_keepsItsTextAndButtonInside() {
-        val state = StartUiState(continueItems = listOf(summary("a", "Die drei ??? und der Super-Papagei").copy(remainingSec = 3_900.0)))
+    @GraphicsMode(GraphicsMode.Mode.NATIVE) // real text measuring, so the lines are real
+    fun hero_atDoubleFontSize_wrapsInsteadOfClipping_andKeepsItsButtonTarget() {
+        val title = "Die drei ??? und der Super-Papagei"
+        val state = StartUiState(continueItems = listOf(summary("a", title).copy(remainingSec = 3_900.0)))
         rule.setContent { LauschigTheme { StartScreen(state, onOpen = {}, onPlay = {}) } }
+        val play = rule.onNodeWithTag("heroPlay").assertWidthIsAtLeast(56.dp).assertHeightIsAtLeast(56.dp).fetchSemanticsNode().boundsInRoot
+        val left = rule.onNodeWithTag("heroLeft", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("\"left\" text runs under the button: $left / $play", left.right <= play.left)
+        // The title wraps to its two lines (ellipsized after them), and the card grows with it instead of cutting it off.
+        val titleNode = rule.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        titleNode.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        assertEquals(2, layouts.single().lineCount)
         val card = rule.onNodeWithTag("continueHero").fetchSemanticsNode().boundsInRoot
-        listOf("heroLeft", "heroPlay", "heroProgress").forEach { tag ->
-            val b = rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            assertTrue("$tag $b outside $card", b.top >= card.top && b.bottom <= card.bottom && b.left >= card.left && b.right <= card.right)
-        }
+        assertTrue(titleNode.boundsInRoot.bottom <= left.top && left.bottom <= card.bottom)
     }
 
     @Test
