@@ -1,5 +1,9 @@
 package io.wolftown.lauschig.ui.player
 
+import org.junit.Assert.assertTrue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.MutableSharedFlow
 import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerUiState
@@ -71,6 +75,22 @@ class PlayerViewModelTest {
         player.state.value = playing(10.0).copy(itemId = "b2")
         val other = v.state.first { it.itemId == "b2" && it.author == "Jemand" }
         assertEquals(null, other.seriesName)
+    }
+
+    @Test fun aNewTitle_isNeverShownWithThePreviousTitlesMeta() = runTest {
+        val b2Meta = MutableSharedFlow<PlayerMeta?>() // the new title's row is not read yet
+        val v = viewModels.own(PlayerViewModel(player, metaOf = { if (it == "b1") flowOf(PlayerMeta("Autorin", "Saga", "3", coverVersion = 42)) else b2Meta }) { flowOf(emptyList()) })
+        val seen = mutableListOf<PlayerScreenState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.toList(seen) }
+        player.state.value = playing(125.0)
+        v.state.first { it.itemId == "b1" && it.coverVersion == 42L }
+        player.state.value = playing(10.0).copy(itemId = "b2")
+        v.state.first { it.itemId == "b2" }
+        val b2 = seen.filter { it.itemId == "b2" }
+        assertTrue(b2.isNotEmpty())
+        assertTrue("b2 with b1's author or cover version: $b2", b2.all { it.author == null && it.coverVersion == null })
+        b2Meta.emit(PlayerMeta("Jemand", coverVersion = 7))
+        assertEquals(7L, v.state.first { it.author == "Jemand" }.coverVersion)
     }
 
     @Test fun speedPresets_applyToController() = runTest {

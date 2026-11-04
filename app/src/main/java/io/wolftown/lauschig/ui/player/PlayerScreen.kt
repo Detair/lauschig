@@ -235,11 +235,15 @@ fun PlayerScreen(
     val hasChapters = state.chapters.isNotEmpty()
     val loaded = state.itemId != null
     val detailsLabel = stringResource(R.string.player_open_details)
-    val art = state.itemId?.let { coverModel(LocalServerBaseUrl.current, it, state.coverPath, state.coverVersion) }
+    // A server cover only once this title's version is known, so it is not requested twice.
+    val art = state.itemId?.let { id ->
+        if (state.coverPath == null && state.coverVersion == null) null
+        else coverModel(LocalServerBaseUrl.current, id, state.coverPath, state.coverVersion ?: 0)
+    }
     val surface = MaterialTheme.colorScheme.surface
     // The signature: the cover's tint at the top, fading into the surface at 60 % of the height.
     val scheme = MaterialTheme.colorScheme
-    val tintTarget = coverTintTarget(art, state.coverVersion, surface)
+    val tintTarget = coverTintTarget(art, state.coverVersion ?: 0, surface)
     val tint = animateColorAsState(tintTarget, tween(TINT_FADE_MS), label = "playerTint")
     // The controls (play button, slider, "downloaded") stay primary only where primary keeps 3:1 on the tint at the top.
     val playerScheme = remember(scheme, tintTarget) {

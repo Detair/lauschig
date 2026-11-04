@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.player
 
+import kotlinx.coroutines.flow.onStart
 import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
@@ -61,8 +62,8 @@ data class PlayerScreenState(
     val author: String? = null,
     val seriesName: String? = null,
     val seriesSequence: String? = null,
-    /** The cover's server version (see [PlayerMeta]). */
-    val coverVersion: Long = 0,
+    /** The cover's server version (see [PlayerMeta]); null until this title's row is read (no server cover until then). */
+    val coverVersion: Long? = null,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -104,10 +105,16 @@ class PlayerViewModel(
     private val chapters: Flow<List<ChapterInfo>> =
         loadedId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else chaptersOf(id) }
 
-    private val meta: Flow<PlayerMeta?> =
-        loadedId.flatMapLatest { id -> if (id == null) flowOf(null) else metaOf(id) }.distinctUntilChanged()
+    /**
+     * The loaded title's meta, tagged with the title it belongs to: on a change of title it is "none" until the new
+     * title's row is read, so the new title is never shown with the previous one's author or cover version.
+     */
+    private val meta: Flow<Pair<String?, PlayerMeta?>> = loadedId.flatMapLatest { id ->
+        if (id == null) flowOf(null to null) else metaOf(id).map { id to it }.onStart { emit(id to null) }
+    }.distinctUntilChanged()
 
-    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, m ->
+    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, (metaFor, meta) ->
+        val m = meta.takeIf { metaFor == p.itemId }
         // Without chapter data the whole book acts as one chapter.
         val start = if (p.chapterIndex >= 0) p.chapterStartSec else 0.0
         val end = if (p.chapterIndex >= 0 && p.chapterEndSec > start) p.chapterEndSec else p.durationSec
@@ -141,7 +148,7 @@ class PlayerViewModel(
             author = m?.author,
             seriesName = m?.seriesName,
             seriesSequence = m?.seriesSequence,
-            coverVersion = m?.coverVersion ?: 0,
+            coverVersion = m?.coverVersion,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 
