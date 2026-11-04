@@ -269,6 +269,44 @@ class AchievementsTest {
         assertEquals(listOf(d("2026-10-30")), commuter.reached)
     }
 
+    @Test fun commuter_readsTheLocalStartAcrossDstChanges() {
+        fun utc(text: String) = Instant.parse(text).toEpochMilli()
+        val commuter = evaluate(
+            listOf(
+                stat("1", "x", 600.0, startMs = utc("2026-03-27T04:30:00Z")), // Friday before summer time: 05:30 – too early
+                stat("2", "x", 600.0, startMs = utc("2026-03-30T04:30:00Z")), // Monday after: 06:30 – counts
+                stat("3", "x", 600.0, startMs = utc("2026-03-29T05:30:00Z")), // the change day is a Sunday
+                stat("4", "x", 600.0, startMs = utc("2026-10-23T15:30:00Z")), // Friday before winter time: 17:30 – counts
+                stat("5", "x", 600.0, startMs = utc("2026-10-26T17:30:00Z")), // Monday after: 18:30 – counts (19:30 in summer)
+                stat("6", "x", 600.0, startMs = utc("2026-10-26T04:30:00Z")), // Monday after: 05:30 – too early
+            ),
+        ).getValue(Achievement.COMMUTER)
+        assertEquals(3.0, commuter.value!!, 0.0)
+    }
+
+    @Test fun weekendAndMarathon_countTheLocalDay_onTheShortAndTheLongDay() {
+        fun utc(text: String) = Instant.parse(text).toEpochMilli()
+        // 23:30 UTC on Saturday 28 March is 00:30 on Sunday in Berlin, the 23-hour day.
+        val spring = listOf(
+            stat("1", "x", 3 * 3600.0, startMs = utc("2026-03-28T09:00:00Z")),
+            stat("2", "x", 2 * 3600.0, startMs = utc("2026-03-28T23:30:00Z")),
+            stat("3", "x", 2 * 3600.0, startMs = utc("2026-03-29T01:30:00Z")), // 03:30 summer time, the same Sunday
+        )
+        val springStates = evaluate(spring)
+        assertEquals(listOf(d("2026-03-29")), springStates.getValue(Achievement.WEEKEND).reached) // not on Saturday (UTC)
+        assertEquals(listOf(d("2026-03-29")), springStates.getValue(Achievement.MARATHON).reached) // 4 h on the short day
+        // The 25-hour day: 02:30 happens twice, both count for Sunday 25 October.
+        val autumn = evaluate(
+            listOf(
+                stat("1", "x", 2 * 3600.0, startMs = utc("2026-10-25T00:30:00Z")), // 02:30 summer time
+                stat("2", "x", 2 * 3600.0, startMs = utc("2026-10-25T01:30:00Z")), // 02:30 winter time
+                stat("3", "x", 1 * 3600.0, startMs = utc("2026-10-24T21:00:00Z")), // 23:00 on Saturday
+            ),
+        )
+        assertEquals(listOf(d("2026-10-25")), autumn.getValue(Achievement.MARATHON).reached)
+        assertEquals(listOf(d("2026-10-25")), autumn.getValue(Achievement.WEEKEND).reached)
+    }
+
     // --- one go ------------------------------------------------------------------------------------------------------
 
     @Test fun oneGo_aBookFinishedWithin72HoursOfItsFirstSession() {
