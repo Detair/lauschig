@@ -370,6 +370,9 @@ class AchievementsTest {
         assertTrue(inputs(base) != inputs(base + stat("3", "2026-11-02T13:00", 60.0))) // a new day in the run
         assertTrue(inputs(base) != inputs(base, zone = ZoneId.of("America/New_York")))
         assertTrue(inputs(base) != inputs(base, finished = listOf(book("li_1", "2026-11-01", finishedAt = at("2026-11-01T13:00")))))
+        // The same session id rewritten with another title or start time (a corrected row on the server).
+        assertTrue(inputs(base) != inputs(listOf(base[0], stat("2", "2026-11-01T12:00", 300.0, item = "li_2"))))
+        assertTrue(inputs(base) != inputs(listOf(base[0], stat("2", "2026-11-01T12:30", 300.0))))
     }
 
     @Test fun tierInputs_equal_meansTheSameTiersReached_overManyRandomTicks() {

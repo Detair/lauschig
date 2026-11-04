@@ -158,9 +158,16 @@ class AchievementNoticeViewModel(
      */
     fun shown(notice: AchievementNotice) {
         viewModelScope.launch {
-            if (accounts.account.first()?.serverId != notice.serverId) return@launch
-            val at = clock()
-            seen.insertAll(notice.unlocks.map { AchievementSeenEntity(notice.serverId, it.id, it.tier, at) })
+            try {
+                if (accounts.account.first()?.serverId != notice.serverId) return@launch
+                val at = clock()
+                seen.insertAll(notice.unlocks.map { AchievementSeenEntity(notice.serverId, it.id, it.tier, at) })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Not written (disk full …): the notice may come once more – never a crash of the screen.
+                Log.w(TAG, "achievement notice not marked as shown", e)
+            }
         }
     }
 

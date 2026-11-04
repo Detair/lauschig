@@ -75,7 +75,10 @@ enum class Achievement(val id: String, val tiers: List<Double>, val measure: Ach
 data class TierInputs(
     val zone: ZoneId,
     val sessions: Int,
-    /** Order-independent sum of the session ids' hashes: a session added or replaced. */
+    /**
+     * Order-independent sum of each session's (id, title, start) hash: a session added, replaced, or rewritten with
+     * another title or start time.
+     */
     val sessionIds: Int,
     val withListening: Int,
     /** Sessions long enough for a time window ([Achievements.WINDOW_SESSION_SEC]). */
@@ -208,8 +211,9 @@ object Achievements {
 
     /**
      * What decides which tiers [evaluate] finds reached (not on which day), from the same data plus its [days] and the
-     * number of finished series. Cheap (no sort, no zone conversion per session) and coarse on purpose: a playback tick
-     * on a day that counts already moves none of it, so the notice skips the evaluation then.
+     * number of finished series. Cheap (one pass over the sessions, no zone conversion per session; only the per-day
+     * totals are sorted for the streak and weekend checks) and coarse on purpose: a playback tick on a day that counts
+     * already moves none of it, so the notice skips the evaluation then.
      */
     fun tierInputs(
         sessions: List<StatSession>,
@@ -224,7 +228,7 @@ object Achievements {
         var windows = 0
         val perTitle = HashMap<String, Double>()
         for (s in sessions) {
-            ids += s.id.hashCode()
+            ids += 31 * (31 * s.id.hashCode() + s.itemKey.hashCode()) + s.startedAt.hashCode()
             if (s.listenedSec > 0) listened++
             if (s.listenedSec >= WINDOW_SESSION_SEC) windows++
             if (s.itemKey.isNotEmpty()) perTitle.merge(s.itemId, s.listenedSec, Double::plus)

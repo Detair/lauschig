@@ -286,6 +286,28 @@ class AchievementNoticeViewModelTest {
         assertTrue(notices.all { it == null })
     }
 
+    @Test fun aFailingWrite_ofShown_isLogged_neverTheScreen() = runTest {
+        session("1", "2026-11-01T10:00", 3000.0)
+        val calls = AtomicInteger(0)
+        val fullOnSecondWrite = object : AchievementSeenDao by db.achievementSeenDao() {
+            override suspend fun insertAll(rows: List<AchievementSeenEntity>) {
+                if (calls.incrementAndGet() == 2) throw SQLiteFullException("disk full")
+                db.achievementSeenDao().insertAll(rows)
+            }
+        }
+        val vm = vm(fullOnSecondWrite)
+        backgroundScope.launchCollect(vm)
+        eventually({ seen() }) { it == listOf("_baseline:0@1000") } // the first write: the baseline
+        session("2", "2026-11-01T12:00", 700.0)
+        val notice = vm.awaitNotice { it != null }!!
+
+        vm.shown(notice) // the second write fails
+        quiet()
+        assertEquals(2, calls.get())
+        assertEquals(listOf("_baseline:0@1000"), seen())
+        // An exception escaping into the view model's scope would fail this test (runTest reports uncaught ones).
+    }
+
     @Test fun aFailingRead_endsTheNoticeQuietly_neverTheScreen() = runTest {
         session("1", "2026-11-01T10:00", 4000.0)
         val broken = object : AchievementSeenDao by db.achievementSeenDao() {
