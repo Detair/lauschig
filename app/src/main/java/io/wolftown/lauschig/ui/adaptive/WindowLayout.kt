@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.adaptive
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
@@ -8,6 +9,8 @@ import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
 import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -33,10 +36,19 @@ val PaneScaffoldDirective.isTwoPane: Boolean get() = maxHorizontalPartitions > 1
 /** Text pages (settings, details opened full screen, …) never grow wider than this; wide windows centre them. */
 val READABLE_MAX_WIDTH = 840.dp
 
+/**
+ * The free width on each side of a page that [ReadableWidth] centres (0 when the page fills its window). A page may
+ * let a full-bleed backdrop (the detail header's cover tint) reach this far beyond its own bounds.
+ */
+val LocalReadableGutter = staticCompositionLocalOf { 0.dp }
+
 /** Centres [content] with at most [READABLE_MAX_WIDTH] on wide windows; full width on phones. */
 @Composable
 fun ReadableWidth(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        Box(Modifier.widthIn(max = READABLE_MAX_WIDTH).fillMaxSize()) { content() }
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val gutter = ((maxWidth - READABLE_MAX_WIDTH) / 2).coerceAtLeast(0.dp)
+        Box(Modifier.widthIn(max = READABLE_MAX_WIDTH).fillMaxSize()) {
+            CompositionLocalProvider(LocalReadableGutter provides gutter, content = content)
+        }
     }
 }

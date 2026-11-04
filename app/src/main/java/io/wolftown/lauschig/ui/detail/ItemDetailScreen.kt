@@ -43,8 +43,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -53,13 +51,28 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.admin.ItemAdminMenu
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.FinishedCard
-import io.wolftown.lauschig.ui.common.Initials
+import io.wolftown.lauschig.ui.common.CoverArt
+import io.wolftown.lauschig.ui.common.CoverShapes
+import io.wolftown.lauschig.ui.adaptive.LocalReadableGutter
+import io.wolftown.lauschig.ui.theme.animateCoverTint
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.LayoutDirection
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
@@ -157,10 +170,24 @@ fun ItemDetailScreen(
     extras: LazyListScope.() -> Unit = {},
 ) {
     val settledOffline = LocalOfflineDimming.current
+    val model = if (state.found) coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion) else null
+    val surface = MaterialTheme.colorScheme.surface
+    val tint = animateCoverTint(model, surface)
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    // The tint reaches under the status bar and, on a wide window that centres this page, into the free sides.
+    val reachTop = WindowInsets.systemBars.getTop(density).toFloat()
+    val reachSide = with(density) { LocalReadableGutter.current.toPx() }
     // The window (or pane) this page has, not the page's own height: the list below scrolls and has no bounds.
     BoxWithConstraints(modifier.fillMaxSize()) {
         val sideCover = if (headerBesideCover(maxWidth, maxHeight)) sideCoverSize(maxWidth, maxHeight) else null
-        LazyColumn(Modifier.fillMaxSize()) {
+        val coverPx = with(density) { (sideCover ?: minOf(COLUMN_COVER_MAX, maxWidth - 32.dp)).toPx() }
+        LazyColumn(
+            Modifier.fillMaxSize().drawBehind {
+                drawHeaderTint(listState, tint.value, surface, coverPx, besideCover = sideCover != null, reachTop, reachSide)
+            },
+            state = listState,
+        ) {
             item("back") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
@@ -196,6 +223,52 @@ fun ItemDetailScreen(
             }
             chapterItems(state.chapters, onChapter)
         }
+    }
+}
+
+/** The column's cover: as wide as the window up to this. */
+private val COLUMN_COVER_MAX = 280.dp
+
+/**
+ * The header's backdrop, moving with the list: the cover's [tint] behind the back row and the cover, fading into the
+ * [surface] before the texts start – downwards to just below the cover in the column, sideways to just past the cover
+ * (and softly at its bottom) when the cover sits beside the texts. Nothing once the header has scrolled away.
+ */
+private fun DrawScope.drawHeaderTint(
+    list: LazyListState, tint: Color, surface: Color, coverPx: Float, besideCover: Boolean, reachTop: Float, reachSide: Float,
+) {
+    if (tint == surface) return
+    val items = list.layoutInfo.visibleItemsInfo
+    val header = items.firstOrNull { it.key == "header" } ?: return
+    val pageTop = (items.firstOrNull { it.key == "back" }?.offset ?: (header.offset - 48.dp.roundToPx())).toFloat()
+    val coverBottom = header.offset + coverPx
+    if (!besideCover) {
+        val end = coverBottom + 8.dp.toPx()
+        if (end <= 0f) return
+        drawRect(
+            Brush.verticalGradient(0f to tint, 1f to surface, startY = pageTop - reachTop, endY = end),
+            topLeft = Offset(-reachSide, -reachTop),
+            size = Size(size.width + 2 * reachSide, end + reachTop),
+        )
+    } else {
+        val fade = 32.dp.toPx()
+        if (coverBottom + fade <= 0f) return
+        val endX = 16.dp.toPx() + coverPx + 8.dp.toPx()
+        val start = if (layoutDirection == LayoutDirection.Rtl) size.width + reachSide else -reachSide
+        val stop = if (layoutDirection == LayoutDirection.Rtl) size.width - endX else endX
+        val left = minOf(start, stop)
+        val width = kotlin.math.abs(stop - start)
+        drawRect(
+            Brush.horizontalGradient(0f to tint, 1f to surface, startX = start, endX = stop),
+            topLeft = Offset(left, -reachTop),
+            size = Size(width, coverBottom + reachTop),
+        )
+        // The column's foot fades into the surface instead of ending in a line.
+        drawRect(
+            Brush.verticalGradient(0f to surface.copy(alpha = 0f), 1f to surface, startY = coverBottom - fade, endY = coverBottom),
+            topLeft = Offset(left, coverBottom - fade),
+            size = Size(width, fade),
+        )
     }
 }
 
@@ -236,14 +309,15 @@ private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, onPrimary: () ->
 @Composable
 private fun Cover(state: ItemDetailUiState, side: Dp? = null) {
     val model = coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion)
-    val shape = if (side != null) Modifier.size(side) else Modifier.widthIn(max = 280.dp).fillMaxWidth().aspectRatio(1f)
-    Box(shape.clip(RoundedCornerShape(12.dp)).testTag("cover")) {
-        Initials(state.title)
-        if (model != null) {
-            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
-    }
+    val size = if (side != null) Modifier.size(side) else Modifier.widthIn(max = COLUMN_COVER_MAX).fillMaxWidth().aspectRatio(1f)
+    CoverArt(
+        model, state.title,
+        size.shadow(8.dp, CoverShapes.Tile, ambientColor = CoverShadow, spotColor = CoverShadow).testTag("cover"),
+        initialsStyle = MaterialTheme.typography.headlineLarge,
+    )
 }
+
+private val CoverShadow = Color.Black.copy(alpha = 0.3f)
 
 private class ChipSpec(val label: String, val target: Pair<BrowseKind, String>)
 
