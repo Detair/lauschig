@@ -48,3 +48,70 @@
 - Time zone/DST and locale week start produce the same day buckets as a human would expect.
 - Sign-out: the new table and stamp are purged/kept exactly like other account data.
 - Stats screen offline with an empty cache: empty state, no spinner forever.
+
+## Implementation notes (2026-11-04)
+
+All six tasks are done on `phase-5a` (TDD, one commit per task plus three fixes found while verifying). Version 0.3.0
+(code 3) with "Was ist neu" lines for the UI polish and the statistics.
+
+**Built**
+- **API**: `MeApi.listeningSessions(itemsPerPage, page)` → `UserListeningSessionsPage` / `UserListeningSessionDto`
+  (media type, display title/author, `mediaMetadata.title`, flexible numbers, broken rows dropped). Verified on the
+  local ABS 2.37.1: 0-based pages, newest `updatedAt` first (also newest `startedAt`).
+- **Room v9**: `listening_sessions` (`ListeningSessionEntity`, PK serverId+id, index serverId+startedAt), AutoMigration
+  8→9, schema 9.json, `MigrationTest.v8ToV9…`, registered as account data (AccountDataDao delete/hasRows/SERVER_TABLES).
+  `SessionDao.observeAll(serverId)` for this device's sessions.
+- **Sync**: `ListeningSessionSync` (singleton, runs serialized) – see "Decisions" for the run types; `SyncWorker` calls
+  `syncIfDue` (30 min) after the progress sync, best effort; the Stats page calls `sync` once on open after the
+  connection check said online.
+- **Logic**: `stats/ListeningStats` (pure) + `StatsSessions` (Room flows, merged).
+- **UI**: `ui/stats/StatsScreen` + `StatsViewModel` + `BarChart` (Canvas), route `Stats` inside `ReadableWidth`;
+  Start card (`StartViewModel.statsCard`, `StartScreen(stats, onOpenStats)`); Settings row „Statistik“.
+
+**Decisions beyond the plan (Claudes Wahl, for review)**
+1. *Later runs ask for one session first* (`itemsPerPage=1`): same newest `updatedAt` and same `total` = nothing
+   changed, the run ends after that request. Session JSON is large (≈1.4 KB per session on the test server without
+   chapters or descriptions; real books carry both), so re-reading the last 24 h every 30 min would have cost megabytes
+   a day. Later runs page with 20, full runs with 100.
+2. *Stop rule*: a later run stops after the first page that reaches sessions older than newest − 24 h (one page
+   earlier than "all older"; the order is by `updatedAt`, so nothing below can be newer).
+3. *Late uploads and deletions*: ABS keeps the `updatedAt` a device uploads (checked: a session from three weeks ago
+   uploaded now sorts last), so the 24 h overlap alone would never reach sessions an offline device uploads days later.
+   After a later run the cached row count is compared with the server's total; when they differ a **full run** follows,
+   at most once per 24 h. A full run drops rows the server no longer lists (deleted there) – after re-reading page 0
+   when anything would be dropped, so a session that moved to the top while paging is not taken for deleted – and
+   remembers how many listed rows could not be read, so those do not trigger a full run every day.
+4. `newestUpdatedAt` in the DAO was not needed (the stamps are the authority: only complete runs move them); the DAO has
+   `count`, `ids`, `delete` (chunks of 500) for the reconcile instead. Stamps: `listening_sessions[_total|_unreadable|
+   _full|_run]:<serverId>`.
+5. An episode's row carries its podcast's title; top titles group episodes under their podcast (by library item id).
+   Names come from the catalog where it knows the item, else from the session.
+6. A finishing session also needs listening time > 0 (a 0 s session opened at the end is no finish). A finished series
+   needs at least two numbered volumes (a single numbered volume is mostly a series the library holds one book of).
+7. The Start card sits below the whole "continue" block (hero + its row), shows the current week (locale week start,
+   today in primary) and hides when less than 60 s were heard in the last 30 days (a few seconds by accident do not
+   bring it back).
+8. Settings: the row sits right under the account rows (with a bar-chart icon like them), no section of its own.
+9. A period switch starts at that period's current one; previous is bounded by the first day with a session.
+10. Streak/record tiles show the streaks as of today in every period; „Beendet“ counts the period's books, in „Gesamt“
+    also the finished series.
+11. „Server nicht erreichbar“ is only said in the empty state; with data the app's offline banner already says it.
+12. Bars: neutral `outline`, the current day/month/year in `primary`; month bars labelled 1/8/15/22/29; the month
+    chart's description names only days with listening. Tiles side by side in one height, one below the other when a
+    word would have to break (large text).
+
+**Verification**
+- `timeout 1500 ./gradlew testDebugUnitTest :abs-api:test lintDebug assembleDebug -q` green (see the report for counts).
+- Emulator (AVD lauschig35, signed in to the local test ABS): what's new 0.3.0, Start card, Stats week/month/year/all,
+  previous/next bounds, an empty week (a test session from 14 Oct was added to the server for this and removed again
+  afterwards), Settings entry, German (Monday week, „2.–8. Nov. 2026“), 200 % font (tiles stack, nothing cut),
+  dark/light, tablet mimic portrait/landscape, offline (airplane mode; server stopped) shows the cache without a
+  spinner, sign-out without keeping purges rows + stamps, with keeping both stay; the app is signed in again.
+  The numbers matched a script over the server's sessions (week 56 min on 2 days, Der Anfang 26 min, Die Mitte 25 min…).
+
+**Open / for Fabian**
+- A heavy listener's first sync downloads every session's full JSON (with chapters and metadata) – on mobile data too,
+  like the other syncs. ABS also loads all of a user's sessions for every page it serves.
+- The empty-cache-offline state was checked in tests only (on the emulator the first sync after signing in was done
+  before the server could be stopped).
+- Sessions deleted on the server that this device recorded itself keep counting (they are in `local_sessions`).
