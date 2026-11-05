@@ -90,4 +90,10 @@ class AccountStateCleanerTest {
         AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}).clear(a)
         assertEquals(other, prompts.prompt.value)
     }
+
+    @Test fun theDiagnosticLog_goesOnEverySignOut() = runBlocking {
+        var cleared = 0
+        AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, { cleared++ }).clear(a)
+        assertEquals(1, cleared)
+    }
 }

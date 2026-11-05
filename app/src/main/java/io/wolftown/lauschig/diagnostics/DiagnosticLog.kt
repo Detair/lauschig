@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object DiagnosticLog {
     const val CAPACITY = 500
     private const val MAX_MESSAGE = 1_000
+    /** Masked before it is cut to [MAX_MESSAGE]: a secret cut in half would no longer be recognised. */
+    private const val MAX_MASK_INPUT = 8_000
     private const val TOP_FRAMES = 8
     private const val CAUSE_FRAMES = 4
     private const val MAX_CAUSES = 3
@@ -30,6 +32,8 @@ object DiagnosticLog {
 
     private val entries = ArrayDeque<String>(CAPACITY)
     private val lock = Any()
+    /** One writer at a time (attach, the delayed write and the crash handler share the file). */
+    private val writeLock = Any()
     @Volatile private var file: File? = null
     private val writePending = AtomicBoolean(false)
     private val writer by lazy {
@@ -41,7 +45,7 @@ object DiagnosticLog {
     fun record(level: Char, tag: String, message: String?, error: Throwable? = null) {
         val entry = buildString {
             append(timestamp()).append(' ').append(level).append('/').append(tag.take(40)).append(": ")
-            append(LogMasker.mask(message.orEmpty().take(MAX_MESSAGE)))
+            append(masked(message.orEmpty()))
             if (error != null) appendThrowable(error)
         }
         synchronized(lock) {
@@ -51,13 +55,28 @@ object DiagnosticLog {
         scheduleWrite()
     }
 
+    private fun masked(text: String): String = LogMasker.mask(text.take(MAX_MASK_INPUT)).take(MAX_MESSAGE)
+
     /** Every entry, oldest first. */
     fun entries(): List<String> = synchronized(lock) { entries.toList() }
 
-    /** Forgets everything, also on disk (tests; and a user who wants a fresh start). */
+    /**
+     * Masks the kept entries once more with the user's own values ([LogMasker.maskLiterals]) – they become known a
+     * moment after the start, after the first entries – and writes them.
+     */
+    fun remask() {
+        synchronized(lock) {
+            val again = entries.map(LogMasker::maskLiterals)
+            entries.clear()
+            again.forEach { entries.addLast(it) }
+        }
+        scheduleWrite()
+    }
+
+    /** Forgets everything, also on disk (sign-out and another account: the next one must not share these entries). */
     fun clear() {
         synchronized(lock) { entries.clear() }
-        file?.delete()
+        synchronized(writeLock) { file?.delete() }
     }
 
     /**
@@ -84,10 +103,10 @@ object DiagnosticLog {
     internal fun detach() { file = null }
 
     /** Writes the entries to the attached file right now (blocking); false if there is none or writing failed. */
-    fun writeNow(): Boolean {
+    fun writeNow(): Boolean = synchronized(writeLock) {
         val target = file ?: return false
         val text = entries().joinToString("\n", postfix = "\n")
-        return try {
+        try {
             target.parentFile?.mkdirs()
             val tmp = File(target.path + ".tmp")
             tmp.writeText(text)
@@ -147,7 +166,7 @@ object DiagnosticLog {
         while (t != null && depth <= MAX_CAUSES && seen.add(t)) {
             append('\n').append(if (depth == 0) "    " else "    Caused by: ")
             append(t.javaClass.name)
-            t.message?.let { append(": ").append(LogMasker.mask(it.take(MAX_MESSAGE))) }
+            t.message?.let { append(": ").append(masked(it)) }
             val frames = t.stackTrace
             val shown = if (depth == 0) TOP_FRAMES else CAUSE_FRAMES
             frames.take(shown).forEach { f -> append("\n        at ").append(f.className).append('.').append(f.methodName).append('(').append(f.fileName ?: "?").append(':').append(f.lineNumber).append(')') }

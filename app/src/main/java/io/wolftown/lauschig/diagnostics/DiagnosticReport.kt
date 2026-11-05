@@ -47,6 +47,8 @@ class DiagnosticReport(
     private val cacheDir: File,
     private val facts: suspend () -> DiagnosticFacts,
     private val entries: () -> List<String> = DiagnosticLog::entries,
+    /** Before a new copy is written: the old one and its grant go ([discardShared]). */
+    private val discard: () -> Unit = {},
 ) {
     @Inject constructor(@ApplicationContext context: Context, api: ApiProvider, roots: VolumeDownloadRoots) : this(
         context.cacheDir,
@@ -63,15 +65,17 @@ class DiagnosticReport(
                 "${Build.MANUFACTURER} ${Build.MODEL}", connectionFact(api.connectionState.value), storage, System.currentTimeMillis(),
             )
         },
+        discard = { discardShared(context) },
     )
 
-    /** The whole text: facts, then every entry (oldest first). */
-    suspend fun text(): String = render(facts(), entries())
+    /** The whole text: facts, then every entry (oldest first), masked once more with every own value known now. */
+    suspend fun text(): String = render(facts(), entries().map(LogMasker::maskLiterals))
 
     /** Writes [text] to the shared file (replacing the previous one) and returns it. */
     suspend fun write(): File {
         val text = text()
         return withContext(Dispatchers.IO) {
+            discard()
             val dir = File(cacheDir, DIR).apply { mkdirs() }
             File(dir, FILE_NAME).apply { writeText(text) }
         }
@@ -115,5 +119,19 @@ class DiagnosticReport(
         }
 
         fun authority(context: Context) = "${context.packageName}.diagnostics"
+
+        /**
+         * The copy shared last time goes and the app that got it loses its read grant: at the next start, at sign-out and
+         * before a new share writes it again. Blocking.
+         */
+        fun discardShared(context: Context) {
+            val file = File(File(context.cacheDir, DIR), FILE_NAME)
+            try {
+                context.revokeUriPermission(FileProvider.getUriForFile(context, authority(context), file), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                // No grant or no provider (tests): nothing to revoke.
+            }
+            File(context.cacheDir, DIR).listFiles()?.forEach { it.delete() }
+        }
     }
 }

@@ -118,4 +118,95 @@ class LogMaskerTest {
         val out = masked(leaky, "wolftown", "fabian", jwt, "eyJ", "f@")
         assertTrue(out, out.startsWith("W/OkHttp: <-- 401 https://<server>/api/authorize (12ms)"))
     }
+
+    // --- the review's adversarial lines (scratchpad maskcheck/MaskCheck.java)
+
+    @Test fun theFullSslMessage_withAWildcardName_losesEveryName() {
+        LogMasker.setLiterals(listOf("audiobookshelf.example.io", "example.io"))
+        val ssl = "Hostname audiobookshelf.example.io not verified:\n    certificate: sha256/AbC=\n    DN: CN=audiobookshelf.example.io\n" +
+            "    subjectAltNames: [audiobookshelf.example.io, *.example.io]"
+        masked(ssl, "example.io", "audiobookshelf")
+        LogMasker.setLiterals(emptyList())
+        // Without the own values: the patterns alone.
+        val out = masked("Hostname abs.other-domain.de not verified: subjectAltNames: [*.other-domain.de, other-domain.de]", "other-domain")
+        assertTrue(out, out.contains("[*.<server>, <server>]"))
+        masked("Hostname 192.168.178.20 not verified: subjectAltNames: [*.example.io]", "192.168", "example.io")
+        masked("cookie domain .example.io set", "example.io")
+    }
+
+    @Test fun secretKeys_byPart_inAnyQuotes_withSeveralWords() {
+        masked("""{"user":{"username":"lukas","newPassword":"hunter2","oldPassword":"pw1","authToken":"plainsecret"}}""", "lukas", "hunter2", "pw1", "plainsecret")
+        masked("""{"authOpenIDClientSecret":"s3cr3tvalue","apiToken":"abcd"}""", "s3cr3tvalue", "abcd")
+        masked("""{'password': 'hunter2'}""", "hunter2")
+        assertEquals("password=<redacted>", masked("password=my secret phrase", "secret phrase", "my"))
+        masked("""{"apiToken": 123456789}""", "123456789")
+        masked("x-refresh-token: abc123", "abc123")
+        masked("set connect.sid=s%3AabcDEF123.xyz;", "abcDEF123")
+        masked("refresh_token=abc.def.ghi rt: 8f14e45fceea167a5a36dedd4bea2543c4ca4238a0b923820dcc509a6f75849b", "abc.def", "8f14e45f")
+        masked("header Authorization=Bearer abcdefgh123", "abcdefgh123")
+        masked("GET /api/items/li_1/play?token=sekret123&x=1", "sekret123")
+        // Author names are no secret.
+        assertEquals("author: Astrid Lindgren", LogMasker.mask("author: Astrid Lindgren"))
+    }
+
+    @Test fun singleWordHosts_inJavasMessages() {
+        masked("Unable to resolve host \"nas\": No address associated with hostname", "\"nas\"")
+        masked("Unable to resolve host \"Fabians-NAS.local\": No address", "Fabians")
+    }
+
+    @Test fun foldersAndTitles_inPaths_keepOnlyTheExtension_ourOwnDirectoryStays() {
+        assertEquals(
+            "file /storage/emulated/0/<…>.mp3 missing",
+            masked("file /storage/emulated/0/Hörbücher/Lukas/Bibi Blocksberg 001.mp3 missing", "Lukas", "Bibi", "Hörbücher"),
+        )
+        assertEquals(
+            "/storage/1A2B-3C4D/<…>.m4b: open failed: ENOENT (No such file or directory)",
+            masked("/storage/1A2B-3C4D/Kinder/Die drei ???/001.m4b: open failed: ENOENT (No such file or directory)", "Kinder", "drei"),
+        )
+        masked("Missing file for primary:Hörbücher/Lukas/Bibi 001.mp3 at /storage/emulated/0/Hörbücher/Lukas/Bibi 001.mp3", "Lukas", "Bibi", "Hörbücher")
+        masked("listing /storage/emulated/0/Hörbücher/Lukas failed", "Lukas", "Hörbücher")
+        val own = "/storage/A6E5-110D/Android/data/io.wolftown.lauschig/files/downloads/d5f7cac00f5eb3cb/li_x/1.m4b.part: open failed: ENOSPC (No space left on device)"
+        assertEquals(own, LogMasker.mask(own))
+    }
+
+    @Test fun mappedIpv6_tailscaleAndBracketedAddresses() {
+        masked("addr ::ffff:192.168.178.20 and fe80::1%wlan0 and 2001:db8:85a3:0:0:8a2e:370:7334", "192", "168", "fe80", "2001", "8a2e")
+        masked("failed to connect to /100.64.12.34 (port 13378) from /100.64.0.7 (port 40000)", "100.64")
+        masked("Failed to connect to audiobookshelf.example.io/[fd7a:115c:a1e0::1]:443", "example.io", "fd7a")
+        assertEquals("MAC aa:bb:cc:dd:ee:ff time 12:34:56", LogMasker.mask("MAC aa:bb:cc:dd:ee:ff time 12:34:56").replace("<ip>", "aa:bb:cc:dd:ee:ff"))
+    }
+
+    @Test fun credentialsWithoutAScheme() {
+        assertEquals("<redacted>@<server>/api", masked("user:pass@audiobookshelf.example.io:13378/api", "user:pass", "example.io"))
+    }
+
+    @Test fun everyProbeLine_leaksNoneOfItsSecrets() {
+        LogMasker.setLiterals(listOf("audiobookshelf.example.io", "example.io", "fabian", "FRITZ!Box 7590 XY"))
+        val probes = mapOf(
+            "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJ4In0.abc123" to listOf("eyJ"),
+            "https://audiobookshelf.example.io/api/items/li_1/file/2?token=eyJx" to listOf("example.io", "eyJx", "li_1"),
+            "mail lukas.mustermann@gmx.de" to listOf("mustermann", "gmx"),
+            "Cookie: connect.sid=s%3Aabc.def" to listOf("abc.def"),
+            "token eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJ4In0" to listOf("eyJ"),
+            "opaque refresh 4f3c2a1b9e8d7c6b5a4f3c2a1b9e8d7c6b5a4f3c2a1b9e8d7c6b5a4f3c2a1b" to listOf("4f3c2a1b"),
+            "WLAN FRITZ!Box 7590 XY connected" to listOf("FRITZ"),
+            "user fabians tablet" to listOf("fabian"),
+            "socket http://10.0.2.2:13378, via=LOCAL" to listOf("10.0.2.2", "13378"),
+            "ws://audiobookshelf.example.io/socket.io/?EIO=4&token=x" to listOf("example.io", "EIO", "token=x"),
+            "ABS host abs.wolftown.io and audiobookshelf.wolftown.io:443 and netbird abs.netbird.cloud" to listOf("wolftown", "netbird.cloud"),
+            "OIDC redirect audiobookshelf://oauth?code=abc&state=xyz" to listOf("code=abc", "xyz"),
+            "Basic dXNlcjpwYXNz" to listOf("dXNlcjpwYXNz"),
+            "share https://audiobookshelf.example.io/share/my-secret-slug" to listOf("my-secret-slug", "example.io"),
+        )
+        for ((line, secrets) in probes) masked(line, *secrets.toTypedArray())
+    }
+
+    @Test fun aSecretAtTheCut_isMaskedBeforeTheMessageIsCut() {
+        DiagnosticLog.clear()
+        val padding = "x".repeat(985)
+        DiagnosticLog.record('W', "Cut", "$padding password=hunter2-and-more")
+        val e = DiagnosticLog.entries().last()
+        assertFalse(e, e.contains("hunter"))
+        DiagnosticLog.clear()
+    }
 }

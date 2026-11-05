@@ -25,7 +25,8 @@ class DiagnosticSecrets(
     private val account: Flow<Account?>,
     private val kept: Flow<List<KeptAccount>>,
     private val rmab: Flow<RmabConfig?>,
-    private val apply: (Collection<String>) -> Unit = LogMasker::setLiterals,
+    /** Hands the values to the masker and masks the entries kept so far once more (they predate the values). */
+    private val apply: (Collection<String>) -> Unit = { LogMasker.setLiterals(it); DiagnosticLog.remask() },
 ) {
     @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, rmab: RmabRepository) : this(accounts.account, kept.accounts, rmab.config)
 
@@ -49,16 +50,31 @@ class DiagnosticSecrets(
         private const val TAG = "DiagnosticSecrets"
 
         fun literals(account: Account?, kept: List<KeptAccount>, rmab: RmabConfig?): Set<String> = buildSet {
+            fun host(h: String) { add(h); parentDomain(h)?.let(::add) }
             account?.let { a ->
-                listOfNotNull(a.addresses.local, a.addresses.public).forEach { add(it.host) }
+                listOfNotNull(a.addresses.local, a.addresses.public).forEach { host(it.host) }
                 add(a.username)
                 addAll(a.addresses.homeSsids)
             }
-            kept.forEach { add(it.host.substringBefore(':')); add(it.username) }
+            kept.forEach { host(it.host.substringBefore(':')); add(it.username) }
             rmab?.let { r ->
-                r.url.toHttpUrlOrNull()?.host?.let(::add)
+                r.url.toHttpUrlOrNull()?.host?.let(::host)
                 add(r.username)
             }
         }.filter { it.isNotBlank() }.toSet()
+
+        /**
+         * The registrable domain above a host (`example.io` for `abs.example.io`, `example.co.uk` for `abs.example.co.uk`):
+         * certificates name it as `*.example.io`, other services of the same family use it. Null for an IP address or a
+         * host that is that domain already.
+         */
+        fun parentDomain(host: String): String? {
+            if (':' in host || host.all { it.isDigit() || it == '.' }) return null
+            val labels = host.lowercase().split('.').filter { it.isNotEmpty() }
+            val take = if (labels.size >= 3 && labels[labels.size - 2] in SECOND_LEVEL && labels.last().length == 2) 3 else 2
+            return if (labels.size > take) labels.takeLast(take).joinToString(".") else null
+        }
+
+        private val SECOND_LEVEL = setOf("co", "com", "org", "net", "gov", "edu", "ac", "or", "ne", "go")
     }
 }

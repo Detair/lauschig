@@ -21,6 +21,13 @@ object LogMasker {
             .map { Regex(Regex.escape(it), RegexOption.IGNORE_CASE) }
     }
 
+    /** Only the user's own values ([setLiterals]): run again over kept entries once those are known (early entries). */
+    fun maskLiterals(text: String): String {
+        var s = text
+        for (r in literals) s = r.replace(s, LITERAL)
+        return s
+    }
+
     fun mask(text: String): String {
         var s = text
         s = HEADER.replace(s) { m -> "${m.groupValues[1]}: $REDACTED" }
@@ -29,17 +36,38 @@ object LogMasker {
             val trail = m.value.takeLastWhile { it in ".,;:!?" }
             maskUrl(m.value.dropLast(trail.length)) + trail
         }
+        s = USER_PATH.replace(s) { m -> maskUserPath(m.groupValues[1], m.groupValues[2]) }
+        s = DOCUMENT_ID.replace(s) { m -> maskUserPath(m.groupValues[1] + ":", "/" + m.groupValues[2]).replaceFirst(":/", ":") }
         s = AUTH_SCHEME.replace(s) { m -> "${m.groupValues[1]} $REDACTED" }
         s = JWT.replace(s, TOKEN)
-        s = JSON_SECRET.replace(s) { m -> "\"${m.groupValues[1]}\":\"$REDACTED\"" }
+        s = QUOTED_SECRET.replace(s) { m -> "${m.groupValues[1]}${m.groupValues[2]}${m.groupValues[1]}${m.groupValues[3]}${m.groupValues[4]}$REDACTED${m.groupValues[4]}" }
         s = KEY_VALUE.replace(s) { m -> "${m.groupValues[1]}${m.groupValues[2]}$REDACTED" }
-        for (r in literals) s = r.replace(s, LITERAL)
+        s = USER_INFO.replace(s, "$REDACTED@$HOST")
+        s = maskLiterals(s)
         s = EMAIL.replace(s, "<email>")
+        s = QUOTED_HOST.replace(s) { m -> "${m.groupValues[1]} \"$HOST\"" }
+        s = UNVERIFIED_HOST.replace(s) { m -> "${m.groupValues[1]} $HOST" }
         s = IPV6.replace(s) { m -> if (looksLikeIpv6(m.groupValues[1])) IP else m.value }
         s = IPV4.replace(s, IP)
+        s = WILDCARD_DOMAIN.replace(s) { m -> if (isCodeOrFile(m.groupValues[2])) m.value else m.groupValues[1] + HOST }
         s = DOMAIN.replace(s) { m -> if (isCodeOrFile(m.value)) m.value else HOST }
         s = LONG_SECRET.replace(s, TOKEN)
         return s
+    }
+
+    /**
+     * A path in shared storage or on a card ([root] = `/storage/emulated/0`, `/storage/1A2B-3C4D`, …): folder and file
+     * names are the user's (titles, children's names) and go; the extension stays. The app's own directory there
+     * (`Android/data/<this app>`) is kept: download paths are useful and hold only ids.
+     */
+    private fun maskUserPath(root: String, rest: String): String {
+        if (rest.startsWith(OWN_DIR)) return root + rest
+        // The path ends at ": " (Java's "path: open failed"), " (", " at ", or right after a known file extension.
+        var end = listOf(": ", " (", " at ", ", ").mapNotNull { d -> rest.indexOf(d).takeIf { it >= 0 } }.minOrNull() ?: rest.length
+        val ext = EXTENSION_IN_PATH.findAll(rest.substring(0, end)).lastOrNull()
+        if (ext != null) end = ext.range.last + 1
+        val extension = ext?.groupValues?.get(1)?.let { ".$it" }.orEmpty()
+        return "$root/$ELLIPSIS$extension" + rest.substring(end)
     }
 
     private fun maskUrl(url: String): String {
@@ -85,19 +113,37 @@ object LogMasker {
     private val AUTH_SCHEME = Regex("""(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}""")
     private val JWT = Regex("""eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*""")
 
-    private const val SECRET_KEYS =
-        "access_?token|refresh_?token|id_?token|token|api_?key|apikey|password|passwd|pwd|pass|secret|client_?secret|" +
-            "code_?verifier|session_?id|sessionid|connect\\.sid|sid|username|user_?name|email|e-mail"
-    private val JSON_SECRET = Regex("""(?i)"($SECRET_KEYS)"\s*:\s*"(?:[^"\\]|\\.)*"""")
-    private val KEY_VALUE = Regex("""(?i)\b($SECRET_KEYS)(\s*[=:]\s*)(?!<)("[^"]*"|'[^']*'|[^\s"'&,;)}\]]+)""")
+    /** Any key that names a secret, also inside a longer name ("newPassword", "authToken", "authOpenIDClientSecret"). */
+    private const val SECRET_KEY =
+        "[A-Za-z0-9_.-]*(?:pass(?:word|wd|phrase)?|pwd|secret|token|auth(?!or(?!iz))|cookie|session|api[_-]?key|apikey|" +
+            "credential|verifier|sid|username|user_?name|e-?mail)[A-Za-z0-9_.-]*"
+    /** `"key": "value"` and `'key': 'value'` (JSON, Python-like dumps): the value goes, whatever it holds. */
+    private val QUOTED_SECRET = Regex("""(?i)(["'])($SECRET_KEY)\1(\s*:\s*)(["'])(?:(?!\4)[^\\]|\\.)*\4""")
+    /** `key=value` / `key: value`: the value goes up to the next delimiter, several words included. */
+    private val KEY_VALUE = Regex("""(?i)(?<![\w.-])($SECRET_KEY)(["']?\s*[=:]\s*)(?!["']?<)("[^"]*"|'[^']*'|[^\s"',;&)}\]][^"',;&)}\]\r\n]*)""")
+    /** `user:pass@host` without a scheme. */
+    private val USER_INFO = Regex("""(?<![\w/@<])[^\s:@/"'<>]+:[^\s@/"'<>]+@[A-Za-z0-9.\[\]:-]+""")
+    /** `host "nas"` (UnknownHostException) and `Hostname nas not verified` (SSL): single-word hosts as well. */
+    private val QUOTED_HOST = Regex("""(?i)\b(host(?:name)?)\s*"[^"]*"""")
+    private val UNVERIFIED_HOST = Regex("""(?i)\b(Hostname)\s+(?!<)\S+(?=\s+not verified)""")
 
     private val URL = Regex("""\b[a-zA-Z][a-zA-Z0-9+.-]{1,15}://[^\s"'<>\])}]*""")
     private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}""")
     private val IPV4 = Regex("""(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\d.])""")
-    private val IPV6 = Regex("""(?<![\w:.])\[?((?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4})\]?(?::\d{1,5})?(?![\w:])""")
+    /** Also IPv4-mapped (`::ffff:192.168.1.5`): the dotted tail is part of it. */
+    private val IPV6 = Regex("""(?<![\w:.])\[?((?:[0-9A-Fa-f]{0,4}:){2,7}(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]{0,4}))\]?(?::\d{1,5})?(?![\w:])""")
+    /** `*.example.io` (certificate names) and `.example.io` (cookie domains): the plain rule never starts after a dot. */
+    private val WILDCARD_DOMAIN = Regex("""(?<![\w.-])(\*\.|\.)((?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-]*[A-Za-z0-9])(?![\w-])""")
     private val DOMAIN = Regex("""(?<![\w.@/<-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-]*[A-Za-z0-9](?::\d{1,5})?(?![\w-])""")
     /** Anything left that looks like a key: 40+ letters and digits (both) without a break. Ids (UUIDs: 36) stay. */
     private val LONG_SECRET = Regex("""(?<![\w-])(?=[A-Za-z_-]*\d)(?=[\d_-]*[A-Za-z])[A-Za-z0-9_-]{40,}(?![\w-])""")
+
+    /** Shared storage and cards; the rest of the path up to the end of the line is looked at ([maskUserPath]). */
+    private val USER_PATH = Regex("""(/storage/emulated/\d+|/storage/self/primary|/storage/[A-Za-z0-9-]+|/sdcard|/mnt/media_rw/[A-Za-z0-9-]+)(/[^\n"'<>]*)""")
+    /** A document id of the storage provider: `primary:Hörbücher/…`, `1A2B-3C4D:…`. */
+    private val DOCUMENT_ID = Regex("""\b(primary|[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}):(?!/)([^\s"'<>][^\n"'<>]*)""")
+    private const val OWN_DIR = "/Android/data/io.wolftown.lauschig"
+    private val EXTENSION_IN_PATH = Regex("""\.(mp3|m4a|m4b|mp4|aac|ogg|oga|opus|flac|wav|wma|jpg|jpeg|png|webp|gif|txt|json|part|pdf|epub|nfo|cue|opf)\b""", RegexOption.IGNORE_CASE)
 
     private val CODE_PREFIXES = listOf(
         "io.wolftown.", "java.", "javax.", "android.", "androidx.", "kotlin.", "kotlinx.", "okhttp3.", "okio.", "com.google.",

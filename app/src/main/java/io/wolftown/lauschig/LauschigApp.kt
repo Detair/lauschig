@@ -12,6 +12,7 @@ import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.cleanup.FinishedDownloadsWorker
 import io.wolftown.lauschig.diagnostics.DiagnosticLog
+import io.wolftown.lauschig.diagnostics.DiagnosticReport
 import io.wolftown.lauschig.diagnostics.DiagnosticSecrets
 import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
@@ -55,7 +56,11 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         // The user's own hosts and names are masked in the diagnostic log; its entries survive the process.
         diagnosticSecrets.start(scope)
-        scope.launch(Dispatchers.IO) { DiagnosticLog.attach(File(noBackupFilesDir, DIAGNOSTIC_LOG)) }
+        scope.launch(Dispatchers.IO) {
+            DiagnosticLog.attach(File(noBackupFilesDir, DIAGNOSTIC_LOG))
+            // The copy shared last time goes, and with it the read grant of the app it went to.
+            DiagnosticReport.discardShared(this@LauschigApp)
+        }
         scope.launch { syncScheduler.start(scope) }
         // Picks up files added to the device folders meanwhile (throttled; a WorkManager job, nothing waits for it).
         scope.launch { localFolders.scanIfDue() }

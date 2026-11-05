@@ -351,8 +351,7 @@ class FinishedDownloadCleanerTest {
         delay(300)
         assertTrue("A is still the last played title", a.single().isFile)
         last = LastPlayed(s, "B", now)
-        withTimeout(10_000) { while (db.downloadDao().get(s, "A") != null) delay(20) }
-        assertFalse(a.single().exists())
+        withTimeout(10_000) { while (db.downloadDao().get(s, "A") != null || a.single().exists()) delay(20) }
         assertEquals(listOf("A" to "B"), heldWhenDeleted)
         assertTrue("its progress stays finished", db.progressDao().get(s, "A")!!.isFinished)
         assertNotNull("the next title is untouched", db.downloadDao().get(s, "B"))

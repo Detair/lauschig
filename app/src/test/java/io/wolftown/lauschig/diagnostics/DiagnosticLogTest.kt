@@ -40,6 +40,9 @@ class DiagnosticLogTest {
     private lateinit var dir: File
 
     @Before fun setUp() {
+        // FileProvider caches its roots per authority in a static map; every Robolectric test has a new data directory.
+        androidx.core.content.FileProvider::class.java.declaredFields.filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && Map::class.java.isAssignableFrom(it.type) }
+            .forEach { f -> f.isAccessible = true; (f.get(null) as MutableMap<*, *>).clear() }
         dir = File(ctx.cacheDir, "diag-${System.nanoTime()}").apply { mkdirs() }
         DiagnosticLog.clear()
         DiagnosticLog.clock = { 1_762_330_000_000 }
@@ -104,15 +107,17 @@ class DiagnosticLogTest {
         val file = File(dir, "crash.txt")
         DiagnosticLog.attach(file)
         var handedOn: Throwable? = null
+        var onDiskWhenHandedOn = ""
         val original = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { _, e -> handedOn = e }
+        // The previous handler ends the process: what is on disk when it runs is all there will be.
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> handedOn = e; onDiskWhenHandedOn = file.readText() }
         try {
             DiagnosticLog.installCrashHandler()
             DiagnosticLog.installCrashHandler() // idempotent
             val boom = IllegalStateException("player released at http://192.168.1.5:13378/")
             Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), boom)
             assertEquals(boom, handedOn)
-            val text = file.readText()
+            val text = onDiskWhenHandedOn
             assertTrue(text, text.contains("E/Crash: uncaught exception in thread"))
             assertTrue(text, text.contains("java.lang.IllegalStateException: player released at http://<server>/"))
         } finally {
@@ -174,7 +179,7 @@ class DiagnosticLogTest {
             ServerAddresses("http://192.168.178.20:13378/".toHttpUrl(), "https://abs.wolftown.io/".toHttpUrl(), setOf("FRITZ!Box 7590 XY")), emptySet(),
         )
         val literals = DiagnosticSecrets.literals(account, listOf(KeptAccount("b", "lukas", "nas.local:13378")), RmabConfig("https://rmab.wolftown.io", "fab"))
-        assertEquals(setOf("192.168.178.20", "abs.wolftown.io", "fabian", "FRITZ!Box 7590 XY", "nas.local", "lukas", "rmab.wolftown.io", "fab"), literals)
+        assertEquals(setOf("192.168.178.20", "abs.wolftown.io", "wolftown.io", "fabian", "FRITZ!Box 7590 XY", "nas.local", "lukas", "rmab.wolftown.io", "fab"), literals)
         LogMasker.setLiterals(literals)
         Log.i("Home", "lukas is on FRITZ!Box 7590 XY")
         assertTrue(DiagnosticLog.entries().single().endsWith("I/Home: <private> is on <private>"))
@@ -201,5 +206,77 @@ class DiagnosticLogTest {
         rule.onNodeWithTag("diagnosticsShare").performClick()
         assertEquals(1, shared)
         rule.onNodeWithTag("diagnosticsPreview").assertDoesNotExist()
+    }
+
+    @Test fun earlyEntries_areMaskedAgain_onceTheOwnValuesAreKnown_andAtExport() = runBlocking {
+        Log.w("Net", "Unable to resolve host nas-keller: timeout")
+        assertTrue(DiagnosticLog.entries().single().contains("nas-keller"))
+        LogMasker.setLiterals(listOf("nas-keller"))
+        DiagnosticLog.remask()
+        assertTrue(DiagnosticLog.entries().single().endsWith("Unable to resolve host <private>: timeout"))
+        // And whatever is kept unmasked somewhere is masked once more when it is shared.
+        val text = DiagnosticReport(dir, { facts }, { listOf("2026-11-05 10:00:00.000 I/X: lukas listened") }).text()
+        LogMasker.setLiterals(listOf("lukas"))
+        val again = DiagnosticReport(dir, { facts }, { listOf("2026-11-05 10:00:00.000 I/X: lukas listened") }).text()
+        assertTrue(text.contains("lukas"))
+        assertFalse(again, again.contains("lukas"))
+    }
+
+    @Test fun theFacade_neverThrowsIntoTheApp_logcatStillGetsTheLine() {
+        val before = Log.recorder
+        Log.recorder = { _, _, _, _ -> throw OutOfMemoryError("while building the entry") }
+        try {
+            Log.w("Any", "a line", IOException("x"))
+            Log.i("Any", "another line")
+            assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("Any").any { it.msg == "another line" })
+        } finally {
+            Log.recorder = before
+        }
+    }
+
+    @Test fun manyWriters_atOnce_leaveAWholeFile() {
+        val file = File(dir, "concurrent.txt")
+        DiagnosticLog.attach(file)
+        repeat(50) { Log.i("Many", "entry $it") }
+        val threads = (1..8).map { Thread { repeat(30) { DiagnosticLog.writeNow() } } }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+        assertTrue(DiagnosticLog.writeNow())
+        assertEquals(DiagnosticLog.entries().joinToString("\n", postfix = "\n"), file.readText())
+        assertFalse(File(file.path + ".tmp").exists())
+    }
+
+    @Test fun theSharedCopy_goesWithItsGrant_andClearRemovesTheLogFile() = runBlocking {
+        val shared = DiagnosticReport(ctx.cacheDir, { facts }).write()
+        assertTrue(shared.isFile)
+        DiagnosticReport.discardShared(ctx)
+        assertFalse(shared.exists())
+        val file = File(dir, "persisted.txt")
+        DiagnosticLog.attach(file)
+        Log.i("Before", "sign-out")
+        assertTrue(DiagnosticLog.writeNow())
+        DiagnosticLog.clear()
+        assertFalse("sign-out leaves nothing for the next account", file.exists())
+        assertTrue(DiagnosticLog.entries().isEmpty())
+    }
+
+    @Test fun theProvider_exposesNothingButTheSharedCopy() {
+        val elsewhere = listOf(File(ctx.noBackupFilesDir, "diagnostic-log.txt"), File(ctx.cacheDir, "image_cache/x"), File(ctx.filesDir, "downloads/x.mp3"))
+        for (f in elsewhere) {
+            try {
+                androidx.core.content.FileProvider.getUriForFile(ctx, DiagnosticReport.authority(ctx), f)
+                org.junit.Assert.fail("$f must not be reachable through the provider")
+            } catch (e: IllegalArgumentException) {
+            }
+        }
+    }
+
+    @Test fun parentDomains_ofOwnHosts() {
+        assertEquals("example.io", DiagnosticSecrets.parentDomain("audiobookshelf.example.io"))
+        assertEquals("example.co.uk", DiagnosticSecrets.parentDomain("abs.example.co.uk"))
+        assertEquals(null, DiagnosticSecrets.parentDomain("example.io"))
+        assertEquals(null, DiagnosticSecrets.parentDomain("nas"))
+        assertEquals(null, DiagnosticSecrets.parentDomain("192.168.178.20"))
+        assertEquals(null, DiagnosticSecrets.parentDomain("fd00::1"))
     }
 }
