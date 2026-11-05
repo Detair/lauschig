@@ -10,6 +10,7 @@ import dagger.hilt.android.HiltAndroidApp
 import io.wolftown.lauschig.account.AccountDataJanitor
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
+import io.wolftown.lauschig.cleanup.FinishedQuestions
 import io.wolftown.lauschig.cleanup.FinishedDownloadsWorker
 import io.wolftown.lauschig.diagnostics.DiagnosticLog
 import io.wolftown.lauschig.diagnostics.DiagnosticReport
@@ -40,6 +41,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
+    @Inject lateinit var finishedQuestions: FinishedQuestions
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
 
     override val workManagerConfiguration: Configuration
@@ -81,6 +83,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Registers its audio-device callback only while the setting is on.
         autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
+        // A "Download löschen?" question a killed process left open counts as "Behalten".
+        scope.launch { finishedQuestions.settleLeftovers() }
         // Finished downloads go by themselves if the user wants it; never a title the player holds.
         finishedDownloads.start(scope)
         FinishedDownloadsWorker.schedule(this)

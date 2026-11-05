@@ -6,6 +6,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.bookmarks.BookmarkRules
+import io.wolftown.lauschig.cleanup.FinishedSeenStore
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.AccountDataDao
 import io.wolftown.lauschig.db.dao.BookmarkDao
@@ -74,9 +75,12 @@ class DeviceAccountData(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Download roots on a card that was out at the purge: the purge waits for them. */
     private val volumePurges: VolumePurges = VolumePurges.None,
+    /** The automatic clean-up's "first seen finished" times of the server ([FinishedSeenStore.forget]). */
+    private val forgetSeen: suspend (serverId: String) -> Unit = {},
 ) : AccountData {
-    @Inject constructor(db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore, volumePurges: DataStoreVolumePurges) :
-        this(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges)
+    @Inject constructor(
+        db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore, volumePurges: DataStoreVolumePurges, seen: FinishedSeenStore,
+    ) : this(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges, seen::forget)
 
     override suspend fun unsynced(serverId: String): Int {
         if (DeviceLibrary.isLocal(serverId)) return 0
@@ -102,6 +106,7 @@ class DeviceAccountData(
         volumePurges.add(serverId, away)
         stamps.removeServer(serverId)
         dao.deleteServer(serverId)
+        forgetSeen(serverId)
         withContext(io) {
             val gone = files.deleteServer(serverId)
             forgetCovers(serverId)

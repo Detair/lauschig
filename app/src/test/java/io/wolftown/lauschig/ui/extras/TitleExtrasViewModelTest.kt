@@ -18,6 +18,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -103,5 +105,22 @@ class TitleExtrasViewModelTest {
         vm.deleteBookmark(row)
         settle()
         assertEquals(listOf("bookmarks", "bookmarks", "bookmarks", "bookmarks"), triggers)
+    }
+
+    /** "Play from the queue" picks the title for the automatic clean-up before it leaves the queue (no unprotected gap). */
+    @Test fun playFromQueue_picksTheTitle_beforeItLeavesTheQueue() = runBlocking {
+        io.wolftown.lauschig.cleanup.TitleHandover.reset()
+        db.queueDao().add(s, "c", 1)
+        var pickedWhenGone: Boolean? = null
+        val watch = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            db.queueDao().observe(s).first { rows -> rows.none { it.itemKey == "c" } }
+            pickedWhenGone = io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c")
+        }
+        vm().playFromQueue("c")
+        kotlinx.coroutines.withTimeout(5_000) { while (pickedWhenGone == null) kotlinx.coroutines.delay(10) }
+        watch.cancel()
+        assertEquals(true, pickedWhenGone)
+        assertEquals(listOf("play c null"), player.calls)
+        io.wolftown.lauschig.cleanup.TitleHandover.reset()
     }
 }

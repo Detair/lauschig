@@ -33,15 +33,16 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -81,7 +82,7 @@ object AutoDeleteRules {
     /** Counts at all (whenever it is due); [keep] says which keys must stay. */
     fun counts(c: AutoDeleteCandidate, keep: (String) -> Boolean): Boolean {
         val completed = c.completedAt ?: return false
-        val seen = c.finishedSeenAt ?: return false
+        val seen = c.finishedSeenAt?.takeIf { it >= 0 } ?: return false // BEFORE_BASELINE: finished before this device looked
         return completed <= seen && reallyFinished(c.positionSec, c.durationSec) && !keep(c.key)
     }
 
@@ -129,8 +130,13 @@ class FinishedDownloadCleaner(
     private val lastPlayed: suspend () -> LastPlayed?,
     private val queue: (serverId: String) -> Flow<List<String>>,
     private val localBytes: (serverId: String) -> Flow<List<ItemBytes>>,
+    /** Titles whose "Download löschen?" question is not settled ([FinishedQuestions.holds]). */
+    private val questionHolds: Flow<Set<FinishedQuestion>> = flowOf(emptySet()),
+    /** Titles on their way into the player and the service's title ([TitleHandover]). */
+    private val handover: Flow<TitleHandover.State> = TitleHandover.state,
     private val clock: () -> Long = System::currentTimeMillis,
     private val recheckMs: Long = 60_000,
+    private val graceMs: Long = TitleHandover.GRACE_MS,
 ) {
     @Inject constructor(
         accounts: AccountStore,
@@ -145,24 +151,30 @@ class FinishedDownloadCleaner(
         lastPlayed: LastPlayedStore,
         queue: QueueDao,
         audioFiles: AudioFileDao,
+        questions: FinishedQuestions,
     ) : this(
         accounts, downloads, progress::observeFinishedKeys, settings, app, manager, files::completedAt, seen,
         player.state.map { it.itemId }, lastPlayed::get, { sid -> queue.observe(sid).map { rows -> rows.map { it.itemKey } } },
-        audioFiles::observeLocalBytes,
+        audioFiles::observeLocalBytes, questions.holds, TitleHandover.state,
     )
 
-    /** Keys whose "Download löschen?" question is open: never deleted before the answer. */
-    private val held = MutableStateFlow<Set<String>>(emptySet())
-
-    fun hold(key: String) = held.update { it + key }
-    fun release(key: String) = held.update { it - key }
+    /** What the player side holds right now for [sid]: the controller's title and everything else (see [PlayerHold]). */
+    private fun holdOf(sid: String, loaded: String?, queued: List<String>, questions: Set<FinishedQuestion>, h: TitleHandover.State): PlayerHold {
+        val now = clock()
+        val picked = h.picked.filterValues { now - it < graceMs }
+        return PlayerHold(
+            loaded,
+            queued.toSet() + questions.filter { it.serverId == sid }.map { it.key } + picked.keys + listOfNotNull(h.serviceTitle),
+            picked.values.minOfOrNull { it + graceMs },
+        )
+    }
 
     /** One pass for the signed-in account (the daily worker); returns the keys whose downloads were deleted. */
     suspend fun runOnce(): List<String> {
         val sid = accounts.account.first()?.serverId ?: return emptyList()
         return pass(
             sid, downloads.observeFinishedComplete(sid).first(), finishedKeys(sid).first().toSet(), settings.autoDeleteFinished.first(),
-            app.cleanupIgnored.first(), PlayerHold(loadedKey.first(), queue(sid).first().toSet() + held.value),
+            app.cleanupIgnored.first(), holdOf(sid, loadedKey.first(), queue(sid).first(), questionHolds.first(), handover.first()), Departures(graceMs),
         ).deleted
     }
 
@@ -177,31 +189,61 @@ class FinishedDownloadCleaner(
         return AutoDeletePreview(keys.size, bytes)
     }
 
-    /** Watches as long as [scope] lives. */
+    /** Watches as long as [scope] lives; an error in one pass is logged and the next pass runs as usual. */
     fun start(scope: CoroutineScope) {
         scope.launch {
-            try {
-                accounts.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
-                    if (sid == null) emptyFlow()
-                    else combine(
-                        downloads.observeFinishedComplete(sid).distinctUntilChanged(),
-                        finishedKeys(sid).map { it.toSet() }.distinctUntilChanged(),
-                        settings.autoDeleteFinished,
-                        app.cleanupIgnored,
-                        combine(loadedKey.distinctUntilChanged(), queue(sid).distinctUntilChanged(), held) { l, q, h -> PlayerHold(l, q.toSet() + h) },
-                    ) { rows, finished, mode, kept, protected -> Watch(sid, rows, finished, mode, kept, protected) }
-                }.collectLatest { w ->
+            val departures = Departures(graceMs)
+            accounts.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
+                if (sid == null) emptyFlow()
+                else combine(
+                    downloads.observeFinishedComplete(sid).distinctUntilChanged(),
+                    finishedKeys(sid).map { it.toSet() }.distinctUntilChanged(),
+                    settings.autoDeleteFinished,
+                    app.cleanupIgnored,
+                    combine(loadedKey.distinctUntilChanged(), queue(sid).distinctUntilChanged(), questionHolds, handover) { l, q, qs, h -> holdOf(sid, l, q, qs, h) },
+                ) { rows, finished, mode, kept, hold -> Watch(sid, rows, finished, mode, kept, hold) }
+                    .retryWhen { e, _ ->
+                        // A store that cannot be read (a full disk) pauses the clean-up; it reads again a little later.
+                        if (e is CancellationException) return@retryWhen false
+                        Log.w(TAG, "automatic clean-up could not read its state; tried again", e)
+                        delay(recheckMs)
+                        true
+                    }
+            }
+                // Every change of what the player holds is noted, also one the pass below never sees (it is restarted).
+                .onEach { w -> departures.note(w.hold.all(), clock()) }
+                .collectLatest { w ->
                     while (true) {
-                        val next = pass(w.serverId, w.rows, w.finished, w.mode, w.kept, w.protected).nextCheck ?: break
+                        val next = try {
+                            pass(w.serverId, w.rows, w.finished, w.mode, w.kept, w.hold, departures).nextCheck
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "an automatic clean-up pass failed; tried again", e)
+                            clock() + recheckMs
+                        } ?: break
                         delay((next - clock()).coerceAtLeast(1_000))
                     }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "automatic clean-up stopped; the daily run takes over", e)
-            }
         }
+    }
+
+    /**
+     * Titles that left the player's hold (the queue, the loaded or the service's title, a picked one) stay held for
+     * [graceMs] more: whatever order the player, the queue and this watcher see a hand-over in, no gap opens.
+     */
+    private class Departures(private val graceMs: Long) {
+        private var held: Set<String> = emptySet()
+        private val leftAt = HashMap<String, Long>()
+
+        @Synchronized fun note(now: Set<String>, at: Long) {
+            (held - now).forEach { leftAt[it] = at }
+            now.forEach { leftAt.remove(it) }
+            held = now
+            leftAt.values.removeAll { at - it >= graceMs }
+        }
+
+        @Synchronized fun recent(at: Long): Map<String, Long> = leftAt.filterValues { at - it < graceMs }.mapValues { it.value + graceMs }
     }
 
     private class Watch(
@@ -210,25 +252,30 @@ class FinishedDownloadCleaner(
         val finished: Set<String>,
         val mode: AutoDeleteMode,
         val kept: Set<String>,
-        val protected: PlayerHold,
+        val hold: PlayerHold,
     )
 
     /**
      * What the player holds: [loaded] (the controller's title, any state; null when it knows none) and [others] (the
-     * queue and open questions). Without a loaded title the service's last played one stands in for it ([LastPlayedStore]):
-     * a title started by the car with the app's controller not connected, or a process the daily worker started.
+     * queue, unsettled questions, picked titles, the service's title). Without a loaded title the service's last played
+     * one stands in for it ([LastPlayedStore]): a process the daily worker started. [pickedUntil]: when the earliest
+     * picked title stops being held by its pick.
      */
-    private data class PlayerHold(val loaded: String?, val others: Set<String>)
+    private data class PlayerHold(val loaded: String?, val others: Set<String>, val pickedUntil: Long? = null) {
+        fun all(): Set<String> = others + listOfNotNull(loaded)
+    }
 
     private class PassResult(val deleted: List<String>, val nextCheck: Long?)
 
     private suspend fun pass(
         sid: String, rows: List<FinishedDownload>, finished: Set<String>, mode: AutoDeleteMode, kept: Set<String>, hold: PlayerHold,
+        departures: Departures,
     ): PassResult {
         val seenAt = seen.reconcile(sid, finished, clock())
         if (mode == AutoDeleteMode.NEVER || rows.isEmpty()) return PassResult(emptyList(), null)
         val title = hold.loaded ?: lastPlayed()?.takeIf { it.serverId == sid }?.itemId
-        val protected = hold.others + listOfNotNull(title)
+        val recent = departures.recent(clock())
+        val protected = hold.others + listOfNotNull(title) + recent.keys
         val keepIgnoringPlayer = AutoDeleteRules.keeper(sid, kept, emptySet())
         val keep = AutoDeleteRules.keeper(sid, kept, protected)
         val candidates = candidates(sid, rows, seenAt, keepIgnoringPlayer)
@@ -236,7 +283,11 @@ class FinishedDownloadCleaner(
         val deleted = delete(sid, AutoDeleteRules.due(candidates, mode, now, keep))
         // A title the player holds waits; it is looked at again (the last played one changes without a signal here).
         val waiting = candidates.any { it.key in protected && AutoDeleteRules.counts(it, keepIgnoringPlayer) }
-        val next = listOfNotNull(AutoDeleteRules.nextDue(candidates, mode, now, keep), if (waiting) now + recheckMs else null).minOrNull()
+        // Also when a pick or a departure stops holding a title that would count.
+        val lapses = listOfNotNull(hold.pickedUntil) + recent.values
+        val next = listOfNotNull(
+            AutoDeleteRules.nextDue(candidates, mode, now, keep), if (waiting) now + recheckMs else null, lapses.minOrNull()?.takeIf { waiting },
+        ).minOrNull()
         return PassResult(deleted, next)
     }
 
@@ -277,9 +328,15 @@ class FinishedDownloadsWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val cleaner: FinishedDownloadCleaner,
 ) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
         cleaner.runOnce()
-        return Result.success()
+        Result.success()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // A store or the disk failed (often when space is short): try again, never give up for good.
+        Log.w("FinishedDownloads", "daily clean-up failed; retried", e)
+        Result.retry()
     }
 
     companion object {

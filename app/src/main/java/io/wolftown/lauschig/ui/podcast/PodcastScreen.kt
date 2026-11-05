@@ -245,7 +245,7 @@ fun EpisodeRow(
 private fun EpisodeActionsSheet(episode: EpisodeUi, actions: ItemActionsViewModel, onDismiss: () -> Unit) {
     val download by remember(episode.key) { actions.downloadState(episode.key) }.collectAsStateWithLifecycle(QuickDownload.None)
     val progress by remember(episode.key) { actions.progressState(episode.key) }.collectAsStateWithLifecycle(null)
-    val host = rememberProgressActionHost(episode.key, actions, download)
+    val host = rememberProgressActionHost(episode.key, actions)
     val offline = LocalOfflineDimming.current
     ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("episodeActions")) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
@@ -266,10 +266,9 @@ private fun EpisodeActionsSheet(episode: EpisodeUi, actions: ItemActionsViewMode
                 ListItem(
                     headlineContent = { Text(stringResource(entry.label(progress))) },
                     leadingContent = { Icon(entry.icon, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth().clickable { host.run(entry); if (!entry.keepsSheetOpen(download)) onDismiss() },
+                    modifier = Modifier.fillMaxWidth().clickable { host.run(entry); onDismiss() },
                 )
             }
         }
     }
-    host.Dialogs(onDismiss)
 }

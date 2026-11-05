@@ -37,7 +37,6 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -61,11 +60,9 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
-import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
-import io.wolftown.lauschig.download.AutoDeleteMode
-import io.wolftown.lauschig.download.DownloadSettings
+import io.wolftown.lauschig.cleanup.FinishedQuestion
+import io.wolftown.lauschig.cleanup.FinishedQuestions
 import io.wolftown.lauschig.playback.PlayerController
-import io.wolftown.lauschig.settings.AppSettings
 import io.wolftown.lauschig.playback.ProgressActions
 import io.wolftown.lauschig.playback.nextVolume
 import kotlinx.coroutines.flow.flow
@@ -116,33 +113,10 @@ class ItemActionsViewModel @Inject constructor(
     private val progressActions: ProgressActions,
     private val items: ItemDao,
     private val queue: QueueDao,
-    downloadSettings: DownloadSettings,
-    private val appSettings: AppSettings,
-    private val cleaner: FinishedDownloadCleaner,
+    private val questions: FinishedQuestions,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
-    /** True while the automatic clean-up is on ([io.wolftown.lauschig.cleanup.FinishedDownloadCleaner]). */
-    private val autoDeleteOn = downloadSettings.autoDeleteFinished.map { it != AutoDeleteMode.NEVER }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
-    /** The "Download löschen?" question after "mark as finished" says what "Behalten" means then. */
-    val autoDeleting: Boolean get() = autoDeleteOn.value
-
-    /** Before "mark as finished" asks about the download: the clean-up waits for the answer. */
-    fun holdForQuestion(itemId: String) = cleaner.hold(itemId)
-
-    /** "Löschen": deletes now, then the clean-up may look at the title again (there is nothing left for it). */
-    fun deleteAfterQuestion(itemId: String) = withServer(itemId) { sid ->
-        withContext(NonCancellable) { try { downloads.cancel(sid, itemId, deleteFiles = true) } finally { cleaner.release(itemId) } }
-    }
-
-    /** "Behalten" (or the question dismissed): with the clean-up on, the title goes on the keep list – never silently deleted. */
-    fun keepAfterQuestion(itemId: String) = withServer(itemId) { sid ->
-        // Finishes even if the screen goes away meanwhile: releasing the hold without the keep entry would delete.
-        withContext(NonCancellable) { try { if (autoDeleteOn.value) appSettings.setCleanupIgnored("$sid:$itemId", true) } finally { cleaner.release(itemId) } }
-    }
 
     /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
     private fun serverOf(itemId: String): Flow<String?> = if (DeviceLibrary.isLocalKey(itemId)) flowOf(DeviceLibrary.SERVER_ID) else serverId
@@ -169,7 +143,18 @@ class ItemActionsViewModel @Inject constructor(
         if (itemId == null) flowOf(null)
         else serverOf(itemId).flatMapLatest { sid -> if (sid == null) flowOf(null) else flow { emit(nextVolume(items, sid, itemId)) } }
 
-    fun markFinished(itemId: String) = withServer(itemId) { progressActions.markFinished(it, itemId) }
+    /**
+     * "Als gehört markieren". A completely downloaded title asks "Download löschen?" ([FinishedQuestions]) – decided from
+     * a fresh read, never from what the menu showed; the question is noted before the title becomes finished, so the
+     * automatic clean-up waits for the answer.
+     */
+    fun markFinished(itemId: String) = withServer(itemId) { sid ->
+        withContext(NonCancellable) {
+            val complete = !DeviceLibrary.isLocal(sid, itemId) && downloads.observe(sid, itemId).first()?.state == DownloadState.COMPLETE
+            if (complete) questions.ask(FinishedQuestion(sid, itemId))
+            progressActions.markFinished(sid, itemId)
+        }
+    }
     fun startOver(itemId: String) = withServer(itemId) { progressActions.startOver(it, itemId) }
     fun markNotFinishedKeepPosition(itemId: String) = withServer(itemId) { progressActions.markNotFinishedKeepPosition(it, itemId) }
     fun hideFromContinue(itemId: String) = withServer(itemId) { progressActions.hideFromContinue(it, itemId) }
@@ -199,9 +184,8 @@ fun ItemActionsSheet(
 ) {
     val download by remember(item.id) { viewModel.downloadState(item.id) }.collectAsStateWithLifecycle(QuickDownload.None)
     val progress by remember(item.id) { viewModel.progressState(item.id) }.collectAsStateWithLifecycle(null)
-    val host = rememberProgressActionHost(item.id, viewModel, download)
+    val host = rememberProgressActionHost(item.id, viewModel)
     val runProgress = host::run
-    val progressDialogs: @Composable (() -> Unit) -> Unit = { done -> host.Dialogs(done) }
     val askNotifications = rememberNotificationPermissionOnce()
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val offline = LocalOfflineDimming.current
@@ -236,14 +220,13 @@ fun ItemActionsSheet(
                 QuickDownload.Complete -> ActionRow(Icons.Rounded.Delete, stringResource(R.string.detail_download_delete)) { confirmDelete = true }
             }
             progressEntries(progress, offline, local).forEach { entry ->
-                ActionRow(entry.icon, stringResource(entry.label(progress))) { runProgress(entry); if (!entry.keepsSheetOpen(download)) onDismiss() }
+                ActionRow(entry.icon, stringResource(entry.label(progress))) { runProgress(entry); onDismiss() }
             }
         }
     }
     if (confirmDelete) {
         DeleteDownloadDialog(onConfirm = { confirmDelete = false; viewModel.deleteDownload(item.id); onDismiss() }, onDismiss = { confirmDelete = false })
     }
-    progressDialogs(onDismiss)
 }
 
 /** Progress actions, shown in the long-press menu, the detail screen and the player menu. */
@@ -263,9 +246,6 @@ enum class ProgressEntry(val icon: ImageVector) {
         HideFromContinue -> R.string.progress_hide
         PullFromServer -> R.string.progress_pull
     }
-
-    /** "Mark finished" on a downloaded title asks about deleting the download first. */
-    fun keepsSheetOpen(download: QuickDownload) = this == MarkFinished && download == QuickDownload.Complete
 }
 
 /**
@@ -289,26 +269,18 @@ fun progressEntries(p: ProgressEntity?, offline: Boolean, local: Boolean = false
 }
 
 /**
- * Runs progress actions for one title and hosts their follow-ups: after "mark finished" on a downloaded title
- * it asks whether to delete the download; "fetch from server" reports its result as a toast.
+ * Runs progress actions for one title: after "mark finished" on a downloaded title the question about the download is
+ * shown at the top of the app ([io.wolftown.lauschig.cleanup.FinishedQuestions]); "fetch from server" reports its result
+ * as a toast.
  */
 class ProgressActionHost internal constructor(
     private val itemId: String,
     private val viewModel: ItemActionsViewModel,
-    private val download: () -> QuickDownload,
     private val toast: (Int) -> Unit,
 ) {
-    internal var askDelete by mutableStateOf(false)
-
     fun run(entry: ProgressEntry) {
         when (entry) {
-            ProgressEntry.MarkFinished -> {
-                // Asked first, also with the automatic clean-up on: a mis-tap never deletes silently.
-                val ask = download() == QuickDownload.Complete
-                if (ask) viewModel.holdForQuestion(itemId)
-                viewModel.markFinished(itemId)
-                if (ask) askDelete = true
-            }
+            ProgressEntry.MarkFinished -> viewModel.markFinished(itemId)
             ProgressEntry.MarkNotFinishedKeep -> viewModel.markNotFinishedKeepPosition(itemId)
             ProgressEntry.StartOver -> viewModel.startOver(itemId)
             ProgressEntry.HideFromContinue -> viewModel.hideFromContinue(itemId)
@@ -317,39 +289,33 @@ class ProgressActionHost internal constructor(
             }
         }
     }
-
-    @Composable
-    fun Dialogs(onFinishedHandled: () -> Unit = {}) {
-        if (askDelete) {
-            val keep = { askDelete = false; viewModel.keepAfterQuestion(itemId); onFinishedHandled() }
-            AlertDialog(
-                onDismissRequest = keep,
-                title = { Text(stringResource(R.string.progress_delete_after_finish_title)) },
-                text = {
-                    Text(
-                        stringResource(
-                            if (viewModel.autoDeleting) R.string.progress_delete_after_finish_auto_message else R.string.progress_delete_after_finish_message,
-                        ),
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { askDelete = false; viewModel.deleteAfterQuestion(itemId); onFinishedHandled() }, modifier = Modifier.testTag("finishedDelete")) {
-                        Text(stringResource(R.string.detail_delete_confirm))
-                    }
-                },
-                dismissButton = { TextButton(onClick = keep, modifier = Modifier.testTag("finishedKeep")) { Text(stringResource(R.string.detail_delete_dismiss)) } },
-            )
-        }
-    }
 }
 
 @Composable
-fun rememberProgressActionHost(itemId: String, viewModel: ItemActionsViewModel, download: QuickDownload): ProgressActionHost {
+fun rememberProgressActionHost(itemId: String, viewModel: ItemActionsViewModel): ProgressActionHost {
     val context = LocalContext.current
-    val current by rememberUpdatedState(download)
     return remember(itemId, viewModel) {
-        ProgressActionHost(itemId, viewModel, { current }) { res -> Toast.makeText(context, res, Toast.LENGTH_SHORT).show() }
+        ProgressActionHost(itemId, viewModel) { res -> Toast.makeText(context, res, Toast.LENGTH_SHORT).show() }
     }
+}
+
+/**
+ * "Download löschen?" after "Als gehört markieren" (hosted at the top of the app). With the automatic clean-up on,
+ * "Behalten" – and dismissing – keeps the title from it.
+ */
+@Composable
+fun FinishedQuestionDialog(autoDeleting: Boolean, onDelete: () -> Unit, onKeep: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text(stringResource(R.string.progress_delete_after_finish_title)) },
+        text = {
+            Text(stringResource(if (autoDeleting) R.string.progress_delete_after_finish_auto_message else R.string.progress_delete_after_finish_message))
+        },
+        confirmButton = {
+            TextButton(onClick = onDelete, modifier = Modifier.testTag("finishedDelete")) { Text(stringResource(R.string.detail_delete_confirm)) }
+        },
+        dismissButton = { TextButton(onClick = onKeep, modifier = Modifier.testTag("finishedKeep")) { Text(stringResource(R.string.detail_delete_dismiss)) } },
+    )
 }
 
 @Composable

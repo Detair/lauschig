@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.BookmarkDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
@@ -147,6 +148,7 @@ class TitleExtrasViewModel(
 
     /** Plays a queued title now; it leaves the queue. */
     fun playFromQueue(key: String) = withServer { sid ->
+        TitleHandover.pick(key) // never unprotected between leaving the queue and being loaded
         queue.remove(sid, key)
         player.play(DeviceLibrary.serverFor(sid, key) ?: sid, key)
     }

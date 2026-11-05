@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import io.wolftown.lauschig.R
 import androidx.media3.common.AudioAttributes
+import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
@@ -246,7 +247,11 @@ class PlaybackService : MediaLibraryService() {
 
             // A title the service started by itself (car, voice, resumption, queue) shows up in the app too; the app's
             // own starts are left alone there.
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = playerController.adoptFromService()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // What the player holds is never deleted by the automatic clean-up, also before the app adopts it.
+                TitleHandover.serviceHolds(currentKey(exo)?.second)
+                playerController.adoptFromService()
+            }
 
             // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.
             override fun onEvents(player: Player, events: Player.Events) {
@@ -547,6 +552,7 @@ class PlaybackService : MediaLibraryService() {
             start = { owner, key -> starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) },
             // Checked again right before a start: a sign-out may have come in between.
             stillOwner = { owner -> accountStore.account.first()?.serverId == owner },
+            pick = { _, key -> TitleHandover.pick(key) },
         )
         return object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
