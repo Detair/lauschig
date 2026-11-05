@@ -578,7 +578,8 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   der leere Zustand; das Feld hat statt eines Platzhalters ein Label („Kapitel suchen“ bleibt über dem Text stehen);
   die Nummer eines Treffers liest TalkBack als „Kapitel 12“.
 - **E7** `ProfileSwitch.removeProfile(serverId)` entfernt ein gespeichertes (nicht aktives) Konto wie eine Abmeldung ohne
-  Behalten: Server-Logout mit dessen eigenem Refresh-Token (`savedCredentials`), Purge seiner Zeilen und Downloads,
+  Behalten: Server-Logout mit dessen eigenem Refresh-Token (`savedCredentials`; nur, wenn die aktuelle Verbindung auf
+  dessen Server ist – siehe Fix-Runde 2, N3), Purge seiner Zeilen und Downloads,
   `forget`. **Claudes Wahl:** die Löschschuld (pending purge) wird *vor* dem Vergessen eingetragen – bricht etwas
   dazwischen ab, beendet der Janitor den Purge beim nächsten Start; nie Daten ohne Besitzer. `AccountStore.forget`
   bleibt der letzte Schritt davon (KDoc). Die gespeicherte Liste wird Eintrag für Eintrag gelesen: ein unlesbarer Eintrag
@@ -599,4 +600,46 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   bestimmten Server-ID arbeitet (Syncs, Worker, ViewModels, Coil-Cover einer Seite), die API seines Kontos holen lassen
   oder prüfen, dass diese Server-ID angemeldet ist – heute ist „für A gemacht“ der Zeitpunkt, zu dem Client/API geholt
   wurden. `removeProfile` an die Oberfläche („Profil entfernen“) anbinden.
+
+### Nachtrag Task 12 – Fix-Runde 2 nach Re-Review (2026-11-05)
+
+- **N1** `removeProfile` hielt mit `work.cancel` auch die Syncs des *angemeldeten* Kontos an (die Sync-Arbeiten gelten
+  nicht je Server). Neu `AccountWork.cancelOwn(serverId)`: nur die Downloads dieses Servers und seine Arbeit außerhalb
+  WorkManager, nie die Syncs; `removeProfile` nutzt sie. (Ein beiseitegelegtes Konto hat eigentlich keine laufende Arbeit
+  – sie wurde beim Beiseitelegen beendet –, `cancelOwn` bleibt als Absicherung.) Test mit WorkManager: die Syncs bleiben
+  eingeplant, nur die Downloads des entfernten Servers gehen.
+- **N2** Kontooperationen laufen nacheinander: `SignOut` ist eine Instanz mit einer Sperre für Abmelden, das neue
+  `signIn` (Einrichtung und Neuanmeldung gehen jetzt darüber), `switchTo`, Profilwechsel und `removeProfile`. `forget`
+  meldet, ob es wirklich ein gespeichertes Konto entfernt hat (in derselben Schreiboperation entschieden), und
+  `removeProfile` prüft vor dem Purge noch einmal, dass das Konto nicht das angemeldete ist. Deterministische Tests:
+  Wechsel zu einem Profil, dann dessen Entfernen → abgelehnt, nichts gelöscht; Entfernen, dann Wechsel dorthin → nichts
+  zum Wechseln; eine Anmeldung wartet auf eine laufende Abmeldung.
+- **N3** Richtiggestellt (KDoc `removeProfile`, E7 oben): der Server-Logout eines entfernten Profils gelingt nur, wenn die
+  aktuelle Verbindung auf dessen Server ist (der Familienfall: derselbe Server). Ein Profil auf einem anderen Server wird
+  dort nicht abgemeldet; seine Sitzung läuft von selbst ab. Kein neuer Netzweg dafür jetzt.
+- **N5** Die Clients eines Kontos (lokale und öffentliche Adresse) teilen sich eine Refresh-Sperre: 401er auf beiden
+  Adressen refreshen nur einmal, der zweite nimmt den neuen Token („jemand anderes hat erneuert“). Vorher refreshte jede
+  Adresse für sich mit demselben Refresh-Token (bestand schon vor Phase 6).
+- **N6** Tests: ein Konto mit lokaler und öffentlicher Adresse bekommt sein Token auf beiden, auch beim Adresswechsel,
+  ohne `AccountChangedException`; 401er auf beiden Adressen → ein Refresh (schlägt mit einer Sperre je Adresse fehl);
+  eine Anfrage über `api.libraryApi` trägt das Token; der Satzzeichen-Test der Oberfläche wartet erst auf eine echte
+  Suche (schlägt ohne die Regel fehl); der Test „nur dieses Konto“ unterscheidet `cancel` und `cancelOwn`.
+
+- **Gerätedurchlauf (Emulator, lokaler Test-ABS) nach Fix-Runde 2:** ein Titel gestreamt (~20 s, dann Pause), dabei
+  lief der „Beim Abspielen herunterladen“-Download mit (beides über die kontogebundenen Clients); derselbe Titel im
+  Flugmodus offline gespielt, Flugmodus wieder aus, Download wieder gelöscht; Abmelden („Downloads behalten“) und neu
+  angemeldet mit den Testzugangsdaten – Cover kamen nach dem Leeren der Caches neu vom Server; keine
+  `AccountChangedException` im Log. TalkBack: ließ sich auf dem Emulator nicht zuverlässig steuern (beim ersten Start legt
+  sich die Berechtigungsfrage der Bedienungshilfen über die App, der gesprochene Text ist nicht auslesbar) – die
+  Ansage der Trefferzahl ist nur per Robolectric (Live-Region gesetzt) geprüft, ein Hörtest steht aus.
+
+#### Ergänzung zu „Was Phase 7 noch braucht“ (Fix-Runde 2)
+
+- Profil auf einem anderen Server beim Entfernen abmelden: dessen eigene Adressen prüfen (`AddressResolver`, begrenzt
+  durch `LOGOUT_TIMEOUT_MS`) und den Logout dorthin schicken – heute nur, wenn die aktuelle Verbindung dort ist (N3).
+- Langlebige Sammler (N4): `ApiProvider.retrofit` baut nach einem Kontowechsel nur deshalb neu, weil die Verbindung
+  dabei kurz auf „offline“ geht. Wer die APIs dauerhaft sammelt statt je Aktion `.first()` zu nehmen, kann diesen
+  Zwischenstand verpassen und behält den Client des alten Kontos (der dann nichts mehr sendet). Vor dem ersten solchen
+  Sammler `retrofit` mit der Server-ID des angemeldeten Kontos kombinieren (`combine(shared, account-id)`), oder Clients
+  nach einem Wechsel ausdrücklich neu holen.
 
