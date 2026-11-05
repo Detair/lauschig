@@ -29,6 +29,7 @@ import io.wolftown.lauschig.ui.achievements.AchievementsRoute
 import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
+import io.wolftown.lauschig.ui.adaptive.closeDetailPane
 import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
@@ -229,13 +230,14 @@ private fun NavDestination.tabRoot(): TopLevelTab? = when {
 
 /**
  * Opens [tab] with the pages it had (each tab keeps its own stack). Tapping the tab the user is in – also with a page
- * such as Settings or a title above its root – returns to its root instead (Material navigation); at the root nothing
- * changes.
+ * such as Settings or a title above its root – returns to its root instead (Material navigation): its own page, with
+ * Library's and Search's detail pane (two panes) back to empty. At the root of a one-pane tab nothing changes.
  */
 fun NavHostController.navigateToTab(tab: TopLevelTab) {
     val active = activeTabRoot()
     if (active != null && active.destination.tabRoot() == tab) {
         if (currentBackStackEntry != active) popBackStack(active.destination.id, inclusive = false)
+        active.closeDetailPane()
         return
     }
     navigate(tab.route()) {
