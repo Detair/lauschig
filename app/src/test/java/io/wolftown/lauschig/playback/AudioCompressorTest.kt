@@ -11,7 +11,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class AudioCompressorTest {
     /** The effects created so far, with their session and state. */
-    private class Fx(val session: Int) : SessionEffect {
+    private open class Fx(val session: Int) : SessionEffect {
         var on = false
         var released = false
         override fun setEnabled(on: Boolean) { this.on = on }
@@ -85,6 +85,33 @@ class AudioCompressorTest {
         fail = false
         c.attach(43)
         assertEquals(43, live().single().session)
+    }
+
+    // Review 2: an effect that was created but cannot be switched on is released, not leaked.
+    @Test fun anEffectThatWillNotSwitchOn_isReleased() {
+        val broken = mutableListOf<Fx>()
+        val c = AudioCompressor { s -> object : Fx(s) { override fun setEnabled(on: Boolean) = error("refused") }.also { broken += it } }
+        c.attach(42)
+        c.setEnabled(true) // must not throw
+        assertTrue(broken.single().released)
+    }
+
+    @Test fun setUpOrRelease_releasesWhenTheSetUpFails_andPassesTheError() {
+        val released = mutableListOf<String>()
+        val error = runCatching { setUpOrRelease("dp", { released += it }) { error("bad parameter value") } }.exceptionOrNull()
+        assertEquals("bad parameter value", error?.message)
+        assertEquals(listOf("dp"), released)
+        assertEquals("ok", setUpOrRelease("ok", { released += it }) {})
+        assertEquals(listOf("dp"), released)
+    }
+
+    // The real DynamicsProcessing under Robolectric: no native engine, but its Java side (config builder, band and
+    // limiter checks) runs, so a wrong argument would throw here.
+    @Test fun night_create_buildsItsConfig_andCanBeSwitchedAndReleased() {
+        val fx = NightCompressor.create(42)
+        fx.setEnabled(true)
+        fx.setEnabled(false)
+        fx.release()
     }
 
     @Test fun night_isAGentleSingleBandCompressorWithMakeUpGainAndALimiter() {

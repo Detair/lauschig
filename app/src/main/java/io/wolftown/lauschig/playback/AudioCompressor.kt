@@ -44,12 +44,23 @@ object NightCompressor {
             .setMbcAllChannelsTo(DynamicsProcessing.Mbc(/* inUse = */ true, /* enabled = */ true, BANDS).apply { setBand(0, band) })
             .setLimiterAllChannelsTo(limiter)
             .build()
-        val dp = DynamicsProcessing(0, session, config).apply { enabled = false }
+        val dp = setUpOrRelease(DynamicsProcessing(0, session, config), DynamicsProcessing::release) { it.enabled = false }
         return object : SessionEffect {
             override fun setEnabled(on: Boolean) { dp.enabled = on }
             override fun release() = dp.release()
         }
     }
+}
+
+/** Runs [setUp] on a freshly created [resource]; if that throws, the resource is released before the error goes on. */
+internal inline fun <T> setUpOrRelease(resource: T, release: (T) -> Unit, setUp: (T) -> Unit): T {
+    try {
+        setUp(resource)
+    } catch (e: Throwable) {
+        try { release(resource) } catch (r: Exception) { e.addSuppressed(r) }
+        throw e
+    }
+    return resource
 }
 
 /** An audio effect on one session, as [AudioCompressor] drives it. */
@@ -88,7 +99,10 @@ class AudioCompressor(private val create: (session: Int) -> SessionEffect = Nigh
         }
         if (effect != null) return
         try {
-            effect = create(session).also { it.setEnabled(true) }
+            // Held before it is switched on: an effect that refuses is released below, never leaked.
+            val e = create(session)
+            effect = e
+            e.setEnabled(true)
         } catch (e: Exception) {
             Log.w(TAG, "dynamics processing unavailable", e)
             release()
