@@ -61,7 +61,7 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
-import io.wolftown.lauschig.cleanup.AutoDeleteRules
+import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.playback.PlayerController
@@ -71,10 +71,10 @@ import io.wolftown.lauschig.playback.nextVolume
 import kotlinx.coroutines.flow.flow
 import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -83,6 +83,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Download state as shown on quick actions (sheet, player); the detail screen keeps its richer [io.wolftown.lauschig.ui.detail.DownloadUi]. */
@@ -116,19 +117,31 @@ class ItemActionsViewModel @Inject constructor(
     private val items: ItemDao,
     private val queue: QueueDao,
     downloadSettings: DownloadSettings,
-    appSettings: AppSettings,
+    private val appSettings: AppSettings,
+    private val cleaner: FinishedDownloadCleaner,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** The automatic clean-up and the titles kept from it ("serverId:key"); see [io.wolftown.lauschig.cleanup.FinishedDownloadCleaner]. */
-    private val autoDelete = combine(downloadSettings.autoDeleteFinished, appSettings.cleanupIgnored) { mode, kept -> mode to kept }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, AutoDeleteMode.NEVER to emptySet())
+    /** True while the automatic clean-up is on ([io.wolftown.lauschig.cleanup.FinishedDownloadCleaner]). */
+    private val autoDeleteOn = downloadSettings.autoDeleteFinished.map { it != AutoDeleteMode.NEVER }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** True if marking [itemId] finished deletes its download right away; then there is nothing to ask. */
-    fun deletesWhenFinished(itemId: String): Boolean {
-        val (mode, kept) = autoDelete.value
-        return AutoDeleteRules.deletesRightAway(mode, kept, serverId.value, itemId)
+    /** The "Download löschen?" question after "mark as finished" says what "Behalten" means then. */
+    val autoDeleting: Boolean get() = autoDeleteOn.value
+
+    /** Before "mark as finished" asks about the download: the clean-up waits for the answer. */
+    fun holdForQuestion(itemId: String) = cleaner.hold(itemId)
+
+    /** "Löschen": deletes now, then the clean-up may look at the title again (there is nothing left for it). */
+    fun deleteAfterQuestion(itemId: String) = withServer(itemId) { sid ->
+        withContext(NonCancellable) { try { downloads.cancel(sid, itemId, deleteFiles = true) } finally { cleaner.release(itemId) } }
+    }
+
+    /** "Behalten" (or the question dismissed): with the clean-up on, the title goes on the keep list – never silently deleted. */
+    fun keepAfterQuestion(itemId: String) = withServer(itemId) { sid ->
+        // Finishes even if the screen goes away meanwhile: releasing the hold without the keep entry would delete.
+        withContext(NonCancellable) { try { if (autoDeleteOn.value) appSettings.setCleanupIgnored("$sid:$itemId", true) } finally { cleaner.release(itemId) } }
     }
 
     /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
@@ -290,8 +303,11 @@ class ProgressActionHost internal constructor(
     fun run(entry: ProgressEntry) {
         when (entry) {
             ProgressEntry.MarkFinished -> {
+                // Asked first, also with the automatic clean-up on: a mis-tap never deletes silently.
+                val ask = download() == QuickDownload.Complete
+                if (ask) viewModel.holdForQuestion(itemId)
                 viewModel.markFinished(itemId)
-                if (download() == QuickDownload.Complete && !viewModel.deletesWhenFinished(itemId)) askDelete = true
+                if (ask) askDelete = true
             }
             ProgressEntry.MarkNotFinishedKeep -> viewModel.markNotFinishedKeepPosition(itemId)
             ProgressEntry.StartOver -> viewModel.startOver(itemId)
@@ -305,16 +321,23 @@ class ProgressActionHost internal constructor(
     @Composable
     fun Dialogs(onFinishedHandled: () -> Unit = {}) {
         if (askDelete) {
+            val keep = { askDelete = false; viewModel.keepAfterQuestion(itemId); onFinishedHandled() }
             AlertDialog(
-                onDismissRequest = { askDelete = false; onFinishedHandled() },
+                onDismissRequest = keep,
                 title = { Text(stringResource(R.string.progress_delete_after_finish_title)) },
-                text = { Text(stringResource(R.string.progress_delete_after_finish_message)) },
+                text = {
+                    Text(
+                        stringResource(
+                            if (viewModel.autoDeleting) R.string.progress_delete_after_finish_auto_message else R.string.progress_delete_after_finish_message,
+                        ),
+                    )
+                },
                 confirmButton = {
-                    TextButton(onClick = { askDelete = false; viewModel.deleteDownload(itemId); onFinishedHandled() }) {
+                    TextButton(onClick = { askDelete = false; viewModel.deleteAfterQuestion(itemId); onFinishedHandled() }, modifier = Modifier.testTag("finishedDelete")) {
                         Text(stringResource(R.string.detail_delete_confirm))
                     }
                 },
-                dismissButton = { TextButton(onClick = { askDelete = false; onFinishedHandled() }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
+                dismissButton = { TextButton(onClick = keep, modifier = Modifier.testTag("finishedKeep")) { Text(stringResource(R.string.detail_delete_dismiss)) } },
             )
         }
     }

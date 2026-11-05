@@ -129,6 +129,10 @@ abstract class AudioFileDao {
             "WHERE serverId = :serverId AND localPath IS NOT NULL GROUP BY itemId",
     )
     abstract fun observeLocalBytes(serverId: String): Flow<List<ItemBytes>>
+
+    /** Every recorded file of [serverId]'s downloads (the volumes they are on; sign-out with a card that is out). */
+    @Query("SELECT localPath FROM audio_files WHERE serverId = :serverId AND localPath IS NOT NULL")
+    abstract suspend fun localPaths(serverId: String): List<String>
 }
 
 data class BytesProgress(val done: Long, val total: Long)
@@ -177,6 +181,10 @@ abstract class ProgressDao {
     /** True if [itemId] or any of its episodes (`itemId~episodeId`) has a progress row. ABS ids never contain `~` or LIKE wildcards, so a prefix compare is exact. */
     @Query("SELECT EXISTS(SELECT 1 FROM progress WHERE serverId = :serverId AND (itemId = :itemId OR substr(itemId, 1, length(:itemId) + 1) = :itemId || '~'))")
     abstract suspend fun hasAnyForItem(serverId: String, itemId: String): Boolean
+
+    /** Keys (books and episodes) marked finished; the automatic clean-up notes when it first sees each one. */
+    @Query("SELECT itemId FROM progress WHERE serverId = :serverId AND isFinished = 1")
+    abstract fun observeFinishedKeys(serverId: String): kotlinx.coroutines.flow.Flow<List<String>>
 
     @Query("SELECT * FROM progress WHERE serverId = :serverId AND dirty = 1")
     abstract suspend fun dirty(serverId: String): List<ProgressEntity>
@@ -263,18 +271,36 @@ data class DownloadEntryRow(
     val isFinished: Boolean,
 )
 
-/** A complete download of a finished title: [finishedAt] is its progress's `lastUpdate`. */
-data class FinishedDownload(val itemKey: String, val requestedAt: Long, val finishedAt: Long)
+/**
+ * A complete download of a title marked finished, with where its progress stands ([positionSec] of [durationSec]): the
+ * automatic clean-up tells a title that really ended from one the tracker marked finished in its last 0.5 %.
+ */
+data class FinishedDownload(val itemKey: String, val positionSec: Double, val durationSec: Double)
+
+/** A finished, completely downloaded title or episode with its title (clean-up page). */
+data class FinishedEntry(val itemKey: String, val title: String)
 
 @Dao
 interface DownloadDao {
     /** Complete downloads (books and episodes) of [serverId] whose title is marked finished; for the automatic clean-up. */
     @Query(
-        """SELECT d.itemId AS itemKey, d.requestedAt AS requestedAt, p.lastUpdate AS finishedAt
+        """SELECT d.itemId AS itemKey, p.currentTimeSec AS positionSec, p.durationSec AS durationSec
            FROM downloads d JOIN progress p ON p.serverId = d.serverId AND p.itemId = d.itemId
            WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND p.isFinished = 1""",
     )
     fun observeFinishedComplete(serverId: String): Flow<List<FinishedDownload>>
+
+    /** The same downloads with a title (an episode's own), for the clean-up page; books and episodes. */
+    @Query(
+        """SELECT d.itemId AS itemKey, COALESCE(e.title, i.title, d.itemId) AS title
+           FROM downloads d JOIN progress p ON p.serverId = d.serverId AND p.itemId = d.itemId
+           LEFT JOIN items i ON i.serverId = d.serverId AND i.id = d.itemId
+           LEFT JOIN episodes e ON e.serverId = d.serverId AND instr(d.itemId, '~') > 0
+             AND e.itemId = substr(d.itemId, 1, instr(d.itemId, '~') - 1) AND e.id = substr(d.itemId, instr(d.itemId, '~') + 1)
+           WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND p.isFinished = 1
+           ORDER BY COALESCE(e.title, i.title, d.itemId) COLLATE NOCASE""",
+    )
+    fun observeFinishedEntries(serverId: String): Flow<List<FinishedEntry>>
 
     /** Every download of [serverId] (books and episodes) for the download management page. */
     @Query(

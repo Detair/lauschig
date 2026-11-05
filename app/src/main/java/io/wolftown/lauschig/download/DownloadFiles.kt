@@ -153,6 +153,17 @@ class DownloadFiles(
         }
     }
 
+    /**
+     * When the download of [itemId] was completed, on the device's clock: the newest modification time of its recorded
+     * audio files (a file is written, then renamed into place). Null when nothing is recorded or a recorded file is not
+     * there (a card that is out). Blocking.
+     */
+    suspend fun completedAt(serverId: String, itemId: String): Long? {
+        val paths = audioFiles.forItem(serverId, itemId).map { it.localPath ?: return null }
+        if (paths.isEmpty()) return null
+        return paths.maxOf { p -> File(p).takeIf { it.isFile }?.lastModified()?.takeIf { it > 0 } ?: return null }
+    }
+
     companion object {
         const val COVER = "cover.jpg"
         private val SERVER_ID = Regex("[0-9a-f]{16}")

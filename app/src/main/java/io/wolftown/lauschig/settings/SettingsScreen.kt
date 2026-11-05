@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,11 +43,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.download.MeteredDownload
 import io.wolftown.lauschig.external.AudibleRegions
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -64,9 +69,15 @@ data class SettingsUiState(
     val downloadOnPlay: Boolean = true,
     val meteredOnPlay: MeteredDownload = MeteredDownload.ASK,
     val autoDelete: AutoDeleteMode = AutoDeleteMode.NEVER,
+    /** Turning the automatic clean-up on would delete existing downloads: the question before it is switched on. */
+    val autoDeleteConfirm: AutoDeleteConfirm? = null,
     val playback: PlaybackPrefs = PlaybackPrefs(),
     val appearance: Appearance = Appearance(),
 )
+
+/** [count] downloads of [bytes] would go if [mode] were switched on. */
+@Immutable
+data class AutoDeleteConfirm(val mode: AutoDeleteMode, val count: Int, val bytes: Long)
 
 @Immutable
 data class PlaybackPrefs(
@@ -94,7 +105,10 @@ class SettingsViewModel @Inject constructor(
     private val download: DownloadSettings,
     private val playbackSettings: PlaybackSettings,
     private val ui: UiSettings,
+    private val cleaner: FinishedDownloadCleaner,
 ) : ViewModel() {
+    private val autoDeleteConfirm = MutableStateFlow<AutoDeleteConfirm?>(null)
+
     private val playback = combine(
         combine(playbackSettings.rewindOnResumeSec, playbackSettings.defaultSpeed, playbackSettings.skipSilence) { r, sp, sk -> Triple(r, sp, sk) },
         playbackSettings.defaultBoostDb,
@@ -113,6 +127,7 @@ class SettingsViewModel @Inject constructor(
     ) { base, auto, onPlay, metered, pb -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered, playback = pb) }
         .combine(ui.appearance) { s, look -> s.copy(appearance = look) }
         .combine(download.autoDeleteFinished) { s, mode -> s.copy(autoDelete = mode) }
+        .combine(autoDeleteConfirm) { s, c -> s.copy(autoDeleteConfirm = c) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -123,7 +138,27 @@ class SettingsViewModel @Inject constructor(
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }
     fun setMeteredOnPlay(mode: MeteredDownload) { viewModelScope.launch { download.setMeteredOnPlay(mode) } }
-    fun setAutoDelete(mode: AutoDeleteMode) { viewModelScope.launch { download.setAutoDeleteFinished(mode) } }
+    /** Turning it on while finished downloads exist asks first ([confirmAutoDelete] / [cancelAutoDelete]). */
+    fun setAutoDelete(mode: AutoDeleteMode) {
+        viewModelScope.launch {
+            if (mode != AutoDeleteMode.NEVER && download.autoDeleteFinished.first() == AutoDeleteMode.NEVER) {
+                val preview = cleaner.preview(mode)
+                if (preview.count > 0) {
+                    autoDeleteConfirm.value = AutoDeleteConfirm(mode, preview.count, preview.bytes)
+                    return@launch
+                }
+            }
+            download.setAutoDeleteFinished(mode)
+        }
+    }
+
+    fun confirmAutoDelete() {
+        val c = autoDeleteConfirm.value ?: return
+        autoDeleteConfirm.value = null
+        viewModelScope.launch { download.setAutoDeleteFinished(c.mode) }
+    }
+
+    fun cancelAutoDelete() { autoDeleteConfirm.value = null }
 
     val appearanceActions = AppearanceActions(
         onTheme = { viewModelScope.launch { ui.setTheme(it) } },
@@ -159,6 +194,8 @@ fun SettingsRoute(
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
         onAutoDelete = viewModel::setAutoDelete,
+        onAutoDeleteConfirm = viewModel::confirmAutoDelete,
+        onAutoDeleteCancel = viewModel::cancelAutoDelete,
         playbackActions = viewModel.playbackActions,
         appearanceActions = viewModel.appearanceActions,
         onOpenNavigation = onOpenNavigation,
@@ -189,6 +226,8 @@ fun SettingsScreen(
     onDownloadOnPlay: (Boolean) -> Unit = {},
     onMeteredOnPlay: (MeteredDownload) -> Unit = {},
     onAutoDelete: (AutoDeleteMode) -> Unit = {},
+    onAutoDeleteConfirm: () -> Unit = {},
+    onAutoDeleteCancel: () -> Unit = {},
     playbackActions: PlaybackPrefsActions = PlaybackPrefsActions(),
     modifier: Modifier = Modifier,
     appearanceActions: AppearanceActions = AppearanceActions(),
@@ -255,6 +294,7 @@ fun SettingsScreen(
         ChoiceRow(
             R.string.settings_auto_delete, R.string.settings_auto_delete_hint, "autoDelete", AutoDeleteMode.entries, state.autoDelete, onAutoDelete,
         ) { autoDeleteLabel(it) }
+        state.autoDeleteConfirm?.let { AutoDeleteConfirmDialog(it, onAutoDeleteConfirm, onAutoDeleteCancel) }
         // The automatic clean-up deletes what the reminder would name.
         val autoDeleting = state.autoDelete != AutoDeleteMode.NEVER
         SwitchRow(
@@ -357,6 +397,29 @@ private fun AutoDownloadRow(current: AutoDownloadMode, onSelect: (AutoDownloadMo
             }
         }
     }
+}
+
+/** "N gehörte Downloads (X MB) werden gelöscht": before the automatic clean-up is switched on. */
+@Composable
+private fun AutoDeleteConfirmDialog(c: AutoDeleteConfirm, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val size = android.text.format.Formatter.formatShortFileSize(androidx.compose.ui.platform.LocalContext.current, c.bytes).replace(' ', '\u00A0')
+    val days = ((c.mode.afterMs ?: 0L) / (24L * 60 * 60 * 1000)).toInt()
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.settings_auto_delete_confirm_title)) },
+        text = {
+            Column {
+                Text(
+                    if (days == 0) pluralStringResource(R.plurals.settings_auto_delete_confirm_now, c.count, c.count, size)
+                    else pluralStringResource(R.plurals.settings_auto_delete_confirm_later, c.count, c.count, size, days),
+                    modifier = Modifier.testTag("autoDeleteConfirmText"),
+                )
+                Text(stringResource(R.string.settings_auto_delete_confirm_keep), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag("autoDeleteConfirm")) { Text(stringResource(R.string.settings_auto_delete_confirm_ok)) } },
+        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.testTag("autoDeleteCancel")) { Text(stringResource(R.string.settings_auto_delete_confirm_cancel)) } },
+    )
 }
 
 @Composable

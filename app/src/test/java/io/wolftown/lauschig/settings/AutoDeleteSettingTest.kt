@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -23,10 +24,30 @@ import org.robolectric.annotation.Config
 class AutoDeleteSettingTest {
     @get:Rule val rule = createComposeRule()
 
-    private fun show(state: SettingsUiState, onAutoDelete: (AutoDeleteMode) -> Unit = {}) = rule.setContent {
+    private fun show(state: SettingsUiState, onAutoDelete: (AutoDeleteMode) -> Unit = {}, onConfirm: () -> Unit = {}, onCancel: () -> Unit = {}) = rule.setContent {
         LauschigTheme {
-            SettingsScreen(state, onBack = {}, onOpenCleanup = {}, onNextVolume = {}, onWifiOnly = {}, onCleanupReminder = {}, onAutoDelete = onAutoDelete)
+            SettingsScreen(
+                state, onBack = {}, onOpenCleanup = {}, onNextVolume = {}, onWifiOnly = {}, onCleanupReminder = {}, onAutoDelete = onAutoDelete,
+                onAutoDeleteConfirm = onConfirm, onAutoDeleteCancel = onCancel,
+            )
         }
+    }
+
+    @Test fun turningItOn_withHeardDownloads_asksFirst_withCountAndSize() {
+        var confirmed = 0
+        var cancelled = 0
+        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.IMMEDIATELY, 3, 1_200_000_000)), onConfirm = { confirmed++ }, onCancel = { cancelled++ })
+        rule.onNodeWithTag("autoDeleteConfirmText").assertTextEquals("3 heard downloads (1.2\u00A0GB) will be deleted right away.")
+        rule.onNodeWithText("To keep a title, mark it “Keep” under “Clean up” first.").assertExists()
+        rule.onNodeWithTag("autoDeleteCancel").performClick()
+        rule.onNodeWithTag("autoDeleteConfirm").performClick()
+        assertEquals(1, cancelled)
+        assertEquals(1, confirmed)
+    }
+
+    @Test fun theQuestion_forADelay_saysWhen() {
+        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.AFTER_7_DAYS, 1, 50_000_000)))
+        rule.onNodeWithTag("autoDeleteConfirmText").assertTextEquals("1 heard download (50\u00A0MB) will be deleted, 7 days after it was heard.")
     }
 
     @Test fun theFourChoices_neverIsTheDefault() {

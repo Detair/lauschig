@@ -11,10 +11,8 @@ import io.wolftown.lauschig.account.AccountDataJanitor
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.cleanup.FinishedDownloadsWorker
-import io.wolftown.lauschig.cleanup.playingKey
 import io.wolftown.lauschig.diagnostics.DiagnosticLog
 import io.wolftown.lauschig.diagnostics.DiagnosticSecrets
-import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.AutoResumer
@@ -41,7 +39,6 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
-    @Inject lateinit var player: PlayerController
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
 
     override val workManagerConfiguration: Configuration
@@ -79,8 +76,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Registers its audio-device callback only while the setting is on.
         autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
-        // Finished downloads go by themselves if the user wants it; never the title that is playing.
-        finishedDownloads.start(scope, player.playingKey())
+        // Finished downloads go by themselves if the user wants it; never a title the player holds.
+        finishedDownloads.start(scope)
         FinishedDownloadsWorker.schedule(this)
     }
 
