@@ -102,4 +102,29 @@ class AccountDataJanitorTest {
         // here and has no rows: nobody owns it.
         assertEquals(listOf(failed, orphan), deletedDirs)
     }
+
+    @Test fun theSignedInAndKeptAccounts_areTidied_neverAPendingPurgeOrAnOrphan() = runTest {
+        kept.pending.value = setOf(failed)
+        purgeFails = true // stays pending
+        val tidied = mutableListOf<String>()
+        AccountDataJanitor(accounts, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true }, { sid -> tidied += sid; 1 }).run()
+        assertEquals(listOf(current, keptId), tidied)
+    }
+
+    @Test fun aFailingTidy_neitherStopsTheOthers_norTheRun() = runTest {
+        val tidied = mutableListOf<String>()
+        AccountDataJanitor(accounts, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true }, { sid ->
+            if (sid == current) throw java.io.IOException("card pulled")
+            tidied += sid; 0
+        }).run()
+        assertEquals(listOf(keptId), tidied)
+        assertEquals(listOf(failed, orphan), deletedDirs) // nothing pending here: "failed" has no owner either
+    }
+
+    @Test fun signedOut_onlyTheKeptAccountsAreTidied() = runTest {
+        accounts.acc.value = null
+        val tidied = mutableListOf<String>()
+        AccountDataJanitor(accounts, kept, data, { dirs.toList() }, { true }, { sid -> tidied += sid; 0 }).run()
+        assertEquals(listOf(keptId), tidied)
+    }
 }

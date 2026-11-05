@@ -17,6 +17,7 @@ import io.wolftown.lauschig.download.DownloadList
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadSort
 import io.wolftown.lauschig.download.DownloadWorker
+import io.wolftown.lauschig.download.VolumeDownloadRoots
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -74,8 +75,10 @@ data class DownloadsUiState(
     val usedBytes: Long = 0,
     /** The part of [usedBytes] that belongs to earlier accounts (not listed in [entries]; see `KeptDownloadsSection`). */
     val keptBytes: Long = 0,
-    /** Free space of the app storage volume; null until read. */
+    /** Free space of the volume new downloads go to; null until read. */
     val freeBytes: Long? = null,
+    /** The chosen SD card is not there: new downloads go to the internal storage meanwhile. */
+    val cardMissing: Boolean = false,
     val finishedCount: Int = 0,
     val finishedBytes: Long = 0,
     val sort: DownloadSort = DownloadSort.ADDED,
@@ -115,9 +118,20 @@ class DownloadsViewModel(
     private val freeSpace: suspend () -> Long?,
     kept: Flow<List<KeptDownloads>>,
     dispatcher: CoroutineDispatcher,
+    /** True while the chosen download volume is not available ([VolumeDownloadRoots.chosenMissing]); read with [freeSpace]. */
+    private val cardMissing: suspend () -> Boolean = { false },
 ) : ViewModel() {
-    @Inject constructor(accountStore: AccountStore, dao: DownloadDao, downloads: DownloadManager, files: DownloadFiles, kept: KeptDownloadSizes) :
-        this(accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept.entries, Dispatchers.Default)
+    @Inject constructor(
+        accountStore: AccountStore,
+        dao: DownloadDao,
+        downloads: DownloadManager,
+        files: DownloadFiles,
+        kept: KeptDownloadSizes,
+        roots: VolumeDownloadRoots,
+    ) : this(
+        accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept.entries, Dispatchers.Default,
+        cardMissing = { withContext(Dispatchers.IO) { runCatching { roots.chosenMissing() }.getOrDefault(false) } },
+    )
 
     private val sort = MutableStateFlow(DownloadSort.ADDED)
     private val query = MutableStateFlow("")
@@ -130,7 +144,7 @@ class DownloadsViewModel(
 
     val state: StateFlow<DownloadsUiState> = serverId.flatMapLatest { sid ->
         if (sid == null) flowOf(DownloadsUiState(loaded = true))
-        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid), keptTotal) { all, so, q, free, keptSum ->
+        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid), keptTotal) { all, so, q, (free, missing), keptSum ->
             rows = all
             val totals = DownloadList.totals(all)
             DownloadsUiState(
@@ -140,6 +154,7 @@ class DownloadsViewModel(
                 usedBytes = totals.usedBytes + keptSum,
                 keptBytes = keptSum,
                 freeBytes = free,
+                cardMissing = missing,
                 finishedCount = totals.finishedCount,
                 finishedBytes = totals.finishedBytes,
                 sort = so,
@@ -152,9 +167,9 @@ class DownloadsViewModel(
      * Free space, read when the set of downloads or their states change (one finished, one deleted) and otherwise every
      * [FREE_SPACE_REFRESH_MS]; never on a progress tick (a running download updates its row about once a second).
      */
-    private fun freeBytes(sid: String): Flow<Long?> =
+    private fun freeBytes(sid: String): Flow<Pair<Long?, Boolean>> =
         dao.observeEntries(sid).map { all -> all.mapTo(HashSet()) { it.itemKey to it.state } }.distinctUntilChanged()
-            .flatMapLatest { flow { while (true) { emit(freeSpace()); delay(FREE_SPACE_REFRESH_MS) } } }
+            .flatMapLatest { flow { while (true) { emit(freeSpace() to cardMissing()); delay(FREE_SPACE_REFRESH_MS) } } }
 
     private fun DownloadEntryRow.toUi() =
         DownloadEntryUi(itemKey, DownloadList.displayTitle(this), subtitle?.takeIf { it.isNotBlank() }, entryStatus(this), bytesDone, bytesTotal, isFinished)

@@ -2,6 +2,7 @@ package io.wolftown.lauschig.account
 
 import android.util.Log
 import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.download.DownloadTidy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -11,8 +12,11 @@ import javax.inject.Inject
 /**
  * Runs once per app start. Finishes purges that failed during a sign-out ([KeptAccountStore.pendingPurges]; dropped
  * when that account signed in again, its data is live then) and deletes download directories nobody can reach any
- * more: no rows, not the signed-in account, not kept, not pending. The device library has no download directory, and
- * the folders of "Auf dem Gerät" are the user's own documents: neither is ever touched.
+ * more: no rows, not the signed-in account, not kept, not pending. The directories of the signed-in and the kept accounts
+ * are tidied ([DownloadTidy]: titles without a download row, stale copies on a second volume). Every mounted volume is
+ * covered (internal storage and SD card); a card that was out at sign-out is cleaned at the first start it is back. The
+ * device library has no download directory, and the folders of "Auf dem Gerät" are the user's own documents: neither is
+ * ever touched.
  */
 class AccountDataJanitor(
     private val accounts: AccountStore,
@@ -20,11 +24,14 @@ class AccountDataJanitor(
     private val data: AccountData,
     private val serverDirs: suspend () -> List<String>,
     private val deleteDir: suspend (serverId: String) -> Boolean,
+    /** Tidies one owned account's title directories; returns how many titles were tidied. */
+    private val tidyItems: suspend (serverId: String) -> Int = { 0 },
 ) {
-    @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, files: DownloadFiles) : this(
+    @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, files: DownloadFiles, tidy: DownloadTidy) : this(
         accounts, kept, data,
         serverDirs = { withContext(Dispatchers.IO) { files.serverIds() } },
         deleteDir = { sid -> withContext(Dispatchers.IO) { files.deleteServer(sid) } },
+        tidyItems = tidy::tidy,
     )
 
     suspend fun run() {
@@ -56,6 +63,18 @@ class AccountDataJanitor(
             val now = signedIn() ?: return
             if (now.id == sid) continue
             if (deleteDir(sid)) Log.i(TAG, "deleted downloads without an owner")
+        }
+        val pending = kept.pendingPurges.first()
+        val tidyIds = (listOfNotNull(current.id) + kept.accounts.first().map { it.serverId }).distinct().filter { it !in pending }
+        for (sid in tidyIds) {
+            try {
+                val n = tidyItems(sid)
+                if (n > 0) Log.i(TAG, "tidied $n download directories")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "tidying the downloads failed; retried at the next start", e)
+            }
         }
     }
 

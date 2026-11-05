@@ -45,9 +45,21 @@ class DownloadSettings @Inject constructor(@ApplicationContext context: Context)
         store.edit { it[METERED_ON_PLAY] = value.name }
     }
 
+    /**
+     * Where new downloads go: the app's files directory on another volume ([DownloadVolume.path], e.g. an SD card), or
+     * null for the internal storage (default). A volume that is not available makes downloads fall back to internal
+     * ([VolumeDownloadRoots]); the choice itself stays, so they go there again once the card is back.
+     */
+    val storagePath: Flow<String?> = store.data.map { it[STORAGE_PATH]?.takeIf { p -> p.isNotBlank() } }
+
+    suspend fun setStoragePath(path: String?) {
+        store.edit { if (path.isNullOrBlank()) it.remove(STORAGE_PATH) else it[STORAGE_PATH] = path }
+    }
+
     private companion object {
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val DOWNLOAD_ON_PLAY = booleanPreferencesKey("download_on_play")
         val METERED_ON_PLAY = stringPreferencesKey("metered_on_play")
+        val STORAGE_PATH = stringPreferencesKey("storage_path")
     }
 }

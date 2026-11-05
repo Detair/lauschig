@@ -158,6 +158,7 @@ fun SettingsRoute(
         onOpenNavigation = onOpenNavigation,
         rmabSection = { io.wolftown.lauschig.rmab.RmabSettingsSection() },
         onOpenDownloads = onOpenDownloads,
+        storageSection = { DownloadLocationSection() },
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
         onOpenConnection = onOpenConnection,
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
@@ -187,6 +188,8 @@ fun SettingsScreen(
     /** Slot for the ReadMeABook section (needs Hilt, so the route supplies it). */
     rmabSection: @Composable () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    /** Slot for "Speicherort" (needs Hilt and the device's volumes). */
+    storageSection: @Composable () -> Unit = {},
     /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
     localSection: @Composable () -> Unit = {},
     onOpenConnection: () -> Unit = {},
@@ -234,6 +237,7 @@ fun SettingsScreen(
             supportingContent = { Text(stringResource(R.string.downloads_manage_hint)) },
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenDownloads).testTag("openDownloads"),
         )
+        storageSection()
         SwitchRow(R.string.settings_wifi_only, R.string.settings_wifi_only_hint, state.wifiOnly, onWifiOnly)
         SwitchRow(R.string.settings_download_on_play, R.string.settings_download_on_play_hint, state.downloadOnPlay, onDownloadOnPlay, Modifier.testTag("downloadOnPlay"))
         MeteredRow(state.meteredOnPlay, state.downloadOnPlay, onMeteredOnPlay)

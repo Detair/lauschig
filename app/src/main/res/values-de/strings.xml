@@ -387,6 +387,16 @@
     <string name="downloads_title">Downloads</string>
     <string name="downloads_manage">Downloads verwalten</string>
     <string name="downloads_manage_hint">Pausieren, fortsetzen, sortieren, durchsuchen und belegten Speicher sehen</string>
+    <string name="settings_storage">Speicherort</string>
+    <string name="settings_storage_internal">Interner Speicher</string>
+    <string name="settings_storage_sd">SD-Karte</string>
+    <string name="settings_storage_external">Externer Speicher</string>
+    <string name="settings_storage_free">%1$s frei</string>
+    <string name="settings_storage_unavailable">Nicht verfügbar</string>
+    <string name="settings_storage_missing">SD-Karte nicht gefunden – neue Downloads landen vorerst im internen Speicher.</string>
+    <string name="settings_storage_choose">Wohin neue Downloads kommen</string>
+    <string name="settings_storage_hint">Bisherige Downloads bleiben, wo sie sind, und lassen sich weiter abspielen und löschen. Ist die Karte nicht eingelegt, landen neue Downloads im internen Speicher. Dateien auf einer SD-Karte kann lesen, wer die Karte in ein anderes Gerät steckt.</string>
+    <string name="settings_storage_cancel">Schließen</string>
     <string name="downloads_storage">%1$s belegt · %2$s frei</string>
     <string name="downloads_storage_used">%1$s belegt</string>
     <string name="downloads_storage_kept">%1$s belegt (davon %2$s von früheren Konten) · %3$s frei</string>

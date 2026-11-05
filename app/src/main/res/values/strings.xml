@@ -387,6 +387,16 @@
     <string name="downloads_title">Downloads</string>
     <string name="downloads_manage">Manage downloads</string>
     <string name="downloads_manage_hint">Pause, resume, sort, search and see the storage used</string>
+    <string name="settings_storage">Storage location</string>
+    <string name="settings_storage_internal">Internal storage</string>
+    <string name="settings_storage_sd">SD card</string>
+    <string name="settings_storage_external">External storage</string>
+    <string name="settings_storage_free">%1$s free</string>
+    <string name="settings_storage_unavailable">Not available</string>
+    <string name="settings_storage_missing">SD card not found – new downloads go to the internal storage for now.</string>
+    <string name="settings_storage_choose">Where new downloads go</string>
+    <string name="settings_storage_hint">Earlier downloads stay where they are and can still be played and deleted. While the card is out, new downloads go to the internal storage. Files on an SD card can be read by anyone who puts the card into another device.</string>
+    <string name="settings_storage_cancel">Close</string>
     <string name="downloads_storage">%1$s used · %2$s free</string>
     <string name="downloads_storage_used">%1$s used</string>
     <string name="downloads_storage_kept">%1$s used (%2$s from earlier accounts) · %3$s free</string>

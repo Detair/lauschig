@@ -274,4 +274,23 @@ class AccountDataTest {
         assertEquals(BookmarkPending.UPSERT, db.bookmarkDao().all(a).single().pending)
         assertEquals(listOf<BookmarkEntity>(), db.bookmarkDao().all(b))
     }
+
+    @Test fun sizeWalkAndPurge_coverEveryMountedVolume() = runBlocking {
+        val card = File(root.parentFile, "card/downloads").apply { mkdirs() }
+        val cardRoots = object : io.wolftown.lauschig.download.DownloadRoots {
+            override fun external() = listOf(card)
+            override fun target() = card
+        }
+        val multi = DownloadFiles(root, db.audioFileDao(), roots = cardRoots)
+        val d = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), multi, stamps, forgottenCovers::add)
+        File(root, "$a/in").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(4))
+        File(card, "$a/out").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(6))
+        File(card, "$b/other").apply { mkdirs() }.resolve("0.mp3").writeBytes(ByteArray(1))
+        assertEquals(10L, d.downloadBytes(a))
+        d.purge(a)
+        assertFalse(File(root, a).exists())
+        assertFalse(File(card, a).exists())
+        assertTrue("another server's downloads on the card stay", File(card, "$b/other/0.mp3").isFile)
+        assertEquals(listOf(b), multi.serverIds())
+    }
 }

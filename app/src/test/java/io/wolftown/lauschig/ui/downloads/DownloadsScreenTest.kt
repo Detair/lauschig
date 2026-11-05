@@ -134,6 +134,16 @@ class DownloadsScreenTest {
         rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used (2.0\u00A0MB from earlier accounts)")
     }
 
+    @Test fun aMissingCard_isSaidUnderTheStorageFigure() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(cardMissing = true), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsCardMissing").assertTextEquals("SD card not found – new downloads go to the internal storage for now.")
+    }
+
+    @Test fun noCardHint_whileTheCardIsThere() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsCardMissing").assertDoesNotExist()
+    }
+
     @Test fun header_withoutFreeSpaceAndKeptData_isJustTheUsedFigure() {
         rule.setContent { LauschigTheme { DownloadsScreen(state.copy(freeBytes = null), {}, {}, DownloadsActions()) } }
         rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used")
