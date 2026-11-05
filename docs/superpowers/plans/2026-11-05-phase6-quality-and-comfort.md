@@ -429,3 +429,117 @@ Paket „Performance & Suche“ (Branch `p6-perf`).
 - **Throttle:** Entscheiden und Senden laufen unter einem `Mutex`; ein freigegebener älterer Tick kann einen neueren Wert mit anderem Schlüssel nicht mehr überholen (Test mit virtueller Zeit).
 - **Dokumentiert:** Was der Schlüssel nicht abdeckt (Positionstick eines anderen Titels, geänderte Metadaten eines vorhandenen Titels) kann bis zu 1,5 s warten, geht aber nie verloren; Strukturänderungen laufen sofort.
 - **Test:** `LibraryViewModel` bekommt wie `SearchViewModel` einen injizierbaren Dispatcher (Hilt-Konstruktor unverändert); der Messtest läuft mit eigenem `TestCoroutineScheduler` (virtuelle Zeit, keine Wanduhr): 20 Schreibvorgänge → 3 Emissionen (vorher 20), „beendet“ ohne vergangene virtuelle Zeit sofort sichtbar.
+
+---
+
+## Umsetzung Task 12 (2026-11-05)
+
+Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein Navigations-Fix vom Tablet.
+
+- **12.3 Kapitelsuche** im Kapitel-Tab des Inhalte-Blatts (`ContentsSheet`): Suchfeld oben, Treffer in Buchreihenfolge,
+  Lösch-Knopf, leerer Zustand („Kein Kapitel zu „…““ mit Hinweis „Such nach einem Wort aus dem Titel oder nach der
+  Kapitelnummer.“). `ChapterSearch` (ui/detail): Wortanfang-Suche wie die Katalogsuche (jedes Suchwort muss ein Wort des
+  Titels beginnen), ohne Groß/Klein, Akzente und Umlaute – „mädchen“, „madchen“, „maedchen“ finden „Mädchen“, „strasse“
+  findet „Straße“; eine Zahl findet auch das Kapitel dieser Nummer („12“ → Kapitel 12, wie es auch heißt), führende
+  Nullen zählen nicht („7“ → „Track 007“), gemischte Wörter zerfallen in Teile („cd2“ → cd, 2).
+  - **Claudes Wahl Zahlen:** Wortanfang auch für Nummern, wie in der Katalogsuche: bei 300 Kapiteln findet „12“ das
+    Kapitel 12 und 120–129 (Kapitel 12 zuerst), „57“ nur 57. Keine Teilwort-Suche („kehr“ findet „Rückkehr“ nicht) – sie
+    brächte bei Zahlen „112“ für „12“.
+  - **Claudes Wahl Umlaute:** neben dem Entfernen der Akzente (ä → a) auch die ausgeschriebene Form (ä → ae, ß → ss) für
+    Titel und Suche. Nur „madchen“ findet einen „Maedchen“ geschriebenen Titel nicht (weder Titel- noch Umlautschreibung).
+  - **Claudes Wahl Nummern an den Treffern:** während der Suche steht vor jedem Treffer seine Kapitelnummer
+    (Tabellenziffern) – ein Zahlentreffer ist erkennbar, und man sieht, wo er im Buch liegt. Ohne Suche bleibt die Liste
+    wie bisher.
+  - **Claudes Wahl Schwelle:** das Feld erscheint ab 10 Kapiteln (`CHAPTER_SEARCH_FROM`); kürzere Listen passen auf ein,
+    zwei Bildschirme und bleiben ruhig.
+  - Die Suche überlebt einen Blick in einen anderen Tab des Blatts (im Blatt gehalten, `rememberSaveable`); ein neues
+    Blatt beginnt leer. Eine neue Eingabe springt zum ersten Treffer, Löschen zurück zum aktuellen Kapitel. Ein Treffer
+    springt und schließt das Blatt (die Tastatur geht mit); die Tastaturtaste „Suchen“ und das Ziehen der Liste blenden
+    die Tastatur aus.
+  - Tastatur (Emulator, Gboard): das Blatt bleibt 85 % des Fensters; das Fenster endet über der Tastatur, das Blatt rückt
+    dabei ein Stück hoch (≈ 15 % der Tastaturhöhe), die Liste endet an der Tastaturkante – kein Treffer verdeckt
+    (gemessen: Liste 650–1517 px, Tastatur ab 1517 px, mit und ohne `imePadding`; es bleibt als Absicherung, ohne doppelte
+    Lücke).
+  - **Claudes Wahl Detailseite:** dort kein Suchfeld. Die Kapitel stehen am Ende einer langen Seite (Beschreibung,
+    Metadaten), ein Feld mitten darin wäre fremd; zum Springen im Buch ist der Player da. `ChapterSearch` ist unabhängig
+    und ließe sich dort später nutzen.
+  - Tests: `ChapterSearchTest` (6), `ChapterListTest` (5, Compose).
+- **12.1 Mehrere angemeldete Konten (Naht für den Profilwechsel):**
+  - `AccountStore` hält neben dem aktiven Konto gespeicherte (`saved`, `add`, `activate`, `forget`). Das aktive Konto
+    behält seine Schlüssel (`account_json`, `access_token_enc`, `refresh_token_enc`, `needs_reauth`); gespeicherte liegen
+    in einem weiteren Schlüssel `saved_accounts_json` (Metadaten, verschlüsselte Tokens, Re-Auth-Flag je Konto), der nur
+    existiert, solange es welche gibt. Ein einzelnes Konto wird also genau wie bisher gespeichert – Upgrade-Test mit dem
+    0.3.0-Format (Schlüssel und JSON, wie die alte Version sie schrieb) und auf dem Emulator (Update über die installierte
+    Version: weiter angemeldet, Serververwaltung lädt mit Token).
+  - Tokens nur verschlüsselt: ein Wechsel verschiebt den Chiffretext, entschlüsselt und verschlüsselt nichts (Test zählt
+    die Cipher-Aufrufe); `Credentials.toString()` zeigt keine Tokens, nichts wird geloggt.
+  - **Claudes Wahl – Tokens gehören ihrem Konto:** `credentials()` liest Server-ID und Tokens in einem Zug;
+    `AuthInterceptor` markiert jede Anfrage mit dem Konto, dessen Token sie trägt (`SentBy`); `TokenAuthenticator`
+    beantwortet einen 401 nach einem Wechsel nie mit dem Token des anderen Kontos, und ein Refresh (oder seine Ablehnung),
+    der erst nach dem Wechsel ankommt, landet beim eigenen Konto (`updateTokens(serverId, …)`,
+    `markNeedsReauth(serverId)`), nicht beim neuen. Ohne das könnte ein spät ankommender Refresh dem neuen Profil die
+    Tokens des alten geben. Für ein einzelnes Konto unverändert; einzige Änderung: ein Refresh, der nach einer Abmeldung
+    ankommt, schickt seine Anfrage nicht mehr erneut ab.
+  - `ProfileSwitch` (umgesetzt von `SignOut`, in Hilt gebunden, noch ohne Oberfläche): `switchProfile(serverId)`,
+    `addProfile(next, tokens)`. Sie verlassen das aktive Konto mit den Schritten der Abmeldung im neuen Modus
+    „beiseitelegen“: Wiedergabe und Arbeit stoppen, wartende Downloads pausieren, der zuletzt gespielte Titel und der
+    Kontozustand außerhalb Room gehen (RMAB, SSO, letzte Suchen, Download-Frage, Cover-Caches, Aufräum-Benachrichtigung)
+    – aber **kein Server-Logout**, Daten und Downloads bleiben, kein „Behalten“-Eintrag (keine Frage an das nächste
+    Konto, kein Löschangebot), eine alte Löschschuld verfällt; als letzter Schritt wird das nächste Konto aktiv (nie
+    „kein Konto“ dazwischen).
+  - `AccountDataJanitor` und `KeptAccountDeletion` behandeln gespeicherte Konten wie angemeldete (nie gelöscht,
+    Löschschuld verfällt). Im Janitor genau: `SignedIn` trägt zusätzlich `saved` (aus `accounts.saved`), die beiden
+    Bedingungen „gewollt“/„besessen“ um `current.saved` ergänzt, ein Satz im KDoc. `AccountStateCleaner` unverändert.
+  - Abmelden, „Behalten“ und `switchTo` (Re-Auth als anderes Konto) unverändert; Abmelden betrifft nur das aktive Konto,
+    gespeicherte bleiben.
+  - Keine sichtbare Oberfläche (zum Testen nicht nötig: Speicher, Wechselablauf, Janitor, Löschschutz und die Token-
+    Rennen sind mit Unit-Tests abgedeckt). Tests: `AccountStoreTest` (10), `SignOutTest` +5, `TokenAuthenticatorTest` +3,
+    `AccountDataJanitorTest` +1, `KeptAccountDeletionTest` +1.
+- **12.2 Cast-Naht:** `PlaybackOutput` (playback/) trennt `player` – was spielt: die Session (und über sie App-
+  `PlayerController`, Benachrichtigung, Sperrbildschirm, Kopfhörer, Auto), Fortschritt, Warteschlange, Kapitel, Widget,
+  Auto-Tasten, Play-Tasten-Wächter – von `device`, dem ExoPlayer des Geräts (Effekte, Stille überspringen, Lautstärke des
+  Sleep-Fades, Stream-Monitor); `isLocal` aus `Player.deviceInfo`. `DeviceOutput(exo)`: beides derselbe ExoPlayer, das
+  Verhalten bleibt gleich. `PlaybackService` hält `output` statt `player: ExoPlayer`. Keine Cast-Abhängigkeit.
+  - **Claudes Wahl – die Naht sitzt an der Session, nicht im `PlayerController`:** Media3 ≥ 1.9 hat einen `CastPlayer`
+    mit lokalem Player (`CastPlayer.Builder(context).setLocalPlayer(exo)`), der selbst zwischen Gerät und Empfänger
+    wechselt und die Warteschlange mitnimmt. Steht er in der Session, folgen App (`PlayerController` über den
+    `MediaController`), Benachrichtigung, Sperrbildschirm und Auto ohne Änderung; ein Umschalten im `PlayerController`
+    ginge an der Session vorbei. Darum statt `PlayerControllerCastTest` ein `PlaybackOutputTest` (3: Gerät = ExoPlayer und
+    lokal; Freigabe; ein Ausgang, dessen Player woanders spielt, ist nicht lokal und behält den Geräte-Player).
+  - Emulator: Gerätetitel spielt, Medientasten Pause und Weiter (30 s über `CarSafePlayer` auf `output.player`) wie bisher.
+- **Nachtrag (Controller, Tablet): erneutes Tippen auf den offenen Tab** führt zu seiner Wurzel (Material-Muster): ist
+  der getippte Tab der aktive – auch mit Einstellungen oder einem Titel darüber –, geht es zurück bis zu seiner Wurzel; an
+  der Wurzel passiert nichts (derselbe Eintrag, Zustand bleibt). Andere Tabs behalten ihre gespeicherten Seiten. Aktiv ist
+  die Tab-Wurzel über dem Start-Tab (ein Tabwechsel lässt nur die Start-Wurzel und höchstens eine weitere Tab-Wurzel auf
+  dem Stapel); `currentBackStack` darf die App nicht nutzen (Lint RestrictedApi), darum `getBackStackEntry` je Tab.
+  **Claudes Wahl:** kein Hochscrollen an der Wurzel (jede Seite hält ihren eigenen Listenzustand – nicht billig); mit zwei
+  Bereichen (Tablet) bleibt die Detailseite rechts in der Bibliothek beim erneuten Tippen stehen (sie liegt nicht auf dem
+  äußeren Stapel). Tests: `TabReselectTest` (5).
+- What's new 0.4.0: zwei Zeilen (Kapitelsuche, erneutes Tippen auf den Tab), DE + EN.
+
+### Was Phase 7 noch braucht
+
+- **Profilwechsel (12.1):**
+  - Oberfläche: Profilmenü (aktives Konto + `saved`), „Profil hinzufügen“ → Anmeldung, die `addProfile` statt
+    `save`/`switchTo` ruft; „Profil entfernen“ für ein gespeichertes Konto (Server-Logout mit seinem Refresh-Token, Purge
+    seiner Daten, `forget`) – dafür fehlt noch ein Abmeldeweg für ein *nicht aktives* Konto.
+  - Abmelden des aktiven Kontos, wenn weitere gespeichert sind: auf eines wechseln statt zur Anmeldung (heute:
+    Anmeldeseite, die gespeicherten bleiben erhalten).
+  - Sync gespeicherter Konten: Worker und `ApiProvider` arbeiten nur mit dem aktiven Konto; ungesyncte Änderungen eines
+    beiseitegelegten Kontos bleiben in Room, bis es wieder aktiv ist. Vor dem Wechsel `check()` (Push) aufrufen oder je
+    Konto syncen.
+  - Pausierte Downloads nach dem Zurückwechseln fortsetzen (heute pausiert wie bei „Behalten“); Downloads gespeicherter
+    Konten in der Speicheranzeige der Downloads-Seite zeigen.
+  - Zustand, der heute beim Wechsel gelöscht wird, je Konto speichern: RMAB-Verbindung, letzte Suchen.
+  - Schutz vor dem Wechsel in ein Erwachsenenprofil (PIN/Gerätesperre) auf Kinder-Tablets – Entscheidung Fabian.
+- **Cast (12.2):**
+  - `media3-cast` (Version wie Media3) + Cast-Framework, `CastOptionsProvider`, Cast-Knopf (`MediaRouteButton`, Compose-
+    Variante in media3-cast) oder System-Ausgabeumschalter; `CastPlayer.Builder(context).setLocalPlayer(exo)` als
+    `PlaybackOutput.player`.
+  - `MediaItemFactory`: Empfänger brauchen erreichbare URLs – Server-Stream mit Token im Query, keine `file://`-Downloads,
+    keine Gerätetitel (CastPlayer überträgt nicht abspielbare Items nicht); der Empfänger muss die Serveradresse erreichen
+    (öffentliche Adresse, keine Cleartext-Ausnahmen).
+  - `PlaybackComfort` teilen: Titel-Teile (Tempo je Titel, Rückspulen nach Pause, letzte Aktivität) auf `output.player`,
+    Effekte und Stille überspringen auf `output.device`; der Sleep-Fade an die Lautstärke des Empfängers statt an
+    `exo.volume`.
+  - `PlayerUiState`/Player: die Ausgabe zeigen (`isLocal`, Gerätename), z. B. im Quellen-Hinweis.
