@@ -5,6 +5,8 @@ import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -47,7 +49,7 @@ class AccountBoundClientTest {
                 if (request.path == "/auth/refresh") { refreshes++; return MockResponse().setResponseCode(401) }
                 val auth = request.getHeader("Authorization")
                 seen += auth
-                return if (auth != null) MockResponse().setBody("{}") else MockResponse().setResponseCode(401)
+                return if (auth != null) MockResponse().setBody("""{"libraries":[]}""") else MockResponse().setResponseCode(401)
             }
         }
         x.dispatcher = answer(seenX)
@@ -107,5 +109,55 @@ class AccountBoundClientTest {
         // Y is not one of A's addresses: a client for it (a stale state of another server) sends nothing.
         assertTrue(runCatching { get(api.clientFor(y.url("/")), y) }.exceptionOrNull() is AccountChangedException)
         assertEquals(0, y.requestCount)
+    }
+
+    // Fix round 2, N6/N5: the address switching the app lives on, and the Retrofit path.
+
+    /** Fabian at home (X, local) and on the way (Y, public): one account, two addresses. */
+    private val both = Account(
+        "dddddddddddddddd", "u4", "fabian", false, ServerAddresses(x.url("/"), y.url("/")),
+        setOf("http://${x.hostName}:${x.port}", "http://${y.hostName}:${y.port}"),
+    )
+
+    @Test fun anAccountWithALocalAndAPublicAddress_getsItsTokenOnBoth_whicheverIsUsed() {
+        runBlocking { store.save(both, "a-access", "a-refresh") }
+        get(api.clientFor(x.url("/")), x).close()
+        get(api.clientFor(y.url("/")), y).close() // the address changes (left the home Wi-Fi) …
+        get(api.clientFor(x.url("/")), x).close() // … and back
+        assertEquals(listOf<String?>("Bearer a-access", "Bearer a-access"), seenX)
+        assertEquals(listOf<String?>("Bearer a-access"), seenY)
+    }
+
+    @Test fun unauthorizedOnBothAddresses_refreshesOnce_andBothUseTheNewToken() {
+        runBlocking { store.save(both, "a-access", "a-refresh") }
+        val refreshCalls = java.util.concurrent.atomic.AtomicInteger()
+        val seen = CopyOnWriteArrayList<String?>()
+        val answer = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path == "/auth/refresh") {
+                    refreshCalls.incrementAndGet()
+                    return MockResponse().setBodyDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .setBody("""{"user":{"id":"u4","username":"fabian","type":"user","accessToken":"new-access","refreshToken":"new-refresh"}}""")
+                }
+                seen += request.getHeader("Authorization")
+                return if (request.getHeader("Authorization") == "Bearer new-access") MockResponse().setBody("{}") else MockResponse().setResponseCode(401)
+            }
+        }
+        x.dispatcher = answer
+        y.dispatcher = answer
+        val codes = CopyOnWriteArrayList<Int>()
+        val threads = listOf(x, y).map { server -> Thread { get(api.clientFor(server.url("/")), server).use { codes += it.code } } }
+        threads.forEach { it.start() }
+        threads.forEach { it.join(10_000) }
+        assertEquals(listOf(200, 200), codes.toList())
+        assertEquals("one refresh for the account, not one per address", 1, refreshCalls.get())
+        assertEquals("new-access", store.access)
+        assertFalse(store.reauth.value)
+    }
+
+    @Test fun theRetrofitApis_carryTheAccountsToken() = runBlocking {
+        val libraries = api.libraryApi.filterNotNull().first()
+        libraries.libraries()
+        assertEquals(listOf<String?>("Bearer a-access"), seenX)
     }
 }

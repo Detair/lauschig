@@ -19,7 +19,8 @@ import retrofit2.HttpException
  *
  * - Refresh rejected (401/403): [AccountStore.markNeedsReauth]; account and data stay untouched.
  * - Network error during refresh: nothing is flagged, the 401 just propagates.
- * - Concurrent 401s are serialized; later ones reuse the token the first one obtained.
+ * - Concurrent 401s are serialized – per account, across its addresses ([lock]); later ones reuse the token the first one
+ *   obtained.
  * - Only for the account the client was made for ([madeFor], see [AuthInterceptor]), while it is the signed-in one and
  *   [baseUrl] is one of its addresses: after a switch nothing is retried or refreshed (and nobody is flagged), and no
  *   refresh token goes to another account's server. A refresh that was already running stores its tokens with its own
@@ -33,12 +34,16 @@ class TokenAuthenticator(
     refreshClient: OkHttpClient,
     private val baseUrl: HttpUrl,
     private val madeFor: String?,
+    /**
+     * Serialises refreshes; shared by all clients of one account (its local and its public address), so two 401s on
+     * different addresses never refresh twice with the same refresh token.
+     */
+    private val lock: Any = Any(),
 ) : Authenticator {
     private val authApi = AbsClientFactory.retrofit(
         baseUrl,
         refreshClient.newBuilder().followRedirects(false).followSslRedirects(false).build(),
     ).create(AuthApi::class.java)
-    private val lock = Any()
 
     override fun authenticate(route: Route?, response: Response): Request? {
         if (response.priorResponse != null) return null // already retried once

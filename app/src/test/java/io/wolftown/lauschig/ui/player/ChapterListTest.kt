@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import org.junit.Assert.assertEquals
@@ -144,9 +145,12 @@ class ChapterListTest {
     // Fix round 1, E4: punctuation alone is no search – no numbers, no jump away from the playing chapter.
     @Test fun punctuationAlone_isNoSearch() {
         show()
-        rule.onNodeWithTag("chapterSearch").performTextInput("?")
+        search("12") // the words are ready: a "?" would now be filtered if it counted
+        rule.onNodeWithTag("chapterNumber", useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag("chapterSearch").performTextReplacement("?")
         rule.waitForIdle()
         rule.onNodeWithTag("chapterNumber", useUnmergedTree = true).assertDoesNotExist()
-        rule.onNodeWithTag("currentChapter").assertExists()
+        rule.onNodeWithTag("chapterSearchHits", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("currentChapter").assertExists() // back at the playing chapter
     }
 }

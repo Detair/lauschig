@@ -43,6 +43,8 @@ class ApiProvider(
     /** Per (account, base URL): a client belongs to the account signed in when it was built ([AuthInterceptor]). */
     private val cache = HashMap<Pair<String?, HttpUrl>, Retrofit>()
     private val clients = HashMap<Pair<String?, HttpUrl>, OkHttpClient>()
+    /** One refresh lock per account, shared by its clients for the local and the public address. */
+    private val refreshLocks = HashMap<String?, Any>()
 
     // Shared so that several API flows do not each run their own probe loop. When nobody has listened for 5 s the
     // value falls back to Offline: a process kept alive at home must not hand an old Online(LOCAL) to the next
@@ -94,7 +96,7 @@ class ApiProvider(
     private fun clientFor(serverId: String?, baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(serverId to baseUrl) {
         okHttp.newBuilder()
             .addInterceptor(AuthInterceptor(store, baseUrl, serverId))
-            .authenticator(TokenAuthenticator(store, okHttp, baseUrl, serverId))
+            .authenticator(TokenAuthenticator(store, okHttp, baseUrl, serverId, refreshLocks.getOrPut(serverId) { Any() }))
             .build()
     }
 
