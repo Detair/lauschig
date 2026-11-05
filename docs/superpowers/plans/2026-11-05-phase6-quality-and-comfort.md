@@ -303,9 +303,14 @@ Paket „Player & Klang“ (Branch `p6-player`), zusammen mit Task 3, 8, 11.1 un
 - **Claudes Wahl Werte:** ein Band über das ganze Spektrum, Schwelle −24 dB, 3:1, Knie 8 dB, Attack 15 ms, Release 200 ms,
   +6 dB Make-up für leise Stimmen, Limiter bei −3 dB (10:1, 1/50 ms). Variante `VARIANT_FAVOR_FREQUENCY_RESOLUTION`: der
   Emulator lehnt die Zeitauflösungs-Variante ab („bad parameter value“).
-- **Claudes Wahl ohne Klicken:** das Umschalten bei laufender Wiedergabe geht über `QuietSwitch` – 60 ms Ausblenden der
-  Player-Lautstärke, Effekt in der Stille einsetzen/entfernen, 40 ms setzen lassen, zurück auf die vorige Lautstärke.
-  Pausiert wird direkt geschaltet.
+- **Claudes Wahl ohne Klicken:** das Umschalten bei laufender (oder puffernder) Wiedergabe geht über `QuietSwitch` – 60 ms
+  Ausblenden, Effekt in der Stille einsetzen/entfernen, 40 ms setzen lassen, wieder einblenden. Pausiert wird direkt
+  geschaltet. **Fix-Runde 1:** die Lautstärke hat genau einen Besitzer, `PlayerVolume` = gewünschte Lautstärke der
+  Controller (das Ausblenden des Sleep-Timers, über `CarSafePlayer.setVolume`) × eigener Faktor des Umschaltens. Der
+  Kompressor-Wechsel blendet nur seinen Faktor, schreibt nie eine alte absolute Lautstärke zurück – ein Wechsel während des
+  Sleep-Fades (oder ein Fade während des Wechsels) endet immer bei der Lautstärke des Timers.
+- Ein Effekt, der sich nicht einschalten lässt, wird freigegeben (`AudioCompressor` hält ihn vor dem Einschalten,
+  `NightCompressor.create` gibt die `DynamicsProcessing` bei einem Fehler frei).
 - Global (wie „Stille überspringen“), Schalter im Klang-Blatt „Sprachfokus & Nacht-Kompression“; die Klang-Kachel zeigt
   „Nacht“.
 
@@ -316,6 +321,11 @@ Paket „Player & Klang“ (Branch `p6-player`), zusammen mit Task 3, 8, 11.1 un
   (der Platz der alten Mittelzeile ist frei); Buchzeit, nicht durch das Tempo geteilt (wie der Schieberegler). Beide Werte
   folgen dem Daumen beim Ziehen. Fingertipp schaltet um, gespeichert in `UiSettings` (`player_remaining_time`, Standard
   Kapitel). TalkBack: „Kapitel: noch 14 Minuten“, Aktion „Restzeit des Buchs zeigen“.
+- **Fix-Runde 1:** ohne Kapitel (keins, oder eins über das ganze Buch, z. B. ein Hörspiel in einer Datei) zeigt rechts die
+  Restzeit des Buchs ohne Wort und ohne Umschalten (kein Klick, TalkBack „Noch 51 Minuten“). Die Restzeit wird auf die
+  Sekunde aufgerundet, die abgelaufene Zeit abgerundet – beide ergeben zusammen die Länge (00:25 + −01:15 = 01:40). Nach dem
+  Loslassen des Reglers zeigen beide Zeiten das Ziel, bis der Sprung angekommen ist. **Claudes Wahl bleibt:** Buchzeit,
+  nicht durch das Tempo geteilt – wie überall in der App (Fortschritt, „noch x min“, Verlauf).
 
 ## Umsetzung Task 11.6 (2026-11-05)
 
