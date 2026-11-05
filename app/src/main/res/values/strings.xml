@@ -734,6 +734,14 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>
+        <item>Player: speed, sleep and sound as three equal tiles; chapters, queue, bookmarks and history in one sheet</item>
+        <item>Sleep timer: a soft hint tone 30 seconds before the end – time to shake (can be turned off)</item>
+        <item>Sound: “Speech focus &amp; night compression” turns loud passages down and quiet voices up</item>
+        <item>Two times at the progress bar: elapsed on the left, time left on the right – tap to switch between chapter and book</item>
+        <item>Swipe the mini player up to open the player</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
         <item>A small card on Start shows how much you listened this week</item>

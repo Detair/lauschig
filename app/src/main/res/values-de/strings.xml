@@ -734,6 +734,14 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Sprungzeiten einstellbar: zurück 5–30 s, vor 15–60 s – im Player, in der Benachrichtigung, im Auto und am Kopfhörer</item>
+        <item>Player: Tempo, Sleep und Klang als drei gleiche Kacheln; Kapitel, Warteschlange, Lesezeichen und Verlauf in einem Blatt</item>
+        <item>Sleep-Timer: ein leiser Hinweiston 30 Sekunden vor dem Ende – Zeit zum Schütteln (abschaltbar)</item>
+        <item>Klang: „Sprachfokus &amp; Nacht-Kompression“ dämpft laute Stellen und hebt leise Stimmen an</item>
+        <item>Zwei Zeiten am Fortschrittsbalken: abgelaufen links, Restzeit rechts – Antippen wechselt zwischen Kapitel und Buch</item>
+        <item>Mini-Player nach oben wischen öffnet den Player</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
         <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
