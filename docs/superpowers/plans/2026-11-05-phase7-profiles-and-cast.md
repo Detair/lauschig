@@ -143,3 +143,96 @@ Festgelegt ist bisher:
 2. Gesamtreview von 7A, Gerätedurchlauf mit zwei Benutzern auf dem lokalen Test-Server, PR, CI, Merge.
 3. Task 4 präzisieren, Branch `p7-cast`, Umsetzung, Review, Test nach OK, PR, CI, Merge.
 4. Prüfung: `timeout 1500 ./gradlew testDebugUnitTest :abs-api:test :core:model:test lintDebug assembleDebug -q`.
+
+---
+
+## Umsetzung Task 1 (2026-11-05)
+
+Branch `p7-profiles`, ohne Oberfläche: `ProfileSwitch` bleibt nur aus Tests erreichbar, keine neuen Texte, kein Versionssprung.
+Keine Schemaänderung (eine neue DAO-Abfrage `activeKeys`, Room bleibt v11).
+
+- **1.1 Zustand je Konto.** `AccountStateCleaner` hat drei Wege: `clear(serverId)` (Abmelden, nur dieses Konto), `setAside(serverId)`
+  (Wechsel: RMAB, letzte Suchen und Cover auf der Platte bleiben; SSO-Versuch, Download-Frage, Aufräum-Benachrichtigung,
+  Diagnose-Log und Cover im RAM gehen) und `forget(serverId)` (gespeichertes Profil wird entfernt: nur seine Verbindung und Suchen).
+  `RmabRepository` und `RecentSearches` speichern unter `<schlüssel>:<serverId>` und folgen dem aktiven Konto. Was parallel läuft,
+  endet für das Konto, das es begonnen hat (ein `connect` über den Wechsel hinweg speichert beim alten Konto; der Status-Cache gilt je Konto).
+  Migration wie bei `migrateAutoDelete`: `migrate(aktives Konto)` bei jedem Start; abgemeldet haben die alten Werte keinen Besitzer und
+  gehen. `clear` und `setAside` rufen sie vorher selbst auf: Das verlassene Konto ist in dem Moment das rechtmäßige.
+  **Geprüft:** Der Schlüssel im Cover-Cache ist die URL aus `coverModel` (`…/api/items/<id>/cover?ts=<n>`), das Token steht nur im Header. Test.
+- **1.2 Zuletzt gespielt je Konto.** `LastPlayedStore`: `get(serverId)`, `set`, `forget(serverId)`, dazu `forAccount(serverId)`. Die
+  alten drei Schlüssel wandern per `DataMigration` zum Eintrag ihrer eigenen Server-ID, vor dem ersten Lesen. `PlayerController.showPaused`
+  zeigt den Titel pausiert an seiner Position, ohne den Player anzufassen.
+  - **Claudes Wahl – Gerätetitel:** bleibt ein Eintrag für das ganze Gerät (wie der Plan sagt: „Server-Titel je Konto“). `forAccount`
+    nimmt den neueren von eigenem Server-Titel und Gerätetitel, also das Verhalten von heute für ein Konto.
+  - **Claudes Wahl – Mini-Player:** nur der eigene Server-Titel, und nur wenn er der neueste ist. Ein Gerätetitel, den A zuletzt gehört
+    hat, erscheint bei B nicht („B startet still“); Medientaste und Auto finden ihn weiterhin.
+  - **Claudes Wahl – kein Laden in den Player:** `showPaused` ist der Zustand wie nach einem beendeten Dienst. Laden hieße puffern
+    und eine Benachrichtigung. Nach einem Kaltstart gibt es wie heute keinen Mini-Player.
+- **1.3 Vor dem Wechsel sichern.** `saveBeforeLeaving`: pausieren, dann Änderungen hochladen, höchstens `SWITCH_PUSH_TIMEOUT_MS` (5 s), auch der
+  Verbindungs-Check zählt mit. Offline, Zeitablauf oder Fehler: Es wird gewechselt, die Änderungen bleiben in Room.
+- **1.4 Nach dem Wechsel.** `arrive`: Downloads, Mini-Player, `syncNow`. `SwitchedDownloads` merkt je Konto im DataStore, was der Wechsel
+  pausiert hat; weiter läuft nur, was noch `PAUSED` ist.
+  - **Claudes Wahl – WLAN:** `enqueue` ohne Netz-Vorgabe, die Einstellung gilt. Ein früheres „jetzt über Mobilfunk“ überlebt den Wechsel nicht.
+  - **Claudes Wahl – Fehlschläge:** Lässt sich das Ziel nicht aktivieren, bleibt das bisherige Konto und läuft weiter wie nach einem
+    Zurückwechseln (`switchProfile` = false, `addProfile` wirft). Prozess-Tod mitten im Wechsel: `LauschigApp` setzt beim Start fort.
+    Ein gespeichertes Konto, das sich neu anmeldet (`signIn`, `switchTo`), bekommt seine Downloads auch zurück. Abmelden und Entfernen vergessen den Merker.
+- **1.5 Clients und Syncs.** `ApiProvider.meApi(serverId)`, `libraryApi(serverId)`, `adminApi(serverId)`: `null`, solange dieses Konto nicht
+  angemeldet ist; die Felder ohne Konto sind weg (außer `authApi`). `retrofit` kombiniert Verbindung und Konto-ID. `clientFor(serverId, baseUrl)`
+  ist öffentlich. Umgestellt: `ProgressSync`, `BookmarkSync`, `LibrarySync`, `CollectionSync`, `ListeningSessionSync`, `HistoryRepository`,
+  `ProgressActions`, `AuthorInfoCache`, `AdminRepository`, `DownloadWorker`, Stream (`PlaybackService`), Auto-Cover.
+  **Der Fehler war echt:** Vor der Änderung schickte `ProgressSync.sync(A)` nach dem Wechsel `PATCH /api/me/progress/a-book` mit B's Token.
+  - **Claudes Wahl – später Download-Worker:** Er sendet nichts, setzt die Zeile auf `PAUSED`, trägt sie in den Merker ein und endet
+    erfolgreich (kein Retry, kein Fehlversuch). Genauso, wenn der Wechsel mitten im Download kommt (`AccountChangedException`).
+  - **Claudes Wahl – `clientFor(baseUrl)` bleibt für Cover der sichtbaren Seite.** Geprüft gegen den lokalen ABS: Die Cover-Route antwortet
+    ohne Token mit 200, `/api/items/<id>` mit 401. Es geht dabei also nichts Vertrauliches über das Konto hinaus; Task 2 baut die Seiten beim Wechsel ab.
+- **1.6 Abmelden auf anderem Server.** `ServerLogout.logoutProfile`: aktuelle Verbindung, wenn sie auf dem Server des Profils ist, sonst
+  `AddressResolver.resolveElsewhere` (schreibt nicht ins Protokoll des Verbindungsfensters), alles innerhalb des Zeitlimits. `logout` fürs Abmelden bleibt
+  unverändert, ohne Probe. Scheitert das, läuft die Entfernung durch.
+  - **Claudes Wahl – eigener Client:** `unauthenticatedClient(account)` erlaubt `http://` nur zu den für dieses Konto bestätigten Servern. Der Wächter
+    des angemeldeten Kontos bleibt, wie er war. Der erste Versuch (Wächter um gespeicherte Konten erweitern) scheiterte im `ProfileSwitchFlowTest`:
+    `forget` läuft vor dem Logout, das Konto steht dann nicht mehr in der Liste.
+
+### 1.7 Durchsicht der Singletons
+
+| Klasse | Befund |
+|---|---|
+| `PlaybackService` | **Geändert:** Stream über den Client des Kontos, das die Verbindung gesehen hat. `lastOnline` wird beim Kontowechsel schon heute verworfen. |
+| `watchLibrary` / Android Auto | **Geändert:** nach `carLibraryChanges` ausgelagert, Test. Das Verhalten war schon richtig: `notifyChildrenChanged` kommt nach dem Wechsel, auch bei gleich aussehenden Listen. |
+| `CarLibrary`, `CarSearch`, `CarStarts`, `LibraryCallback` | Nichts zu tun: kein Cache, der Kontext wird je Aufruf gelesen; fremde Ordner-IDs liefern für B keine Zeilen. |
+| Widget (`WidgetAccountWatcher`) | **Geändert:** zeichnet bei jedem Kontowechsel neu, auch wenn nichts gespeichert ist; sonst fehlte der letzte Titel nach dem Zurückwechseln. |
+| `WidgetSource`, `WidgetStore`, `WidgetPublisher`, `WidgetCoverCache` | Nichts zu tun: Schlüssel je Server; ein Titel, den der Publisher spät schreibt, wird beim fremden Konto ausgeblendet (`forDisplay`). |
+| `SpeedMemory`, `PlaybackComfort` | Nichts zu tun: Schlüssel je Titel mit Server-ID, späte Speicherungen gehen auf den eigenen Schlüssel. |
+| `AutoResume` (`LastTitleStarter`, `AutoResumer`) | **Geändert:** liest `forAccount`. Der Rest fragt je Aufruf das aktive Konto. |
+| `CoverStore` / `AutoModule` | **Geändert:** Abruf über `clientFor(serverId, …)`, kein Rennen mehr zwischen Prüfung und Client. Cache und Fehlversuche je Server. |
+| `NextVolumePrefetcher` | **Geändert:** Prüft nach dem Lesen des Kontos, ob der Titel noch im Player ist; vorher bekam B den nächsten Band (Test). Ein angezeigter Titel über 80 % kann den nächsten Band auslösen, das ist die normale Regel. |
+| Erfolge, Statistik (`AchievementNoticeViewModel`, `AchievementSeenDao`, `ListeningDataSource`, `ListeningSessionSync`) | Nichts zu tun außer der API je Konto: alles nach Server-ID, `flatMapLatest` und Stempel je Konto. |
+| `PlayerControllerImpl` | **Geändert:** `showPaused`, und `play` startet keinen Server-Titel eines anderen Kontos (Seite, die den Wechsel überlebt hat). |
+| `DownloadPrompts` / `AppViewModel` | **Geändert:** Die Frage wird nur ihrem Konto gestellt, auch wenn sie nach dem Wechsel eintrifft. |
+| `FinishedQuestions` | **Geändert** (ViewModel): Die Frage „Download löschen?“ von A erscheint nicht bei B; sie wartet auf A. |
+| `PositionJumpBus` | **Geändert:** Sprünge eines Syncs, der nach dem Wechsel endet, werden verworfen; offene gehen mit dem Konto. |
+| `ConnectionLog` | **Geändert:** wird beim Verlassen geleert, sonst stünden A's Adressen in B's Fenster (auch beim Abmelden, kleine Verbesserung). |
+| `DiagnosticSecrets` | **Geändert:** Hosts und Namen gespeicherter Konten bleiben maskiert. RMAB nur des aktiven Kontos; das Log wird beim Wechsel ohnehin geleert. |
+| `RmabRepository`, `RecentSearches`, `LastPlayedStore` | **Geändert:** siehe 1.1, 1.2. `RmabViewModel` fragt bei einer anderen Verbindung neu. |
+| `AuthorInfoCache` | **Geändert:** API je Konto. Schlüssel hatten die Server-ID schon. |
+| `ProgressActions`, `ListeningSessionSync` | **Geändert:** API je Konto. |
+| `SleepTimer`, `StreamMonitor`, `TitleHandover` | Nichts zu tun: Stop beendet den Timer, der Monitor geht auf inaktiv; `TitleHandover` schützt nur (ein Schlüssel zu viel löscht nichts). |
+| `FinishedDownloadCleaner`, `FinishedSeenStore`, `AutoDeleteAccountState`, `KeptAccounts`, `KeptDownloadSizes`, `AccountDataJanitor`, `VolumePurges`, `SyncStamps`, `ExternalSeriesRepository` | Nichts zu tun: alles je Server; gespeicherte Konten gelten als angemeldet. |
+| `DataStoreAccountStore`, `AuthInterceptor`, `TokenAuthenticator`, `OidcLogin`, `MediaControllerFacade`, `SyncScheduler`, `VoicePlayer`, `DeviceInfoProvider`, `OkHttpReachabilityProbe`, `AudibleCatalog`, `LocalFolders`, `SafDocumentTree`, `DownloadRoots`, `StorageVolumes`, `AndroidNetworkInfo`, `DefaultDownloadManager`, `PlayDownloadStarter` | Nichts zu tun: bereits gebunden, je Aufruf oder ohne Konto. |
+| `AppSettings`, `DownloadSettings`, `PlaybackSettings`, `UiSettings`, `FilterPreferences`, `DiscoverPreferences` | **Claudes Wahl: bleiben Geräte-Einstellungen**, außer dem, was schon je Server ist (Aufräumen, Merker). Ändern wäre eine eigene Entscheidung. |
+
+**Tests:** 106 neue. `ProfileSwitchFlowTest` (8), `AccountBoundSyncTest` (17, je Sync-Klasse und Worker), `SignOutTest` (+13), `RmabRepositoryTest` (+9),
+`RecentSearchesTest` (7), `ServerLogoutTest` (+7), `SwitchedDownloadsTest` (6), `PlayerControllerTest` (+7), `AccountStateCleanerTest` (+7), `LastPlayedStoreTest` (5), weitere
+in den Tests der jeweiligen Klassen. Alle Verhaltenstests sind vorher rot gelaufen; Ausnahme ist `CarLibraryChangesTest`, der vorhandenes Verhalten festhält. Der Flow-Test
+selbst lässt sich auf dem alten Stand nicht kompilieren, darum mit vier Mutationen geprüft (API nicht gebunden, Wechsel löscht wie Abmelden, kein Sichern, kein Fortsetzen): jede macht ihn rot.
+
+**Emulator 5554:** Update über die installierte 0.4.0: installiert, startet, Konto bleibt. Suche „Der“ steht weiter unter „Letzte Suchen“ (Schlüssel `queries:<id>`), der letzte Titel ist
+umgezogen (`item_id:<id>`), und die Medientaste startet ihn nach `force-stop`. Das RMAB-Update nur per Test, weil dort keine Verbindung eingerichtet war. **Nicht geprüft:** Streamen über die
+neuen Clients. Die Sitzung auf dem Emulator war schon vor dieser Arbeit abgelaufen („Session expired“, seit 16:17), gespielt wurde daher ein Download; neu angemeldet habe ich nicht.
+
+### Was Task 2 wissen muss
+
+- `AppNavHost` speichert Tab-Stapel (`saveState`/`restoreState`, Zeile 244–246): Beim Wechsel dürfen sie nicht wiederhergestellt werden, sonst leben A's ViewModels bei B weiter. Am einfachsten: `NavHost` nach `serverId` schlüsseln.
+- Liest das Konto nur einmal und überlebt den Wechsel also nicht richtig: `YearReviewViewModel.builds()`, `SetupViewModel` (Zeile 85).
+- `showPaused`: Der Player hat nichts geladen. Spulen und Kapitelsprung tun nichts, bis Play gedrückt wird; das gilt heute schon nach einem beendeten Dienst. Der Mini-Player erscheint kurz nach dem Wechsel (Room-Abfrage).
+- Ein Wechsel kann dauern: 5 s Sichern plus bis zu 5 s `work.cancel`. Die Anzeige „Wechsle zu …“ muss das aushalten.
+- `addProfile` wirft, wenn das neue Konto nicht gespeichert werden kann; `switchProfile` liefert `false`.
