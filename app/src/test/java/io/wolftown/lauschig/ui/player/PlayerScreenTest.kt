@@ -14,6 +14,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasText
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performSemanticsAction
 import io.wolftown.lauschig.ui.LauschigTheme
@@ -111,6 +114,25 @@ class PlayerScreenTest {
         assertEquals(1, seeks.size)
         rule.onNodeWithTag("elapsed").assertTextEquals("01:20")
         rule.onNodeWithTag("remaining").assert(hasText("−00:20", substring = true))
+    }
+
+    // Review 11: while the thumb is dragged both timestamps follow it, and they still add up to the chapter's length.
+    @Test fun draggingTheSlider_timestampsFollowTheThumb() {
+        val seeks = mutableListOf<Float>()
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onSeekInChapter = { seeks += it }) } }
+        rule.onNodeWithTag("chapterSlider").performTouchInput {
+            down(Offset(width * 0.3f, centerY))
+            moveTo(Offset(width * 0.85f, centerY))
+        }
+        rule.waitForIdle()
+        fun clock(text: String) = text.trimStart('−').split(':').let { (m, sec) -> m.toInt() * 60 + sec.toInt() }
+        val elapsed = rule.onNodeWithTag("elapsed").fetchSemanticsNode().config[SemanticsProperties.Text].single().text
+        val remaining = rule.onNodeWithTag("remaining").fetchSemanticsNode().config[SemanticsProperties.Text].map { it.text }.single { it.startsWith("−") }
+        assertTrue("elapsed did not follow the thumb: $elapsed", clock(elapsed) > 60)
+        assertEquals(100, clock(elapsed) + clock(remaining))
+        assertTrue("seeked before the release", seeks.isEmpty())
+        rule.onNodeWithTag("chapterSlider").performTouchInput { up() }
+        assertEquals(1, seeks.size)
     }
 
     @Test fun remaining_tapToggles() {
