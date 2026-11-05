@@ -747,6 +747,9 @@
         <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
         <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
         <item>Statistics: tap or swipe across the bars to see date and listening time; with TalkBack every bar says its value</item>
+        <item>Downloads can go to the SD card (Settings → Storage location); while it is out they go to the internal storage</item>
+        <item>Heard downloads can delete themselves – right away, after 3 or after 7 days; progress and history stay</item>
+        <item>Settings → About → Share diagnostic log: helps to find problems, without passwords, tokens or server addresses</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>

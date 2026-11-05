@@ -330,3 +330,74 @@ Paket „Darstellung“ (Branch `p6-look`); 11.1 und 11.6 gehören zu anderen Pa
 - **Fix-Runde 2:** Das Diagramm übernimmt einen Wisch nur, wenn er flacher als steil ist (sonst scrollt die Seite),
   und das Abfahren beginnt beim berührten Balken. Die Frage „Download abbrechen?“ gilt nur, solange der Download
   wartet: läuft, endet oder verschwindet er, schließt sie sich, und ein spätes Bestätigen bricht nichts mehr ab.
+
+## Umsetzung Task 4 (2026-11-05)
+
+Paket „Downloads & Support“ (Branch `p6-downloads`). Keine Schemaänderung (DB bleibt v10; v11 nicht belegt).
+
+- `StorageVolumes` liest `ContextCompat.getExternalFilesDirs`: interner Speicher immer, dazu jedes eingehängte andere
+  Volume (SD-Karte = entfernbar, sonst „Externer Speicher“; Name vom System, z. B. „SanDisk SD-Karte“). Der primäre
+  „externe“ Speicher ist emuliert (derselbe Flash) und wird übersprungen. Nur-lesbare Karten werden gelistet
+  (Abspielen geht), aber nicht als Ziel angeboten. Die Liste ist 10 s gecacht.
+- `DownloadSettings.storagePath` speichert das App-Verzeichnis des Volumes (null = intern). `VolumeDownloadRoots`
+  macht daraus das Ziel – nur solange die Karte eingehängt und beschreibbar ist, sonst intern. Jede externe Wurzel
+  bekommt eine `.nomedia` (Musik-Apps unter Android 9/10 sollen die Hörbücher nicht listen).
+- `DownloadFiles` kennt mehrere Wurzeln: Ein Titel bleibt dort, wo sein Ordner liegt; nur ein Titel ohne Ordner geht
+  an das Ziel. Liegt ein Titel auf zwei Volumes, gewinnt der interne Ordner. Größe beim Abmelden, Purge, Janitor,
+  `deleteItem` und `cleanupOrphans` decken jedes eingehängte Volume ab. Der Worker wartet beim Kaltstart auf die
+  gelesene Einstellung (`awaitLocation`).
+- **Claudes Wahl – bestehende Downloads beim Wechsel:** Sie bleiben, wo sie sind (kein Verschieben); die
+  `localPath`-Einträge sind absolut, also spielen und löschen sie sich weiter wie bisher. Der Dialog sagt das.
+  Verschieben (GBs kopieren mit Fortschritt, Abbruch, Platzprüfung) wäre ein eigenes Feature.
+- **Claudes Wahl – Karte fehlt:** Statt Toast ein bleibender Hinweis in den Einstellungen („SD-Karte nicht gefunden –
+  neue Downloads landen vorerst im internen Speicher“) und auf der Download-Seite; die Wahl bleibt bestehen, mit der
+  Karte gehen neue Downloads wieder dorthin. Ein Toast aus einem Hintergrund-Worker würde übersehen.
+- **Claudes Wahl – Janitor:** Er räumt jetzt auch innerhalb der Konten auf (angemeldetes und behaltene Konten, nie
+  ein offener Purge): Titelordner ohne Download-Zeile (gelöscht, während die Karte draußen war) und alte Kopien auf
+  einem zweiten Volume bei fertigen Downloads (`DownloadTidy`). Laufende/pausierte Downloads werden nie angefasst.
+  Was beim Abmelden auf einer fehlenden Karte liegt, löscht der Janitor beim ersten Start mit eingelegter Karte.
+- UI: Zeile „Speicherort“ unter „Downloads verwalten“ (Ort + freier Platz); Antippen öffnet die Auswahl, wenn es
+  mehr als ein Volume gibt oder die gewählte Karte fehlt. Der Hinweis nennt auch, dass Dateien auf einer SD-Karte in
+  einem anderen Gerät lesbar sind.
+- Grenze: Ein fertiger Download auf einer gerade fehlenden Karte zählt weiter als „heruntergeladen“; abgespielt wird
+  er dann gestreamt (online), löschen geht.
+
+## Umsetzung Task 5 (2026-11-05)
+
+- **Claudes Wahl – Allowlist statt Logcat:** Kein Logcat-Mitschnitt. Jeder Log-Aufruf der App geht über
+  `diagnostics.Log` (gleiche Aufrufe wie `android.util.Log`, Logcat unverändert, `d` bleibt draußen); Bibliotheks-Logs
+  (ExoPlayer, OkHttp, WorkManager) kommen nie hinein. Ein Eintrag besteht aus festen Feldern: Zeit, Level, Tag,
+  maskierte Nachricht und bei Fehlern die Exception-Kette (Klassennamen, maskierte Meldungen, oberste Stackframes –
+  nur Code-Namen). Kopf der geteilten Datei: App-/Android-Version, Gerätemodell, online (Heimnetz/Internet)/offline,
+  Download-Ziel – kein Server, kein Benutzer, kein WLAN-Name.
+- `LogMasker` für Freitext: Authorization-/Cookie-/API-Key-Header, Bearer/Basic, JWTs, geheime Schlüssel=Wert-Paare
+  und JSON-Felder (token, password, username, email …), URLs (nur Schema und ABS-API-Pfadwörter bleiben, Abfrage immer
+  weg – auch Share-Slugs fallen), E-Mail, IPv4/IPv6, Hostnamen (Code- und Dateinamen ausgenommen), lange Schlüssel und
+  die eigenen Werte des Nutzers (`DiagnosticSecrets`: Server-Hosts und Benutzernamen des angemeldeten und behaltener
+  Konten, Heim-WLAN-Namen, ReadMeABook-Host und -Benutzer). Getestet mit realistischen Zeilen.
+- Ringpuffer 500 Einträge, schon maskiert gespeichert; **Claudes Wahl:** Er überlebt den Prozess (app-privat in
+  `no_backup/diagnostic-log.txt`, 2 s nach einem neuen Eintrag und sofort beim Absturz geschrieben, beim Start
+  zurückgelesen mit „--- app started ---“) – sonst wäre das Problem von heute Morgen am Abend weg. Bleibt beim
+  Abmelden (enthält nur Maskiertes; Probleme beim Abmelden sollen sichtbar bleiben).
+- Teilen: Einstellungen → Über → „Diagnose-Log teilen“ zeigt erst, was drin ist und was nie (mit Vorschau der neuesten
+  40 Einträge), dann `cache/diagnostics/lauschig-diagnose.txt` per `FileProvider` (nur dieses Verzeichnis) und
+  `ACTION_SEND text/plain` mit Lese-Grant; Lauschig selbst ist als Ziel ausgeschlossen (es nimmt geteilten Text an).
+- Die Playback-Dateien haben nur ihre Log-Import-Zeile geändert.
+
+## Umsetzung Task 6 (2026-11-05)
+
+- `AutoDeleteMode` (Nie Standard / Sofort / Nach 3 Tagen / Nach 7 Tagen) in `DownloadSettings`; Zeile „Gehörte
+  Downloads automatisch löschen“ bei den Download-Einstellungen.
+- `FinishedDownloadCleaner` löscht über `DownloadManager.cancel` (Dateien + Download-Zeile); Fortschritt, Sitzungen,
+  Hörverlauf und Lesezeichen bleiben (Test zählt alle Tabellen). In der App beobachtet er die fertigen Downloads und
+  handelt sofort bzw. wenn der nächste fällig wird; ein täglicher Worker deckt die Zeit ohne App ab. Folgen auch
+  Podcast-Episoden.
+- Maßstab ist `progress.lastUpdate`. **Claudes Wahl:** Ein Download zählt nur, wenn der Titel *nach* dem Hinzufügen
+  des Downloads beendet wurde – wer einen gehörten Titel zum Wiederhören lädt, verliert ihn nicht sofort wieder; er
+  geht erst, wenn er erneut beendet wird.
+- Nie gelöscht: Gerätetitel, der gerade spielende Titel (danach), Titel, die man beim Aufräumen behält.
+  **Claudes Wahl:** „Nicht mehr erinnern“ heißt jetzt „Behalten: keine Erinnerung, kein automatisches Löschen“ – für
+  Kinder-Lieblingshörspiele, die immer wieder laufen.
+- **Claudes Wahl:** Solange automatisch gelöscht wird, ruht die wöchentliche Aufräum-Erinnerung (Schalter
+  deaktiviert, mit Begründung). Bei „Sofort“ entfällt die Frage „Download löschen?“ nach „Als gehört markieren“ (der
+  Download ist gleich weg); bei 3/7 Tagen bleibt sie (jetzt löschen schafft jetzt Platz).

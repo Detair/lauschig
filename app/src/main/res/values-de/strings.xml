@@ -747,6 +747,9 @@
         <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
         <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
         <item>Statistik: Balken antippen oder darüberwischen zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
+        <item>Downloads auf die SD-Karte (Einstellungen → Speicherort); fehlt die Karte, landen sie im internen Speicher</item>
+        <item>Gehörte Downloads können sich selbst löschen – sofort, nach 3 oder nach 7 Tagen; Fortschritt und Hörverlauf bleiben</item>
+        <item>Einstellungen → Über → Diagnose-Log teilen: hilft bei der Fehlersuche, ohne Passwörter, Zugangsdaten und Serveradressen</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
