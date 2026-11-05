@@ -104,8 +104,14 @@
     <string name="detail_current_chapter_position">%1$s / %2$s</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
-    <string name="player_seek_back">Back %1$d seconds</string>
-    <string name="player_seek_forward">Forward %1$d seconds</string>
+    <plurals name="player_seek_back">
+        <item quantity="one">Back %d second</item>
+        <item quantity="other">Back %d seconds</item>
+    </plurals>
+    <plurals name="player_seek_forward">
+        <item quantity="one">Forward %d second</item>
+        <item quantity="other">Forward %d seconds</item>
+    </plurals>
     <string name="player_previous_chapter">Previous chapter</string>
     <string name="player_next_chapter">Next chapter</string>
     <string name="player_speed_button">Playback speed %1$s</string>
@@ -342,7 +348,6 @@
     <string name="collection_missing_titles">Some titles are not available on this device yet.</string>
     <string name="queue_add">Play next</string>
     <string name="queue_added">Added to the queue</string>
-    <string name="queue_title">Queue</string>
     <string name="queue_empty">Nothing queued. Add titles with “Play next”.</string>
     <string name="queue_hint">Starts automatically when the current title ends.</string>
     <string name="queue_move_up">Move up</string>
@@ -472,8 +477,14 @@
     <string name="car_duration_h_min">%1$d h %2$d min</string>
     <string name="car_duration_min">%1$d min</string>
     <string name="car_volume">Volume %1$s</string>
-    <string name="car_seek_back">Back %1$d seconds</string>
-    <string name="car_seek_forward">Forward %1$d seconds</string>
+    <plurals name="car_seek_back">
+        <item quantity="one">Back %d second</item>
+        <item quantity="other">Back %d seconds</item>
+    </plurals>
+    <plurals name="car_seek_forward">
+        <item quantity="one">Forward %d second</item>
+        <item quantity="other">Forward %d seconds</item>
+    </plurals>
     <string name="car_speed">Speed %1$s×</string>
     <string name="car_sleep_off">Sleep timer off</string>
     <string name="car_sleep_minutes">Sleep timer: %1$d min</string>

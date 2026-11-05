@@ -53,7 +53,7 @@ class CarButtons(private val res: Resources) {
     }
 
     private fun seekButton(sec: Int, forward: Boolean) = CommandButton.Builder(seekIcon(sec, forward))
-        .setDisplayName(res.getString(if (forward) R.string.car_seek_forward else R.string.car_seek_back, sec))
+        .setDisplayName(res.getQuantityString(if (forward) R.plurals.car_seek_forward else R.plurals.car_seek_back, sec, sec))
         .setSessionCommand(command(if (forward) SEEK_FORWARD else SEEK_BACK))
         .setSlots(if (forward) CommandButton.SLOT_FORWARD else CommandButton.SLOT_BACK)
         .build()

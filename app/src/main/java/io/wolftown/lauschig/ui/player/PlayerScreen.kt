@@ -371,7 +371,7 @@ fun PlayerScreen(
             IconButton(onClick = onPrevious, enabled = hasChapters, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.player_previous_chapter), Modifier.size(32.dp))
             }
-            val back = stringResource(R.string.player_seek_back, state.seekBackSec)
+            val back = pluralStringResource(R.plurals.player_seek_back, state.seekBackSec, state.seekBackSec)
             IconButton(onClick = { onSeekBy(-state.seekBackSec) }, modifier = Modifier.size(56.dp).semantics { contentDescription = back }) {
                 SeekIcon(state.seekBackSec, forward = false, size = 36.dp)
             }
@@ -386,7 +386,7 @@ fun PlayerScreen(
                     )
                 }
             }
-            val forward = stringResource(R.string.player_seek_forward, state.seekForwardSec)
+            val forward = pluralStringResource(R.plurals.player_seek_forward, state.seekForwardSec, state.seekForwardSec)
             IconButton(onClick = { onSeekBy(state.seekForwardSec) }, modifier = Modifier.size(56.dp).semantics { contentDescription = forward }) {
                 SeekIcon(state.seekForwardSec, forward = true, size = 36.dp)
             }
