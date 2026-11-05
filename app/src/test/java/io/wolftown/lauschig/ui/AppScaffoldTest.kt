@@ -1,14 +1,18 @@
 package io.wolftown.lauschig.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -52,6 +56,33 @@ private class FakePlayer(initial: PlayerUiState = PlayerUiState()) : PlayerContr
 @Config(sdk = [35])
 class AppScaffoldTest {
     @get:Rule val rule = createComposeRule()
+
+    @Test
+    fun turningBetweenBottomBarAndRail_keepsThePagesSavedState() {
+        // A phone turned to landscape gets the rail (and back): the activity is recreated, and the page's saved state
+        // (scroll positions, …) must find its place again in the other layout.
+        val tester = StateRestorationTester(rule)
+        var rail by mutableStateOf(false)
+        tester.setContent {
+            LauschigTheme {
+                AppScaffold(ONLINE, miniPlayer = {}, navigationRail = rail) {
+                    var count by rememberSaveable { mutableStateOf(0) }
+                    Text("count $count", Modifier.clickable { count++ })
+                }
+            }
+        }
+        rule.onNodeWithText("count 0").performClick()
+        rule.onNodeWithText("count 1").assertIsDisplayed()
+
+        rail = true
+        tester.emulateSavedInstanceStateRestore()
+        rule.onNodeWithText("count 1").assertIsDisplayed()
+
+        rule.onNodeWithText("count 1").performClick()
+        rail = false
+        tester.emulateSavedInstanceStateRestore()
+        rule.onNodeWithText("count 2").assertIsDisplayed()
+    }
 
     @Test
     fun bottomBar_hasFourItemsWithIconAndLabel() {
