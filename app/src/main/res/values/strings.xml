@@ -400,6 +400,14 @@
     <string name="player_contents_current">Now: ch. %1$d / %2$d</string>
     <string name="player_contents_no_chapters">Queue, bookmarks &amp; history</string>
     <string name="player_contents_chapters_empty">This title has no chapters.</string>
+    <string name="chapter_search_hint">Search chapters</string>
+    <string name="chapter_search_nothing">No chapter for “%s”</string>
+    <string name="chapter_search_nothing_hint">Search for a word of the title or for the chapter number.</string>
+    <plurals name="chapter_search_hits">
+        <item quantity="one">%d chapter</item>
+        <item quantity="other">%d chapters</item>
+    </plurals>
+    <string name="chapter_number_spoken">Chapter %d</string>
     <string name="player_remaining_chapter_short">Chapter</string>
     <string name="player_remaining_book_short">Book</string>
     <string name="player_remaining_chapter_description">Chapter: %1$s left</string>
@@ -774,6 +782,8 @@
         <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
         <item>Statistics: tap or swipe across the bars to see date and listening time; with TalkBack every bar says its value</item>
         <item>Faster search, covers stay cached after a restart, lists no longer churn while you listen</item>
+        <item>Search chapters: in long audiobooks, type a word of the title or the chapter number in the player\'s chapter sheet</item>
+        <item>Tap the open tab again to return to its first page</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>

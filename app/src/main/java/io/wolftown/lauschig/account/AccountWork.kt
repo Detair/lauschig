@@ -16,17 +16,25 @@ import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** The WorkManager work of one account. Device folder scans and the cleanup reminder are no account work. */
-fun interface AccountWork {
+interface AccountWork {
     /**
-     * Cancels it and waits (bounded) until WorkManager reports every piece finished. The cancellation is recorded at
-     * once; a download that is just writing stops at its next chunk (it checks before every one).
+     * The signed-in account [serverId]'s work: every sync (they are not per server – all of it is the signed-in
+     * account's) and its own work ([cancelOwn]). Cancels it and waits (bounded) until WorkManager reports every piece
+     * finished. The cancellation is recorded at once; a download that is just writing stops at its next chunk (it checks
+     * before every one).
      */
     suspend fun cancel(serverId: String)
+
+    /**
+     * Only what is [serverId]'s own – its downloads and its work outside WorkManager – never the syncs: for an account
+     * that is not the signed-in one (a saved profile), whose removal must not stop the signed-in account's syncs.
+     */
+    suspend fun cancelOwn(serverId: String)
 }
 
 /**
- * Cancels every sync ([SyncScheduler.ACCOUNT_WORK]; the periodic one comes back with the next `syncNow()`, which every
- * sign-in calls), the account's downloads (by the download rows and by the server tag of newer download work), and a
+ * [cancel]: every sync ([SyncScheduler.ACCOUNT_WORK]; the periodic one comes back with the next `syncNow()`, which every
+ * sign-in calls), and both: the account's downloads (by the download rows and by the server tag of newer download work), and a
  * „Jetzt laden“ read of the listening history, which runs outside WorkManager ([ListeningSessionSync.cancelLoadNow]).
  */
 class WorkManagerAccountWork(
@@ -40,10 +48,15 @@ class WorkManagerAccountWork(
     @Inject constructor(@ApplicationContext context: Context, downloads: DownloadDao, listeningSync: ListeningSessionSync) :
         this({ WorkManager.getInstance(context) }, downloads::keys, WAIT_MS, listeningSync::cancelLoadNow)
 
-    override suspend fun cancel(serverId: String) {
+    override suspend fun cancel(serverId: String) = cancel(serverId, syncs = true)
+
+    override suspend fun cancelOwn(serverId: String) = cancel(serverId, syncs = false)
+
+    private suspend fun cancel(serverId: String, syncs: Boolean) {
         cancelOther(serverId)
         val wm = workManager()
-        val names = SyncScheduler.ACCOUNT_WORK + downloadKeys(serverId).map { DefaultDownloadManager.workName(serverId, it) }
+        val names = (if (syncs) SyncScheduler.ACCOUNT_WORK else emptyList()) +
+            downloadKeys(serverId).map { DefaultDownloadManager.workName(serverId, it) }
         val tag = DefaultDownloadManager.serverTag(serverId)
         names.forEach { wm.cancelUniqueWork(it) }
         wm.cancelAllWorkByTag(tag)

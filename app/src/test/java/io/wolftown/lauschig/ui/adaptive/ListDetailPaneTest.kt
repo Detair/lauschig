@@ -161,6 +161,39 @@ class ListDetailPaneTest {
         rule.onNodeWithText("pane browse:Ann").assertIsDisplayed()
     }
 
+    // Fix round 1, E8: re-tapping the tab at its root closes the pane's page(s) – the plain list, as on one pane.
+    @Test fun wide_reTappingTheTab_closesThePane() {
+        show()
+        rule.onNodeWithText("open b").performClick()
+        rule.onNodeWithText("link").performClick()
+        rule.onNodeWithText("pane:next").assertIsDisplayed()
+        onOuter { it.navigateToTab(TopLevelTab.Library) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("emptyPane").assertIsDisplayed()
+        rule.onNodeWithText("the list").assertIsDisplayed()
+        assertEquals(0, count("pane:b") + count("pane:next"))
+        // The list opens titles as before, and a page closed this way never comes back on one pane.
+        rule.onNodeWithText("open a").performClick()
+        rule.onNodeWithText("pane:a").assertIsDisplayed()
+        onOuter { it.navigateToTab(TopLevelTab.Library) }
+        rule.waitForIdle()
+        twoPane = false
+        rule.waitForIdle()
+        rule.onNodeWithText("the list").assertIsDisplayed()
+        assertEquals(0, count("outer:a"))
+    }
+
+    @Test fun onePane_reTappingTheTab_keepsTheNextWidePaneWorking() {
+        twoPane = false
+        show()
+        onOuter { it.navigateToTab(TopLevelTab.Library) } // at the root: a close request with no pane
+        rule.onNodeWithText("open b").performClick()
+        rule.onNodeWithText("outer:b").assertIsDisplayed()
+        twoPane = true // the outer page moves into the pane – the old request must not close it
+        rule.waitForIdle()
+        assertShownOnce(inPane = true)
+    }
+
     @Test fun wide_theListReplacesThePane_linksInsidePush() {
         show()
         rule.onNodeWithText("open a").performClick()

@@ -12,5 +12,8 @@ sealed interface ConnectionState {
  * True if this state is about one of [addresses] (same scheme, host and port): a state of the current account's
  * server. Right after an account switch a shared state may still replay the previous server's Online for a moment.
  */
-fun ConnectionState.Online.belongsTo(addresses: ServerAddresses): Boolean =
-    listOfNotNull(addresses.local, addresses.public).any { baseUrl.scheme == it.scheme && baseUrl.host == it.host && baseUrl.port == it.port }
+fun ConnectionState.Online.belongsTo(addresses: ServerAddresses): Boolean = baseUrl.isAddressOf(addresses)
+
+/** True if this (base) URL is one of [addresses]: same scheme, host and port. */
+fun HttpUrl.isAddressOf(addresses: ServerAddresses): Boolean =
+    listOfNotNull(addresses.local, addresses.public).any { scheme == it.scheme && host == it.host && port == it.port }

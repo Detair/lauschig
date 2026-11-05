@@ -511,7 +511,7 @@ fun PlayerScreen(
         ModalBottomSheet(onDismissRequest = { showSpeed = false }) { SpeedSheet(state.speed, onSpeed) }
     }
     contentsTab?.let { tab ->
-        ContentsSheet(tab, state.chapters, onChapter, contents, onDismiss = { contentsTab = null })
+        ContentsSheet(tab, state.chapters, onChapter, contents, onDismiss = { contentsTab = null }, titleKey = state.itemId)
     }
 }
 

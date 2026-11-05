@@ -400,6 +400,14 @@
     <string name="player_contents_current">Aktuell: Kap. %1$d / %2$d</string>
     <string name="player_contents_no_chapters">Warteschlange, Lesezeichen &amp; Verlauf</string>
     <string name="player_contents_chapters_empty">Dieser Titel hat keine Kapitel.</string>
+    <string name="chapter_search_hint">Kapitel suchen</string>
+    <string name="chapter_search_nothing">Kein Kapitel zu „%s“</string>
+    <string name="chapter_search_nothing_hint">Such nach einem Wort aus dem Titel oder nach der Kapitelnummer.</string>
+    <plurals name="chapter_search_hits">
+        <item quantity="one">%d Kapitel</item>
+        <item quantity="other">%d Kapitel</item>
+    </plurals>
+    <string name="chapter_number_spoken">Kapitel %d</string>
     <string name="player_remaining_chapter_short">Kapitel</string>
     <string name="player_remaining_book_short">Buch</string>
     <string name="player_remaining_chapter_description">Kapitel: noch %1$s</string>
@@ -774,6 +782,8 @@
         <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
         <item>Statistik: Balken antippen oder darüberwischen zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
         <item>Schnellere Suche, Cover bleiben nach dem Neustart gespeichert, Listen flackern beim Hören nicht mehr</item>
+        <item>Kapitel suchen: bei langen Hörbüchern im Kapitel-Blatt des Players ein Wort aus dem Titel oder die Nummer eingeben</item>
+        <item>Den offenen Tab noch einmal antippen führt zurück zu seiner ersten Seite</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>

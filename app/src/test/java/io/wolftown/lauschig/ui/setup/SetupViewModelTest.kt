@@ -80,6 +80,13 @@ private class FakeSignOut(private val store: FakeAccountStore) : AccountSignOut 
         switched += store.acc.value!!.serverId to next.serverId
         store.save(next, accessToken, refreshToken)
     }
+
+    /** Like the real one (SignOutTest checks it): another account is switched to, the same one (or none) saved. */
+    override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) {
+        val previous = store.acc.value
+        if (previous != null && previous.serverId != next.serverId) switchTo(next, accessToken, refreshToken)
+        else store.save(next, accessToken, refreshToken)
+    }
 }
 
 private fun ok(access: String? = "acc", refresh: String? = "ref", type: String = "user") =

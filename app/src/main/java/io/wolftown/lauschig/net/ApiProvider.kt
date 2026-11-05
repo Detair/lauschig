@@ -7,6 +7,7 @@ import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +18,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -37,8 +40,11 @@ class ApiProvider(
     // Network interceptor: sees every hop incl. redirects. Every client (also the refresh client) refuses http:// to servers the user has not confirmed.
     private val okHttp: OkHttpClient = okHttp.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor(store)).build()
 
-    private val cache = HashMap<HttpUrl, Retrofit>()
-    private val clients = HashMap<HttpUrl, OkHttpClient>()
+    /** Per (account, base URL): a client belongs to the account signed in when it was built ([AuthInterceptor]). */
+    private val cache = HashMap<Pair<String?, HttpUrl>, Retrofit>()
+    private val clients = HashMap<Pair<String?, HttpUrl>, OkHttpClient>()
+    /** One refresh lock per account, shared by its clients for the local and the public address. */
+    private val refreshLocks = HashMap<String?, Any>()
 
     // Shared so that several API flows do not each run their own probe loop. When nobody has listened for 5 s the
     // value falls back to Offline: a process kept alive at home must not hand an old Online(LOCAL) to the next
@@ -66,8 +72,9 @@ class ApiProvider(
      */
     val connectionState: StateFlow<ConnectionState> get() = shared
 
+    // The account changes always come with a connection reset (`accountConnection`), so the next Online builds for it.
     private val retrofit: Flow<Retrofit?> = shared
-        .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(s.baseUrl) } }
+        .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(signedIn(), s.baseUrl) } }
         .distinctUntilChanged()
 
     val authApi: Flow<AuthApi?> = retrofit.map { it?.create(AuthApi::class.java) }
@@ -78,17 +85,32 @@ class ApiProvider(
     /** Guarded client without credentials, for requests while no server is online (they fail fast). */
     fun unauthenticatedClient(): OkHttpClient = okHttp
 
-    /** The authenticated client for [baseUrl] (origin-scoped Bearer + token refresh); also used for file downloads. */
+    /**
+     * The authenticated client for [baseUrl] (origin-scoped Bearer + token refresh); also used for file downloads. It
+     * belongs to the account signed in now: its requests carry that account's token, and none after another account
+     * signed in ([AuthInterceptor]). Reads the account store; not for the main thread.
+     */
+    fun clientFor(baseUrl: HttpUrl): OkHttpClient = clientFor(runBlocking { signedIn() }, baseUrl)
+
     @Synchronized
-    fun clientFor(baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(baseUrl) {
+    private fun clientFor(serverId: String?, baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(serverId to baseUrl) {
         okHttp.newBuilder()
-            .addInterceptor(AuthInterceptor(store, baseUrl))
-            .authenticator(TokenAuthenticator(store, okHttp, baseUrl))
+            .addInterceptor(AuthInterceptor(store, baseUrl, serverId))
+            .authenticator(TokenAuthenticator(store, okHttp, baseUrl, serverId, refreshLocks.getOrPut(serverId) { Any() }))
             .build()
     }
 
     @Synchronized
-    private fun retrofitFor(baseUrl: HttpUrl): Retrofit = cache.getOrPut(baseUrl) {
-        AbsClientFactory.retrofit(baseUrl, clientFor(baseUrl))
+    private fun retrofitFor(serverId: String?, baseUrl: HttpUrl): Retrofit = cache.getOrPut(serverId to baseUrl) {
+        AbsClientFactory.retrofit(baseUrl, clientFor(serverId, baseUrl))
+    }
+
+    /** The signed-in account's server id; null when signed out or unreadable (its clients then send no token). */
+    private suspend fun signedIn(): String? = try {
+        store.account.first()?.serverId
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 }
