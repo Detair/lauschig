@@ -40,10 +40,11 @@ Version 0.4.0, in daily use on our own devices; not on Google Play yet (a closed
   books and folders that exist only on the device.
 - Android Auto, voice search, a home-screen widget, links from the Audiobookshelf web app, phone and tablet layouts.
 - Listening statistics, achievements and a year in review, computed on the device.
-- New in 0.4.0 (Phase 6, merged so far): adjustable skip steps, a new player layout, a hint tone (chime) before the
-  sleep timer fades out, night compression, a warm night palette ("Fireside"), chapter search, faster search and
-  library, and a cover cache.
-<!-- downloads package -->
+- New in 0.4.0 (Phase 6): adjustable skip steps, a new player layout, a hint tone (chime) before the sleep timer fades
+  out, night compression, a warm night palette ("Fireside"), chapter search, faster search and library, and a cover
+  cache.
+- Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
+  diagnostic log you can share – with passwords, tokens and server addresses masked.
 
 The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
