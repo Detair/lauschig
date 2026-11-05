@@ -448,3 +448,29 @@ Keine Schemaänderung (weiter v10 auf diesem Zweig; v12 nicht belegt).
 - **L11–L13:** Der Log-Aufruf wirft nie in die App; ein Schreiber für die Datei; die geteilte Kopie wird beim nächsten
   Start, vor einem neuen Teilen und beim Abmelden gelöscht und ihr Lese-Grant widerrufen; **Claudes Wahl geändert:**
   Das Diagnose-Log selbst wird bei jedem Abmelden und Kontowechsel geleert (Familiengeräte).
+
+### Nachtrag Task 4–6 – Fix-Runde 2 nach Re-Review (2026-11-05)
+
+Leitregel „im Zweifel behalten“. Keine Schemaänderung (v10 auf diesem Zweig; v12 nicht belegt).
+
+- **N1 Übergabe:** Jeder Startweg merkt seinen Titel vorher an (`TitleHandover`): der Warteschlangen-Wechsel und
+  „Aus der Warteschlange abspielen“ *bevor* der Titel die Warteschlange verlässt, der Player der App und der Starter des
+  Dienstes (Auto, Widget, Fortsetzen) bevor sie laden; der Dienst meldet, was sein Player hält. Ein gemerkter Titel ist
+  60 s geschützt; jeder Titel, der den Halt des Players verlässt (Warteschlange, geladen, Dienst, gemerkt), behält ihn
+  weitere 60 s – egal in welcher Reihenfolge Player, Warteschlange und Aufräumen den Wechsel sehen. **N9** ist damit
+  erledigt (der alte Titel bleibt bei einem Start, der scheitert, geschützt). Emulator: „Das Ende“ (gehört, geladen,
+  zählend) als Nächstes in der Warteschlange, „Der Anfang“ zu Ende gespielt → „Das Ende“ startet aus seinen Dateien.
+- **N2 Konten:** Die „zuerst als gehört gesehen“-Zeiten bleiben je Server; ein Server, den das Gerät zum ersten Mal
+  sieht, bekommt eine stille Grundlinie – was dann schon gehört war, löscht das automatische Aufräumen nie (das
+  Aufräumen-Menü bietet es weiter an). Ein Purge vergisst die Zeiten. Die Einschalt-Frage (D3) bleibt.
+- **N3/N4 offene Frage:** „Download löschen?“ wird aus einem frischen Lesen entschieden (nicht aus dem ersten Wert des
+  Menüs), *vor* dem Markieren auf der Platte vermerkt und oben in der App gezeigt (übersteht Drehen; Emulator geprüft).
+  Bis zur Antwort bleibt der Titel gehalten; eine Frage, die ein beendeter Prozess offen ließ, zählt beim nächsten
+  Start als „Behalten“. Lässt sich der Behalten-Eintrag nicht schreiben, bleibt der Titel gehalten; lässt sich der
+  Vermerk nicht lesen, löscht das Aufräumen gar nicht.
+- **N5:** Ein Fehler in einem Durchgang wird protokolliert, der nächste läuft; ein nicht lesbarer Speicher wird eine
+  Minute später erneut gelesen; der Tages-Worker meldet „retry“.
+- **N6–N8 (Log):** Eine eigene Domain nimmt ihre Subdomains mit (`abs.example.io` → `<private>`); nach einem Pfad im
+  App-Verzeichnis wird der Rest der Zeile weiter maskiert; Felder eines Zertifikat-DN (CN, O, OU, L, ST, C, E …) gehen.
+- **N10:** Liegt auf der fehlenden Karte nur ein begonnener Download (`.part`), wartet der Purge auch auf sie und
+  löscht dann den ganzen Ordner des Kontos dort.
