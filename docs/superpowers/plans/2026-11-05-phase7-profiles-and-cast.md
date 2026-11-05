@@ -153,7 +153,7 @@ Keine Schemaänderung (eine neue DAO-Abfrage `activeKeys`, Room bleibt v11).
 
 - **1.1 Zustand je Konto.** `AccountStateCleaner` hat drei Wege: `clear(serverId)` (Abmelden, nur dieses Konto), `setAside(serverId)`
   (Wechsel: RMAB, letzte Suchen und Cover auf der Platte bleiben; SSO-Versuch, Download-Frage, Aufräum-Benachrichtigung,
-  Diagnose-Log und Cover im RAM gehen) und `forget(serverId)` (gespeichertes Profil wird entfernt: nur seine Verbindung und Suchen).
+  Diagnose-Log und Cover im RAM gehen) und `forget(serverId)` (gespeichertes Profil wird entfernt: seine Verbindung und Suchen, dazu wie beim Abmelden die Cover-Caches; siehe Fix-Runde 1).
   `RmabRepository` und `RecentSearches` speichern unter `<schlüssel>:<serverId>` und folgen dem aktiven Konto. Was parallel läuft,
   endet für das Konto, das es begonnen hat (ein `connect` über den Wechsel hinweg speichert beim alten Konto; der Status-Cache gilt je Konto).
   Migration wie bei `migrateAutoDelete`: `migrate(aktives Konto)` bei jedem Start; abgemeldet haben die alten Werte keinen Besitzer und
@@ -162,10 +162,10 @@ Keine Schemaänderung (eine neue DAO-Abfrage `activeKeys`, Room bleibt v11).
 - **1.2 Zuletzt gespielt je Konto.** `LastPlayedStore`: `get(serverId)`, `set`, `forget(serverId)`, dazu `forAccount(serverId)`. Die
   alten drei Schlüssel wandern per `DataMigration` zum Eintrag ihrer eigenen Server-ID, vor dem ersten Lesen. `PlayerController.showPaused`
   zeigt den Titel pausiert an seiner Position, ohne den Player anzufassen.
-  - **Claudes Wahl – Gerätetitel:** bleibt ein Eintrag für das ganze Gerät (wie der Plan sagt: „Server-Titel je Konto“). `forAccount`
-    nimmt den neueren von eigenem Server-Titel und Gerätetitel, also das Verhalten von heute für ein Konto.
-  - **Claudes Wahl – Mini-Player:** nur der eigene Server-Titel, und nur wenn er der neueste ist. Ein Gerätetitel, den A zuletzt gehört
-    hat, erscheint bei B nicht („B startet still“); Medientaste und Auto finden ihn weiterhin.
+  - **Geändert in Fix-Runde 1 – Gerätetitel:** Jedes Konto hat seinen eigenen zuletzt gespielten Gerätetitel. `forAccount` nimmt den neueren
+    von eigenem Server-Titel und eigenem Gerätetitel; mit einem Konto ist das das Verhalten von heute. Details unten.
+  - **Geändert in Fix-Runde 1 – Mini-Player:** Er zeigt, was das Konto selbst zuletzt gespielt hat, auch einen Gerätetitel. Der gemeinsame
+    Eintrag aus der Zeit davor erscheint dort nicht („B startet still“); Medientaste und Auto finden ihn weiterhin.
   - **Claudes Wahl – kein Laden in den Player:** `showPaused` ist der Zustand wie nach einem beendeten Dienst. Laden hieße puffern
     und eine Benachrichtigung. Nach einem Kaltstart gibt es wie heute keinen Mini-Player.
 - **1.3 Vor dem Wechsel sichern.** `saveBeforeLeaving`: pausieren, dann Änderungen hochladen, höchstens `SWITCH_PUSH_TIMEOUT_MS` (5 s), auch der
@@ -174,7 +174,7 @@ Keine Schemaänderung (eine neue DAO-Abfrage `activeKeys`, Room bleibt v11).
   pausiert hat; weiter läuft nur, was noch `PAUSED` ist.
   - **Claudes Wahl – WLAN:** `enqueue` ohne Netz-Vorgabe, die Einstellung gilt. Ein früheres „jetzt über Mobilfunk“ überlebt den Wechsel nicht.
   - **Claudes Wahl – Fehlschläge:** Lässt sich das Ziel nicht aktivieren, bleibt das bisherige Konto und läuft weiter wie nach einem
-    Zurückwechseln (`switchProfile` = false, `addProfile` wirft). Prozess-Tod mitten im Wechsel: `LauschigApp` setzt beim Start fort.
+    Zurückwechseln (`switchProfile` = false, `addProfile` wirft). Prozess-Tod mitten im Wechsel: `LauschigApp` setzt beim Start fort; das gilt seit Fix-Runde 1 auch für Zeilen, die noch wartend oder laufend stehen.
     Ein gespeichertes Konto, das sich neu anmeldet (`signIn`, `switchTo`), bekommt seine Downloads auch zurück. Abmelden und Entfernen vergessen den Merker.
 - **1.5 Clients und Syncs.** `ApiProvider.meApi(serverId)`, `libraryApi(serverId)`, `adminApi(serverId)`: `null`, solange dieses Konto nicht
   angemeldet ist; die Felder ohne Konto sind weg (außer `authApi`). `retrofit` kombiniert Verbindung und Konto-ID. `clientFor(serverId, baseUrl)`
@@ -182,7 +182,8 @@ Keine Schemaänderung (eine neue DAO-Abfrage `activeKeys`, Room bleibt v11).
   `ProgressActions`, `AuthorInfoCache`, `AdminRepository`, `DownloadWorker`, Stream (`PlaybackService`), Auto-Cover.
   **Der Fehler war echt:** Vor der Änderung schickte `ProgressSync.sync(A)` nach dem Wechsel `PATCH /api/me/progress/a-book` mit B's Token.
   - **Claudes Wahl – später Download-Worker:** Er sendet nichts, setzt die Zeile auf `PAUSED`, trägt sie in den Merker ein und endet
-    erfolgreich (kein Retry, kein Fehlversuch). Genauso, wenn der Wechsel mitten im Download kommt (`AccountChangedException`).
+    erfolgreich (kein Retry, kein Fehlversuch). Genauso, wenn der Wechsel mitten im Download kommt. `AccountChangedException` bei weiter
+    angemeldetem Konto zählt seit Fix-Runde 1 wie ein Netzfehler; eingetragen wird nur, was wirklich auf `PAUSED` ging.
   - **Claudes Wahl – `clientFor(baseUrl)` bleibt für Cover der sichtbaren Seite.** Geprüft gegen den lokalen ABS: Die Cover-Route antwortet
     ohne Token mit 200, `/api/items/<id>` mit 401. Es geht dabei also nichts Vertrauliches über das Konto hinaus; Task 2 baut die Seiten beim Wechsel ab.
 - **1.6 Abmelden auf anderem Server.** `ServerLogout.logoutProfile`: aktuelle Verbindung, wenn sie auf dem Server des Profils ist, sonst
@@ -226,13 +227,44 @@ in den Tests der jeweiligen Klassen. Alle Verhaltenstests sind vorher rot gelauf
 selbst lässt sich auf dem alten Stand nicht kompilieren, darum mit vier Mutationen geprüft (API nicht gebunden, Wechsel löscht wie Abmelden, kein Sichern, kein Fortsetzen): jede macht ihn rot.
 
 **Emulator 5554:** Update über die installierte 0.4.0: installiert, startet, Konto bleibt. Suche „Der“ steht weiter unter „Letzte Suchen“ (Schlüssel `queries:<id>`), der letzte Titel ist
-umgezogen (`item_id:<id>`), und die Medientaste startet ihn nach `force-stop`. Das RMAB-Update nur per Test, weil dort keine Verbindung eingerichtet war. **Nicht geprüft:** Streamen über die
-neuen Clients. Die Sitzung auf dem Emulator war schon vor dieser Arbeit abgelaufen („Session expired“, seit 16:17), gespielt wurde daher ein Download; neu angemeldet habe ich nicht.
+umgezogen (`item_id:<id>`), und die Medientaste startet ihn nach `force-stop`. Das RMAB-Update nur per Test, weil dort keine Verbindung eingerichtet war. Streamen war zunächst offen,
+weil die Sitzung abgelaufen war; es ist in Fix-Runde 1 geprüft (siehe dort).
 
 ### Was Task 2 wissen muss
 
 - `AppNavHost` speichert Tab-Stapel (`saveState`/`restoreState`, Zeile 244–246): Beim Wechsel dürfen sie nicht wiederhergestellt werden, sonst leben A's ViewModels bei B weiter. Am einfachsten: `NavHost` nach `serverId` schlüsseln.
 - Liest das Konto nur einmal und überlebt den Wechsel also nicht richtig: `YearReviewViewModel.builds()`, `SetupViewModel` (Zeile 85).
 - `showPaused`: Der Player hat nichts geladen. Spulen und Kapitelsprung tun nichts, bis Play gedrückt wird; das gilt heute schon nach einem beendeten Dienst. Der Mini-Player erscheint kurz nach dem Wechsel (Room-Abfrage).
-- Ein Wechsel kann dauern: 5 s Sichern plus bis zu 5 s `work.cancel`. Die Anzeige „Wechsle zu …“ muss das aushalten.
+- Ein Wechsel kann im schlimmsten Fall rund 20 s dauern: je bis zu 5 s Sichern, `work.cancel` und zweimal Stoppen. Die Anzeige „Wechsle zu …“ muss das aushalten.
 - `addProfile` wirft, wenn das neue Konto nicht gespeichert werden kann; `switchProfile` liefert `false`.
+
+### Fix-Runde 1 nach Review (2026-11-05)
+
+Alle Befunde des Reviews übernommen. Neue Tests liefen vorher rot; `anOpenDownloadQuestion_goesWithItsAccount_…` hält vorhandenes Verhalten fest.
+
+- **I1 – Ein Titel rund um den Wechsel überlebt ihn nicht.** Bisher konnte zwischen dem Stopp und dem Kontowechsel ein Titel von A starten (Medientaste,
+  Auto, Widget, Tipp auf die alte Seite). Er lief bei B weiter, und sein Stream ging mit B's Token hinaus. Jetzt:
+  - `leave` stoppt nach dem Kontowechsel noch einmal (`stopAgain`), bevor das nächste Konto ankommt. Das schließt auch dieselbe Lücke beim Abmelden und bricht einen laufenden `play`-Job ab.
+  - `AccountPlaybackGuard` im `PlaybackService`: Beim Kontowechsel stoppt und leert er den Player, wenn der Titel nicht dem neuen Konto gehört, und
+    zwar bevor der Client des nächsten Kontos gilt. Die erste Antwort beim Dienststart und eine Anmeldung stoppen nichts.
+  - **Claudes Wahl:** Auch ein Gerätetitel aus der Lücke geht, B startet still.
+  - **Claudes Wahl – zusätzlich:** `titleChanged` stoppt bei jedem Titelwechsel einen Server-Titel, der nicht dem angemeldeten Konto gehört. Das fängt
+    die übrigen Wege ab (nächster Titel der Warteschlange, ein Auto-Start, der knapp vor dem Wechsel fertig wurde). Ein Gerätetitel auf diesem späten Weg bleibt, dabei geht kein Token hinaus.
+  - `CarStarts.start` prüft das Konto nach `resolveTitle`: Hat es gewechselt, startet nichts, auch kein Gerätetitel. `PlayerControllerImpl.adopt` übernimmt keinen Server-Titel eines anderen Kontos.
+- **I2 – Der zuletzt gespielte Gerätetitel gilt je Konto.** Bisher nahm ein Gerätetitel von A den letzten Titel von B ein: kein Mini-Player für B, und B's Medientaste startete A's Titel.
+  - `set(last, account)` schreibt unter `item_id:device:<konto>`; der Dienst gibt das Konto des Moments mit, ein später Schreibvorgang bleibt also bei A.
+  - `forAccount` = neuester eigener Titel, sonst der gemeinsame Eintrag `item_id:device`. Der stammt aus der Zeit vor dem ersten neuen Schreiben, aus der Zeit ohne Anmeldung oder von einem abgemeldeten Konto. Das nächste Spielen beendet ihn.
+  - **Claudes Wahl – Abmelden wie in 0.4.0:** `forget` gibt den Gerätetitel nur dann ans Gerät zurück, wenn er der letzte Titel des Kontos war; war es ein Server-Titel, bleibt nichts zum Fortsetzen. Ein einzelnes Konto merkt also nichts.
+  - Widget: Ein Wechsel entfernt auch einen gespeicherten Gerätetitel (`clearUnlessOf`), `WidgetPublisher.forgetTitle` verhindert, dass der alte Titel zurückgeschrieben wird. Abmelden und Anmelden behalten ihn wie bisher.
+- **M1** Der Merker wird vor `work.cancel` geschrieben und vor dem Pausieren noch einmal (**Claudes Wahl:** `cancel` kann Sekunden dauern, was in der Zeit dazukommt, soll nicht verloren gehen). `resume` reiht auch vermerkte Zeilen in `QUEUED` und `RUNNING` ein; `KEEP` lässt laufende Arbeit in Ruhe.
+- **M2** Siehe oben (Download-Worker). `setStateIf` liefert dafür die Zahl der geänderten Zeilen, keine Schemaänderung.
+- **M3** `ProfileSwitchFlowTest` baut `SignOut` über den `@Inject`-Konstruktor. `FakeFacade.onPause` speichert die Position 150 ms nach der Pause, wie der Tracker. Mutationen geprüft: ohne die 300 ms Wartezeit wird er rot, ebenso ohne `stopAgain` und ohne den eigenen letzten Titel im Mini-Player.
+- **M4** Testname und Kommentare korrigiert, die Frage von A bleibt nun geprüft für A's Rückkehr stehen.
+- **M5** `forget` leert auch die Cover-Caches im RAM und auf der Platte; das aktive Konto lädt seine Cover neu.
+- **M6** Jeder Stopp in der Kontosperre ist auf `STOP_TIMEOUT_MS` (5 s) begrenzt.
+
+**Tests:** App 1886, abs-api 48, core:model 3, core:database 66, keine Fehler; Lint ohne neue Meldung in diesen Klassen.
+
+**Emulator 5554 (Build 4d1e649, angemeldet als root):** „Die Mitte“ nach Löschen des Downloads gestreamt, ohne Fehler (`PLAYING`, Download beim Abspielen lief mit). Ein Gerätetitel steht unter `item_id:device:<id>`. Medientaste mit sichtbarer App spielt, der Guard griff nirgends fälschlich ein.
+
+**Neuer Befund, nicht behoben:** Die Medientaste bei kalt gestartetem Dienst im Hintergrund lädt den Titel, spielt aber nicht: Android 15 lehnt die Audio-Fokus-Anfrage ab (`AS.HardeningEnforcer: Focus request DENIED`), weil der Dienst noch nicht im Vordergrund ist; danach `playWhenReady=false reason=2`. Der Stand vor dieser Runde (942b4cf) zeigt das genauso (je 3 von 3), die Ursache liegt also nicht in dieser Runde.
