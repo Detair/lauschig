@@ -106,8 +106,9 @@ fun BarChart(
     if (selected?.let { it !in values.indices } == true) selected = null
     val semantics = if (interactive) Modifier.semantics { isTraversalGroup = true }
     else Modifier.clearAndSetSemantics { if (description != null) contentDescription = description }
-    // Room for the tooltip above the bars: its two lines (they grow with the text size), its padding and a gap.
-    val band = if (interactive) with(LocalDensity.current) { (TOOLTIP_TEXT_HEIGHT.toDp() + TOOLTIP_PADDING * 2 + TOOLTIP_GAP) } else 0.dp
+    // Room for the tooltip above the bars: its two lines (they grow with the text size – each converted on its own, as
+    // the text is: large sizes scale less on Android 14+), its padding and a gap.
+    val band = if (interactive) with(LocalDensity.current) { TOOLTIP_LINE_1.toDp() + TOOLTIP_LINE_2.toDp() + TOOLTIP_PADDING * 2 + TOOLTIP_GAP } else 0.dp
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     Column(modifier.then(semantics)) {
         Box(Modifier.fillMaxWidth().height(height + band)) {
@@ -245,17 +246,18 @@ private fun BoxScope.BarTooltip(count: Int, selected: Int?, tips: List<BarTip>) 
     ) {
         Text(
             tip.value,
-            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum", lineHeight = 20.sp),
+            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum", lineHeight = TOOLTIP_LINE_1),
             fontWeight = FontWeight.Bold,
             color = scheme.inverseOnSurface,
             maxLines = 1,
         )
-        Text(tip.title, style = MaterialTheme.typography.labelSmall.copy(lineHeight = 16.sp), color = scheme.inverseOnSurface, maxLines = 1)
+        Text(tip.title, style = MaterialTheme.typography.labelSmall.copy(lineHeight = TOOLTIP_LINE_2), color = scheme.inverseOnSurface, maxLines = 1)
     }
 }
 
-/** The tooltip's two lines (20 + 16 sp), its vertical padding and the gap to the bars below it. */
-private val TOOLTIP_TEXT_HEIGHT = 36.sp
+/** The tooltip's two lines (time, date), its vertical padding and the gap to the bars below it. */
+private val TOOLTIP_LINE_1 = 20.sp
+private val TOOLTIP_LINE_2 = 16.sp
 private val TOOLTIP_PADDING = 4.dp
 private val TOOLTIP_GAP = 6.dp
 
