@@ -63,8 +63,8 @@ class TokenAuthenticatorTest {
         }
         val base = OkHttpClient()
         client = base.newBuilder()
-            .addInterceptor(AuthInterceptor(store, server.url("/")))
-            .authenticator(TokenAuthenticator(store, base, server.url("/")))
+            .addInterceptor(AuthInterceptor(store, server.url("/"), madeFor = "s"))
+            .authenticator(TokenAuthenticator(store, base, server.url("/"), madeFor = "s"))
             .build()
     }
 
@@ -172,7 +172,8 @@ class TokenAuthenticatorTest {
 
     // Profile switch (Phase 6, Task 12.1): tokens stay with the account that sent the request.
 
-    private val other = Account("t", "u2", "b", false, ServerAddresses(null, null), emptySet())
+    /** Another user on the same server. */
+    private val other by lazy { Account("t", "u2", "b", false, ServerAddresses(null, server.url("/")), emptySet()) }
 
     @Test
     fun aRequestOfTheOldAccount_isNeverRetriedWithTheNewAccountsToken() {
