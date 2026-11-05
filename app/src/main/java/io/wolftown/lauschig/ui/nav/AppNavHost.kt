@@ -11,6 +11,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -202,18 +203,30 @@ fun NavHostController.isOnYearReview(): Boolean =
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {
-    val dest = currentBackStackEntryAsState().value?.destination
-    return when {
-        dest == null -> TopLevelTab.Start
-        dest.hasRoute<Start>() -> TopLevelTab.Start
-        dest.hasRoute<Library>() -> TopLevelTab.Library
-        dest.hasRoute<Discover>() -> TopLevelTab.Discover
-        dest.hasRoute<Search>() -> TopLevelTab.Search
-        else -> null
-    }
+    val dest = currentBackStackEntryAsState().value?.destination ?: return TopLevelTab.Start
+    return dest.tabRoot()
 }
 
+/** The tab whose root page [this] is, null for any other page. */
+private fun NavDestination.tabRoot(): TopLevelTab? = when {
+    hasRoute<Start>() -> TopLevelTab.Start
+    hasRoute<Library>() -> TopLevelTab.Library
+    hasRoute<Discover>() -> TopLevelTab.Discover
+    hasRoute<Search>() -> TopLevelTab.Search
+    else -> null
+}
+
+/**
+ * Opens [tab] with the pages it had (each tab keeps its own stack). Tapping the tab the user is in – the topmost tab
+ * root on the stack, also with a page such as Settings or a title above it – returns to its root instead (Material
+ * navigation); at the root nothing changes.
+ */
 fun NavHostController.navigateToTab(tab: TopLevelTab) {
+    val active = currentBackStack.value.lastOrNull { it.destination.tabRoot() != null }
+    if (active != null && active.destination.tabRoot() == tab) {
+        if (currentBackStackEntry != active) popBackStack(active.destination.id, inclusive = false)
+        return
+    }
     navigate(tab.route()) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
