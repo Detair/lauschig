@@ -474,7 +474,8 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   - Tokens nur verschlüsselt: ein Wechsel verschiebt den Chiffretext, entschlüsselt und verschlüsselt nichts (Test zählt
     die Cipher-Aufrufe); `Credentials.toString()` zeigt keine Tokens, nichts wird geloggt.
   - **Claudes Wahl – Tokens gehören ihrem Konto:** `credentials()` liest Server-ID und Tokens in einem Zug;
-    `AuthInterceptor` markiert jede Anfrage mit dem Konto, dessen Token sie trägt (`SentBy`); `TokenAuthenticator`
+    `AuthInterceptor` markiert jede Anfrage mit dem Konto, dessen Token sie trägt (`SentBy`; in Fix-Runde 1 ersetzt durch
+    Clients je Konto, siehe dort – erst damit ist auch das erste Senden gebunden); `TokenAuthenticator`
     beantwortet einen 401 nach einem Wechsel nie mit dem Token des anderen Kontos, und ein Refresh (oder seine Ablehnung),
     der erst nach dem Wechsel ankommt, landet beim eigenen Konto (`updateTokens(serverId, …)`,
     `markNeedsReauth(serverId)`), nicht beim neuen. Ohne das könnte ein spät ankommender Refresh dem neuen Profil die
@@ -512,7 +513,8 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   der Wurzel passiert nichts (derselbe Eintrag, Zustand bleibt). Andere Tabs behalten ihre gespeicherten Seiten. Aktiv ist
   die Tab-Wurzel über dem Start-Tab (ein Tabwechsel lässt nur die Start-Wurzel und höchstens eine weitere Tab-Wurzel auf
   dem Stapel); `currentBackStack` darf die App nicht nutzen (Lint RestrictedApi), darum `getBackStackEntry` je Tab.
-  **Claudes Wahl:** kein Hochscrollen an der Wurzel (jede Seite hält ihren eigenen Listenzustand – nicht billig); mit zwei
+  **Claudes Wahl:** kein Hochscrollen an der Wurzel (jede Seite hält ihren eigenen Listenzustand – nicht billig); (in
+  Fix-Runde 1 geändert, siehe dort:) mit zwei
   Bereichen (Tablet) bleibt die Detailseite rechts in der Bibliothek beim erneuten Tippen stehen (sie liegt nicht auf dem
   äußeren Stapel). Tests: `TabReselectTest` (5).
 - What's new 0.4.0: zwei Zeilen (Kapitelsuche, erneutes Tippen auf den Tab), DE + EN.
@@ -522,7 +524,8 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
 - **Profilwechsel (12.1):**
   - Oberfläche: Profilmenü (aktives Konto + `saved`), „Profil hinzufügen“ → Anmeldung, die `addProfile` statt
     `save`/`switchTo` ruft; „Profil entfernen“ für ein gespeichertes Konto (Server-Logout mit seinem Refresh-Token, Purge
-    seiner Daten, `forget`) – dafür fehlt noch ein Abmeldeweg für ein *nicht aktives* Konto.
+    seiner Daten, `forget`) – den Ablauf dafür gibt es seit Fix-Runde 1 (`ProfileSwitch.removeProfile`), es fehlt die
+    Oberfläche.
   - Abmelden des aktiven Kontos, wenn weitere gespeichert sind: auf eines wechseln statt zur Anmeldung (heute:
     Anmeldeseite, die gespeicherten bleiben erhalten).
   - Sync gespeicherter Konten: Worker und `ApiProvider` arbeiten nur mit dem aktiven Konto; ungesyncte Änderungen eines
@@ -543,3 +546,57 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
     Effekte und Stille überspringen auf `output.device`; der Sleep-Fade an die Lautstärke des Empfängers statt an
     `exo.volume`.
   - `PlayerUiState`/Player: die Ausgabe zeigen (`isLocal`, Gerätename), z. B. im Quellen-Hinweis.
+
+### Nachtrag Task 12 – Fix-Runde 1 nach Review (2026-11-05)
+
+- **E1 – das erste Senden ist an sein Konto gebunden.** `ApiProvider.clientFor` baut Clients je (Konto, Basis-URL): ein
+  Client gehört dem Konto, das beim Bauen angemeldet war (`retrofit` ebenso; ein Kontowechsel setzt die Verbindung
+  ohnehin zurück, das nächste „online“ baut für das neue Konto). `AuthInterceptor` hängt dessen Token nur an, solange es
+  das angemeldete Konto ist und die Basis-URL eine seiner Adressen ist; sonst geht die Anfrage gar nicht hinaus
+  (`AccountChangedException`, eine `IOException` – Aufrufer behandeln sie wie einen Netzfehler). `TokenAuthenticator`
+  refresht nur unter denselben Bedingungen. Damit: nach einem Wechsel erreicht kein Token von B den Server von A (auch
+  nicht im kurzen Fenster, in dem der geteilte Zustand noch „online bei A“ meldet), eine für A gebaute Anfrage läuft auf
+  demselben Server nie als B, und B wird dadurch nie zur Neuanmeldung markiert. `SentBy` entfällt.
+  **Was weiterhin gilt (genau):** „für A gemacht“ heißt: über einen Client oder eine API-Instanz, die geholt wurde,
+  während A angemeldet war. Code, der nach dem Wechsel noch mit A’s Server-ID arbeitet und sich die API *danach* holt
+  (z. B. `ProgressSync.sync(serverId)`, Worker, ViewModels, die einen Wechsel überleben), sendet als B – heute ruft ihn
+  nur das angemeldete Konto auf (der Wechsel stoppt die Arbeit des alten Kontos), in Phase 7 muss er es prüfen (siehe
+  unten). Tests: `AccountBoundClientTest` (5: verschiedene Server – kein Token von B an A’s Server, B nicht markiert;
+  derselbe Server – A’s Anfrage läuft nicht als B; nach Abmeldung nichts; fremde Adresse ohne Token).
+- **E2** Titel und Suche werden vor dem Zerlegen zusammengesetzt (NFC), Zeichen-Marken gehören zum Wort: ein zerlegt
+  gespeichertes „Käse“ (a + U+0308, z. B. Dateinamen von macOS) finden käse, kase und kaese, eine zerlegte Eingabe findet
+  einen zusammengesetzten Titel.
+- **E3** Die Wörter der Kapitel werden einmal je Titelliste vorbereitet (`ChapterSearch.index`, auf
+  `Dispatchers.Default`), nicht mehr bei jedem Positions-Tick; ein Tastendruck vergleicht nur noch Wortanfänge. Bis der
+  Index bereit ist (einen Moment nach dem Öffnen), wird nicht gefiltert.
+- **E4** Buchstaben und Ziffern passen mit und ohne Leerzeichen dazwischen („cd2“ findet „CD 2“ und „CD2“, „teil1“
+  „Teil 1“, „track007“ „Track 007“; „cd 2“ findet alle drei Schreibweisen). Eine Suche nur aus Satzzeichen ist keine
+  Suche (keine Nummern, kein Sprung).
+- **E5** Wechselt der geladene Titel bei offenem Blatt (die Warteschlange läuft weiter), beginnt der Kapitel-Tab neu:
+  Suche leer, Liste am aktuellen Kapitel.
+- **E6 TalkBack:** die Trefferzahl („3 Kapitel“) steht unter dem Feld und wird höflich angesagt (Live-Region), ebenso
+  der leere Zustand; das Feld hat statt eines Platzhalters ein Label („Kapitel suchen“ bleibt über dem Text stehen);
+  die Nummer eines Treffers liest TalkBack als „Kapitel 12“.
+- **E7** `ProfileSwitch.removeProfile(serverId)` entfernt ein gespeichertes (nicht aktives) Konto wie eine Abmeldung ohne
+  Behalten: Server-Logout mit dessen eigenem Refresh-Token (`savedCredentials`), Purge seiner Zeilen und Downloads,
+  `forget`. **Claudes Wahl:** die Löschschuld (pending purge) wird *vor* dem Vergessen eingetragen – bricht etwas
+  dazwischen ab, beendet der Janitor den Purge beim nächsten Start; nie Daten ohne Besitzer. `AccountStore.forget`
+  bleibt der letzte Schritt davon (KDoc). Die gespeicherte Liste wird Eintrag für Eintrag gelesen: ein unlesbarer Eintrag
+  (beschädigt oder von einer späteren Version) wird übersprungen, die anderen bleiben; er wird unverändert
+  zurückgeschrieben, und solange sich die lesbaren Einträge nicht ändern, wird gar nicht geschrieben (auch ein Wert, der
+  gar keine Liste ist, bleibt erhalten).
+- **E8 – geändert gegenüber der Claudes-Wahl oben:** mit zwei Bereichen schließt das erneute Tippen auf Bibliothek oder
+  Suche auch die Detailseite rechts (zurück zur reinen Liste) – auf dem Tablet sieht das Tippen sonst wirkungslos aus.
+  Umsetzung: ein Merker im Zustand des Host-Eintrags, den der Bereich mit `popBackStack(PaneEmpty)` beantwortet; mit
+  einem Bereich wird er sofort verworfen (er schließt nie eine Seite, die später in den Bereich wandert). Hochscrollen
+  bleibt weg.
+- **E9** Der Test des Beiseitelegens liest Tokens und Flag des alten Kontos zurück; `PlaybackOutputTest` prüft die Regel
+  von `isLocal` selbst (lokal und entfernt), nicht die Antwort eines eigenen Fakes.
+
+#### Ergänzung zu „Was Phase 7 noch braucht“ (Fix-Runde 1)
+
+- Profilwechsel: Clients je Konto ausdrücklich machen (`clientFor(serverId, baseUrl)` öffentlich) und alles, was mit einer
+  bestimmten Server-ID arbeitet (Syncs, Worker, ViewModels, Coil-Cover einer Seite), die API seines Kontos holen lassen
+  oder prüfen, dass diese Server-ID angemeldet ist – heute ist „für A gemacht“ der Zeitpunkt, zu dem Client/API geholt
+  wurden. `removeProfile` an die Oberfläche („Profil entfernen“) anbinden.
+
