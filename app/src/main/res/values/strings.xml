@@ -563,6 +563,12 @@
     <string name="settings_pure_black">Pure black</string>
     <string name="settings_pure_black_hint">Black background in the dark theme – easy on OLED screens and at night</string>
     <string name="settings_pure_black_light">Only in the dark theme</string>
+    <string name="settings_dark_tone">Dark tone</string>
+    <string name="settings_dark_tone_hint">Fireside: warm mocha and amber, gentle at night</string>
+    <string name="settings_dark_tone_hint_dynamic">Fireside: warm mocha and amber – also instead of the wallpaper colors</string>
+    <string name="dark_tone_night_blue">Night blue</string>
+    <string name="dark_tone_dynamic">Dynamic</string>
+    <string name="dark_tone_warm">Fireside</string>
     <string name="settings_dynamic_color">Dynamic colors</string>
     <string name="settings_dynamic_color_hint">Colors matching your wallpaper</string>
     <string name="settings_font_scale">Text size</string>
@@ -699,6 +705,9 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Dark tone “Fireside”: warm mocha, cream and amber for listening in bed – also with pure black</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
         <item>A small card on Start shows how much you listened this week</item>

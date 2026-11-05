@@ -28,6 +28,7 @@ class AppearanceActions(
     val onPureBlack: (Boolean) -> Unit = {},
     val onDynamicColor: (Boolean) -> Unit = {},
     val onFontScale: (Int) -> Unit = {},
+    val onDarkTone: (DarkThemeTone) -> Unit = {},
 )
 
 @Composable
@@ -40,7 +41,46 @@ private fun themeLabel(mode: ThemeMode): String = stringResource(
 )
 
 /**
- * Design, pure black, dynamic colors (Android 12+ only, [dynamicColorAvailable]) and text size. Everything applies at
+ * The dark theme's palette as two segments. With the wallpaper's colours active, the regular tone is theirs, so the first
+ * segment says "Wallpaper" instead of "Night blue"; the fireside replaces them in the dark theme. Off in the light theme.
+ */
+@Composable
+private fun DarkToneRow(appearance: Appearance, actions: AppearanceActions, dynamicColorActive: Boolean) {
+    val enabled = appearance.theme != ThemeMode.LIGHT
+    val hint = when {
+        !enabled -> R.string.settings_pure_black_light
+        dynamicColorActive -> R.string.settings_dark_tone_hint_dynamic
+        else -> R.string.settings_dark_tone_hint
+    }
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_dark_tone)) },
+        supportingContent = {
+            Column {
+                Text(stringResource(hint))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    val tones = DarkThemeTone.entries
+                    tones.forEachIndexed { i, tone ->
+                        val label = when (tone) {
+                            DarkThemeTone.NIGHT_BLUE -> if (dynamicColorActive) R.string.dark_tone_dynamic else R.string.dark_tone_night_blue
+                            DarkThemeTone.WARM_AMBER -> R.string.dark_tone_warm
+                        }
+                        SegmentedButton(
+                            selected = appearance.darkTone == tone,
+                            onClick = { actions.onDarkTone(tone) },
+                            shape = SegmentedButtonDefaults.itemShape(i, tones.size),
+                            enabled = enabled,
+                            label = { Text(stringResource(label), maxLines = 1) },
+                            modifier = Modifier.testTag("darkTone:$tone"),
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+/**
+ * Design, dark tone, pure black, dynamic colors (Android 12+ only, [dynamicColorAvailable]) and text size. Everything applies at
  * once to the whole app, so this screen is its own preview; the sample card shows title and body text side by side.
  */
 @Composable
@@ -53,6 +93,7 @@ fun AppearanceSection(
 ) {
     Section(R.string.settings_section_look)
     ChoiceRow(R.string.settings_theme, R.string.settings_theme_hint, "themeMode", ThemeMode.entries, appearance.theme, actions.onTheme) { themeLabel(it) }
+    DarkToneRow(appearance, actions, dynamicColorActive = dynamicColorAvailable && appearance.dynamicColor)
     SwitchRow(
         R.string.settings_pure_black,
         if (appearance.theme == ThemeMode.LIGHT) R.string.settings_pure_black_light else R.string.settings_pure_black_hint,

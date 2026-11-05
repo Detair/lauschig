@@ -23,6 +23,14 @@ private val Context.uiDataStore by preferencesDataStore(name = "ui_settings")
 /** Light, dark, or whatever the system uses. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/**
+ * The dark theme's palette. [NIGHT_BLUE] is the regular one: the wallpaper's colours when dynamic colour is on (Android
+ * 12+), else Lauschig's night blue. [WARM_AMBER] ("Kaminfeuer & Bernstein") is warm mocha, cream and honey amber for
+ * the bed at night; picked, it wins over dynamic colour in the dark theme (wallpaper palettes are often cool), and pure
+ * black still darkens it. The light theme is never affected.
+ */
+enum class DarkThemeTone { NIGHT_BLUE, WARM_AMBER }
+
 /** How the app looks (Einstellungen → Darstellung). Defaults are the look the app had before the setting existed. */
 @Immutable
 data class Appearance(
@@ -33,6 +41,8 @@ data class Appearance(
     val dynamicColor: Boolean = true,
     /** App text size on top of the system's, in percent (one of [FONT_SCALES]). */
     val fontScalePercent: Int = 100,
+    /** Dark theme only: night blue (or the wallpaper's colours) or the warm fireside palette. */
+    val darkTone: DarkThemeTone = DarkThemeTone.NIGHT_BLUE,
 ) {
     companion object {
         val FONT_SCALES = listOf(85, 100, 115, 130)
@@ -50,6 +60,7 @@ class UiSettings(private val store: DataStore<Preferences>) {
             pureBlack = prefs[PURE_BLACK] ?: false,
             dynamicColor = prefs[DYNAMIC_COLOR] ?: true,
             fontScalePercent = prefs[FONT_SCALE]?.takeIf { it in Appearance.FONT_SCALES } ?: 100,
+            darkTone = prefs[DARK_TONE]?.let { runCatching { DarkThemeTone.valueOf(it) }.getOrNull() } ?: DarkThemeTone.NIGHT_BLUE,
         )
     }.distinctUntilChanged()
 
@@ -89,6 +100,10 @@ class UiSettings(private val store: DataStore<Preferences>) {
         store.edit { it[DYNAMIC_COLOR] = on }
     }
 
+    suspend fun setDarkTone(tone: DarkThemeTone) {
+        store.edit { it[DARK_TONE] = tone.name }
+    }
+
     /** Ignores values that are not one of [Appearance.FONT_SCALES]. */
     suspend fun setFontScale(percent: Int) {
         if (percent !in Appearance.FONT_SCALES) return
@@ -99,6 +114,7 @@ class UiSettings(private val store: DataStore<Preferences>) {
         val THEME = stringPreferencesKey("theme_mode")
         val PURE_BLACK = booleanPreferencesKey("pure_black")
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        val DARK_TONE = stringPreferencesKey("dark_tone")
         val FONT_SCALE = intPreferencesKey("font_scale_percent")
         val TAB_ORDER = stringPreferencesKey("tab_order")
         val TABS_HIDDEN = stringSetPreferencesKey("tabs_hidden")

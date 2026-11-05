@@ -563,6 +563,12 @@
     <string name="settings_pure_black">Reines Schwarz</string>
     <string name="settings_pure_black_hint">Schwarzer Hintergrund im dunklen Design – schont OLED-Displays und ist nachts angenehm</string>
     <string name="settings_pure_black_light">Nur im dunklen Design</string>
+    <string name="settings_dark_tone">Dunkler Farbton</string>
+    <string name="settings_dark_tone_hint">Kaminfeuer: warmes Mokka und Bernstein, sanft für die Nacht</string>
+    <string name="settings_dark_tone_hint_dynamic">Kaminfeuer: warmes Mokka und Bernstein – auch statt der Farben des Hintergrundbilds</string>
+    <string name="dark_tone_night_blue">Nachtblau</string>
+    <string name="dark_tone_dynamic">Dynamisch</string>
+    <string name="dark_tone_warm">Kaminfeuer</string>
     <string name="settings_dynamic_color">Dynamische Farben</string>
     <string name="settings_dynamic_color_hint">Farben passend zum Hintergrundbild</string>
     <string name="settings_font_scale">Schriftgröße</string>
@@ -699,6 +705,9 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Dunkler Farbton „Kaminfeuer“: warmes Mokka, Creme und Bernstein fürs Hören im Bett – auch mit reinem Schwarz</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
         <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
