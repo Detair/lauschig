@@ -249,8 +249,13 @@ class DiagnosticLogTest {
     @Test fun theSharedCopy_goesWithItsGrant_andClearRemovesTheLogFile() = runBlocking {
         val shared = DiagnosticReport(ctx.cacheDir, { facts }).write()
         assertTrue(shared.isFile)
-        DiagnosticReport.discardShared(ctx)
+        val revoked = mutableListOf<Pair<android.net.Uri, Int>>()
+        val recording = object : android.content.ContextWrapper(ctx) {
+            override fun revokeUriPermission(uri: android.net.Uri, modeFlags: Int) { revoked += uri to modeFlags }
+        }
+        DiagnosticReport.discardShared(recording)
         assertFalse(shared.exists())
+        assertEquals(listOf(androidx.core.content.FileProvider.getUriForFile(ctx, DiagnosticReport.authority(ctx), shared) to Intent.FLAG_GRANT_READ_URI_PERMISSION), revoked)
         val file = File(dir, "persisted.txt")
         DiagnosticLog.attach(file)
         Log.i("Before", "sign-out")

@@ -173,7 +173,8 @@ class LogMaskerTest {
         masked("addr ::ffff:192.168.178.20 and fe80::1%wlan0 and 2001:db8:85a3:0:0:8a2e:370:7334", "192", "168", "fe80", "2001", "8a2e")
         masked("failed to connect to /100.64.12.34 (port 13378) from /100.64.0.7 (port 40000)", "100.64")
         masked("Failed to connect to audiobookshelf.example.io/[fd7a:115c:a1e0::1]:443", "example.io", "fd7a")
-        assertEquals("MAC aa:bb:cc:dd:ee:ff time 12:34:56", LogMasker.mask("MAC aa:bb:cc:dd:ee:ff time 12:34:56").replace("<ip>", "aa:bb:cc:dd:ee:ff"))
+        // A MAC address goes too (it names the device); a time stays.
+        assertEquals("MAC <ip> time 12:34:56", LogMasker.mask("MAC aa:bb:cc:dd:ee:ff time 12:34:56"))
     }
 
     @Test fun credentialsWithoutAScheme() {
@@ -203,10 +204,41 @@ class LogMaskerTest {
 
     @Test fun aSecretAtTheCut_isMaskedBeforeTheMessageIsCut() {
         DiagnosticLog.clear()
-        val padding = "x".repeat(985)
-        DiagnosticLog.record('W', "Cut", "$padding password=hunter2-and-more")
+        // Cut first, the value would lose its closing quote and no longer look like a JSON secret ("hunter" would leak).
+        DiagnosticLog.record('W', "Cut", "x".repeat(980) + " {\"password\":\"hunter2\"}")
         val e = DiagnosticLog.entries().last()
         assertFalse(e, e.contains("hunter"))
         DiagnosticLog.clear()
+    }
+
+    // --- round 2
+
+    @Test fun anOwnParentDomain_takesItsSubdomainsWithIt() {
+        LogMasker.setLiterals(listOf("example.io", "fabian"))
+        assertEquals("<private> and <private>", masked("abs.example.io and auth.example.io", "abs.", "auth."))
+        assertEquals("connect <private>", masked("connect fabian-nas.example.io", "nas", "fabian"))
+        assertEquals("[*.<private>]", masked("[*.example.io]", "example"))
+        masked("lukas-tablet.netbird.cloud", "lukas").also { LogMasker.setLiterals(listOf("netbird.cloud")); masked("lukas-tablet.netbird.cloud", "lukas", "tablet") }
+    }
+
+    @Test fun afterAPathInTheAppsOwnDirectory_anotherPathOnTheLineIsMasked() {
+        val own = "/storage/emulated/0/Android/data/io.wolftown.lauschig/files/x.mp3"
+        assertEquals(
+            "rename $own to /storage/emulated/0/<…>.mp3",
+            masked("rename $own to /storage/emulated/0/Hörbücher/Lukas/Bibi 002.mp3", "Lukas", "Bibi", "Hörbücher"),
+        )
+    }
+
+    @Test fun certificateSubjects_loseOwnerOrganisationAndTown() {
+        val dn = "Hostname nas not verified:\n    DN: CN=nas.fritz.box,O=Fabian Hofmann,OU=Keller,L=Berlin,ST=Berlin,C=DE,EMAILADDRESS=f@example.de"
+        val out = masked(dn, "Fabian", "Hofmann", "Keller", "Berlin", "f@example", "fritz")
+        assertTrue(out, out.contains("O=<redacted>") && out.contains("L=<redacted>") && out.contains("C=<redacted>"))
+    }
+
+    @Test fun round2ProbeLines() {
+        masked("subjectAltNames: [*.home.arpa, nas.home.arpa]", "home.arpa")
+        assertEquals("connect to <ip> failed", masked("connect to [::ffff:c0a8:b214]:13378 failed", "c0a8"))
+        assertEquals("<redacted>@<server>", masked("lukas:hunter2@192.168.178.20:13378", "lukas", "hunter2", "192.168"))
+        masked("{\"accessToken\":\"x\\\"y z\"}", "y z")
     }
 }
