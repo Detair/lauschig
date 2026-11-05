@@ -3,7 +3,7 @@ package io.wolftown.lauschig.auto
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem

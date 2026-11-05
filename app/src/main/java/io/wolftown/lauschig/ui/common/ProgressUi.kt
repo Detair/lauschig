@@ -40,7 +40,7 @@ import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
 fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel: ItemActionsViewModel = hiltViewModel(), onEnqueue: (() -> Unit)? = null) {
     val download by remember(itemId) { viewModel.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val progress by remember(itemId) { viewModel.progressState(itemId) }.collectAsStateWithLifecycle(null)
-    val host = rememberProgressActionHost(itemId, viewModel, download)
+    val host = rememberProgressActionHost(itemId, viewModel)
     var open by remember { mutableStateOf(false) }
     val offline = LocalOfflineDimming.current
     Box(modifier) {
@@ -65,7 +65,6 @@ fun ProgressMenuButton(itemId: String, modifier: Modifier = Modifier, viewModel:
             }
         }
     }
-    host.Dialogs()
 }
 
 /**

@@ -9,6 +9,12 @@ import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
 import io.wolftown.lauschig.account.AccountDataJanitor
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
+import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
+import io.wolftown.lauschig.cleanup.FinishedQuestions
+import io.wolftown.lauschig.cleanup.FinishedDownloadsWorker
+import io.wolftown.lauschig.diagnostics.DiagnosticLog
+import io.wolftown.lauschig.diagnostics.DiagnosticReport
+import io.wolftown.lauschig.diagnostics.DiagnosticSecrets
 import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.AutoResumer
@@ -20,8 +26,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import io.wolftown.lauschig.widget.WidgetAccountWatcher
+import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -34,6 +42,11 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var localFolders: LocalFolders
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
+    @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
+    @Inject lateinit var finishedQuestions: FinishedQuestions
+    @Inject lateinit var downloadSettings: io.wolftown.lauschig.download.DownloadSettings
+    @Inject lateinit var accountStore: io.wolftown.lauschig.account.AccountStore
+    @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -42,9 +55,18 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     override fun newImageLoader(context: PlatformContext): ImageLoader = newCoverImageLoader(this, apiProvider)
 
     override fun onCreate() {
+        // Before anything else: a crash during start is in the diagnostic log too.
+        DiagnosticLog.installCrashHandler()
         super.onCreate()
         // Off the main thread; nothing here awaits network I/O.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // The user's own hosts and names are masked in the diagnostic log; its entries survive the process.
+        diagnosticSecrets.start(scope)
+        scope.launch(Dispatchers.IO) {
+            DiagnosticLog.attach(File(noBackupFilesDir, DIAGNOSTIC_LOG))
+            // The copy shared last time goes, and with it the read grant of the app it went to.
+            DiagnosticReport.discardShared(this@LauschigApp)
+        }
         scope.launch { syncScheduler.start(scope) }
         // Coil's former default cache directory is orphaned since the covers have their own; remove it (IO, never fails the start).
         scope.launch(Dispatchers.IO) { deleteLegacyCoverCaches(this@LauschigApp) }
@@ -59,7 +81,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("LauschigApp", "account data cleanup failed", e)
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "account data cleanup failed", e)
             }
         }
         // The player state is main-thread bound; the prefetcher only reads it.
@@ -67,5 +89,26 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Registers its audio-device callback only while the setting is on.
         autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
+        scope.launch {
+            // The automatic clean-up became a setting per account: the old device-wide value is the signed-in account's.
+            try {
+                downloadSettings.migrateAutoDelete(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "auto-delete setting not moved to the account", e)
+            }
+            // A "Download löschen?" question a killed process left open counts as "Behalten" – settled before the
+            // clean-up looks at anything.
+            finishedQuestions.settleLeftovers()
+            // Finished downloads go by themselves if the user wants it; never a title the player holds.
+            finishedDownloads.start(scope)
+        }
+        FinishedDownloadsWorker.schedule(this)
+    }
+
+    private companion object {
+        /** App-private, never backed up; its entries are masked when recorded. */
+        const val DIAGNOSTIC_LOG = "diagnostic-log.txt"
     }
 }

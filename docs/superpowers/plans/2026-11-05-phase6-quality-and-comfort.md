@@ -410,6 +410,195 @@ Paket „Darstellung“ (Branch `p6-look`); 11.1 und 11.6 gehören zu anderen Pa
   und das Abfahren beginnt beim berührten Balken. Die Frage „Download abbrechen?“ gilt nur, solange der Download
   wartet: läuft, endet oder verschwindet er, schließt sie sich, und ein spätes Bestätigen bricht nichts mehr ab.
 
+## Umsetzung Task 4 (2026-11-05)
+
+Paket „Downloads & Support“ (Branch `p6-downloads`). Keine Schemaänderung (DB bleibt v10; v11 nicht belegt).
+
+- `StorageVolumes` liest `ContextCompat.getExternalFilesDirs`: interner Speicher immer, dazu jedes eingehängte andere
+  Volume (SD-Karte = entfernbar, sonst „Externer Speicher“; Name vom System, z. B. „SanDisk SD-Karte“). Der primäre
+  „externe“ Speicher ist emuliert (derselbe Flash) und wird übersprungen. Nur-lesbare Karten werden gelistet
+  (Abspielen geht), aber nicht als Ziel angeboten. Die Liste ist 10 s gecacht.
+- `DownloadSettings.storagePath` speichert das App-Verzeichnis des Volumes (null = intern). `VolumeDownloadRoots`
+  macht daraus das Ziel – nur solange die Karte eingehängt und beschreibbar ist, sonst intern. Jede externe Wurzel
+  bekommt eine `.nomedia` (Musik-Apps unter Android 9/10 sollen die Hörbücher nicht listen).
+- `DownloadFiles` kennt mehrere Wurzeln: Ein Titel bleibt dort, wo sein Ordner liegt; nur ein Titel ohne Ordner geht
+  an das Ziel. Liegt ein Titel auf zwei Volumes, gewinnt der interne Ordner. Größe beim Abmelden, Purge, Janitor,
+  `deleteItem` und `cleanupOrphans` decken jedes eingehängte Volume ab. Der Worker wartet beim Kaltstart auf die
+  gelesene Einstellung (`awaitLocation`).
+- **Claudes Wahl – bestehende Downloads beim Wechsel:** Sie bleiben, wo sie sind (kein Verschieben); die
+  `localPath`-Einträge sind absolut, also spielen und löschen sie sich weiter wie bisher. Der Dialog sagt das.
+  Verschieben (GBs kopieren mit Fortschritt, Abbruch, Platzprüfung) wäre ein eigenes Feature.
+- **Claudes Wahl – Karte fehlt:** Statt Toast ein bleibender Hinweis in den Einstellungen („SD-Karte nicht gefunden –
+  neue Downloads landen vorerst im internen Speicher“) und auf der Download-Seite; die Wahl bleibt bestehen, mit der
+  Karte gehen neue Downloads wieder dorthin. Ein Toast aus einem Hintergrund-Worker würde übersehen.
+- **Claudes Wahl – Janitor:** Er räumt jetzt auch innerhalb der Konten auf (angemeldetes und behaltene Konten, nie
+  ein offener Purge): Titelordner ohne Download-Zeile (gelöscht, während die Karte draußen war) und alte Kopien auf
+  einem zweiten Volume bei fertigen Downloads (`DownloadTidy`). Laufende/pausierte Downloads werden nie angefasst.
+  Was beim Abmelden auf einer fehlenden Karte liegt, löscht der Janitor beim ersten Start mit eingelegter Karte.
+- UI: Zeile „Speicherort“ unter „Downloads verwalten“ (Ort + freier Platz); Antippen öffnet die Auswahl, wenn es
+  mehr als ein Volume gibt oder die gewählte Karte fehlt. Der Hinweis nennt auch, dass Dateien auf einer SD-Karte in
+  einem anderen Gerät lesbar sind.
+- Grenze: Ein fertiger Download auf einer gerade fehlenden Karte zählt weiter als „heruntergeladen“; abgespielt wird
+  er dann gestreamt (online), löschen geht.
+
+## Umsetzung Task 5 (2026-11-05)
+
+- **Claudes Wahl – Allowlist statt Logcat:** Kein Logcat-Mitschnitt. Jeder Log-Aufruf der App geht über
+  `diagnostics.Log` (gleiche Aufrufe wie `android.util.Log`, Logcat unverändert, `d` bleibt draußen); Bibliotheks-Logs
+  (ExoPlayer, OkHttp, WorkManager) kommen nie hinein. Ein Eintrag besteht aus festen Feldern: Zeit, Level, Tag,
+  maskierte Nachricht und bei Fehlern die Exception-Kette (Klassennamen, maskierte Meldungen, oberste Stackframes –
+  nur Code-Namen). Kopf der geteilten Datei: App-/Android-Version, Gerätemodell, online (Heimnetz/Internet)/offline,
+  Download-Ziel – kein Server, kein Benutzer, kein WLAN-Name.
+- `LogMasker` für Freitext: Authorization-/Cookie-/API-Key-Header, Bearer/Basic, JWTs, geheime Schlüssel=Wert-Paare
+  und JSON-Felder (token, password, username, email …), URLs (nur Schema und ABS-API-Pfadwörter bleiben, Abfrage immer
+  weg – auch Share-Slugs fallen), E-Mail, IPv4/IPv6, Hostnamen (Code- und Dateinamen ausgenommen), lange Schlüssel und
+  die eigenen Werte des Nutzers (`DiagnosticSecrets`: Server-Hosts und Benutzernamen des angemeldeten und behaltener
+  Konten, Heim-WLAN-Namen, ReadMeABook-Host und -Benutzer). Getestet mit realistischen Zeilen.
+- Ringpuffer 500 Einträge, schon maskiert gespeichert; **Claudes Wahl:** Er überlebt den Prozess (app-privat in
+  `no_backup/diagnostic-log.txt`, 2 s nach einem neuen Eintrag und sofort beim Absturz geschrieben, beim Start
+  zurückgelesen mit „--- app started ---“) – sonst wäre das Problem von heute Morgen am Abend weg. Bleibt beim
+  Abmelden (enthält nur Maskiertes; Probleme beim Abmelden sollen sichtbar bleiben).
+- Teilen: Einstellungen → Über → „Diagnose-Log teilen“ zeigt erst, was drin ist und was nie (mit Vorschau der neuesten
+  40 Einträge), dann `cache/diagnostics/lauschig-diagnose.txt` per `FileProvider` (nur dieses Verzeichnis) und
+  `ACTION_SEND text/plain` mit Lese-Grant; Lauschig selbst ist als Ziel ausgeschlossen (es nimmt geteilten Text an).
+- Die Playback-Dateien haben nur ihre Log-Import-Zeile geändert.
+
+## Umsetzung Task 6 (2026-11-05)
+
+- `AutoDeleteMode` (Nie Standard / Sofort / Nach 3 Tagen / Nach 7 Tagen) in `DownloadSettings`; Zeile „Gehörte
+  Downloads automatisch löschen“ bei den Download-Einstellungen.
+- `FinishedDownloadCleaner` löscht über `DownloadManager.cancel` (Dateien + Download-Zeile); Fortschritt, Sitzungen,
+  Hörverlauf und Lesezeichen bleiben (Test zählt alle Tabellen). In der App beobachtet er die fertigen Downloads und
+  handelt sofort bzw. wenn der nächste fällig wird; ein täglicher Worker deckt die Zeit ohne App ab. Folgen auch
+  Podcast-Episoden.
+- Maßstab ist `progress.lastUpdate`. **Claudes Wahl:** Ein Download zählt nur, wenn der Titel *nach* dem Hinzufügen
+  des Downloads beendet wurde – wer einen gehörten Titel zum Wiederhören lädt, verliert ihn nicht sofort wieder; er
+  geht erst, wenn er erneut beendet wird.
+- Nie gelöscht: Gerätetitel, der gerade spielende Titel (danach), Titel, die man beim Aufräumen behält.
+  **Claudes Wahl:** „Nicht mehr erinnern“ heißt jetzt „Behalten: keine Erinnerung, kein automatisches Löschen“ – für
+  Kinder-Lieblingshörspiele, die immer wieder laufen.
+- **Claudes Wahl:** Solange automatisch gelöscht wird, ruht die wöchentliche Aufräum-Erinnerung (Schalter
+  deaktiviert, mit Begründung). Bei „Sofort“ entfällt die Frage „Download löschen?“ nach „Als gehört markieren“ (der
+  Download ist gleich weg); bei 3/7 Tagen bleibt sie (jetzt löschen schafft jetzt Platz).
+
+### Nachtrag Task 4–6 – Fix-Runde 1 nach Review (2026-11-05)
+
+Keine Schemaänderung (weiter v10 auf diesem Zweig; v12 nicht belegt).
+
+- **Task 6 – was der Player hält (D1):** Nie gelöscht wird der im Player geladene Titel (egal ob er spielt, pausiert,
+  vom Sleep-Timer gestoppt oder vom Anruf unterbrochen ist), die Titel der Warteschlange und ein Titel, dessen
+  „Download löschen?“-Frage offen ist. **Claudes Wahl:** Kennt der Controller der App keinen Titel (Auto ohne
+  verbundene App, ein vom Tages-Worker gestarteter Prozess), gilt der zuletzt gespielte Titel (`LastPlayedStore`) als
+  gehalten. Geprüft wird neu, wenn sich der geladene Titel oder die Warteschlange ändert, und eine Minute später (der
+  zuletzt gespielte Titel meldet keine Änderung). Der Controller setzt seinen Titel erst, nachdem er sein `current`
+  gewechselt und die Download-Beobachtung des alten Titels beendet hat – danach kann Löschen keinen Quellwechsel des
+  alten Titels mehr auslösen (Rennen beim Warteschlangen-Wechsel). Emulator: „Das Ende“ zu Ende gespielt, „Die Mitte“ in
+  der Warteschlange → „Die Mitte“ spielt weiter, „Das Ende“ wird 40 ms nach der Übernahme gelöscht, Fortschritt bleibt
+  „gehört“.
+- **„Gehört“ heißt zu Ende oder markiert (D1):** Die 99,5-%-Marke des Trackers zählt nicht (Position mehr als 2 s vor
+  dem Ende und ≥ 99,5 %); eine Pause kurz vor dem Ende löscht nichts.
+- **D5 – nur Gerätezeiten:** Ein Download zählt, wenn er fertig war (Änderungszeit seiner Dateien), bevor das Gerät
+  den Titel zum ersten Mal als gehört sah (`FinishedSeenStore`, DataStore, wird auch bei „Nie“ geführt). **Claudes
+  Wahl:** Damit ist weder `requestedAt` (bleibt beim Fortsetzen alt) noch die Serverzeit im Spiel. Beim ersten Start
+  dieser Version gelten alle schon gehörten Titel als „jetzt gesehen“ – wer davor einen gehörten Titel neu geladen hat,
+  bekommt ihn in der Einschalt-Frage mitgezählt. Die 3/7 Tage zählen ab diesem Gerätezeitpunkt.
+- **D3:** Einschalten (von „Nie“ auf eine Stufe) fragt, wenn es gehörte Downloads träfe: „N gehörte Downloads (X)
+  werden sofort gelöscht“ bzw. „… jeweils N Tage nachdem sie gehört wurden“, mit Hinweis auf „Behalten“; Abbrechen
+  lässt die Einstellung. Zwischen zwei Stufen wird nicht erneut gefragt.
+- **D4:** Die Frage nach „Als gehört markieren“ kommt wieder, auch bei „Sofort“; bis zur Antwort wartet das
+  Aufräumen. „Löschen“ löscht sofort, „Behalten“ (auch Wegtippen) setzt den Titel bei eingeschaltetem Aufräumen auf die
+  Behalten-Liste.
+- **D14:** Ein Löschfehler wird pro Titel abgefangen und protokolliert; der Beobachter läuft weiter.
+- **D15:** Die Aufräumen-Seite listet auch gehörte Podcast-Episoden; „Behalten“ schützt sie wie Bücher.
+- **Task 4 – V17:** Jeder Lesefehler der Speicherort-Einstellung führt zu „intern“; kein Download wartet ewig.
+- **V18:** Abmelden mit fehlender Karte: Der Dialog sagt, dass die Downloads auf der Karte gelöscht werden, sobald sie
+  wieder steckt (bzw. beim Behalten, dass sie bleiben); nur auf der Karte liegende Downloads lassen das Behalten zu.
+  Der Purge merkt sich die Download-Wurzel der Karte (aus den Pfaden in Room, `VolumePurges`), gilt als fehlgeschlagen,
+  bis die Karte wieder da und das Verzeichnis weg ist – der Purge bleibt offen, der Janitor erledigt ihn.
+- **16 – Karte aus einem anderen Gerät:** akzeptiert. Deren Lauschig-Downloads gehören zu keinem Download dieser
+  Installation (keine Zeilen) und werden beim Aufräumen gelöscht; Übernehmen wäre ein eigenes Feature.
+- **Task 5 – Maskierung (L6–L10):** Wildcard- und Punkt-Hosts (`*.example.io`), die übergeordnete Domain eigener Hosts
+  als eigener Wert, Ein-Wort-Hosts in Javas „host "nas"“/„Hostname … not verified“; Schlüssel per Namensteil
+  (newPassword, authToken, …ClientSecret, apiToken, x-refresh-token, connect.sid …) in einfachen und doppelten
+  Anführungszeichen, Werte mit mehreren Wörtern bis zum Trenner (Autorennamen bleiben); Pfade in geteiltem Speicher und
+  auf Karten behalten nur Volume und Endung (das App-Verzeichnis dort bleibt lesbar), ebenso Dokument-IDs
+  (`primary:…`); IPv4-gemappte IPv6 ganz; `user:pass@host` ohne Schema. Erst maskieren, dann kürzen.
+- **L9:** Einträge vor dem Bekanntwerden der eigenen Werte werden dann erneut maskiert und beim Teilen ein weiteres Mal.
+- **L11–L13:** Der Log-Aufruf wirft nie in die App; ein Schreiber für die Datei; die geteilte Kopie wird beim nächsten
+  Start, vor einem neuen Teilen und beim Abmelden gelöscht und ihr Lese-Grant widerrufen; **Claudes Wahl geändert:**
+  Das Diagnose-Log selbst wird bei jedem Abmelden und Kontowechsel geleert (Familiengeräte).
+
+### Nachtrag Task 4–6 – Fix-Runde 2 nach Re-Review (2026-11-05)
+
+Leitregel „im Zweifel behalten“. Keine Schemaänderung (v10 auf diesem Zweig; v12 nicht belegt).
+
+- **N1 Übergabe:** Jeder Startweg merkt seinen Titel vorher an (`TitleHandover`): der Warteschlangen-Wechsel und
+  „Aus der Warteschlange abspielen“ *bevor* der Titel die Warteschlange verlässt, der Player der App und der Starter des
+  Dienstes (Auto, Widget, Fortsetzen) bevor sie laden; der Dienst meldet, was sein Player hält. Ein gemerkter Titel ist
+  60 s geschützt; jeder Titel, der den Halt des Players verlässt (Warteschlange, geladen, Dienst, gemerkt), behält ihn
+  weitere 60 s – egal in welcher Reihenfolge Player, Warteschlange und Aufräumen den Wechsel sehen. **N9** ist damit
+  erledigt (der alte Titel bleibt bei einem Start, der scheitert, geschützt). Emulator: „Das Ende“ (gehört, geladen,
+  zählend) als Nächstes in der Warteschlange, „Der Anfang“ zu Ende gespielt → „Das Ende“ startet aus seinen Dateien.
+- **N2 Konten:** Die „zuerst als gehört gesehen“-Zeiten bleiben je Server; ein Server, den das Gerät zum ersten Mal
+  sieht, bekommt eine stille Grundlinie – was dann schon gehört war, löscht das automatische Aufräumen nie (das
+  Aufräumen-Menü bietet es weiter an). Ein Purge vergisst die Zeiten. Die Einschalt-Frage (D3) bleibt.
+- **N3/N4 offene Frage:** „Download löschen?“ wird aus einem frischen Lesen entschieden (nicht aus dem ersten Wert des
+  Menüs), *vor* dem Markieren auf der Platte vermerkt und oben in der App gezeigt (übersteht Drehen; Emulator geprüft).
+  Bis zur Antwort bleibt der Titel gehalten; eine Frage, die ein beendeter Prozess offen ließ, zählt beim nächsten
+  Start als „Behalten“. Lässt sich der Behalten-Eintrag nicht schreiben, bleibt der Titel gehalten; lässt sich der
+  Vermerk nicht lesen, löscht das Aufräumen gar nicht.
+- **N5:** Ein Fehler in einem Durchgang wird protokolliert, der nächste läuft; ein nicht lesbarer Speicher wird eine
+  Minute später erneut gelesen; der Tages-Worker meldet „retry“.
+- **N6–N8 (Log):** Eine eigene Domain nimmt ihre Subdomains mit (`abs.example.io` → `<private>`); nach einem Pfad im
+  App-Verzeichnis wird der Rest der Zeile weiter maskiert; Felder eines Zertifikat-DN (CN, O, OU, L, ST, C, E …) gehen.
+- **N10:** Liegt auf der fehlenden Karte nur ein begonnener Download (`.part`), wartet der Purge auch auf sie und
+  löscht dann den ganzen Ordner des Kontos dort.
+
+### Nachtrag Task 5/6 – Fix-Runde 3 nach Re-Review 2 (2026-11-05)
+
+Keine Schemaänderung (DataStore).
+
+- **R1 – Einstellung je Konto:** „Gehörte Downloads automatisch löschen“ gilt je Konto (Standard „Nie“ für jedes,
+  auch später hinzukommende). Die Einstellungszeile, die Einschalt-Frage, der Beobachter, der Tages-Worker, die
+  Aufräum-Erinnerung und die Bedeutung von „Behalten“ richten sich nach dem angemeldeten Konto. Der alte geräteweite
+  Wert gehört dem Konto, das beim Update angemeldet ist; ohne Anmeldung entfällt er. Ein „Sofort“ der Eltern löscht
+  nichts vom Kind.
+- **R2 – kein Abfragen im Sekundentakt:** Durchgänge laufen nur bei Änderungen (gehörte/geladene Downloads, Einstellung,
+  Behalten-Liste, Player, Warteschlange, Fragen, Übergabe) plus einem Zeitgeber – der nächsten Fälligkeit oder dem Ende
+  eines Picks bzw. einer Gnadenfrist, die einen zählenden Titel hält. Ein abgelaufener Pick hält nicht mehr; Dateizeiten
+  von Grundlinien-Titeln werden nicht gelesen. Test auf virtueller Zeit: ein zählender Titel in der Warteschlange, ein
+  anderer spielt – 1 Durchgang in 10 Minuten.
+- **R3:** Starts aus dem Auto (Stöbern, Suche, Sprache) und das Fortsetzen markieren ihren Titel vor dem Auflösen.
+- **R4:** Offene Fragen werden vor dem Start des Aufräumens erledigt; lässt sich eine Frage nicht vermerken, kommt der
+  Titel auf die Behalten-Liste – geht auch das nicht, wird er nicht als gehört markiert.
+- **R5 (Log):** E-Mail-Adressen unter einer eigenen Domain werden ganz maskiert; per Komma angehängte Pfade; DN-Werte mit
+  maskierten Kommas, DNs ohne CN, Attribute in OID-Form.
+- **R7:** Ist der Speicher der „gesehen“-Zeiten oder der offenen Fragen beschädigt, beginnt er leer (einmal
+  protokolliert) und jedes Konto nimmt eine neue Grundlinie: nichts, was jetzt gehört ist, wird gelöscht; das Aufräumen
+  arbeitet weiter.
+
+### Nachtrag Task 5/6 – Fix-Runde 4 nach Re-Review 3 (2026-11-05)
+
+Keine Schemaänderung (DataStore).
+
+- **T2 – Abmelden beendet den Zeitgeber:** Meldet man sich ab (auch mit „Downloads behalten“), endet der Beobachter des
+  bisherigen Kontos samt seinem Zeitgeber. Solange niemand angemeldet ist, läuft kein Durchgang, und nichts wird
+  gelöscht.
+- **T1 – „Abmelden und löschen“ nimmt das Aufräumen mit:** Beim Löschen der Kontodaten (Abmelden mit Löschen,
+  Profil entfernen, nachgeholtes Löschen) gehen auch die Einstellung „Gehörte Downloads automatisch löschen“, die
+  offenen „Download löschen?“-Fragen und die Behalten-Einträge dieses Kontos. Meldet man sich wieder an, beginnt es wie
+  ein neues Konto mit „Nie“.
+- **T3 – neue Grundlinie auch nach Neustart:** Ist der Speicher der offenen Fragen beschädigt, steht die Bitte um eine
+  neue Grundlinie für alle Konten jetzt auf der Platte. Sie wird erst gelöscht, wenn die neue Grundlinie gespeichert
+  ist; ein Neustart vor dem ersten Durchgang verliert sie nicht mehr. Die „gesehen“-Zeiten werden nur noch nacheinander
+  abgeglichen.
+- **T4 (Log):** Der eigene Pfad der App endet am ersten Zeichen, das keine ID enthält. Damit werden auch Pfade
+  maskiert, die mit `;`, `|` oder `:` angehängt sind. Außerdem neu: DN-Werte in Anführungszeichen (mit Komma),
+  weitere Attribute (SURNAME, GIVENNAME, `OID.…` u. a.) und DNs ohne CN/O/OU (Kennung `DN:` oder zwei Felder mit
+  Komma).
+- **Claudes Wahl:** Behalten-Einträge eines gelöschten Kontos gehen mit, denn das Konto beginnt wie neu. Die
+  Aufräum-Einstellung wird vor den Datenbankzeilen gelöscht: Bricht das Löschen ab, ist das Aufräumen schon aus.
+
 ---
 
 ## Umsetzung Task 2 und 9 (2026-11-05)
@@ -643,3 +832,86 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   Sammler `retrofit` mit der Server-ID des angemeldeten Kontos kombinieren (`combine(shared, account-id)`), oder Clients
   nach einem Wechsel ausdrücklich neu holen.
 
+
+---
+
+## Umsetzung Task 10 (2026-11-05)
+
+Paket „Modularisierung“ (Branch `p6-modules`). Neue Module `:core:model` und `:core:database`; `:core:playback` wartet
+(Begründung unten). Alle Dateien sind per `git mv` umgezogen, in denselben Kotlin-Paketen (Importe bleiben), ohne
+inhaltliche Änderung – so trägt Gits Umbenennungserkennung Änderungen anderer Zweige mit (Probe mit `git merge-tree`
+gegen `p6-downloads`: dessen neue Abfragen in `OtherDaos.kt` landen in `core/database/…`, es entstehen keine Konflikte
+außer denen, die `main` ↔ `p6-downloads` ohnehin hat).
+
+- **10.1 `:core:model`** – reines Kotlin/JVM-Modul wie `:abs-api` (kein Android, kein Compose), mit dem Lint-Plugin
+  `com.android.lint`, damit `lint` es mitprüft. Inhalt: `PlayableKey` (`playback`) und `DeviceLibrary` (`local`) samt
+  `PlayableKeyTest` – die Schlüssel, die Datenbank, Wiedergabe, Sync und UI gemeinsam sprechen.
+  - Kotlin smart-castet keine Property aus einem anderen Modul: die acht Stellen in `:app`, die `Parsed.episodeId` auf
+    null prüften und dann benutzten, lesen sie jetzt zuerst in ein lokales `val` (gleiches Verhalten).
+  - **Claudes Wahl:** `ItemSummary` bleibt in `:app`. Es ist das Kachel-Modell der UI, trägt Composes `@Immutable` und
+    liegt mit zwei `CompositionLocal`s in einer Datei; aus einem Modul ohne Compose-Compiler gälte es als instabil
+    (anderes Recompose-Verhalten). `TimelineMapper` rechnet über `AudioFileEntity`/`ChapterEntity` und gehört zur
+    Wiedergabe (10.3). Die Enums der Entities (`DownloadState`, `LibraryKind`, `BookmarkPending`, `CollectionKind`) sind
+    Spaltentypen und bleiben in ihren Entity-Dateien (`:core:database`); die übrigen Enums sind UI oder Einstellungen.
+  - **Claudes Wahl:** `:abs-api` hängt nicht von `:core:model` ab – es braucht nichts daraus.
+- **10.2 `:core:database`** – Android-Library mit Room-Plugin und KSP (nur der Room-Compiler). Umgezogen: Entities, DAOs,
+  `LauschigDatabase`, `Converters`, `SeriesParsing`, dazu `QueueOrder` (`queue`) und `BookmarkRules` (`bookmarks`), die
+  reinen Regeln, die `QueueDao` und `BookmarkDao` aufrufen. `schemas/` liegt jetzt in `core/database/schemas`
+  (`git log --follow` zeigt die Historie bis zum ersten Schema); die Auto-Migrationen lesen es dort, `MigrationTest`
+  liest es relativ zum Modul. Die Tests des Pakets `db` (u. a. `DaoTest`, `MigrationTest`, `QueryPlanTest`) und
+  `BookmarkRulesTest` laufen in `:core:database` (66 Tests). `:app` hat kein Room-Plugin und kein Room-KSP mehr; sein
+  KSP erzeugt nur noch Hilt.
+  - **Claudes Wahl:** `DatabaseModule` (Hilt, stellt Datenbank und DAOs bereit) bleibt in `:app`, im selben Paket
+    `io.wolftown.lauschig.db`. So braucht `:core:database` weder Hilt noch dessen KSP, und der Hilt-Graph ist
+    unverändert.
+  - **Claudes Wahl:** `:core:database` hängt per `api` von `:core:model` und `:abs-api` ab (`BookmarkDao.mergeFromServer`
+    nimmt die `BookmarkDto`-Liste des Servers); Room und Coroutines per `api`, weil `:app` `withTransaction`, `Flow` und
+    `Room.databaseBuilder` direkt nutzt.
+  - **Claudes Wahl:** keine Android-Ressourcen im Modul (`androidResources.enable = false`, spart R-Klasse und
+    Ressourcen-Tasks); `testOptions.targetSdk = 37` wie `:app`, damit Robolectric-Tests ohne `@Config(sdk)` auf demselben
+    SDK laufen wie vorher. Keine eigene `robolectric.properties` nötig (die Library hat keine Application-Klasse).
+  - Release (R8): baut; `LauschigDatabase` und `LauschigDatabase_Impl` behalten ihre Namen (die Keep-Regel in
+    `app/proguard-rules.pro` gilt für Library-Klassen genauso). Der Baseline-Profile der App nennt Klassen beim Namen
+    und wird auf den gesamten Dex angewandt – Namen und Pakete sind gleich geblieben.
+- **10.3 `:core:playback` wartet.** **Claudes Wahl**, Begründung: Die genannten Klassen sind kein abgrenzbarer Kern.
+  `PlaybackService` importiert vierzehn Klassen aus `auto` (Android Auto: `CarLibrary`, `CarButtons`, `LibraryCallback` …),
+  dazu `widget`, `sync`, `connection`, `queue`, `download`, `net`, `account`, `settings`, `R` und `MainActivity`;
+  `PlayerControllerImpl` braucht `sync`, `download`, `net`, `connection`; `SleepTimer` und `PlayerController` hängen an
+  `settings.PlaybackSettings`, `CarSafePlayer` an `auto.CarControls`. `auto` wiederum importiert `playback` (sieben
+  Dateien) – ein Paketzyklus. Ein Umzug hieße entweder die halbe App mitzunehmen oder Schnittstellen für Auto, Widget,
+  Sync, Verbindung und Download-Start einzuziehen und in `:app` neu zu binden – ein Umbau mit Verhaltensrisiko, kein
+  Umzug. Dazu stellt `p6-downloads` alles Logging auf `io.wolftown.lauschig.diagnostics.Log` in `:app` um, auch in
+  `PlaybackService`, `PlayerControllerImpl` und `ServiceTitleStarter`; ein Playback-Modul bräuchte den Logger zuerst
+  in einem eigenen Modul. Voraussetzungen für später: (1) `diagnostics.Log` in ein kleines `:core:diagnostics`, (2)
+  `PlaybackSettings` (und die DataStore-Einstellungen) in ein Modul, (3) Schnittstellen für die Partner des Services
+  (Auto-Bibliothek, Widget, Sync-Auslöser, Verbindungsstatus, Download-Start) in `:core:playback`, gebunden in `:app`,
+  (4) Benachrichtigungs-Strings/-Symbole ins Modul, `MainActivity` über einen injizierten `PendingIntent`.
+- **Generierter Code:** Room erzeugt in `:core:database` Byte für Byte dieselben Dateien wie vorher in `:app`
+  (`diff -r` der KSP-Ausgaben), die Schemas sind unverändert. Tests: vorher 1671 in `:app`, jetzt 1602 in `:app` + 66
+  in `:core:database` + 3 in `:core:model` = 1671 (dazu 48 in `:abs-api`), alle grün. Die Datenbanktests laufen allein
+  in rund 7 s (`./gradlew :core:database:testDebugUnitTest`).
+- **10.4 Messung** (16 Kerne, warmer Daemon, je 3 Läufe, Median; `--offline --no-build-cache`, Configuration Cache an
+  wie im Repo; vorher = `main` 020e299 in einem temporären Worktree, nachher = `p6-modules`, direkt hintereinander):
+
+  | Szenario | vorher | nachher |
+  |---|---|---|
+  | `clean` + `assembleDebug` | 22,0 s (21,9 / 22,0 / 22,5) | 18,2 s (26,7 / 18,2 / 15,7) |
+  | `clean` + `assembleDebug`, Runde 2 abwechselnd, Last bis 8 | 26,1 s (26,1 / 26,0 / 26,4) | 26,7 s (26,7 / 29,1 / 24,8) |
+  | `clean` + `testDebugUnitTest` (kompilieren + alle Tests) | 56,1 s | 55,7 s |
+  | eine Zeile in einer UI-Datei (`PlayerScreen.kt`) + `assembleDebug` | 2,7 s | 1,8 s |
+  | eine Zeile in einer DAO-Abfrage (`ItemDao.kt`) + `assembleDebug` | 5,0 s | 5,0 s |
+
+  Ergebnis: Saubere Builds und Tests sind gleich schnell (innerhalb der Streuung). Eine UI-Änderung ist knapp 1 s
+  schneller, weil das KSP von `:app` kein Room mehr verarbeitet. Eine geänderte DAO-Abfrage bringt nichts: der
+  `@Query`-Text steht in der Klassendatei, die ABI von `:core:database` ändert sich, also laufen KSP, Kotlin und Hilt
+  in `:app` trotzdem. Die Annahme des Plans („>95.000 Zeilen bremsen spürbar“) trifft nicht zu: `app/src/main` hat jetzt
+  34.755 Zeilen Kotlin (vorher 36.578), der Build war schon schnell. Der Nutzen ist Struktur (Room-KSP getrennt, Datenbank
+  mit eigenen Tests, klare Abhängigkeitsrichtung), nicht Tempo – auch deshalb lohnt der riskante Umbau für 10.3 jetzt
+  nicht.
+- **Merge mit `p6-downloads`:** Dessen Stand vom 5.11. mittags (c50f4fd) hat eine neue Stelle, die `Parsed.episodeId`
+  smart-castet (`ui/common/ItemActions.kt`, `titleOf` um Zeile 127): nach dem Merge braucht sie dieselbe
+  Ein-Zeilen-Korrektur (`val episodeId = p.episodeId`, dann `episodeId` statt `p.episodeId`); der Compiler meldet jede
+  solche Stelle mit „Smart cast … declared in different module“.
+- **CI:** `.github/workflows/ci.yml` ruft zusätzlich `:core:model:test`; `lint` und `testDebugUnitTest` (Wurzel)
+  erreichen `:core:database` von selbst, `lint` auch `:core:model`. README: Build-Befehl und eine Zeile zu den Modulen.
+- Keine Version, keine What's-new-Zeile (nichts Sichtbares). **Claudes Wahl.**

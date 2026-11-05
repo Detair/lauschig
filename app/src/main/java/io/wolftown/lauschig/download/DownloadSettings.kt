@@ -17,6 +17,19 @@ private val Context.downloadDataStore by preferencesDataStore(name = "download_s
 enum class MeteredDownload { ASK, ALWAYS, WIFI }
 
 /**
+ * Deleting the download of a finished title by itself: never (default), right away, or once it has been finished for
+ * [afterMs]. Only the files go; progress and listening history stay (see `FinishedDownloadCleaner`).
+ */
+enum class AutoDeleteMode(val afterMs: Long?) {
+    NEVER(null),
+    IMMEDIATELY(0),
+    AFTER_3_DAYS(3 * DAY_MS),
+    AFTER_7_DAYS(7 * DAY_MS),
+}
+
+private const val DAY_MS = 24L * 60 * 60 * 1000
+
+/**
  * Download preferences. [wifiOnly] (default `true`) maps to the WorkManager network constraint
  * `UNMETERED` (else `CONNECTED`) when a download is enqueued. Phase 1: changing it does not retarget
  * work that is already queued; it applies to downloads enqueued afterwards.
@@ -45,9 +58,59 @@ class DownloadSettings @Inject constructor(@ApplicationContext context: Context)
         store.edit { it[METERED_ON_PLAY] = value.name }
     }
 
+    /**
+     * Where new downloads go: the app's files directory on another volume ([DownloadVolume.path], e.g. an SD card), or
+     * null for the internal storage (default). A volume that is not available makes downloads fall back to internal
+     * ([VolumeDownloadRoots]); the choice itself stays, so they go there again once the card is back.
+     */
+    val storagePath: Flow<String?> = store.data.map { it[STORAGE_PATH]?.takeIf { p -> p.isNotBlank() } }
+
+    /**
+     * The automatic clean-up of [serverId]'s account: per account, so on a family device one account turning it on never
+     * deletes another account's downloads. Every account starts at [AutoDeleteMode.NEVER]; no account: NEVER.
+     */
+    fun autoDeleteFinished(serverId: String?): Flow<AutoDeleteMode> = store.data.map { p ->
+        serverId?.let { sid -> p[autoDeleteKey(sid)]?.let { v -> AutoDeleteMode.entries.firstOrNull { it.name == v } } } ?: AutoDeleteMode.NEVER
+    }
+
+    suspend fun setAutoDeleteFinished(serverId: String, mode: AutoDeleteMode) {
+        store.edit { it[autoDeleteKey(serverId)] = mode.name }
+    }
+
+    /** [serverId]'s data was purged: signed in again, it starts at NEVER like any new account. */
+    suspend fun clearAutoDelete(serverId: String) {
+        store.edit { it.remove(autoDeleteKey(serverId)) }
+    }
+
+    /**
+     * Before this setting was per account it was one value for the device: that value belongs to the account that is
+     * signed in now ([activeServerId]); the others start at NEVER. Idempotent; signed out, the old value is dropped.
+     */
+    suspend fun migrateAutoDelete(activeServerId: String?) {
+        store.edit { p ->
+            val old = p[AUTO_DELETE] ?: return@edit
+            if (activeServerId != null && p[autoDeleteKey(activeServerId)] == null) p[autoDeleteKey(activeServerId)] = old
+            p.remove(AUTO_DELETE)
+        }
+    }
+
+    private fun autoDeleteKey(serverId: String) = stringPreferencesKey("auto_delete_finished:$serverId")
+
+    /** Tests: the device-wide value as an older version stored it. */
+    internal suspend fun putLegacyAutoDelete(mode: AutoDeleteMode) {
+        store.edit { it[AUTO_DELETE] = mode.name }
+    }
+
+    suspend fun setStoragePath(path: String?) {
+        store.edit { if (path.isNullOrBlank()) it.remove(STORAGE_PATH) else it[STORAGE_PATH] = path }
+    }
+
     private companion object {
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val DOWNLOAD_ON_PLAY = booleanPreferencesKey("download_on_play")
         val METERED_ON_PLAY = stringPreferencesKey("metered_on_play")
+        val STORAGE_PATH = stringPreferencesKey("storage_path")
+        /** The device-wide value before it became per account ([migrateAutoDelete]). */
+        val AUTO_DELETE = stringPreferencesKey("auto_delete_finished")
     }
 }

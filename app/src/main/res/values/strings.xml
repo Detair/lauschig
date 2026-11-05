@@ -148,7 +148,9 @@
     <string name="progress_pull_done">Position taken from the server</string>
     <string name="progress_pull_failed">Server not reachable or no position there</string>
     <string name="progress_delete_after_finish_title">Delete download?</string>
+    <string name="progress_delete_after_finish_title_named">“%1$s” – delete download?</string>
     <string name="progress_delete_after_finish_message">Finished – delete the download to free up space? Your progress stays.</string>
+    <string name="progress_delete_after_finish_auto_message">Finished – delete the download now? “Keep” leaves it out of the automatic deletion. Your progress stays.</string>
     <string name="finished_title">Finished</string>
     <string name="finished_next_volume">Up next: volume %1$s – %2$s</string>
     <string name="finished_next">Up next: %1$s</string>
@@ -164,11 +166,11 @@
     <string name="settings_wifi_only_hint">Applies to downloads started afterwards.</string>
     <string name="settings_cleanup_reminder">Weekly clean-up reminder</string>
     <string name="settings_cleanup_reminder_hint">Reminds you of finished books that are still downloaded.</string>
-    <string name="settings_cleanup_open_hint">Finished books that are still on this device</string>
+    <string name="settings_cleanup_open_hint">Finished titles that are still on this device</string>
     <string name="cleanup_title">Clean up</string>
-    <string name="cleanup_empty">No finished books are downloaded.</string>
-    <string name="cleanup_hint">Finished books that are still on this device. Selected downloads are deleted; your progress stays.</string>
-    <string name="cleanup_dont_remind">Don\'t remind me about this book</string>
+    <string name="cleanup_empty">No finished titles are downloaded.</string>
+    <string name="cleanup_hint">Finished titles and episodes that are still on this device. Selected downloads are deleted; your progress stays.</string>
+    <string name="cleanup_dont_remind">Keep: no reminder, no automatic deletion</string>
     <string name="cleanup_channel_name">Clean-up reminders</string>
     <string name="cleanup_delete_selected">Delete %1$d (%2$s)</string>
     <plurals name="cleanup_notification_title">
@@ -284,6 +286,27 @@
     <string name="settings_auto_download_hint">After a sync, per podcast. The Wi-Fi setting applies.</string>
     <string name="settings_auto_download_off">Off</string>
     <string name="settings_auto_download_newest">Newest %1$d</string>
+    <string name="settings_auto_delete">Delete heard downloads automatically</string>
+    <string name="settings_auto_delete_hint">Only the files go; your progress and listening history stay. Titles you keep on the clean-up page and titles from your folders are never deleted.</string>
+    <string name="settings_auto_delete_never">Never</string>
+    <string name="settings_auto_delete_immediately">Right away</string>
+    <plurals name="settings_auto_delete_after_days">
+        <item quantity="one">After %1$d day</item>
+        <item quantity="other">After %1$d days</item>
+    </plurals>
+    <string name="settings_cleanup_reminder_auto">Not needed while heard downloads are deleted automatically.</string>
+    <string name="settings_auto_delete_confirm_title">Delete heard downloads?</string>
+    <plurals name="settings_auto_delete_confirm_now">
+        <item quantity="one">%1$d heard download (%2$s) will be deleted right away.</item>
+        <item quantity="other">%1$d heard downloads (%2$s) will be deleted right away.</item>
+    </plurals>
+    <plurals name="settings_auto_delete_confirm_later">
+        <item quantity="one">%1$d heard download (%2$s) will be deleted, %3$d days after it was heard.</item>
+        <item quantity="other">%1$d heard downloads (%2$s) will be deleted, each %3$d days after it was heard.</item>
+    </plurals>
+    <string name="settings_auto_delete_confirm_keep">To keep a title, mark it “Keep” under “Clean up” first.</string>
+    <string name="settings_auto_delete_confirm_ok">Turn on</string>
+    <string name="settings_auto_delete_confirm_cancel">Cancel</string>
     <!-- Stream + download -->
     <string name="download_notification_throttled">Throttled – stream has priority</string>
     <string name="player_download_throttled">Download slow – stream has priority</string>
@@ -436,6 +459,16 @@
     <string name="downloads_title">Downloads</string>
     <string name="downloads_manage">Manage downloads</string>
     <string name="downloads_manage_hint">Pause, resume, sort, search and see the storage used</string>
+    <string name="settings_storage">Storage location</string>
+    <string name="settings_storage_internal">Internal storage</string>
+    <string name="settings_storage_sd">SD card</string>
+    <string name="settings_storage_external">External storage</string>
+    <string name="settings_storage_free">%1$s free</string>
+    <string name="settings_storage_unavailable">Not available</string>
+    <string name="settings_storage_missing">SD card not found – new downloads go to the internal storage for now.</string>
+    <string name="settings_storage_choose">Where new downloads go</string>
+    <string name="settings_storage_hint">Earlier downloads stay where they are and can still be played and deleted. While the card is out, new downloads go to the internal storage. Files on an SD card can be read by anyone who puts the card into another device.</string>
+    <string name="settings_storage_cancel">Close</string>
     <string name="downloads_storage">%1$s used · %2$s free</string>
     <string name="downloads_storage_used">%1$s used</string>
     <string name="downloads_storage_kept">%1$s used (%2$s from earlier accounts) · %3$s free</string>
@@ -660,6 +693,14 @@
     <string name="settings_version">Version</string>
     <string name="settings_whats_new">What\'s new</string>
     <string name="settings_whats_new_hint">The changes of every version</string>
+    <string name="diagnostics_title">Share diagnostic log</string>
+    <string name="diagnostics_hint">Helps to track down a problem. Without passwords, tokens, server addresses or e-mail.</string>
+    <string name="diagnostics_explain">The log holds the app\'s latest events (up to 500), the app and Android version and the device model. Passwords, tokens, cookies, server addresses, IP and e-mail addresses and your user names are masked. You choose where it goes.</string>
+    <string name="diagnostics_share">Share</string>
+    <string name="diagnostics_cancel">Cancel</string>
+    <string name="diagnostics_chooser">Send the diagnostic log to</string>
+    <string name="diagnostics_subject">Lauschig diagnostic log %1$s</string>
+    <string name="diagnostics_failed">The diagnostic log could not be created.</string>
     <string-array name="whatsnew_0_2_0">
         <item>Sleep timer with a gentle fade-out – shake to extend it</item>
         <item>Every book remembers its speed and volume boost; silence can be skipped</item>
@@ -707,6 +748,8 @@
     <string name="previous_account_keep">Keep</string>
     <string name="kept_delete_failed">Not everything could be deleted. Please try again later.</string>
     <string name="sign_out_keep_data">Keep data on this device</string>
+    <string name="sign_out_card_missing_deleted">Downloads on the SD card, which is out right now, are deleted as soon as it is back.</string>
+    <string name="sign_out_card_missing_kept">Some downloads are on the SD card, which is out right now; they stay as well.</string>
     <string name="previous_account_message_data">Data of %1$s (%2$s) is still on this device. Delete it?</string>
     <string name="sign_out_unsynced_unknown">Whether changes are still missing on the server could not be checked.</string>
     <string name="car_sign_in">Sign in to Lauschig on your phone</string>
@@ -781,6 +824,9 @@
         <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
         <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
         <item>Statistics: tap or swipe across the bars to see date and listening time; with TalkBack every bar says its value</item>
+        <item>Downloads can go to the SD card (Settings → Storage location); while it is out they go to the internal storage</item>
+        <item>Heard downloads can delete themselves – right away, after 3 or after 7 days; progress and history stay</item>
+        <item>Settings → About → Share diagnostic log: helps to find problems, without passwords, tokens or server addresses</item>
         <item>Faster search, covers stay cached after a restart, lists no longer churn while you listen</item>
         <item>Search chapters: in long audiobooks, type a word of the title or the chapter number in the player\'s chapter sheet</item>
         <item>Tap the open tab again to return to its first page</item>

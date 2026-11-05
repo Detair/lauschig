@@ -17,9 +17,13 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.whatsnew.WHATS_NEW
 import io.wolftown.lauschig.whatsnew.WhatsNewSheet
 
-/** "Über": the app version and every release's "Was ist neu". */
+/** "Über": the app version, every release's "Was ist neu" and [diagnostics] ("Diagnose-Log teilen", needs Hilt). */
 @Composable
-fun AboutSection(versionName: String = BuildConfig.VERSION_NAME, versionCode: Int = BuildConfig.VERSION_CODE) {
+fun AboutSection(
+    versionName: String = BuildConfig.VERSION_NAME,
+    versionCode: Int = BuildConfig.VERSION_CODE,
+    diagnostics: @Composable () -> Unit = {},
+) {
     var showNews by rememberSaveable { mutableStateOf(false) }
     Section(R.string.settings_section_about)
     ListItem(
@@ -32,5 +36,6 @@ fun AboutSection(versionName: String = BuildConfig.VERSION_NAME, versionCode: In
         supportingContent = { Text(stringResource(R.string.settings_whats_new_hint)) },
         modifier = Modifier.fillMaxWidth().clickable { showNews = true }.testTag("openWhatsNew"),
     )
+    diagnostics()
     if (showNews) WhatsNewSheet(WHATS_NEW) { showNews = false }
 }

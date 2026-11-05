@@ -12,6 +12,12 @@ import javax.inject.Inject
 /**
  * On-disk layout: `<root>/<serverId>/<itemId>/<index>.<ext>` (+ `.part` while downloading) and `cover.jpg`. Titles of the
  * device library are never downloaded; only their covers live in app storage ([deviceCovers], see [LocalCovers]).
+ *
+ * Downloads may live on several volumes: the internal [root] and the download roots of other volumes ([roots], e.g. an SD
+ * card). A title stays where its directory is; a title without one goes to [DownloadRoots.target] (internal if none).
+ * When a title has a directory on more than one volume (re-downloaded while its card was out), the internal one wins,
+ * then the others in the system's order. Everything that walks all downloads (sign-out size, purge, janitor) covers every
+ * volume that is mounted.
  */
 class DownloadFiles(
     private val root: File,
@@ -19,16 +25,33 @@ class DownloadFiles(
     /** Seam for tests: free bytes on the volume holding the given directory. */
     private val usableSpace: (File) -> Long = { dir -> generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() }?.usableSpace ?: 0L },
     deviceCovers: File = File(root.absoluteFile.parentFile, LocalCovers.DIR),
+    private val roots: DownloadRoots = DownloadRoots.None,
 ) {
     private val localCovers = LocalCovers(deviceCovers)
 
-    @Inject constructor(@ApplicationContext context: Context, audioFiles: AudioFileDao) :
-        this(File(context.filesDir, "downloads"), audioFiles)
+    @Inject constructor(@ApplicationContext context: Context, audioFiles: AudioFileDao, roots: VolumeDownloadRoots) :
+        this(File(context.filesDir, DownloadVolume.DOWNLOADS), audioFiles, roots = roots)
+
+    /** The internal root first, then the mounted other volumes' roots (never twice). */
+    private fun allRoots(): List<File> {
+        val seen = HashSet<String>()
+        return (listOf(root) + roots.external()).filter { seen.add(it.absolutePath) }
+    }
+
+    /** Where a title without a directory goes. */
+    private fun placement(): File = roots.target() ?: root
+
+    /** Suspends until new downloads go where the setting says (a worker started with the app process waits for it). */
+    suspend fun awaitLocation() = roots.awaitReady()
+
+    /** The directories [itemId] has on the mounted volumes (usually one, none if not downloaded). */
+    private fun existingItemDirs(serverId: String, itemId: String): List<File> =
+        allRoots().map { File(File(it, serverId), itemId) }.filter { it.isDirectory }.map { guard(it) }
 
     /** Server-controlled ids are validated; anything else is refused (never retried). */
     fun itemDir(serverId: String, itemId: String): File {
         if (!SERVER_ID.matches(serverId) || !ITEM_ID.matches(itemId)) throw FatalDownloadException("invalid_path")
-        return guard(File(File(root, serverId), itemId))
+        return existingItemDirs(serverId, itemId).firstOrNull() ?: guard(File(File(placement(), serverId), itemId))
     }
 
     /** The extension is only used if it is 1-8 alphanumerics; otherwise the file has none. */
@@ -50,58 +73,123 @@ class DownloadFiles(
 
     fun usableSpace(serverId: String, itemId: String): Long = usableSpace(itemDir(serverId, itemId))
 
-    /** Free bytes on the volume that holds the downloads (shown on the download management page). Blocking. */
-    fun freeSpace(): Long = usableSpace(root)
+    /** Free bytes on the volume new downloads go to (shown on the download management page). Blocking. */
+    fun freeSpace(): Long = usableSpace(placement())
 
-    /** Defense in depth: every target must resolve (symlinks included) to below the downloads root. */
+    /** Defense in depth: every target must resolve (symlinks included) to below one of the download roots. */
     private fun guard(f: File): File {
-        val canonicalRoot = root.canonicalFile
-        if (!f.canonicalFile.startsWith(canonicalRoot) || f.canonicalFile == canonicalRoot) throw FatalDownloadException("invalid_path")
+        val canonical = f.canonicalFile
+        val inside = (allRoots() + placement()).any { r -> val c = r.canonicalFile; canonical.startsWith(c) && canonical != c }
+        if (!inside) throw FatalDownloadException("invalid_path")
         return f
     }
 
-    /** The directory of every download of [serverId]; only a real server id (the device library has none). */
-    fun serverDir(serverId: String): File {
+    /** The directory of [serverId]'s downloads on every mounted volume; only a real server id (the device library has none). */
+    private fun serverDirs(serverId: String): List<File> {
         if (!SERVER_ID.matches(serverId)) throw FatalDownloadException("invalid_path")
-        return guard(File(root, serverId))
-    }
-
-    /** Bytes on disk of [serverId]'s downloads: complete and partial files and covers. 0 for none or an invalid id. Blocking. */
-    fun serverBytes(serverId: String): Long {
-        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return 0 }
-        return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        return allRoots().map { guard(File(it, serverId)) }
     }
 
     /**
-     * Deletes every download of [serverId] (sign-out), partial ones included; never anything outside its directory.
-     * False if something could not be deleted (an invalid id has no directory: true). Blocking.
+     * Bytes on disk of [serverId]'s downloads on every mounted volume: complete and partial files and covers. 0 for none
+     * or an invalid id. Blocking.
+     */
+    fun serverBytes(serverId: String): Long {
+        val dirs = try { serverDirs(serverId) } catch (e: FatalDownloadException) { return 0 }
+        return dirs.sumOf { dir -> dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+    }
+
+    /**
+     * Deletes every download of [serverId] (sign-out) on every mounted volume, partial ones included; never anything
+     * outside its directories. False if something could not be deleted (an invalid id has no directory: true). A card
+     * that is out cannot be reached: what it holds goes when it is back ([io.wolftown.lauschig.account.AccountDataJanitor]).
+     * Blocking.
      */
     fun deleteServer(serverId: String): Boolean {
-        val dir = try { serverDir(serverId) } catch (e: FatalDownloadException) { return true }
+        val dirs = try { serverDirs(serverId) } catch (e: FatalDownloadException) { return true }
+        return dirs.map { it.deleteRecursively() }.all { it }
+    }
+
+    /**
+     * The download roots of [serverId]'s downloads that are not mounted now (an SD card that is out): of its recorded
+     * files (paths in Room) and, when a download was begun but not finished, the chosen card. The purge deletes the
+     * account's whole directory there once it is back (partial files and covers included). Blocking.
+     */
+    suspend fun missingRoots(serverId: String): Set<String> {
+        if (!SERVER_ID.matches(serverId)) return emptySet()
+        val mounted = allRoots().map { it.absolutePath }
+        val recorded = audioFiles.localPaths(serverId).filter { it.startsWith("/") && "/$serverId/" in it }
+            .filter { p -> mounted.none { r -> p.startsWith("$r/") } }
+            .map { it.substringBefore("/$serverId/") }.toSet()
+        // A download begun on the chosen card has no recorded path yet: its `.part` files are on that card all the same.
+        val partial = roots.missingTarget()?.takeIf { audioFiles.hasPartial(serverId) }?.absolutePath
+        return recorded + listOfNotNull(partial)
+    }
+
+    /**
+     * Deletes [serverId]'s directory on the download root [root] if that is a mounted volume's root now: true when it
+     * is gone, false if not everything could be deleted, null if [root] is not mounted (never a path outside a root).
+     * Blocking.
+     */
+    fun deleteServerAt(root: String, serverId: String): Boolean? {
+        if (!SERVER_ID.matches(serverId)) return true
+        val r = roots.external().firstOrNull { it.absolutePath == root } ?: return null
+        val dir = try { guard(File(r, serverId)) } catch (e: FatalDownloadException) { return null }
         return dir.deleteRecursively()
     }
 
-    /** The server ids that have a download directory (only real ids; the device library has none). Blocking. */
-    fun serverIds(): List<String> = root.listFiles { f -> f.isDirectory && SERVER_ID.matches(f.name) }?.map { it.name }?.sorted().orEmpty()
+    /** The server ids that have a download directory on any mounted volume (only real ids; the device library has none). Blocking. */
+    fun serverIds(): List<String> =
+        allRoots().flatMap { r -> r.listFiles { f -> f.isDirectory && SERVER_ID.matches(f.name) }?.map { it.name }.orEmpty() }.distinct().sorted()
 
-    /** Never deletes outside the root; invalid ids have no directory, so there is nothing to delete. */
+    /** The item keys of [serverId] that have a directory on any mounted volume; only valid ids. Blocking. */
+    fun itemIds(serverId: String): List<String> {
+        val dirs = try { serverDirs(serverId) } catch (e: FatalDownloadException) { return emptyList() }
+        return dirs.flatMap { d -> d.listFiles { f -> f.isDirectory && ITEM_ID.matches(f.name) }?.map { it.name }.orEmpty() }.distinct().sorted()
+    }
+
+    /** True if [itemId] has directories on more than one volume (see the class comment). Blocking. */
+    fun isOnSeveralVolumes(serverId: String, itemId: String): Boolean =
+        SERVER_ID.matches(serverId) && ITEM_ID.matches(itemId) &&
+            (try { existingItemDirs(serverId, itemId) } catch (e: FatalDownloadException) { emptyList() }).size > 1
+
+    /** Deletes the title's directory on every mounted volume; invalid ids have none, so there is nothing to delete. */
     fun deleteItem(serverId: String, itemId: String) {
-        val dir = try { itemDir(serverId, itemId) } catch (e: FatalDownloadException) { return }
-        dir.deleteRecursively()
+        if (!SERVER_ID.matches(serverId) || !ITEM_ID.matches(itemId)) return
+        val dirs = try { existingItemDirs(serverId, itemId) } catch (e: FatalDownloadException) { return }
+        dirs.forEach { it.deleteRecursively() }
     }
 
     /**
-     * Deletes everything in the item dir that no [io.wolftown.lauschig.db.entities.AudioFileEntity.localPath]
-     * references (files that vanished or were replaced on the server, stale `.part` files). The cover is kept.
+     * Deletes everything in the title's directories that no [io.wolftown.lauschig.db.entities.AudioFileEntity.localPath]
+     * references (files that vanished or were replaced on the server, stale `.part` files, a copy left on another volume).
+     * The cover is kept in the directory [itemDir] uses; another volume's directory goes once it is empty.
      */
     suspend fun cleanupOrphans(serverId: String, itemId: String) {
-        val dir = itemDir(serverId, itemId)
-        val children = dir.listFiles() ?: return
+        val home = itemDir(serverId, itemId)
+        val dirs = existingItemDirs(serverId, itemId)
+        if (dirs.isEmpty()) return
         val keep = audioFiles.forItem(serverId, itemId).mapNotNull { it.localPath }.map { File(it).canonicalPath }.toSet()
-        for (f in children) {
-            if (f.name == COVER) continue
-            if (f.canonicalPath !in keep) guard(f).deleteRecursively()
+        for (dir in dirs) {
+            val children = dir.listFiles() ?: continue
+            val isHome = dir.absolutePath == home.absolutePath
+            for (f in children) {
+                if (isHome && f.name == COVER) continue
+                if (f.canonicalPath !in keep) guard(f).deleteRecursively()
+            }
+            if (!isHome && dir.list()?.isEmpty() == true) dir.delete()
         }
+    }
+
+    /**
+     * When the download of [itemId] was completed, on the device's clock: the newest modification time of its recorded
+     * audio files (a file is written, then renamed into place). Null when nothing is recorded or a recorded file is not
+     * there (a card that is out). Blocking.
+     */
+    suspend fun completedAt(serverId: String, itemId: String): Long? {
+        val paths = audioFiles.forItem(serverId, itemId).map { it.localPath ?: return null }
+        if (paths.isEmpty()) return null
+        return paths.maxOf { p -> File(p).takeIf { it.isFile }?.lastModified()?.takeIf { it > 0 } ?: return null }
     }
 
     companion object {

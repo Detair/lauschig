@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import android.media.audiofx.DynamicsProcessing
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay

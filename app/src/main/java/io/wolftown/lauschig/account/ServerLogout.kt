@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.account
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.absapi.AbsClientFactory
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.connection.ConnectionState

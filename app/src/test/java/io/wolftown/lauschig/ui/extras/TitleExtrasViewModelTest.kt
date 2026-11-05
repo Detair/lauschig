@@ -68,12 +68,12 @@ class TitleExtrasViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm(): TitleExtrasViewModel {
+    private fun vm(queue: io.wolftown.lauschig.db.dao.QueueDao = db.queueDao()): TitleExtrasViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
         return viewModels.own(
             TitleExtrasViewModel(
-                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), db.queueDao(),
+                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), queue,
                 db.itemDao(), db.episodeDao(), player, flowOf(ConnectionState.Offline), sync,
             ),
         )
@@ -103,5 +103,34 @@ class TitleExtrasViewModelTest {
         vm.deleteBookmark(row)
         settle()
         assertEquals(listOf("bookmarks", "bookmarks", "bookmarks", "bookmarks"), triggers)
+    }
+
+    /** "Play from the queue" picks the title for the automatic clean-up before it leaves the queue (no unprotected gap). */
+    @Test fun playFromQueue_picksTheTitle_beforeItLeavesTheQueue() = runBlocking {
+        io.wolftown.lauschig.cleanup.TitleHandover.reset()
+        val real = db.queueDao()
+        real.add(s, "c", 1)
+        // The removal itself records whether the title was picked at that moment.
+        val pickedAtRemoval = mutableListOf<Pair<String, Boolean>>()
+        val recording = object : io.wolftown.lauschig.db.dao.QueueDao() {
+            override fun observe(serverId: String) = real.observe(serverId)
+            override suspend fun entries(serverId: String) = real.entries(serverId)
+            override suspend fun insertAll(rows: List<io.wolftown.lauschig.db.entities.QueueEntity>) = error("not used")
+            override suspend fun clear(serverId: String) = real.clear(serverId)
+            override suspend fun add(serverId: String, itemKey: String, now: Long) = real.add(serverId, itemKey, now)
+            override suspend fun move(serverId: String, itemKey: String, delta: Int) = real.move(serverId, itemKey, delta)
+            override suspend fun replace(serverId: String, keys: List<String>, now: Long) = real.replace(serverId, keys, now)
+            override suspend fun remove(serverId: String, itemKey: String) {
+                pickedAtRemoval += itemKey to io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey(itemKey)
+                real.remove(serverId, itemKey)
+            }
+        }
+        assertEquals("not picked before the start", false, io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c"))
+        vm(recording).playFromQueue("c")
+        kotlinx.coroutines.withTimeout(5_000) { while (player.calls.isEmpty()) kotlinx.coroutines.delay(10) }
+        assertEquals(listOf("c" to true), pickedAtRemoval)
+        assertEquals(emptyList<Any>(), real.entries(s))
+        assertEquals(listOf("play c null"), player.calls)
+        io.wolftown.lauschig.cleanup.TitleHandover.reset()
     }
 }

@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.widget
 
 import android.content.Context
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.glance.appwidget.updateAll
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.account.AccountStore

@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.widget
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.media3.common.Player
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.playback.MediaItemFactory

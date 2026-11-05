@@ -31,7 +31,9 @@ class CarStartsTest {
         lastTitle = { last },
         accountServer = { account },
         current = { loaded },
+        pick = { picked += it },
     )
+    private val picked = mutableListOf<String>()
 
     private fun byId(id: String) = MediaItem.Builder().setMediaId(id).build()
     private fun bySearch(query: String, extras: Bundle? = null) = MediaItem.Builder()
@@ -108,5 +110,33 @@ class CarStartsTest {
         assertTrue(resolved.isEmpty())
         // Another title loads as usual.
         assertTrue(starts.forRequest(listOf(byId("title/$s/other")), 0) is CarStarts.Outcome.Ready)
+    }
+
+    /** A browsed, searched, voice-requested or resumed title is held for the automatic clean-up before it is resolved. */
+    @Test fun everyCarStart_picksItsTitle_beforeItIsResolved() = runTest {
+        val pickedWhenResolved = mutableListOf<Pair<String, List<String>>>()
+        val starts = CarStarts(
+            resolveTitle = { _, key, _ -> pickedWhenResolved += key to picked.toList(); result },
+            searchTitle = { _, _ -> found },
+            lastTitle = { last },
+            accountServer = { account },
+            pick = { picked += it },
+        )
+        starts.forRequest(listOf(byId(MediaIds.of(CarNode.Title(s, "browsed")))), 0)
+        found = CarNode.Title(s, "searched")
+        starts.forRequest(listOf(bySearch("gesucht")), 0)
+        found = CarNode.Title(s, "spoken") // "Spiel … auf Lauschig": the Assistant's query with its hints
+        starts.forRequest(listOf(bySearch("spiel die drei", Bundle().apply { putString(MediaStore.EXTRA_MEDIA_TITLE, "Die drei") })), C.INDEX_UNSET)
+        last = CarNode.Title(s, "resumed")
+        starts.forResumption()
+        assertEquals(
+            listOf(
+                "browsed" to listOf("browsed"),
+                "searched" to listOf("browsed", "searched"),
+                "spoken" to listOf("browsed", "searched", "spoken"),
+                "resumed" to listOf("browsed", "searched", "spoken", "resumed"),
+            ),
+            pickedWhenResolved,
+        )
     }
 }

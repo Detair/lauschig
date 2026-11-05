@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.BookmarkDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
@@ -135,8 +136,8 @@ class TitleExtrasViewModel(
         val sid = DeviceLibrary.serverFor(queueOwner, key) ?: queueOwner
         val p = PlayableKey.parse(key)
         val parent = items.get(sid, p.libraryItemId)
-        if (p.episodeId == null) return QueueRow(key, parent?.title ?: key, parent?.author)
-        val ep = episodes.get(sid, p.libraryItemId, p.episodeId)
+        val episodeId = p.episodeId ?: return QueueRow(key, parent?.title ?: key, parent?.author)
+        val ep = episodes.get(sid, p.libraryItemId, episodeId)
         return QueueRow(key, ep?.title ?: key, parent?.title)
     }
 
@@ -147,6 +148,7 @@ class TitleExtrasViewModel(
 
     /** Plays a queued title now; it leaves the queue. */
     fun playFromQueue(key: String) = withServer { sid ->
+        TitleHandover.pick(key) // never unprotected between leaving the queue and being loaded
         queue.remove(sid, key)
         player.play(DeviceLibrary.serverFor(sid, key) ?: sid, key)
     }

@@ -23,11 +23,16 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.download.AutoDeleteMode
+import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.settings.AppSettings
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
-/** Once a week: if finished titles are still downloaded (and not ignored), posts one notification that opens "Clean up". */
+/**
+ * Once a week: if finished titles are still downloaded (and not ignored), posts one notification that opens "Clean up".
+ * Silent while the automatic clean-up is on of this account ([DownloadSettings.autoDeleteFinished]): it deletes them anyway.
+ */
 @HiltWorker
 class CleanupReminderWorker @AssistedInject constructor(
     @Assisted context: Context,
@@ -36,10 +41,12 @@ class CleanupReminderWorker @AssistedInject constructor(
     private val items: ItemDao,
     private val audioFiles: AudioFileDao,
     private val settings: AppSettings,
+    private val downloadSettings: DownloadSettings,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         if (!settings.cleanupReminder.first()) return Result.success()
         val serverId = accounts.account.first()?.serverId ?: return Result.success()
+        if (downloadSettings.autoDeleteFinished(serverId).first() != AutoDeleteMode.NEVER) return Result.success()
         val ignored = settings.cleanupIgnored.first()
         val candidates = items.observeFinishedDownloaded(serverId).first().filter { "$serverId:${it.id}" !in ignored }
         if (candidates.isEmpty()) return Result.success()

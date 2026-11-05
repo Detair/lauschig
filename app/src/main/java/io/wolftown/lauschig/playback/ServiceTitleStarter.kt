@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
-import android.util.Log
+import io.wolftown.lauschig.cleanup.TitleHandover
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.media3.common.MediaItem
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.local.DeviceLibrary
@@ -84,6 +85,7 @@ class ServiceTitleStarter(
 
     /** Resolves [key] and plays it on the service's player (queue advance); false if it cannot play. */
     suspend fun start(serverId: String, key: String): Boolean {
+        TitleHandover.pick(key) // a queue start: held for the automatic clean-up while it loads (car starts: CarStarts)
         val r = resolve(serverId, key) as? Resolved.Ready ?: return false
         setQueue(r.items, r.index, r.offsetMs)
         if (r.streaming) onStreamStarted(serverId, key)

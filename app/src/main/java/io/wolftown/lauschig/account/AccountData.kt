@@ -6,12 +6,16 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.bookmarks.BookmarkRules
+import io.wolftown.lauschig.cleanup.AutoDeleteAccountState
+import io.wolftown.lauschig.cleanup.FinishedSeenStore
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.AccountDataDao
 import io.wolftown.lauschig.db.dao.BookmarkDao
 import io.wolftown.lauschig.db.dao.ProgressDao
 import io.wolftown.lauschig.db.dao.SessionDao
+import io.wolftown.lauschig.download.DataStoreVolumePurges
 import io.wolftown.lauschig.download.DownloadFiles
+import io.wolftown.lauschig.download.VolumePurges
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.sync.SyncStamps
 import kotlinx.coroutines.CoroutineDispatcher
@@ -55,6 +59,9 @@ interface AccountData {
 
     /** True if [serverId] has any row left. */
     suspend fun hasRows(serverId: String): Boolean
+
+    /** True if some of [serverId]'s downloads are on a volume that is not there now (an SD card that is out). */
+    suspend fun downloadsOnMissingVolume(serverId: String): Boolean = false
 }
 
 class DeviceAccountData(
@@ -67,9 +74,20 @@ class DeviceAccountData(
     /** Drops the car's cached server covers of a server ([CoverStore.forgetServer]). Blocking. */
     private val forgetCovers: (serverId: String) -> Unit,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Download roots on a card that was out at the purge: the purge waits for them. */
+    private val volumePurges: VolumePurges = VolumePurges.None,
+    /** The automatic clean-up's "first seen finished" times of the server ([FinishedSeenStore.forget]). */
+    private val forgetSeen: suspend (serverId: String) -> Unit = {},
+    /** The automatic clean-up's setting, open questions and keep entries of the server ([AutoDeleteAccountState.forget]). */
+    private val forgetAutoDelete: suspend (serverId: String) -> Unit = {},
 ) : AccountData {
-    @Inject constructor(db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore) :
-        this(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer)
+    @Inject constructor(
+        db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore, volumePurges: DataStoreVolumePurges, seen: FinishedSeenStore,
+        autoDelete: AutoDeleteAccountState,
+    ) : this(
+        db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges,
+        seen::forget, autoDelete::forget,
+    )
 
     override suspend fun unsynced(serverId: String): Int {
         if (DeviceLibrary.isLocal(serverId)) return 0
@@ -85,18 +103,29 @@ class DeviceAccountData(
 
     /**
      * The sync stamps first (a kill afterwards costs at most an extra fetch, never a stamp that hides missing rows),
-     * then the rows (nothing then points at the files), then the files and caches.
+     * then the automatic clean-up's setting, questions and keep entries (a purge cut short leaves the clean-up off), then
+     * the rows (nothing then points at the files), then the files and caches. Downloads on a card that is out are
+     * noted first (the rows say where they are): the purge fails until the card was back and they are gone, so the
+     * caller keeps it pending and the janitor finishes it.
      */
     override suspend fun purge(serverId: String) {
         require(!DeviceLibrary.isLocal(serverId)) { "the device library is not account data" }
+        val away = withContext(io) { files.missingRoots(serverId) }
+        volumePurges.add(serverId, away)
         stamps.removeServer(serverId)
+        forgetAutoDelete(serverId)
         dao.deleteServer(serverId)
+        forgetSeen(serverId)
         withContext(io) {
             val gone = files.deleteServer(serverId)
             forgetCovers(serverId)
+            val waiting = volumePurges.finish(serverId) { root -> files.deleteServerAt(root, serverId) }
             if (!gone) throw IOException("the downloads of $serverId could not all be deleted")
+            if (waiting.isNotEmpty()) throw IOException("downloads on a card that is out are deleted once it is back")
         }
     }
+
+    override suspend fun downloadsOnMissingVolume(serverId: String): Boolean = withContext(io) { files.missingRoots(serverId).isNotEmpty() }
 
     override suspend fun deleteRows(serverId: String) {
         require(!DeviceLibrary.isLocal(serverId)) { "the device library is not account data" }

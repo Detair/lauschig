@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.auto
 
 import android.content.Context
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

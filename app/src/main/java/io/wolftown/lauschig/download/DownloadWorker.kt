@@ -115,6 +115,7 @@ class DownloadWorker @AssistedInject constructor(
         val network = inputData.getString(KEY_NETWORK)?.let { n -> NetworkType.entries.firstOrNull { it.name == n } }
         title = (parsed.episodeId?.let { episodes.get(serverId, libraryItemId, it)?.title } ?: items.get(serverId, itemId)?.title).orEmpty()
         try {
+            files.awaitLocation() // a new title goes where the setting says, also right after a cold start
             files.itemDir(serverId, itemId) // validates the server-controlled ids before anything touches the disk
             var list = audioFiles.forItem(serverId, itemId)
             if (list.isEmpty()) {

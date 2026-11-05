@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.auto
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import io.wolftown.lauschig.db.dao.ItemWithDetails

@@ -46,7 +46,8 @@ suspend fun queueEntryState(items: ItemDao, episodes: EpisodeDao, downloads: Dow
     val p = PlayableKey.parse(key)
     val sid = DeviceLibrary.serverFor(serverId, key) ?: serverId
     val item = items.get(sid, p.libraryItemId)
-    val exists = item != null && (p.episodeId == null || episodes.get(sid, p.libraryItemId, p.episodeId) != null)
+    val episodeId = p.episodeId
+    val exists = item != null && (episodeId == null || episodes.get(sid, p.libraryItemId, episodeId) != null)
     val downloaded = DeviceLibrary.isLocal(sid) || downloads.get(sid, key)?.state == DownloadState.COMPLETE
     return AdvancePolicy.classify(exists, item?.orphaned == true, downloaded, online)
 }
@@ -70,6 +71,11 @@ class QueueAdvancer(
     private val start: suspend (serverId: String, key: String) -> Boolean,
     /** False once [serverId] is no longer the signed-in account (a sign-out came in between): nothing more starts. */
     private val stillOwner: suspend (serverId: String) -> Boolean = { true },
+    /**
+     * Called before a title leaves the queue to start: from then on it is held for the automatic clean-up until the
+     * player holds it ([io.wolftown.lauschig.cleanup.TitleHandover]) – it is never unprotected on its way.
+     */
+    private val pick: (serverId: String, key: String) -> Unit = { _, _ -> },
 ) {
     /** Returns the key that was started, or null. */
     suspend fun onEnded(serverId: String, endedKey: String): String? {
@@ -83,6 +89,7 @@ class QueueAdvancer(
                 QueueEntryState.UNAVAILABLE_NOW -> Unit
                 QueueEntryState.PLAYABLE -> {
                     if (!stillOwner(serverId)) return null
+                    pick(serverId, key)
                     remove(serverId, key)
                     if (start(serverId, key)) return key
                 }

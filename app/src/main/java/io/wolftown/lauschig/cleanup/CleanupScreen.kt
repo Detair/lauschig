@@ -39,7 +39,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.AudioFileDao
-import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.settings.AppSettings
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -58,12 +58,15 @@ data class CleanupRow(val itemId: String, val title: String, val bytes: Long, va
 @Immutable
 data class CleanupUiState(val rows: List<CleanupRow> = emptyList(), val loaded: Boolean = false)
 
-/** Finished titles that are still downloaded; ignored ones are listed too (so the choice can be undone). */
+/**
+ * Finished titles and episodes that are still downloaded; kept ("Behalten") ones are listed too, so the choice can be
+ * undone. "Behalten" also keeps a title from the automatic clean-up.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class CleanupViewModel @Inject constructor(
     accounts: AccountStore,
-    items: ItemDao,
+    downloadDao: DownloadDao,
     audioFiles: AudioFileDao,
     private val settings: AppSettings,
     private val downloads: DownloadManager,
@@ -73,9 +76,9 @@ class CleanupViewModel @Inject constructor(
     val state: StateFlow<CleanupUiState> = accounts.account.flatMapLatest { account ->
         val sid = account?.serverId ?: return@flatMapLatest flowOf(CleanupUiState(loaded = true))
         serverId = sid
-        combine(items.observeFinishedDownloaded(sid), audioFiles.observeLocalBytes(sid), settings.cleanupIgnored) { list, bytes, ignored ->
+        combine(downloadDao.observeFinishedEntries(sid), audioFiles.observeLocalBytes(sid), settings.cleanupIgnored) { list, bytes, ignored ->
             val byId = bytes.associate { it.itemId to it.bytes }
-            CleanupUiState(list.map { CleanupRow(it.id, it.title, byId[it.id] ?: 0L, "$sid:${it.id}" in ignored) }, loaded = true)
+            CleanupUiState(list.map { CleanupRow(it.itemKey, it.title, byId[it.itemKey] ?: 0L, "$sid:${it.itemKey}" in ignored) }, loaded = true)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CleanupUiState())
 

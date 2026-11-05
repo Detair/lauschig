@@ -3,7 +3,7 @@ package io.wolftown.lauschig.widget
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.core.graphics.scale
 import androidx.glance.appwidget.updateAll
 import dagger.Binds

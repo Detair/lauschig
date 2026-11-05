@@ -91,6 +91,12 @@ class AccountStateCleanerTest {
         assertEquals(other, prompts.prompt.value)
     }
 
+    @Test fun theDiagnosticLog_goesOnEverySignOut() = runBlocking {
+        var cleared = 0
+        AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, { cleared++ }).clear(a)
+        assertEquals(1, cleared)
+    }
+
     @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }

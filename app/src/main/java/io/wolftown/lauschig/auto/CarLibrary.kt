@@ -313,9 +313,10 @@ class CarLibrary(
         val parsed = PlayableKey.parse(node.key)
         val local = items.observeDownload(sid, node.key).first()?.state == DownloadState.COMPLETE
         val p = progress.get(sid, node.key)
-        if (parsed.episodeId != null) {
+        val episodeId = parsed.episodeId
+        if (episodeId != null) {
             val podcast = items.get(sid, parsed.libraryItemId) ?: return null
-            val e = episodes.get(sid, parsed.libraryItemId, parsed.episodeId) ?: return null
+            val e = episodes.get(sid, parsed.libraryItemId, episodeId) ?: return null
             return episodeEntry(sid, podcast, e, p, local)
         }
         val item = items.get(sid, node.key) ?: return null

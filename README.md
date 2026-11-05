@@ -52,10 +52,13 @@ The design spec and the phase plans (mostly German) live in [`docs/superpowers/s
 
 Kotlin, Jetpack Compose, Hilt, Room, Media3, WorkManager. Android 9+ (minSdk 28).
 
+Modules: `:app` (UI, playback, sync, downloads), `:core:database` (Room entities, DAOs and the exported schemas),
+`:core:model` (plain Kotlin keys every layer shares) and `:abs-api` (the Audiobookshelf API).
+
 ## Build
 
 ```sh
-./gradlew :app:assembleDebug :app:testDebugUnitTest :abs-api:test lint
+./gradlew :app:assembleDebug testDebugUnitTest :abs-api:test :core:model:test lint
 ```
 
 ## Release build

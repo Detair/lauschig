@@ -8,16 +8,22 @@ import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.playback.LastPlayed
 import io.wolftown.lauschig.playback.LastPlayedStore
 import io.wolftown.lauschig.sync.InMemorySyncStamps
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
@@ -585,5 +591,55 @@ class SignOutTest {
         assertEquals(2, signOut(pushes = listOf({ _ -> awaitCancellation() })).check()!!.unsynced)
         assertTrue(testScheduler.currentTime - started <= SignOut.PUSH_TIMEOUT_MS)
         assertEquals(account, accounts.account.first()) // checking never signs out
+    }
+
+    /**
+     * "Abmelden und löschen" takes the account's automatic clean-up with it: signed in again to the same server, it
+     * starts like a new account – "Nie", no question left over (none settled into a keep entry at the next start), no
+     * keep entries. Another account's are untouched.
+     */
+    @Test fun withoutKeeping_theAccountComesBackLikeANewOne_cleanupOff_nothingAskedOrKept(): Unit = runBlocking {
+        val settings = io.wolftown.lauschig.download.DownloadSettings(ctx)
+        val app = io.wolftown.lauschig.settings.AppSettings(ctx)
+        val questionFile = File(root.parentFile, "questions.preferences_pb")
+        val scopes = mutableListOf<CoroutineScope>()
+        fun questions() = io.wolftown.lauschig.cleanup.FinishedQuestions(
+            androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { scopes += it }, produceFile = { questionFile }),
+            autoDeleteOn = { sid -> settings.autoDeleteFinished(sid).first() != AutoDeleteMode.NEVER },
+            keepEntry = { app.setCleanupIgnored(it, true) },
+            deleteDownload = { _, _ -> },
+        )
+        try {
+            val q = questions()
+            settings.setAutoDeleteFinished(a, AutoDeleteMode.AFTER_3_DAYS)
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.IMMEDIATELY)
+            app.setCleanupIgnored("$a:book1", true)
+            app.setCleanupIgnored("$b:book1", true)
+            q.ask(io.wolftown.lauschig.cleanup.FinishedQuestion(a, "book2")) // still open at the sign-out
+            q.ask(io.wolftown.lauschig.cleanup.FinishedQuestion(b, "x"))
+            seed(a)
+            val purging = DeviceAccountData(
+                db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), stamps,
+                forgottenCovers::add, forgetAutoDelete = io.wolftown.lauschig.cleanup.AutoDeleteAccountState(settings, q, app)::forget,
+            )
+
+            signOut(purgeData = purging).execute(keepDownloads = false)
+            accounts.acc.value = account // signed in again to the same server
+
+            assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(a).first())
+            assertEquals(setOf(io.wolftown.lauschig.cleanup.FinishedQuestion(b, "x")), q.holds.first())
+            assertEquals(listOf(io.wolftown.lauschig.cleanup.FinishedQuestion(b, "x")), q.open.value)
+            assertEquals(setOf("$b:book1"), app.cleanupIgnored.first())
+            // The next start settles no question of it.
+            scopes.forEach { s -> s.coroutineContext[kotlinx.coroutines.Job]!!.let { it.cancel(); it.join() } }
+            questions().settleLeftovers()
+            assertEquals(setOf("$b:book1", "$b:x"), app.cleanupIgnored.first())
+            assertEquals(AutoDeleteMode.IMMEDIATELY, settings.autoDeleteFinished(b).first())
+        } finally {
+            scopes.forEach { it.cancel() }
+            settings.setAutoDeleteFinished(a, AutoDeleteMode.NEVER)
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.NEVER)
+            app.cleanupIgnored.first().forEach { app.setCleanupIgnored(it, false) }
+        }
     }
 }

@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.auto
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.playback.PlayableKey
 import java.io.File

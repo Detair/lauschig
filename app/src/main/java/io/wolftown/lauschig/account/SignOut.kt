@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.account
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -34,6 +34,8 @@ data class SignOutCheck(
     val unsynced: Int,
     /** Bytes of this account's downloads on the device; 0 = nothing to keep (the checkbox is hidden). */
     val downloadBytes: Long,
+    /** Some downloads are on an SD card that is out: deleting them waits until it is back (the dialog says so). */
+    val onMissingCard: Boolean = false,
 )
 
 sealed interface SignOutResult {
@@ -187,7 +189,7 @@ class SignOut(
                 if (awaitOnline()) pushes.forEach { push -> step("push") { push(serverId) } }
             }
         }
-        return SignOutCheck(data.unsynced(serverId), data.downloadBytes(serverId))
+        return SignOutCheck(data.unsynced(serverId), data.downloadBytes(serverId), step("card") { data.downloadsOnMissingVolume(serverId) } == true)
     }
 
     override suspend fun downloadBytes(): Long = try {
