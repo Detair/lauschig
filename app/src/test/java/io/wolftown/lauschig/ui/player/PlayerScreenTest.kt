@@ -10,6 +10,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasText
+import androidx.compose.material3.Text
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -43,12 +46,62 @@ class PlayerScreenTest {
             }
         }
         rule.onNodeWithContentDescription("Play").performClick()
-        rule.onNodeWithContentDescription("Back 30 seconds").performClick()
+        rule.onNodeWithContentDescription("Back 15 seconds").performClick()
         rule.onNodeWithContentDescription("Forward 30 seconds").performClick()
         rule.onNodeWithContentDescription("Previous chapter").performClick()
         rule.onNodeWithContentDescription("Next chapter").performClick()
-        assertEquals(listOf("t", "s-30", "s30", "p", "n"), calls)
+        assertEquals(listOf("t", "s-15", "s30", "p", "n"), calls)
         rule.onNodeWithText("02:05 / 05:00").assertExists()
+    }
+
+    @Test fun seekButtons_followTheSettings_andShowTheirSeconds() {
+        val calls = mutableListOf<Int>()
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(seekBackSec = 10, seekForwardSec = 45), {}, onSeekBy = { calls += it }) } }
+        rule.onNodeWithContentDescription("Back 10 seconds").performClick()
+        rule.onNodeWithContentDescription("Forward 45 seconds").performClick()
+        assertEquals(listOf(-10, 45), calls)
+        rule.onNodeWithTag("seekBackNumber", useUnmergedTree = true).assertTextEquals("10")
+        rule.onNodeWithTag("seekForwardNumber", useUnmergedTree = true).assertTextEquals("45")
+    }
+
+    @Test fun tiles_showNameAndValue() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        rule.onNodeWithTag("speedButton").assert(hasText("Speed", substring = true)).assert(hasText("1.25×", substring = true))
+        rule.onNodeWithTag("sleepButton").assert(hasText("Sleep", substring = true)).assert(hasText("Off", substring = true))
+        rule.onNodeWithTag("audioButton").assert(hasText("Sound", substring = true)).assert(hasText("Off", substring = true))
+    }
+
+    @Test fun contentsBanner_showsTheChapter_andOpensTheTabbedSheet() {
+        val chapters = mutableListOf<Int>()
+        rule.setContent {
+            LauschigTheme {
+                PlayerScreen(
+                    state, {}, onChapter = { chapters += it },
+                    contents = PlayerContents(queue = { Text("queue content") }, bookmarks = { Text("bookmark content") }, history = { Text("history content") }),
+                )
+            }
+        }
+        rule.onNodeWithTag("contentsBanner").assert(hasText("Chapters & queue", substring = true)).assert(hasText("Now: ch. 2 / 2", substring = true))
+            .performClick()
+        rule.onNodeWithTag("contentsSheet").assertExists()
+        rule.onNodeWithTag("currentChapter").assertExists()
+        rule.onNodeWithTag("contentsTab:Queue").performClick()
+        rule.onNodeWithText("queue content").assertExists()
+        rule.onNodeWithTag("contentsTab:Bookmarks").performClick()
+        rule.onNodeWithText("bookmark content").assertExists()
+        rule.onNodeWithTag("contentsTab:History").performClick()
+        rule.onNodeWithText("history content").assertExists()
+        rule.onNodeWithTag("contentsTab:Chapters").performClick()
+        rule.onNodeWithText("One").performClick()
+        assertEquals(listOf(0), chapters)
+    }
+
+    @Test fun contentsBanner_withoutChapters_opensOnTheQueue() {
+        rule.setContent {
+            LauschigTheme { PlayerScreen(state.copy(chapters = emptyList()), {}, contents = PlayerContents(queue = { Text("queue content") })) }
+        }
+        rule.onNodeWithTag("contentsBanner").assert(hasText("Queue, bookmarks & history", substring = true)).performClick()
+        rule.onNodeWithText("queue content").assertExists()
     }
 
     @Test fun underTheTitle_authorAndSeriesWithVolume() {
@@ -151,17 +204,16 @@ class PlayerScreenTest {
     private fun FullPlayer(s: PlayerScreenState = state) = PlayerScreen(
         s, {},
         comfort = { ComfortButtons(ComfortUiState(), {}, {}, {}, {}) },
-        extras = { PlayerExtraButtons({}, {}, {}) },
     )
 
     private fun assertAllActionsOnScreen() {
         val root = rule.onRoot().getUnclippedBoundsInRoot()
-        for (tag in listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")) {
+        for (tag in actionTags) {
             val b = rule.onNodeWithTag(tag).getUnclippedBoundsInRoot()
             assertTrue("$tag below the fold: ${b.bottom} > ${root.bottom}", b.bottom <= root.bottom)
             assertTrue("$tag clipped sideways", b.left >= 0.dp && b.right <= root.right)
         }
-        for (d in listOf("Play", "Back 30 seconds", "Forward 30 seconds")) {
+        for (d in listOf("Play", "Back 15 seconds", "Forward 30 seconds")) {
             assertTrue("$d below the fold", rule.onNodeWithContentDescription(d).getUnclippedBoundsInRoot().bottom <= root.bottom)
         }
     }
@@ -193,7 +245,7 @@ class PlayerScreenTest {
                 androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 2f),
             ) { LauschigTheme { FullPlayer() } }
         }
-        rule.onNodeWithTag("historyButton").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("contentsBanner").performScrollTo().assertIsDisplayed()
     }
 
     // A phone in landscape: cover on the start side, controls next to it.
@@ -208,7 +260,7 @@ class PlayerScreenTest {
         assertTrue("play below the fold", play.bottom <= root.bottom)
     }
 
-    private val actionTags = listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")
+    private val actionTags = listOf("speedButton", "sleepButton", "audioButton", "contentsBanner")
 
     // A tablet in landscape (1006×601 dp minus the system bars): the cover alone on the start side, as large as fits and
     // centred; the end side holds the transport and, under it, the action grid, so nothing is left empty and nothing scrolls.

@@ -18,20 +18,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.Forward30
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay30
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
@@ -45,13 +38,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -90,16 +81,14 @@ import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.common.coverModel
-import io.wolftown.lauschig.ui.detail.chapterItems
 import io.wolftown.lauschig.ui.detail.rememberNotificationPermissionOnce
-import io.wolftown.lauschig.ui.extras.BookmarksSheet
-import io.wolftown.lauschig.ui.extras.HistorySheet
-import io.wolftown.lauschig.ui.extras.QueueSheet
+import io.wolftown.lauschig.ui.extras.BookmarksContent
+import io.wolftown.lauschig.ui.extras.HistoryContent
+import io.wolftown.lauschig.ui.extras.QueueContent
 import io.wolftown.lauschig.ui.theme.TINT_FADE_MS
 import io.wolftown.lauschig.ui.theme.controlColorOn
 import io.wolftown.lauschig.ui.theme.coverTintTarget
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -118,7 +107,6 @@ fun PlayerRoute(
     val itemId = state.itemId
     val download by remember(itemId) { actions.downloadState(itemId) }.collectAsStateWithLifecycle(QuickDownload.None)
     val askNotifications = rememberNotificationPermissionOnce()
-    var sheet by rememberSaveable { mutableStateOf<PlayerSheet?>(null) }
     PlayerScreen(
         state, onClose, modifier,
         // The player's id is the playable key; details open on the library item (the podcast for an episode).
@@ -135,9 +123,11 @@ fun PlayerRoute(
         onNext = viewModel::nextChapter,
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
-        extras = {
-            PlayerExtraButtons(onBookmarks = { sheet = PlayerSheet.Bookmarks }, onQueue = { sheet = PlayerSheet.Queue }, onHistory = { sheet = PlayerSheet.History })
-        },
+        contents = PlayerContents(
+            queue = { done -> QueueContent(done) },
+            bookmarks = { done -> itemId?.let { BookmarksContent(it, state.chapterStartSec + state.chapterPositionSec, done) } },
+            history = { done -> itemId?.let { HistoryContent(it, done) } },
+        ),
         comfort = {
             ComfortButtons(
                 comfort,
@@ -149,23 +139,6 @@ fun PlayerRoute(
         },
         comfortHint = { ShakeHint(comfort) },
     )
-    val close = { sheet = null }
-    when (sheet) {
-        PlayerSheet.Bookmarks -> itemId?.let { BookmarksSheet(it, state.chapterStartSec + state.chapterPositionSec, close) }
-        PlayerSheet.History -> itemId?.let { HistorySheet(it, close) }
-        PlayerSheet.Queue -> QueueSheet(close)
-        null -> Unit
-    }
-}
-
-enum class PlayerSheet { Bookmarks, Queue, History }
-
-/** Bookmarks, queue and listening history buttons of the player's action area. */
-@Composable
-fun RowScope.PlayerExtraButtons(onBookmarks: () -> Unit, onQueue: () -> Unit, onHistory: () -> Unit) {
-    PlayerAction(Icons.Rounded.Bookmarks, stringResource(R.string.player_bookmarks), onBookmarks, Modifier.testTag("bookmarksButton"))
-    PlayerAction(Icons.AutoMirrored.Rounded.QueueMusic, stringResource(R.string.player_queue), onQueue, Modifier.testTag("queueButton"))
-    PlayerAction(Icons.Rounded.History, stringResource(R.string.player_history), onHistory, Modifier.testTag("historyButton"))
 }
 
 /** "1,25×" in the user's locale. */
@@ -215,15 +188,15 @@ fun PlayerScreen(
     onDeleteDownload: () -> Unit = {},
     topActions: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
-    /** Sleep timer and audio buttons ([ComfortButtons]) of the action area; shown only while a title is loaded. */
+    /** The Sleep and Klang tiles ([ComfortButtons]) beside Tempo; shown only while a title is loaded. */
     comfort: @Composable RowScope.() -> Unit = {},
-    /** Under the action area, e.g. "shake to extend" ([ShakeHint]); shown only while a title is loaded. */
+    /** Under the tiles, e.g. "shake to extend" ([ShakeHint]); shown only while a title is loaded. */
     comfortHint: @Composable () -> Unit = {},
-    /** Bookmarks, queue, history ([PlayerExtraButtons]); shown only while a title is loaded. */
-    extras: @Composable RowScope.() -> Unit = {},
+    /** Queue, bookmarks and history tabs of the contents sheet (the chapters are the player's own). */
+    contents: PlayerContents = PlayerContents(),
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
-    var showChapters by rememberSaveable { mutableStateOf(false) }
+    var contentsTab by rememberSaveable { mutableStateOf<ContentsTab?>(null) }
     // While dragging, the slider keeps its own value; the seek happens on release only.
     var dragging by remember { mutableStateOf<Float?>(null) }
     // After release the released value stays until the player reflects the seek (or a short timeout), so the thumb never snaps back.
@@ -358,8 +331,9 @@ fun PlayerScreen(
             IconButton(onClick = onPrevious, enabled = hasChapters, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.player_previous_chapter), Modifier.size(32.dp))
             }
-            IconButton(onClick = { onSeekBy(-30) }, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Rounded.Replay30, stringResource(R.string.player_back_30), Modifier.size(36.dp))
+            val back = stringResource(R.string.player_seek_back, state.seekBackSec)
+            IconButton(onClick = { onSeekBy(-state.seekBackSec) }, modifier = Modifier.size(56.dp).semantics { contentDescription = back }) {
+                SeekIcon(state.seekBackSec, forward = false, size = 36.dp)
             }
             FilledIconButton(onClick = onToggle, modifier = Modifier.size(80.dp)) {
                 if (state.isLoading) {
@@ -372,31 +346,31 @@ fun PlayerScreen(
                     )
                 }
             }
-            IconButton(onClick = { onSeekBy(30) }, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Rounded.Forward30, stringResource(R.string.player_forward_30), Modifier.size(36.dp))
+            val forward = stringResource(R.string.player_seek_forward, state.seekForwardSec)
+            IconButton(onClick = { onSeekBy(state.seekForwardSec) }, modifier = Modifier.size(56.dp).semantics { contentDescription = forward }) {
+                SeekIcon(state.seekForwardSec, forward = true, size = 36.dp)
             }
             IconButton(onClick = onNext, enabled = hasChapters, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Rounded.SkipNext, stringResource(R.string.player_next_chapter), Modifier.size(32.dp))
             }
         }
     }
-    // One compact area instead of three button rows, so a phone shows it without scrolling.
+    // Variant B: three equal tiles (Tempo, Sleep, Klang), then one wide banner for everything inside the title.
     val actions: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) {
                 val speedDescription = stringResource(R.string.player_speed_button, formatSpeed(state.speed))
-                PlayerAction(
-                    Icons.Rounded.Speed, formatSpeed(state.speed), onClick = { showSpeed = true }, active = state.speed != 1f,
+                PlayerTile(
+                    Icons.Rounded.Speed, stringResource(R.string.player_tile_speed), formatSpeed(state.speed), onClick = { showSpeed = true },
+                    active = state.speed != 1f,
                     modifier = Modifier.testTag("speedButton").semantics { contentDescription = speedDescription },
-                )
-                PlayerAction(
-                    Icons.AutoMirrored.Rounded.List, stringResource(R.string.player_chapters), onClick = { showChapters = true },
-                    enabled = hasChapters, modifier = Modifier.testTag("chaptersButton"),
                 )
                 if (loaded) comfort()
             }
-            if (loaded) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PlayerActionSpacing)) { extras() }
-            if (loaded) comfortHint()
+            if (loaded) {
+                comfortHint()
+                ContentsBanner(state.chapters, onClick = { contentsTab = initialContentsTab(hasChapters) })
+            }
         }
     }
 
@@ -480,18 +454,8 @@ fun PlayerScreen(
     if (showSpeed) {
         ModalBottomSheet(onDismissRequest = { showSpeed = false }) { SpeedSheet(state.speed, onSpeed) }
     }
-    if (showChapters) {
-        val sheetState = rememberModalBottomSheetState()
-        val scope = rememberCoroutineScope()
-        ModalBottomSheet(onDismissRequest = { showChapters = false }, sheetState = sheetState) {
-            Text(stringResource(R.string.player_chapters), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-            LazyColumn {
-                chapterItems(state.chapters) { idx ->
-                    onChapter(idx)
-                    scope.launch { sheetState.hide() }.invokeOnCompletion { showChapters = false }
-                }
-            }
-        }
+    contentsTab?.let { tab ->
+        ContentsSheet(tab, state.chapters, onChapter, contents, onDismiss = { contentsTab = null })
     }
 }
 

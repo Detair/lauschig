@@ -104,8 +104,8 @@
     <string name="detail_current_chapter_position">%1$s / %2$s</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
-    <string name="player_back_30">Back 30 seconds</string>
-    <string name="player_forward_30">Forward 30 seconds</string>
+    <string name="player_seek_back">Back %1$d seconds</string>
+    <string name="player_seek_forward">Forward %1$d seconds</string>
     <string name="player_previous_chapter">Previous chapter</string>
     <string name="player_next_chapter">Next chapter</string>
     <string name="player_speed_button">Playback speed %1$s</string>
@@ -299,7 +299,6 @@
     <string name="settings_metered_wifi">Wi-Fi only</string>
     <string name="progress_mark_unfinished_keep">Mark as not finished (keep position)</string>
     <string name="player_sleep_timer">Sleep timer</string>
-    <string name="player_sleep_short">Timer</string>
     <string name="player_sleep_active">Sleep timer: %1$s left</string>
     <string name="player_sleep_chapter_active">Sleep timer: end of chapter, %1$s left</string>
     <string name="sleep_minutes">%1$d min</string>
@@ -307,7 +306,6 @@
     <string name="sleep_cancel">Turn off timer</string>
     <string name="sleep_shake_hint">Shake to extend</string>
     <string name="sleep_sheet_hint">Fades out over the last seconds. Shake the phone during the last minute to extend it.</string>
-    <string name="player_audio">Audio</string>
     <string name="audio_skip_silence">Skip silence</string>
     <string name="audio_skip_silence_hint">Applies to all titles</string>
     <string name="audio_boost">Volume boost</string>
@@ -320,6 +318,10 @@
     <string name="settings_rewind_hint">After a pause, jump back a little; after longer pauses further (up to three times).</string>
     <string name="settings_rewind_off">Off</string>
     <string name="settings_rewind_sec">%1$d s</string>
+    <string name="settings_seek_back">Skip back</string>
+    <string name="settings_seek_back_hint">The back button in the player, the notification, the car and on headphones</string>
+    <string name="settings_seek_forward">Skip forward</string>
+    <string name="settings_seek_forward_hint">The forward button in the player, the notification, the car and on headphones</string>
     <string name="settings_default_speed">Default speed</string>
     <string name="settings_default_speed_hint">For titles without their own speed. Every title remembers its speed.</string>
     <string name="settings_default_boost">Default volume boost</string>
@@ -369,6 +371,18 @@
     <string name="player_bookmarks">Bookmarks</string>
     <string name="player_queue">Queue</string>
     <string name="player_history">History</string>
+    <string name="player_tile_speed">Speed</string>
+    <string name="player_tile_sleep">Sleep</string>
+    <string name="player_tile_sound">Sound</string>
+    <string name="player_tile_off">Off</string>
+    <string name="player_tile_no_silence">No silence</string>
+    <string name="player_tile_night">Night</string>
+    <string name="player_sleep_off_description">Sleep timer: off</string>
+    <string name="player_sound_description">Sound: %1$s</string>
+    <string name="player_contents">Chapters &amp; queue</string>
+    <string name="player_contents_current">Now: ch. %1$d / %2$d</string>
+    <string name="player_contents_no_chapters">Queue, bookmarks &amp; history</string>
+    <string name="player_contents_chapters_empty">This title has no chapters.</string>
     <plurals name="collection_titles">
         <item quantity="one">%d title</item>
         <item quantity="other">%d titles</item>

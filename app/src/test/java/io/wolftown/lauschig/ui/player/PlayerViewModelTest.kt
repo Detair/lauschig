@@ -54,6 +54,13 @@ class PlayerViewModelTest {
         chapterIndex = chapter, chapterTitle = "Two", chapterStartSec = chapter * 100.0, chapterEndSec = chapter * 100.0 + 100.0,
     )
 
+    @Test fun seekSteps_comeFromTheController() = runTest {
+        player.state.value = playing(125.0).copy(seekBackSec = 10, seekForwardSec = 60)
+        val s = vm().state.first { it.itemId == "b1" }
+        assertEquals(10, s.seekBackSec)
+        assertEquals(60, s.seekForwardSec)
+    }
+
     @Test fun chapterProgress_isRelativeToChapter() = runTest {
         player.state.value = playing(125.0)
         val s = vm().state.first { it.itemId == "b1" && it.chapters.isNotEmpty() }

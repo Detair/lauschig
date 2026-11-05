@@ -50,7 +50,29 @@ fun sleepDescription(sleep: SleepTimerUi): String = stringResource(
 @Composable
 fun boostLabel(db: Int): String = if (db <= 0) stringResource(R.string.audio_boost_off) else stringResource(R.string.audio_boost_db, db)
 
-/** Sleep timer and audio buttons of the full player's action area, with their sheets. The timer button shows the countdown. */
+/** The Klang tile's value: the boost if one applies, else skipping silence, else "off". */
+@Composable
+fun soundValue(state: ComfortUiState): String {
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    return when {
+        boost > 0 -> boostLabel(boost)
+        state.skipSilence -> stringResource(R.string.player_tile_no_silence)
+        else -> stringResource(R.string.player_tile_off)
+    }
+}
+
+/** Everything the Klang tile has on, for TalkBack ("Klang: +3 dB, Stille überspringen"). */
+@Composable
+fun soundDescription(state: ComfortUiState): String {
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    val parts = listOfNotNull(
+        boostLabel(boost).takeIf { boost > 0 },
+        stringResource(R.string.audio_skip_silence).takeIf { state.skipSilence },
+    )
+    return stringResource(R.string.player_sound_description, parts.joinToString(", ").ifEmpty { stringResource(R.string.player_tile_off) })
+}
+
+/** The Sleep and Klang tiles of the full player, with their sheets. The Sleep tile shows the time left, warmly lit. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RowScope.ComfortButtons(
@@ -63,21 +85,25 @@ fun RowScope.ComfortButtons(
     var showSleep by rememberSaveable { mutableStateOf(false) }
     var showAudio by rememberSaveable { mutableStateOf(false) }
     val sleep = state.sleep
-    val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_timer)
-    PlayerAction(
+    val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_off_description)
+    PlayerTile(
         Icons.Rounded.Bedtime,
-        // The short name fits the narrow button; the description keeps the full one.
-        if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_sleep_short),
+        stringResource(R.string.player_tile_sleep),
+        if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_tile_off),
         onClick = { showSleep = true },
         active = sleep != null,
+        warm = true,
         modifier = Modifier.testTag("sleepButton").semantics { contentDescription = sleepLabel },
     )
-    PlayerAction(
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    val soundLabel = soundDescription(state)
+    PlayerTile(
         Icons.Rounded.GraphicEq,
-        stringResource(R.string.player_audio),
+        stringResource(R.string.player_tile_sound),
+        soundValue(state),
         onClick = { showAudio = true },
-        active = state.skipSilence || (state.titleBoostDb ?: state.defaultBoostDb) > 0,
-        modifier = Modifier.testTag("audioButton"),
+        active = state.skipSilence || boost > 0,
+        modifier = Modifier.testTag("audioButton").semantics { contentDescription = soundLabel },
     )
     if (showSleep) {
         ModalBottomSheet(onDismissRequest = { showSleep = false }) {
@@ -142,7 +168,7 @@ private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCan
 @Composable
 private fun AudioSheet(state: ComfortUiState, onSkipSilence: (Boolean) -> Unit, onBoost: (Int?) -> Unit) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp).testTag("audioSheet")) {
-        Text(stringResource(R.string.player_audio), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        Text(stringResource(R.string.player_tile_sound), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
         ListItem(
             headlineContent = { Text(stringResource(R.string.audio_skip_silence)) },
             supportingContent = { Text(stringResource(R.string.audio_skip_silence_hint)) },

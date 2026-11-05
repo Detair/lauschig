@@ -32,22 +32,23 @@ class PlayerActionTest {
         return results.single()
     }
 
-    // The second action row on a 360 dp phone at 130 %: the longest German label must stay whole, not "Warteschla…".
-    @Test fun longLabel_atLargeText_shrinksInsteadOfCuttingOff() {
+    // The tile row on a 360 dp phone at 130 %: the longest German values must stay whole, not "Ohne Sti…".
+    @Test fun longValue_atLargeText_shrinksInsteadOfCuttingOff() {
         rule.setContent {
             val d = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(d.density, 1.3f)) {
                 LauschigTheme {
                     Row(Modifier.width(328.dp)) {
-                        PlayerAction(Icons.Rounded.History, "Lesezeichen", {})
-                        PlayerAction(Icons.Rounded.History, "Warteschlange", {})
-                        PlayerAction(Icons.Rounded.History, "Verlauf", {})
+                        PlayerTile(Icons.Rounded.History, "Tempo", "1,25×", {})
+                        PlayerTile(Icons.Rounded.History, "Sleep", "Kapitelende", {})
+                        PlayerTile(Icons.Rounded.History, "Klang", "Ohne Stille", {})
                     }
                 }
             }
         }
-        assertFalse("label cut off", layoutOf("Warteschlange").hasVisualOverflow)
-        assertFalse("label cut off", layoutOf("Lesezeichen").hasVisualOverflow)
+        assertFalse("value cut off", layoutOf("Kapitelende").hasVisualOverflow)
+        assertFalse("value cut off", layoutOf("Ohne Stille").hasVisualOverflow)
+        assertFalse("name cut off", layoutOf("Klang").hasVisualOverflow)
     }
 
     // The source label in the player's top bar: one line also in German at 130 %, never "Heruntergelad / en".

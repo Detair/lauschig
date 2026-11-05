@@ -11,6 +11,7 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.StreamLoad
+import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import io.wolftown.lauschig.ui.detail.formatClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -64,6 +65,9 @@ data class PlayerScreenState(
     val seriesSequence: String? = null,
     /** The cover's server version (see [PlayerMeta]); null until this title's row is read (no server cover until then). */
     val coverVersion: Long? = null,
+    /** The seek steps of the settings, for the back / forward buttons. */
+    val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
+    val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -149,6 +153,8 @@ class PlayerViewModel(
             seriesName = m?.seriesName,
             seriesSequence = m?.seriesSequence,
             coverVersion = m?.coverVersion,
+            seekBackSec = p.seekBackSec,
+            seekForwardSec = p.seekForwardSec,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 
