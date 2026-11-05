@@ -134,7 +134,7 @@ class FinishedQuestionTest {
         db.audioFileDao().replaceFromServer(s, "b1", listOf(AudioFileEntity(s, "b1", 1, "i", 100.0, 3, "mp3")))
         db.audioFileDao().setLocal(s, "b1", 1, file.absolutePath, 3)
         db.downloadDao().upsert(DownloadEntity(s, "b1", DownloadState.COMPLETE, 1))
-        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(null) }, object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
         vm = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), questions))
     }
 
@@ -309,7 +309,7 @@ class FinishedQuestionTest {
 
     @Test fun neitherNoteNorKeep_theTitleIsNotMarkedFinished() = runBlocking {
         val q2 = FinishedQuestions(unwritable(), { true }, { throw java.io.IOException("disk full") }, { _, _ -> })
-        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(null) }, object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
         val vm2 = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), q2))
         vm2.markFinished("b1")
         delay(700)

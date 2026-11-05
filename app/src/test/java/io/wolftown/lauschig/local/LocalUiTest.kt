@@ -207,7 +207,7 @@ class LocalUiTest {
         }
         val vm = viewModels.own(
             TitleExtrasViewModel(
-                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), db.queueDao(),
+                store, db.bookmarkDao(), HistoryRepository({ flowOf(null) }, db.historyDao(), db.sessionDao()), db.queueDao(),
                 db.itemDao(), db.episodeDao(), Player(), flowOf(ConnectionState.Offline), sync,
             ),
         )

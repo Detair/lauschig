@@ -1,8 +1,10 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.account.AccountStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,6 +19,11 @@ data class PositionJump(val itemId: String, val fromSec: Double, val toSec: Doub
  */
 @Singleton
 class PositionJumpBus @Inject constructor() {
+    /** The jumps of a sync of [serverId]; if another account is signed in by now, nobody it concerns is there to ask. */
+    suspend fun emitFor(serverId: String, accounts: AccountStore, jumps: List<PositionJump>) {
+        if (jumps.isNotEmpty() && accounts.account.first()?.serverId == serverId) jumps.forEach(::emit)
+    }
+
     private val _pending = MutableStateFlow<List<PositionJump>>(emptyList())
     val pending: StateFlow<List<PositionJump>> = _pending.asStateFlow()
 
@@ -27,4 +34,7 @@ class PositionJumpBus @Inject constructor() {
     }
 
     fun consume(itemId: String) = _pending.update { list -> list.filter { it.itemId != itemId } }
+
+    /** The account was left: what is pending concerns it, not the next one. */
+    fun clear() { _pending.value = emptyList() }
 }

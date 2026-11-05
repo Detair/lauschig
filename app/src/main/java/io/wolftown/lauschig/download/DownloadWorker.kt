@@ -10,6 +10,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import io.wolftown.lauschig.absapi.library.audioFileUrl
 import io.wolftown.lauschig.absapi.library.coverUrl
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.db.dao.AudioFileDao
 import io.wolftown.lauschig.db.dao.DownloadDao
@@ -17,6 +18,7 @@ import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.net.AccountChangedException
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.RateWindow
@@ -44,9 +46,14 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 
-/** Connection + authenticated HTTP client for downloads (the same client the API uses). */
-class DownloadEnvironment(val connection: Flow<ConnectionState>, val client: (HttpUrl) -> OkHttpClient) {
-    @Inject constructor(apiProvider: ApiProvider) : this(apiProvider.connection, apiProvider::clientFor)
+/** Connection, the signed-in account and its authenticated HTTP client for downloads (the same client the API uses). */
+class DownloadEnvironment(
+    val connection: Flow<ConnectionState>,
+    val signedIn: suspend () -> String?,
+    val client: (serverId: String, HttpUrl) -> OkHttpClient,
+) {
+    @Inject constructor(apiProvider: ApiProvider, accounts: AccountStore) :
+        this(apiProvider.connection, { accounts.account.first()?.serverId }, apiProvider::clientFor)
 }
 
 /**
@@ -74,6 +81,7 @@ class DownloadWorker @AssistedInject constructor(
     private val notifier: DownloadNotifier,
     private val monitor: StreamMonitor,
     private val prompts: DownloadPrompts,
+    private val switched: SwitchedDownloads,
 ) : CoroutineWorker(context, params) {
 
     private lateinit var serverId: String
@@ -105,11 +113,13 @@ class DownloadWorker @AssistedInject constructor(
         val row = downloads.get(serverId, itemId)
         // Removed (cancel + delete) or paused by the user while this work was waiting: nothing to do.
         if (row == null || row.state == DownloadState.PAUSED) return Result.success()
+        // Late work of an account that was left (a profile switch): nothing goes out for it, it goes on when it is back.
+        if (env.signedIn() != serverId) return wait()
 
         if (!gate.awaitOnline()) return back("offline")
         val online = withTimeoutOrNull(5_000) { env.connection.first { it is ConnectionState.Online } } as? ConnectionState.Online
             ?: return back("offline")
-        val client = env.client(online.baseUrl)
+        val client = env.client(serverId, online.baseUrl)
 
         downloads.setState(serverId, itemId, DownloadState.RUNNING, null)
         val network = inputData.getString(KEY_NETWORK)?.let { n -> NetworkType.entries.firstOrNull { it.name == n } }
@@ -146,6 +156,8 @@ class DownloadWorker @AssistedInject constructor(
             return Result.success()
         } catch (e: StreamPriorityPause) {
             return pauseForStream(network)
+        } catch (e: AccountChangedException) {
+            return wait()
         } catch (e: CancellationException) {
             // Stopped by WorkManager (constraints/system) -> back to QUEUED; a user pause/removal already changed the row.
             withContext(NonCancellable) { downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.QUEUED, null) }
@@ -158,6 +170,14 @@ class DownloadWorker @AssistedInject constructor(
         } finally {
             monitor.setDownloadThrottled(itemId, false)
         }
+    }
+
+    /** Its account is not the signed-in one: paused, and it continues when the account is back ([SwitchedDownloads]). */
+    private suspend fun wait(): Result {
+        downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.PAUSED, null)
+        downloads.setStateIf(serverId, itemId, DownloadState.QUEUED, DownloadState.PAUSED, null)
+        switched.remember(serverId, setOf(itemId))
+        return Result.success()
     }
 
     /** Paused for the stream: ask whether to keep streaming or download, with the time the rest would take now. */

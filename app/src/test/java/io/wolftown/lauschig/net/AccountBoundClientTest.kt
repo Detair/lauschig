@@ -98,6 +98,17 @@ class AccountBoundClientTest {
         assertFalse(store.reauth.value)
     }
 
+    @Test fun theClientOfANamedAccount_sendsOnlyWhileItIsTheSignedInOne_withItsOwnToken() {
+        // Asked for B while A is signed in: it does not run as A, and B's turn has not come.
+        assertTrue(runCatching { get(api.clientFor(bOnX.serverId, x.url("/")), x) }.exceptionOrNull() is AccountChangedException)
+        assertEquals(0, x.requestCount)
+        runBlocking { store.add(bOnX, "b-access", "b-refresh") }
+        // A's client stays A's; B's is B's, with the state and the signed-in account not asked at all.
+        assertTrue(runCatching { get(api.clientFor(a.serverId, x.url("/")), x) }.exceptionOrNull() is AccountChangedException)
+        get(api.clientFor(bOnX.serverId, x.url("/")), x).close()
+        assertEquals(listOf<String?>("Bearer b-access"), seenX)
+    }
+
     @Test fun afterASignOut_aRequestOfTheAccount_isNotSent() {
         val made = api.clientFor(x.url("/"))
         runBlocking { store.clear(keepDownloads = false) }
@@ -156,7 +167,7 @@ class AccountBoundClientTest {
     }
 
     @Test fun theRetrofitApis_carryTheAccountsToken() = runBlocking {
-        val libraries = api.libraryApi.filterNotNull().first()
+        val libraries = api.libraryApi(a.serverId).filterNotNull().first()
         libraries.libraries()
         assertEquals(listOf<String?>("Bearer a-access"), seenX)
     }

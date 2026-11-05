@@ -73,7 +73,7 @@ class TitleExtrasViewModelTest {
         store.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
         return viewModels.own(
             TitleExtrasViewModel(
-                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), queue,
+                store, db.bookmarkDao(), HistoryRepository({ flowOf(null) }, db.historyDao(), db.sessionDao()), queue,
                 db.itemDao(), db.episodeDao(), player, flowOf(ConnectionState.Offline), sync,
             ),
         )

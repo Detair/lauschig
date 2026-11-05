@@ -11,6 +11,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
@@ -72,28 +74,54 @@ class ApiProvider(
      */
     val connectionState: StateFlow<ConnectionState> get() = shared
 
-    // The account changes always come with a connection reset (`accountConnection`), so the next Online builds for it.
-    private val retrofit: Flow<Retrofit?> = shared
-        .map { (it as? ConnectionState.Online)?.let { s -> retrofitFor(signedIn(), s.baseUrl) } }
+    /** The signed-in account's server id; null when signed out or unreadable (its clients then send no token). */
+    private val signedInId: Flow<String?> = store.account
+        .map { it?.serverId }
+        .catch { e -> if (e is CancellationException) throw e else emit(null) }
         .distinctUntilChanged()
 
-    val authApi: Flow<AuthApi?> = retrofit.map { it?.create(AuthApi::class.java) }
-    val libraryApi: Flow<LibraryApi?> = retrofit.map { it?.create(LibraryApi::class.java) }
-    val meApi: Flow<MeApi?> = retrofit.map { it?.create(MeApi::class.java) }
-    val adminApi: Flow<AdminApi?> = retrofit.map { it?.create(AdminApi::class.java) }
+    /** A connection's client and the account it belongs to. */
+    private data class Bound(val owner: String?, val retrofit: Retrofit)
+
+    /**
+     * The connection together with the signed-in account: a collector that stays gets the new account's client at the
+     * switch itself, also when it never sees the connection reset (the shared state may skip it).
+     */
+    private val retrofit: Flow<Bound?> = combine(shared, signedInId) { state, owner ->
+        (state as? ConnectionState.Online)?.let { Bound(owner, retrofitFor(owner, it.baseUrl)) }
+    }.distinctUntilChanged()
+
+    val authApi: Flow<AuthApi?> = retrofit.map { it?.retrofit?.create(AuthApi::class.java) }
+
+    /**
+     * The API of account [serverId]: null while offline and whenever [serverId] is not the signed-in account. Whoever
+     * works for one account asks with its id, so work that outlives a switch gets no API, instead of the next account's.
+     * An API it already holds stops sending at the switch ([AuthInterceptor]).
+     */
+    fun libraryApi(serverId: String): Flow<LibraryApi?> = apiOf(serverId, LibraryApi::class.java)
+    fun meApi(serverId: String): Flow<MeApi?> = apiOf(serverId, MeApi::class.java)
+    fun adminApi(serverId: String): Flow<AdminApi?> = apiOf(serverId, AdminApi::class.java)
+
+    private fun <T : Any> apiOf(serverId: String, type: Class<T>): Flow<T?> =
+        retrofit.map { bound -> bound?.takeIf { it.owner == serverId }?.retrofit?.create(type) }
 
     /** Guarded client without credentials, for requests while no server is online (they fail fast). */
     fun unauthenticatedClient(): OkHttpClient = okHttp
 
     /**
-     * The authenticated client for [baseUrl] (origin-scoped Bearer + token refresh); also used for file downloads. It
-     * belongs to the account signed in now: its requests carry that account's token, and none after another account
-     * signed in ([AuthInterceptor]). Reads the account store; not for the main thread.
+     * The authenticated client of whoever is signed in now, for requests that belong to no account in particular (the
+     * covers of the page on screen). Reads the account store; not for the main thread. Work for one account takes the
+     * client of that account.
      */
     fun clientFor(baseUrl: HttpUrl): OkHttpClient = clientFor(runBlocking { signedIn() }, baseUrl)
 
+    /**
+     * The authenticated client of account [serverId] for [baseUrl] (origin-scoped Bearer + token refresh); also used for
+     * file downloads. Its requests carry that account's token, and they go out only while it is the signed-in account
+     * and [baseUrl] is one of its addresses ([AuthInterceptor]).
+     */
     @Synchronized
-    private fun clientFor(serverId: String?, baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(serverId to baseUrl) {
+    fun clientFor(serverId: String?, baseUrl: HttpUrl): OkHttpClient = clients.getOrPut(serverId to baseUrl) {
         okHttp.newBuilder()
             .addInterceptor(AuthInterceptor(store, baseUrl, serverId))
             .authenticator(TokenAuthenticator(store, okHttp, baseUrl, serverId, refreshLocks.getOrPut(serverId) { Any() }))

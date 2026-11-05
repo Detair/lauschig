@@ -36,7 +36,7 @@ class SyncWorker @AssistedInject constructor(
             ok = false
         }
         try {
-            progressSync.sync(serverId).forEach(bus::emit)
+            bus.emitFor(serverId, accounts, progressSync.sync(serverId))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -56,7 +56,8 @@ class SyncWorker @AssistedInject constructor(
         } catch (_: Exception) {
             // Best effort: the cached collections stay, the next run tries again.
         }
-        if (ok) {
+        // Local work, no API to refuse it: a switch in the meantime must not queue the old account's episodes.
+        if (ok && accounts.account.first()?.serverId == serverId) {
             try {
                 autoDownloader.run(serverId)
             } catch (e: CancellationException) {

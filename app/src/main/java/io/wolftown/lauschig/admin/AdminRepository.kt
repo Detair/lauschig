@@ -39,16 +39,17 @@ sealed interface MatchOutcome {
  * server scans in the background) is refreshed in Room.
  */
 class AdminRepository(
-    private val admin: Flow<AdminApi?>,
-    private val library: Flow<LibraryApi?>,
+    /** The APIs of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.adminApi]). */
+    private val admin: (serverId: String) -> Flow<AdminApi?>,
+    private val library: (serverId: String) -> Flow<LibraryApi?>,
     private val account: Flow<Account?>,
     private val itemLibraryId: suspend (serverId: String, itemId: String) -> String?,
     private val loadDetails: suspend (serverId: String, itemId: String) -> Unit,
     private val syncLibrarySoon: () -> Unit,
 ) {
     @Inject constructor(api: ApiProvider, accounts: AccountStore, items: ItemDao, sync: LibrarySync, trigger: SyncTrigger) : this(
-        admin = api.adminApi,
-        library = api.libraryApi,
+        admin = api::adminApi,
+        library = api::libraryApi,
         account = accounts.account,
         itemLibraryId = { sid, id -> items.get(sid, id)?.libraryId },
         loadDetails = sync::loadDetails,
@@ -69,7 +70,7 @@ class AdminRepository(
 
     suspend fun matchItem(itemId: String): AdminResult<MatchOutcome> = call { api, serverId ->
         val libraryId = itemLibraryId(serverId, itemId)
-        val provider = library.first()?.libraries()?.libraries?.firstOrNull { it.id == libraryId }?.provider?.takeIf { it.isNotBlank() }
+        val provider = library(serverId).first()?.libraries()?.libraries?.firstOrNull { it.id == libraryId }?.provider?.takeIf { it.isNotBlank() }
         if (provider == null) return@call MatchOutcome.NoProvider
         val r = api.matchItem(itemId, MatchRequest(provider))
         if (r.warning != null && !r.updated) return@call MatchOutcome.NoMatch(r.warning!!)
@@ -92,7 +93,7 @@ class AdminRepository(
 
     private suspend fun <T> call(block: suspend (AdminApi, String) -> T): AdminResult<T> {
         val a = account.first()?.takeIf { it.isAdmin } ?: return AdminResult.Forbidden
-        val api = admin.first() ?: return AdminResult.Offline
+        val api = admin(a.serverId).first() ?: return AdminResult.Offline
         return try {
             AdminResult.Ok(block(api, a.serverId))
         } catch (e: CancellationException) {

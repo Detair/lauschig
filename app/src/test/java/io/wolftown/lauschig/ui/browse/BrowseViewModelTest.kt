@@ -80,7 +80,7 @@ class BrowseViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private val authors = AuthorInfoCache(flowOf(null)) { emptyList() }
+    private val authors = AuthorInfoCache({ flowOf(null) }) { emptyList() }
 
     private fun vm(
         kind: BrowseKind, name: String,
@@ -144,7 +144,7 @@ class BrowseViewModelTest {
             override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
-        val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache(flowOf(api)) { listOf("lib1") }).await { it.author != null }
+        val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache({ flowOf(api) }) { listOf("lib1") }).await { it.author != null }
         assertEquals("Bio", s.author?.description)
     }
 
@@ -156,7 +156,7 @@ class BrowseViewModelTest {
             override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
-        val cache = AuthorInfoCache(flowOf(api)) { listOf("lib1") }
+        val cache = AuthorInfoCache({ flowOf(api) }) { listOf("lib1") }
         cache.ensureLoaded(sid)
         assertEquals(emptyMap<String, AuthorDto>(), cache.authors.value)
     }

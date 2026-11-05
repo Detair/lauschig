@@ -14,11 +14,12 @@ import javax.inject.Inject
 
 /** Listening history per playable: cached server sessions + this device's sessions (works offline). */
 class HistoryRepository(
-    private val api: Flow<MeApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.meApi]). */
+    private val api: (serverId: String) -> Flow<MeApi?>,
     private val history: HistoryDao,
     private val sessions: SessionDao,
 ) {
-    @Inject constructor(apiProvider: ApiProvider, history: HistoryDao, sessions: SessionDao) : this(apiProvider.meApi, history, sessions)
+    @Inject constructor(apiProvider: ApiProvider, history: HistoryDao, sessions: SessionDao) : this(apiProvider::meApi, history, sessions)
 
     fun observe(serverId: String, key: String): Flow<History> =
         combine(history.observeForKey(serverId, key), sessions.observeForKey(serverId, key)) { server, local -> HistoryAggregation.build(server, local) }
@@ -26,7 +27,7 @@ class HistoryRepository(
     /** Replaces the cache with the server's newest [LIMIT] sessions; offline is a no-op, a failure throws and keeps the cache. */
     suspend fun refresh(serverId: String, key: String) {
         if (DeviceLibrary.isLocal(serverId, key)) return // no server knows a device title; its history is this device's
-        val api = api.first() ?: return
+        val api = api(serverId).first() ?: return
         val parsed = PlayableKey.parse(key)
         val episodeId = parsed.episodeId
         val page = if (episodeId != null) api.episodeListeningSessions(parsed.libraryItemId, episodeId, LIMIT)

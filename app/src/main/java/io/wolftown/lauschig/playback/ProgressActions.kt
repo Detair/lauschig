@@ -25,14 +25,15 @@ class ProgressActions(
     private val items: ItemDao,
     private val episodes: EpisodeDao,
     private val player: PlayerController,
-    private val meApi: Flow<MeApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.meApi]). */
+    private val meApi: (serverId: String) -> Flow<MeApi?>,
     private val sync: SyncTrigger,
     private val clock: () -> Long = System::currentTimeMillis,
     /** Time for the paused player's own save to land before the action overwrites it. */
     private val settleMs: Long = 400,
 ) {
     @Inject constructor(progress: ProgressDao, items: ItemDao, episodes: EpisodeDao, player: PlayerController, api: ApiProvider, sync: SyncTrigger) :
-        this(progress, items, episodes, player, api.meApi, sync)
+        this(progress, items, episodes, player, api::meApi, sync)
 
     /** Finished; a position already heard stays (for "mark not finished, keep position"), an unstarted title goes to its end. */
     suspend fun markFinished(serverId: String, itemId: String) {
@@ -70,7 +71,7 @@ class ProgressActions(
      */
     suspend fun pullFromServer(serverId: String, itemId: String): Boolean {
         if (DeviceLibrary.isLocal(serverId, itemId)) return false // no server knows a device title
-        val api = meApi.first() ?: return false
+        val api = meApi(serverId).first() ?: return false
         val key = PlayableKey.parse(itemId)
         val dto = try {
             api.me().mediaProgress.firstOrNull { it.libraryItemId == key.libraryItemId && it.episodeId == key.episodeId }

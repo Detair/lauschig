@@ -99,13 +99,13 @@ class SyncWorkerTest {
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = SyncWorker(
                 c, p, store,
-                LibrarySync(flowOf(lib), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() }),
-                ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
+                LibrarySync({ flowOf(lib) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() }),
+                ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto() }),
                 PositionJumpBus(), gate,
                 EpisodeAutoDownloader(kotlinx.coroutines.flow.flow { order += "autoDownload"; emit(AutoDownloadMode.OFF) }, db.episodeDao(), db.progressDao(), db.downloadDao(), noDownloads, { emptySet() }, {}),
-                BookmarkSync(flowOf(me), db.bookmarkDao()),
-                CollectionSync(flowOf(lib), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() },
-                ListeningSessionSync(flowOf(listeningApi), db.listeningSessionDao(), db.sessionDao(), InMemorySyncStamps(), { true }),
+                BookmarkSync({ flowOf(me) }, db.bookmarkDao()),
+                CollectionSync({ flowOf(lib) }, db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() },
+                ListeningSessionSync({ flowOf(listeningApi) }, db.listeningSessionDao(), db.sessionDao(), InMemorySyncStamps(), { true }),
             )
         }
         return TestListenableWorkerBuilder<SyncWorker>(ctx).setWorkerFactory(factory).build().doWork()

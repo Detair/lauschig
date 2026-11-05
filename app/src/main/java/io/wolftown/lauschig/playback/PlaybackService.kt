@@ -156,6 +156,8 @@ class PlaybackService : MediaLibraryService() {
 
     /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
     @Volatile private var lastOnline: ConnectionState.Online? = null
+    /** The account [lastOnline] was seen for: streams go through its client, which sends nothing once it is left. */
+    @Volatile private var lastOnlineAccount: String? = null
     private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
 
     @OptIn(UnstableApi::class) // transfer listener, load control
@@ -167,7 +169,7 @@ class PlaybackService : MediaLibraryService() {
         // playback. Other origins get the plain client (no credentials).
         val callFactory = Call.Factory { request ->
             val base = lastOnline?.baseUrl?.takeIf { request.url.sameOrigin(it) }
-            (base?.let(api::clientFor) ?: fallbackClient).newCall(request)
+            (base?.let { api.clientFor(lastOnlineAccount, it) } ?: fallbackClient).newCall(request)
         }
         connectionJob = scope.launch {
             // Another account (sign-out, new server) forgets the server, so its token never reaches an old queue's origin.
@@ -177,7 +179,10 @@ class PlaybackService : MediaLibraryService() {
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
-                    if (it is ConnectionState.Online && it.belongsTo(who.third)) lastOnline = it
+                    if (it is ConnectionState.Online && it.belongsTo(who.third)) {
+                        lastOnlineAccount = who.first
+                        lastOnline = it
+                    }
                 }
             }
         }

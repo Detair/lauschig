@@ -85,7 +85,8 @@ enum class HistoryLoad {
  */
 @Singleton
 class ListeningSessionSync(
-    private val api: Flow<MeApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.meApi]). */
+    private val api: (serverId: String) -> Flow<MeApi?>,
     private val dao: ListeningSessionDao,
     private val localSessions: SessionDao,
     private val stamps: SyncStamps,
@@ -101,7 +102,7 @@ class ListeningSessionSync(
     @Inject constructor(
         apiProvider: ApiProvider, dao: ListeningSessionDao, localSessions: SessionDao, stamps: SyncStamps,
         @ApplicationContext context: Context,
-    ) : this(apiProvider.meApi, dao, localSessions, stamps, unmetered = { UnmeteredNetwork.isUnmetered(context) })
+    ) : this(apiProvider::meApi, dao, localSessions, stamps, unmetered = { UnmeteredNetwork.isUnmetered(context) })
 
     private val lock = Mutex()
     /** Full runs reading now, or asked for by [loadNow] and waiting for the connection or the lock. */
@@ -141,7 +142,7 @@ class ListeningSessionSync(
         running.update { it + serverId }
         val job = scope.launch {
             try {
-                api.first { it != null }
+                api(serverId).first { it != null }
                 sync(serverId, allowMetered = true)
             } catch (e: CancellationException) {
                 throw e
@@ -175,7 +176,7 @@ class ListeningSessionSync(
      */
     suspend fun sync(serverId: String, allowMetered: Boolean = false): Unit = lock.withLock {
         if (DeviceLibrary.isLocal(serverId)) return
-        val api = api.first() ?: return
+        val api = api(serverId).first() ?: return
         val open = { allowMetered || unmetered() }
         val wasIncomplete = isIncomplete(serverId)
         incomplete.update { it + (serverId to wasIncomplete) }

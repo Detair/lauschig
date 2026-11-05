@@ -78,7 +78,7 @@ class LibrarySyncTest {
     @After fun tearDown() = db.close()
 
     private fun sync(a: LibraryApi? = api) = LibrarySync(
-        flowOf(a), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
+        { flowOf(a) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
         { block -> db.withTransaction { block() } },
     )
 
@@ -240,7 +240,7 @@ class LibrarySyncTest {
         sync().sync_()
         api.detail = dto("a")
         val failing = LibrarySync(
-            flowOf(api), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
+            { flowOf(api) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(),
             { block -> db.withTransaction { block(); throw IOException("late failure") } },
         )
         try { failing.loadDetails(s, "a"); fail() } catch (_: IOException) {}

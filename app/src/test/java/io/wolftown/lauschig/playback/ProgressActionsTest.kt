@@ -68,7 +68,7 @@ class ProgressActionsTest {
 
     @After fun tearDown() = db.close()
 
-    private fun actions(api: MeApi? = me) = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(api), sync, clock = { now }, settleMs = 0)
+    private fun actions(api: MeApi? = me) = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(api) }, sync, clock = { now }, settleMs = 0)
 
     private suspend fun seed(progress: ProgressEntity? = null) {
         db.itemDao().upsertDetails(ItemEntity(s, "b1", "l", "Book", durationSec = 3600.0))

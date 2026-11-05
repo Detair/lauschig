@@ -91,7 +91,7 @@ class ListeningSessionSyncTest {
     private val later = ListeningSessionSync.LATER_PAGE // 20
 
     private fun sync(api: MeApi? = server, maxPages: Int = ListeningSessionSync.MAX_PAGES) =
-        ListeningSessionSync(flowOf(api), db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages, appVersion, scope)
+        ListeningSessionSync({ flowOf(api) }, db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, maxPages, appVersion, scope)
 
     /** [n] sessions, one per hour, the newest updated at [newest]. */
     private fun sessions(n: Int, newest: Long = now) = (0 until n).map { i -> session("s$i", updatedAt = newest - i * hour) }
@@ -615,7 +615,7 @@ class ListeningSessionSyncTest {
         server.sessions = sessions(600)
         unmetered = false
         val api = kotlinx.coroutines.flow.MutableStateFlow<MeApi?>(null) // offline at the tap
-        val sync = ListeningSessionSync(api, db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, appVersion = appVersion, scope = scope)
+        val sync = ListeningSessionSync({ api }, db.listeningSessionDao(), db.sessionDao(), stamps, { unmetered }, { now }, appVersion = appVersion, scope = scope)
 
         val job = sync.loadNow(s)!!
         assertEquals(HistoryLoad.LOADING, sync.historyLoad(s).first()) // the tap shows at once

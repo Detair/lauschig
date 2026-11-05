@@ -158,7 +158,7 @@ class LocalExclusionTest {
         db.progressDao().saveLocal(s, local, 10.0, 100.0, false, 5)
         db.sessionDao().upsert(LocalSessionEntity("sa", s, local, 0.0, 10.0, 10.0, 1, 2))
         db.progressDao().saveLocal(s, "li_1", 20.0, 100.0, false, 5)
-        val sync = ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") })
+        val sync = ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") })
         sync.sync(s)
         assertNoLocalCall(me.calls)
         assertTrue(me.calls.contains("progress li_1"))
@@ -179,7 +179,7 @@ class LocalExclusionTest {
         assertEquals(BookmarkPending.NONE, db.bookmarkDao().get(s, local, 20.0)!!.pending)
         db.bookmarkDao().delete(dev, local, 10.0)
         assertNull("deleted at once, no tombstone", db.bookmarkDao().get(dev, local, 10.0))
-        val sync = BookmarkSync(flowOf(me), db.bookmarkDao())
+        val sync = BookmarkSync({ flowOf(me) }, db.bookmarkDao())
         sync.sync(s)
         assertNoLocalCall(me.calls)
         // The pull keeps the local row: the server never knows it.
@@ -192,7 +192,7 @@ class LocalExclusionTest {
     // --- History ---------------------------------------------------------------------------------------------------
 
     @Test fun history_ofLocalTitles_isNeverFetched() = runTest {
-        val repo = HistoryRepository(flowOf(me), db.historyDao(), db.sessionDao())
+        val repo = HistoryRepository({ flowOf(me) }, db.historyDao(), db.sessionDao())
         repo.refresh(dev, local)
         repo.refresh(s, local)
         assertTrue(me.calls.isEmpty())
@@ -206,7 +206,7 @@ class LocalExclusionTest {
         seedLocal()
         db.progressDao().saveLocal(dev, local, 10.0, 100.0, false, 5)
         val api = RecordingLibrary(listOf("li_1"))
-        val sync = LibrarySync(flowOf(api), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { block -> db.withTransaction { block() } })
+        val sync = LibrarySync({ flowOf(api) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { block -> db.withTransaction { block() } })
         sync.syncAll(s)
         sync.syncAll(dev)
         sync.loadDetails(dev, local)
@@ -296,7 +296,7 @@ class LocalExclusionTest {
             override fun seekToChapter(index: Int) {}
             override fun setSpeed(speed: Float) {}
         }
-        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(me), object : SyncTrigger { override fun syncNow() { syncs++ } }, settleMs = 0)
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(me) }, object : SyncTrigger { override fun syncNow() { syncs++ } }, settleMs = 0)
         assertFalse(actions.pullFromServer(dev, local))
         actions.markFinished(dev, local)
         actions.startOver(dev, local)

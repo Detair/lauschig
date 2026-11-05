@@ -27,7 +27,7 @@ class ProgressSyncWorker @AssistedInject constructor(
         val serverId = accounts.account.first()?.serverId ?: return Result.success()
         if (!gate.awaitOnline()) return Result.retry()
         return try {
-            progressSync.sync(serverId).forEach(bus::emit)
+            bus.emitFor(serverId, accounts, progressSync.sync(serverId))
             Result.success()
         } catch (e: CancellationException) {
             throw e
