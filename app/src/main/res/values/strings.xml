@@ -77,6 +77,9 @@
     <string name="detail_continue">Continue</string>
     <string name="detail_listen_again">Listen again</string>
     <string name="detail_series_band">%1$s · Book %2$s</string>
+    <string name="detail_quick_length">Length: %1$s</string>
+    <string name="detail_quick_narrator">Read by %1$s</string>
+    <string name="detail_quick_year">Published: %1$s</string>
     <string name="detail_download">Download</string>
     <string name="detail_downloading">Downloading %1$d %%</string>
     <string name="detail_download_queued">Waiting to download</string>
@@ -709,6 +712,7 @@
         <item>Dark tone “Fireside”: warm mocha, cream and amber for listening in bed – also with pure black</item>
         <item>Downloaded titles carry a new symbol, an arrow in a circle – no longer mistaken for “heard”</item>
         <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
+        <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>

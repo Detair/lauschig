@@ -77,6 +77,9 @@
     <string name="detail_continue">Weiterhören</string>
     <string name="detail_listen_again">Nochmal hören</string>
     <string name="detail_series_band">%1$s · Band %2$s</string>
+    <string name="detail_quick_length">Länge: %1$s</string>
+    <string name="detail_quick_narrator">Gelesen von %1$s</string>
+    <string name="detail_quick_year">Erschienen: %1$s</string>
     <string name="detail_download">Herunterladen</string>
     <string name="detail_downloading">Lädt %1$d %%</string>
     <string name="detail_download_queued">Wartet auf Download</string>
@@ -709,6 +712,7 @@
         <item>Dunkler Farbton „Kaminfeuer“: warmes Mokka, Creme und Bernstein fürs Hören im Bett – auch mit reinem Schwarz</item>
         <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
         <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
+        <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>

@@ -2,7 +2,9 @@ package io.wolftown.lauschig.ui.detail
 
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -21,13 +24,24 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Downloading
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +57,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -50,6 +65,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -57,6 +73,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -74,10 +93,12 @@ import io.wolftown.lauschig.ui.common.FinishedCard
 import io.wolftown.lauschig.ui.common.LocalBackdropReach
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
+import io.wolftown.lauschig.ui.common.OfflineIcon
 import io.wolftown.lauschig.ui.common.ProgressMenuButton
 import io.wolftown.lauschig.ui.common.coverModel
 import io.wolftown.lauschig.ui.extras.BookmarkNoteDialog
 import io.wolftown.lauschig.ui.extras.TitleExtrasViewModel
+import io.wolftown.lauschig.ui.extras.listenedText
 import io.wolftown.lauschig.ui.extras.titleExtrasSections
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.theme.animateCoverTint
@@ -300,13 +321,9 @@ private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, marks: HeaderMar
     state.subtitle?.let {
         Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
     }
+    QuickBar(state, onOpenBrowse)
     Chips(state, onOpenBrowse)
-    PrimaryButton(state, onPrimary)
-    if (state.isLocal) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("localSource")) { Hint(stringResource(R.string.detail_local_source)) }
-    } else {
-        DownloadControls(state, onDownload, onPause, onDelete)
-    }
+    PlayAndDownload(state, onPrimary, onDownload, onPause, onDelete)
 }
 
 /** [side]: the square's size beside the texts; null is the column's cover, as wide as the window up to 280 dp. */
@@ -327,7 +344,60 @@ private class ChipSpec(val label: String, val target: Pair<BrowseKind, String>)
 
 private val people = Catalog()
 
-/** One chip per author and narrator, the series and each genre; all open the matching entity page. */
+/**
+ * The quick facts under the title: length, narrator(s) and year, each with its symbol; what is unknown is left out
+ * (nothing at all: no bar). The narrator opens the narrator's page, as its chip did (it is not repeated in the chips).
+ * The server does not tell this app whether a title is abridged, so that badge of the plan is not there.
+ */
+@Composable
+private fun QuickBar(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    val length = state.durationSec.takeIf { it > 0 }
+    val narrators = people.splitPeople(state.narrator)
+    val year = state.publishedYear
+    if (length == null && narrators.isEmpty() && year == null) return
+    FlowRow(
+        Modifier.fillMaxWidth().padding(top = 8.dp).testTag("quickBar"),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        length?.let { sec ->
+            val text = listenedText(sec)
+            QuickFact(Icons.Rounded.Schedule, text, stringResource(R.string.detail_quick_length, text))
+        }
+        narrators.forEach { name ->
+            // A device title's people lead nowhere (entity pages list the server's catalog).
+            val open = if (state.isLocal) null else { { onOpenBrowse(BrowseKind.NARRATOR, name) } }
+            QuickFact(Icons.Rounded.Mic, name, stringResource(R.string.detail_quick_narrator, name), open)
+        }
+        year?.let { QuickFact(Icons.Rounded.CalendarToday, it, stringResource(R.string.detail_quick_year, it)) }
+    }
+}
+
+/** One fact of the [QuickBar]: symbol and value, said as "[description]"; with [onClick] a link (the narrator). */
+@Composable
+private fun QuickFact(icon: ImageVector, text: String, description: String, onClick: (() -> Unit)? = null) {
+    val link = if (onClick != null) {
+        Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp)
+    } else {
+        Modifier
+    }
+    Row(
+        link.semantics(mergeDescendants = true) { contentDescription = description }.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (onClick != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** One chip per author, the series and each genre; all open the matching entity page. The narrator is in the [QuickBar]. */
 @Composable
 private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -> Unit) {
     val seriesLabel = state.seriesName?.let { name ->
@@ -335,12 +405,11 @@ private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -
     }
     val specs = buildList {
         people.splitPeople(state.author).forEach { add(ChipSpec(it, BrowseKind.AUTHOR to it)) }
-        people.splitPeople(state.narrator).forEach { add(ChipSpec(it, BrowseKind.NARRATOR to it)) }
         state.seriesName?.let { add(ChipSpec(seriesLabel ?: it, BrowseKind.SERIES to it)) }
         state.genres.map { it.trim() }.filter { it.isNotEmpty() }.distinct().forEach { add(ChipSpec(it, BrowseKind.GENRE to it)) }
     }
     if (specs.isEmpty()) return
-    androidx.compose.foundation.layout.FlowRow(
+    FlowRow(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -363,33 +432,100 @@ private fun Chip(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The actions: a large primary button (play, continue, listen again) and beside it a compact download button showing
+ * the download's state; below them what the download is doing in words, with its finer controls. A device title has no
+ * download, only its hint.
+ */
 @Composable
-private fun PrimaryButton(state: ItemDetailUiState, onPrimary: () -> Unit) {
+private fun PlayAndDownload(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit) {
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    val settledOffline = LocalOfflineDimming.current
+    val playEnabled = state.playableOffline || !settledOffline
+    // Starting, resuming and retrying need the server; removing never does.
+    val canStart = !settledOffline
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        PrimaryButton(state, playEnabled, onPrimary, Modifier.weight(1f))
+        if (!state.isLocal) DownloadCompanion(state.download, canStart, onDownload, onPause, onDelete, onConfirmDelete = { confirm = true })
+    }
+    if (!playEnabled) {
+        Text(stringResource(R.string.error_not_downloaded_offline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+    }
+    if (state.isLocal) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("localSource")) { Hint(stringResource(R.string.detail_local_source)) }
+    } else {
+        DownloadStatus(state.download, canStart, onPause, onDelete, onConfirmDelete = { confirm = true })
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(stringResource(R.string.detail_delete_title)) },
+            text = { Text(stringResource(R.string.detail_delete_message)) },
+            confirmButton = { TextButton(onClick = { confirm = false; onDelete() }) { Text(stringResource(R.string.detail_delete_confirm)) } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
+        )
+    }
+}
+
+/** The height of the primary button and the size of the download button beside it: easy to hit. */
+private val ACTION_SIZE = 56.dp
+
+@Composable
+private fun PrimaryButton(state: ItemDetailUiState, enabled: Boolean, onPrimary: () -> Unit, modifier: Modifier = Modifier) {
     val label = when (val p = state.primary) {
         PrimaryAction.Play -> stringResource(R.string.detail_play)
         is PrimaryAction.Continue ->
             if (p.chapterNumber != null) stringResource(R.string.detail_continue_chapter, p.chapterNumber) else stringResource(R.string.detail_continue)
         PrimaryAction.ListenAgain -> stringResource(R.string.detail_listen_again)
     }
-    val settledOffline = LocalOfflineDimming.current
-    val playEnabled = state.playableOffline || !settledOffline
-    Button(onClick = onPrimary, enabled = playEnabled, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) { Text(label) }
-    if (!playEnabled) {
-        Text(stringResource(R.string.error_not_downloaded_offline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+    Button(onClick = onPrimary, enabled = enabled, modifier = modifier.heightIn(min = ACTION_SIZE).testTag("primaryButton")) {
+        Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+        Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
+/**
+ * The compact download button beside the primary one, a tonal circle that shows the state: start, the progress ring
+ * (a tap pauses), resume, on this device (a tap asks to delete), failed (a tap retries).
+ */
 @Composable
-private fun DownloadControls(state: ItemDetailUiState, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit) {
-    // What the confirm dialog is for; null = hidden. Both removal flavours reuse the same dialog.
-    var confirm by rememberSaveable { mutableStateOf(false) }
-    // Starting, resuming and retrying need the server; removing never does.
-    val canStart = !LocalOfflineDimming.current
+private fun DownloadCompanion(
+    d: DownloadUi, canStart: Boolean, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onConfirmDelete: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    @Composable
+    fun Companion(description: String, onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) =
+        FilledTonalIconButton(
+            onClick = onClick, enabled = enabled,
+            modifier = Modifier.size(ACTION_SIZE).semantics { contentDescription = description }.testTag("downloadCompanion"),
+        ) { content() }
+    when (d) {
+        DownloadUi.None -> Companion(stringResource(R.string.detail_download), onDownload, canStart) { Icon(Icons.Rounded.Download, null) }
+        DownloadUi.Queued -> Companion(stringResource(R.string.detail_download_queued), onDelete) {
+            CircularProgressIndicator(Modifier.size(40.dp), strokeWidth = 3.dp)
+            Icon(Icons.Rounded.Downloading, null, Modifier.size(20.dp))
+        }
+        is DownloadUi.Running -> Companion(stringResource(R.string.detail_downloading, d.percent), onPause) {
+            CircularProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
+            Icon(Icons.Rounded.Downloading, null, Modifier.size(20.dp))
+        }
+        is DownloadUi.Paused -> Companion(stringResource(R.string.detail_download_resume), onDownload, canStart) { Icon(Icons.Rounded.Download, null) }
+        is DownloadUi.Complete -> Companion(stringResource(R.string.cover_offline_available), onConfirmDelete) { Icon(OfflineIcon, null, tint = scheme.primary) }
+        is DownloadUi.Failed -> Companion(stringResource(R.string.detail_download_retry), onDownload, canStart) {
+            Icon(Icons.Rounded.ErrorOutline, null, tint = if (canStart) scheme.error else LocalContentColor.current)
+        }
+    }
+}
+
+/** What the download is doing, in words, with its finer controls (pause, cancel, delete, remove); nothing before it starts. */
+@Composable
+private fun DownloadStatus(d: DownloadUi, canStart: Boolean, onPause: () -> Unit, onDelete: () -> Unit, onConfirmDelete: () -> Unit) {
+    val offlineHint = !canStart && d.needsServer()
+    if (d == DownloadUi.None && !offlineHint) return
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        when (val d = state.download) {
-            DownloadUi.None -> {
-                OutlinedButton(onClick = onDownload, enabled = canStart, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.detail_download)) }
-            }
+        when (d) {
+            DownloadUi.None -> Unit
             DownloadUi.Queued -> {
                 Text(stringResource(R.string.detail_download_queued), style = MaterialTheme.typography.bodyMedium)
                 LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -400,41 +536,27 @@ private fun DownloadControls(state: ItemDetailUiState, onDownload: () -> Unit, o
                 LinearProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onPause) { Text(stringResource(R.string.detail_download_pause)) }
-                    TextButton(onClick = { if (d.hasPartialData) confirm = true else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
+                    TextButton(onClick = { if (d.hasPartialData) onConfirmDelete() else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
                 }
             }
             is DownloadUi.Paused -> {
                 Text(stringResource(R.string.detail_download_paused), style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDownload, enabled = canStart) { Text(stringResource(R.string.detail_download_resume)) }
-                    TextButton(onClick = { if (d.hasPartialData) confirm = true else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
-                }
+                TextButton(onClick = { if (d.hasPartialData) onConfirmDelete() else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
             }
-            is DownloadUi.Complete -> {
+            is DownloadUi.Complete -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.detail_downloaded, Formatter.formatShortFileSize(LocalContext.current, d.bytes)),
                     style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { confirm = true }) { Text(stringResource(R.string.detail_download_delete)) }
+                TextButton(onClick = onConfirmDelete) { Text(stringResource(R.string.detail_download_delete)) }
             }
             is DownloadUi.Failed -> {
                 Text(stringResource(d.message), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDownload, enabled = canStart) { Text(stringResource(R.string.detail_download_retry)) }
-                    TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_remove)) }
-                }
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.detail_download_remove)) }
             }
         }
-        if (!canStart && state.download.needsServer()) Hint(stringResource(R.string.detail_download_offline))
-    }
-    if (confirm) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text(stringResource(R.string.detail_delete_title)) },
-            text = { Text(stringResource(R.string.detail_delete_message)) },
-            confirmButton = { TextButton(onClick = { confirm = false; onDelete() }) { Text(stringResource(R.string.detail_delete_confirm)) } },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
-        )
+        if (offlineHint) Hint(stringResource(R.string.detail_download_offline))
     }
 }
 
