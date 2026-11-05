@@ -400,6 +400,9 @@
     <string name="player_contents_current">Aktuell: Kap. %1$d / %2$d</string>
     <string name="player_contents_no_chapters">Warteschlange, Lesezeichen &amp; Verlauf</string>
     <string name="player_contents_chapters_empty">Dieser Titel hat keine Kapitel.</string>
+    <string name="chapter_search_hint">Kapitel suchen</string>
+    <string name="chapter_search_nothing">Kein Kapitel zu „%s“</string>
+    <string name="chapter_search_nothing_hint">Such nach einem Wort aus dem Titel oder nach der Kapitelnummer.</string>
     <string name="player_remaining_chapter_short">Kapitel</string>
     <string name="player_remaining_book_short">Buch</string>
     <string name="player_remaining_chapter_description">Kapitel: noch %1$s</string>

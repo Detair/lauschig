@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.wolftown.lauschig.R
@@ -31,12 +33,13 @@ fun formatClock(seconds: Double): String {
     return if (h > 0) String.format(Locale.ROOT, "%d:%02d:%02d", h, m, s) else String.format(Locale.ROOT, "%02d:%02d", m, s)
 }
 
-fun LazyListScope.chapterItems(chapters: List<ChapterRow>, onChapter: (Int) -> Unit) {
-    itemsIndexed(chapters, key = { _, c -> c.index }) { _, c -> ChapterRowItem(c, onClick = { onChapter(c.index) }) }
+/** [numbered]: each row starts with its chapter number (search hits, which may not say where they are). */
+fun LazyListScope.chapterItems(chapters: List<ChapterRow>, onChapter: (Int) -> Unit, numbered: Boolean = false) {
+    itemsIndexed(chapters, key = { _, c -> c.index }) { _, c -> ChapterRowItem(c, numbered, onClick = { onChapter(c.index) }) }
 }
 
 @Composable
-private fun ChapterRowItem(chapter: ChapterRow, onClick: () -> Unit) {
+private fun ChapterRowItem(chapter: ChapterRow, numbered: Boolean, onClick: () -> Unit) {
     val container = if (chapter.isCurrent) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent
     Row(
         Modifier
@@ -48,6 +51,15 @@ private fun ChapterRowItem(chapter: ChapterRow, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (numbered) {
+            Text(
+                (chapter.index + 1).toString(),
+                style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = 28.dp).testTag("chapterNumber"),
+            )
+        }
         Text(
             chapter.title,
             style = MaterialTheme.typography.bodyLarge,
