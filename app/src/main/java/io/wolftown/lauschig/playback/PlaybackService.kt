@@ -192,8 +192,9 @@ class PlaybackService : MediaLibraryService() {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true)
-            .setSeekBackIncrementMs(SEEK_MS)
-            .setSeekForwardIncrementMs(SEEK_MS)
+            // Only the defaults: the session player ([CarSafePlayer]) does every seek step, with the settings' lengths.
+            .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SEEK_BACK * 1000L)
+            .setSeekForwardIncrementMs(PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L)
             .build()
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) { Log.w(TAG, "playback error ${error.errorCodeName}", error) }
@@ -230,8 +231,10 @@ class PlaybackService : MediaLibraryService() {
             this, SESSION_ACTIVITY_REQUEST, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_PLAYER),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        // The session player: "previous"/"next" from a steering wheel or headset move by 30 s, never to the book start.
-        val safe = CarSafePlayer(exo, CarButtons.SEEK_MS).also { carPlayer = it }
+        // The session player: "previous"/"next" from a steering wheel or headset move by the seek steps of the settings,
+        // never to the book start.
+        val safe = CarSafePlayer(exo, PlaybackSettings.DEFAULT_SEEK_BACK * 1000L, PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L)
+            .also { carPlayer = it }
         val buttons = CarButtons(resources).also { carButtons = it }
         val chapterTracker = ChapterTracker(exo, { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) }, scope, onTitle = { updateButtons() })
         chapters = chapterTracker
@@ -254,6 +257,12 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
+        scope.launch {
+            combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair).collect { (back, forward) ->
+                safe.setSteps(back * 1000L, forward * 1000L)
+                updateButtons()
+            }
+        }
         watchLibrary(built)
         startGuard = ForegroundStartGuard(scope, StartHost(exo))
         // The homescreen widget follows the player (also right now: a fresh process starts with an empty player).
@@ -314,9 +323,11 @@ class PlaybackService : MediaLibraryService() {
         speed = Math.round((player?.playbackParameters?.speed ?: 1f) * 100) / 100f,
         sleep = sleepTimer.state.value?.mode,
         hasChapters = chapters?.hasChapters == true,
+        seekBackSec = ((carPlayer?.seekBackIncrement ?: 0L) / 1000).toInt().takeIf { it > 0 } ?: PlaybackSettings.DEFAULT_SEEK_BACK,
+        seekForwardSec = ((carPlayer?.seekForwardIncrement ?: 0L) / 1000).toInt().takeIf { it > 0 } ?: PlaybackSettings.DEFAULT_SEEK_FORWARD,
     )
 
-    /** New media buttons only when what they show changed (speed, sleep timer, chapters). */
+    /** New media buttons only when what they show changed (speed, sleep timer, chapters, seek steps). */
     @OptIn(UnstableApi::class) // media button preferences
     private fun updateButtons() {
         val s = session ?: return
@@ -658,7 +669,6 @@ class PlaybackService : MediaLibraryService() {
 
         /** Request code of the session activity (the cleanup notification uses 0). */
         private const val SESSION_ACTIVITY_REQUEST = 1
-        private const val SEEK_MS = 30_000L
         private const val MIN_BUFFER_MS = 5 * 60_000
         private const val MAX_BUFFER_MS = 10 * 60_000
         private const val START_BUFFER_MS = 2_500

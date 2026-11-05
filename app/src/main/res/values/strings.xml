@@ -437,8 +437,8 @@
     <string name="car_duration_h_min">%1$d h %2$d min</string>
     <string name="car_duration_min">%1$d min</string>
     <string name="car_volume">Volume %1$s</string>
-    <string name="car_seek_back">Back 30 seconds</string>
-    <string name="car_seek_forward">Forward 30 seconds</string>
+    <string name="car_seek_back">Back %1$d seconds</string>
+    <string name="car_seek_forward">Forward %1$d seconds</string>
     <string name="car_speed">Speed %1$s×</string>
     <string name="car_sleep_off">Sleep timer off</string>
     <string name="car_sleep_minutes">Sleep timer: %1$d min</string>

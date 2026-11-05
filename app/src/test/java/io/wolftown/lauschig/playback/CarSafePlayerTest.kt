@@ -58,7 +58,7 @@ class CarSafePlayerTest {
 
     @Test fun oneFileBook_offersNext_andNextMovesThirtySeconds() {
         val f = Fake().apply { position = 100_000 }
-        val p = CarSafePlayer(f.player, 30_000)
+        val p = CarSafePlayer(f.player, 30_000, 30_000)
         nextCommands.forEach { assertTrue("command $it", p.isCommandAvailable(it)) }
         nextCommands.forEach { assertTrue("command $it", p.availableCommands.contains(it)) }
         p.seekToNext()
@@ -69,13 +69,13 @@ class CarSafePlayerTest {
 
     @Test fun lastFileOfABook_nextStopsAtTheEnd() {
         val f = Fake().apply { durations = listOf(600_000L, 300_000L); index = 1; position = 290_000 }
-        CarSafePlayer(f.player, 30_000).seekToNext()
+        CarSafePlayer(f.player, 30_000, 30_000).seekToNext()
         assertEquals(listOf(1 to 300_000L), f.seeks)
     }
 
     @Test fun nothingLoaded_offersNothingExtra() {
         val f = Fake().apply { durations = emptyList() }
-        val p = CarSafePlayer(f.player, 30_000)
+        val p = CarSafePlayer(f.player, 30_000, 30_000)
         assertFalse(p.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT))
         p.seekToNext()
         assertTrue(f.seeks.isEmpty())
@@ -83,7 +83,7 @@ class CarSafePlayerTest {
 
     @Test fun listeners_hearTheWidenedCommands_andEverythingElse() {
         val f = Fake()
-        val p = CarSafePlayer(f.player, 30_000)
+        val p = CarSafePlayer(f.player, 30_000, 30_000)
         var heard: Player.Commands? = null
         var playing: Boolean? = null
         var eventsFrom: Player? = null
@@ -101,6 +101,38 @@ class CarSafePlayerTest {
         assertTrue("events report the session's player", eventsFrom === p)
         p.removeListener(listener)
         assertTrue(f.listeners.isEmpty())
+    }
+
+    @Test fun asymmetricSteps_backAndForwardMoveByTheirOwnSeconds() {
+        val f = Fake().apply { position = 100_000 }
+        val p = CarSafePlayer(f.player, backMs = 15_000, forwardMs = 30_000)
+        p.seekToPrevious()
+        p.seekBack()
+        p.seekToNext()
+        p.seekForward()
+        assertEquals(listOf(0 to 85_000L, 0 to 85_000L, 0 to 130_000L, 0 to 130_000L), f.seeks)
+        assertEquals(15_000L, p.seekBackIncrement)
+        assertEquals(30_000L, p.seekForwardIncrement)
+    }
+
+    @Test fun newSteps_applyAtOnce_andListenersHearTheIncrements() {
+        val f = Fake().apply { position = 100_000 }
+        val p = CarSafePlayer(f.player, 15_000, 30_000)
+        val heard = mutableListOf<String>()
+        p.addListener(object : Player.Listener {
+            override fun onSeekBackIncrementChanged(seekBackIncrementMs: Long) { heard += "back $seekBackIncrementMs" }
+            override fun onSeekForwardIncrementChanged(seekForwardIncrementMs: Long) { heard += "forward $seekForwardIncrementMs" }
+        })
+        p.setSteps(backMs = 10_000, forwardMs = 45_000)
+        p.step(forward = false)
+        p.step(forward = true)
+        assertEquals(listOf(0 to 90_000L, 0 to 145_000L), f.seeks)
+        assertEquals(10_000L, p.seekBackIncrement)
+        assertEquals(45_000L, p.seekForwardIncrement)
+        assertEquals(listOf("back 10000", "forward 45000"), heard)
+        // The same steps again change nothing and tell no one.
+        p.setSteps(10_000, 45_000)
+        assertEquals(2, heard.size)
     }
 
     @Test fun theWrapperForwardsEveryListenerCallback() {
