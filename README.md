@@ -8,12 +8,12 @@ network, and listening progress is synced with the server whenever a connection 
 
 <table>
   <tr>
-    <td align="center" valign="top"><img src="docs/screenshots/start.png" width="260" alt="Start screen with the continue card for Winnetou III, a row of titles in progress and this week's listening time"><br>Continue where you left off</td>
-    <td align="center" valign="top"><img src="docs/screenshots/detail.png" width="260" alt="Detail page of Die Schatzinsel with a header tinted in the cover's colours"><br>Every title in its cover's colours</td>
-    <td align="center" valign="top"><img src="docs/screenshots/player.png" width="260" alt="Player for Winnetou III with chapter progress, speed, chapters, sleep timer and audio settings"><br>Chapters, speed and sleep timer at hand</td>
+    <td align="center" valign="top"><img src="docs/screenshots/start.png" width="260" alt="Start screen with the continue card for Winnetou III, a row of titles in progress and this week's listening time (dark theme, Night blue)"><br>Continue where you left off</td>
+    <td align="center" valign="top"><img src="docs/screenshots/detail.png" width="260" alt="Detail page of Die Schatzinsel with duration, year, tags, a continue button and a round download button"><br>Everything about a title at a glance</td>
+    <td align="center" valign="top"><img src="docs/screenshots/player.png" width="260" alt="Player for Winnetou III in the warm Fireside dark tone, with the chapter banner, two timestamps and tiles for speed, sleep timer and sound"><br>Player in the warm Fireside tone</td>
   </tr>
   <tr>
-    <td align="center" valign="top"><img src="docs/screenshots/statistics.png" width="260" alt="Statistics for the year: listening time per month, streaks and finished books"><br>Listening statistics by week, month and year</td>
+    <td align="center" valign="top"><img src="docs/screenshots/statistics.png" width="260" alt="Statistics for the year with one month selected and its listening time shown in a tooltip"><br>Listening statistics by week, month and year</td>
     <td align="center" valign="top"><img src="docs/screenshots/achievements.png" width="260" alt="Achievements grid with levels for streaks, hours listened and finished books"><br>Achievements for streaks, hours and finished books</td>
     <td align="center" valign="top"><img src="docs/screenshots/year-in-review.png" width="260" alt="Year in review slide with the five most listened titles of the year"><br>Your year in review</td>
   </tr>
@@ -32,7 +32,7 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.3.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). What works:
+Version 0.4.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
 - Browsing by series, authors, narrators, genres, tags and collections; podcasts; search; single sign-on (OIDC).
@@ -40,6 +40,11 @@ Version 0.3.0, in daily use on our own devices; not on Google Play yet (a closed
   books and folders that exist only on the device.
 - Android Auto, voice search, a home-screen widget, links from the Audiobookshelf web app, phone and tablet layouts.
 - Listening statistics, achievements and a year in review, computed on the device.
+- New in 0.4.0 (Phase 6): adjustable skip steps, a new player layout, a hint tone (chime) before the sleep timer fades
+  out, night compression, a warm night palette ("Fireside"), chapter search, faster search and library, and a cover
+  cache.
+- Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
+  diagnostic log you can share – with passwords, tokens and server addresses masked.
 
 The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
