@@ -100,6 +100,11 @@ braucht“ im Plan `2026-11-05-phase6-quality-and-comfort.md` (Task 12, Fix-Rund
 - **2.6 Downloads-Seite.** Eine Zeile „Andere Profile auf diesem Gerät: 2,1 GB“ in der Speicheranzeige, ohne Löschen von hier.
 - **2.7 Mitnahme.** „… die nur auf diesem Handy liegen“ wird „… auf diesem Gerät“ (auch auf dem Tablet richtig).
 - **2.8 What's new** 0.5.0, Versionssprung. Tablet quer und Handy hoch geprüft.
+- **2.9 Wizard beim ersten Start (Fabian, 2026-11-05).** Beim allerersten Start erklärt ein kurzer Wizard in wenigen Seiten die App
+  und bietet am Ende die Anmeldung an. **Claudes Wahl:** Er erscheint nur, wenn kein Konto und kein gespeichertes Profil da sind und
+  er noch nicht gesehen wurde; wer von einer älteren Version kommt, sieht ihn nie. Jede Seite lässt sich überspringen, danach kommt
+  die Anmeldeseite wie bisher. Er sagt klar, dass ein eigener Audiobookshelf-Server nötig ist. Prozess-Tod und Drehen verlieren die
+  Seite nicht, TalkBack liest alles vor, Handy und Tablet quer. „Gesehen“ steht erst nach der letzten Seite oder dem Überspringen fest.
 
 ## Task 3: Der Schutz
 
