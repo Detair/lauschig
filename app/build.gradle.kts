@@ -161,6 +161,7 @@ room {
 dependencies {
     implementation(project(":abs-api"))
     implementation(project(":core:model"))
+    implementation(project(":core:database"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
