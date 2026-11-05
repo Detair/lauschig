@@ -252,3 +252,74 @@
    - `./gradlew testDebugUnitTest :abs-api:test lintDebug assembleDebug -q`
    - Überprüfung auf Emulator/Gerät.
    - PR erstellen und mergen.
+
+---
+
+## Umsetzung Task 1 (2026-11-05)
+
+Paket „Player & Klang“ (Branch `p6-player`), zusammen mit Task 3, 8, 11.1 und 11.6.
+
+- **1.1** `PlaybackSettings`: `seek_back_sec` (5/10/**15**/30) und `seek_forward_sec` (15/**30**/45/60); Werte außerhalb der
+  Auswahl werden beim Schreiben ignoriert und fallen beim Lesen auf den Standard zurück. `PlaybackSettings` nimmt jetzt wie
+  `UiSettings` einen `DataStore` (testbar).
+- **1.2** **Claudes Wahl:** ExoPlayer kennt die Sprungweiten nur beim Bauen (`ExoPlayer.Builder`), es gibt kein
+  `exo.setSeekBackIncrementMs` zur Laufzeit. Deshalb trägt der Session-Player `CarSafePlayer` die Einstellungen
+  (`setSteps`, meldet sie als `seekBack/ForwardIncrement`); er bedient ohnehin jedes Zurück/Vor von Benachrichtigung,
+  Kopfhörer, Lenkrad und Android Auto. ExoPlayer behält die Standardwerte. `PlayerController.seekBy(delta)` bleibt, der
+  Player übergibt ±`seekBackSec`/`seekForwardSec` aus `PlayerUiState`. Auto/Benachrichtigung: Media3-Symbole mit Zahl für
+  5/10/15/30 s, für 45/60 s der Pfeil ohne Zahl; Beschriftung „15 Sekunden zurück“.
+- **1.3** Einstellungen → Wiedergabe: „Zurückspringen“ und „Vorspringen“ ganz oben. **Claudes Wahl:** Die Player-Tasten
+  zeichnen für jeden Wert dasselbe Symbol (runder Replay-Pfeil, für vor gespiegelt, Zahl darin), weil Material nur 5/10/30
+  liefert. Das **Widget** zeigt keine Zahl mehr („Zurückspringen“/„Vorspringen“, Pfeil ohne Ziffern): es springt über den
+  Session-Player um die eingestellten Sekunden und würde sonst „30“ lügen.
+- **Variante B:** drei gleiche Kacheln `Tempo` / `Sleep` / `Klang` (EN Speed / Sleep / Sound), je Icon + Name + Wert. Sleep:
+  „Aus“ oder die Restzeit, aktiv in `primaryContainer` (warmes Bernstein in Lauschigs eigener Palette; mit
+  Hintergrundbild-Farben folgt es dem Hintergrundbild). **Claudes Wahl** Klang-Wert: Boost „+3 dB“ vor „Nacht“ (Kompressor)
+  vor „Ohne Stille“ vor „Aus“; TalkBack hört alles („Klang: +3 dB, Sprachfokus & Nacht-Kompression“). Darunter das Banner
+  „Kapitel & Wiedergabeliste“ mit „Aktuell: Kap. 3 / 12“ (ohne Kapitel: „Warteschlange, Lesezeichen & Verlauf“).
+- **Claudes Wahl Verlauf:** vierter Tab „Verlauf“ im selben Blatt (Kapitel, Warteschlange, Lesezeichen, Verlauf; scrollbare
+  Tab-Leiste), nicht im Überlaufmenü – das Menü gehört zum Fortschritt des Titels (beendet, zurücksetzen), dort wäre der
+  Verlauf versteckt. Das Blatt öffnet auf Kapitel, bei Titeln ohne Kapitel auf Warteschlange, hat eine feste Höhe (85 %), damit
+  es beim Tab-Wechsel nicht springt; ein Sprung, ein Kapitel oder ein Start aus der Warteschlange schließt es.
+- Version 0.4.0 / versionCode 4 mit `whatsnew_0_4_0` (dieses Paket war das erste).
+
+## Umsetzung Task 3 (2026-11-05)
+
+- **Claudes Wahl Zeitpunkt:** der Ton kommt **30 s vor dem Ende**, nicht „zu Beginn des Fade-Outs“ – der Fade dauert nur
+  10 s. 30 s lassen Zeit zum Schütteln (Schüttelfenster: letzte 60 s). Einmal pro Unterschreiten; nach einer Verlängerung
+  (Schütteln, Sprung zurück) wieder; kein Ton, wenn der Timer mit weniger als 30 s startet (wer ihn gerade stellt, ist wach)
+  oder wenn die Grenze im Pausenzustand unterschritten wird.
+- **Claudes Wahl Ton:** statt `ToneGenerator` (harte Pieptöne) ein synthetisierter, leiser Zwei-Ton-Gong (G5 → E5,
+  glockenartiges Abklingen, 1 s, Spitze 20 % Vollaussteuerung, weicher Einsatz, ausgeblendetes Ende – kein Klicken). Er
+  läuft als Media-`AudioTrack` ohne Audio-Fokus: folgt der Medienlautstärke und dem Ausgabegerät (Lautsprecher, Kopfhörer,
+  Auto), das Buch läuft darunter weiter.
+- Einstellung `sleep_chime_enabled` (Standard an) im Sleep-Blatt und unter Einstellungen → Wiedergabe („Hinweiston vor dem
+  Ende“).
+
+## Umsetzung Task 8 (2026-11-05)
+
+- `AudioCompressor` (wie `AudioBoost` am Audio-Session des Players): `DynamicsProcessing` nur solange die Einstellung an ist
+  (aus = freigegeben, keine Rechenlast), neue Session = Effekt zieht um, Gerät ohne Effekt = nur Log.
+- **Claudes Wahl Werte:** ein Band über das ganze Spektrum, Schwelle −24 dB, 3:1, Knie 8 dB, Attack 15 ms, Release 200 ms,
+  +6 dB Make-up für leise Stimmen, Limiter bei −3 dB (10:1, 1/50 ms). Variante `VARIANT_FAVOR_FREQUENCY_RESOLUTION`: der
+  Emulator lehnt die Zeitauflösungs-Variante ab („bad parameter value“).
+- **Claudes Wahl ohne Klicken:** das Umschalten bei laufender Wiedergabe geht über `QuietSwitch` – 60 ms Ausblenden der
+  Player-Lautstärke, Effekt in der Stille einsetzen/entfernen, 40 ms setzen lassen, zurück auf die vorige Lautstärke.
+  Pausiert wird direkt geschaltet.
+- Global (wie „Stille überspringen“), Schalter im Klang-Blatt „Sprachfokus & Nacht-Kompression“; die Klang-Kachel zeigt
+  „Nacht“.
+
+## Umsetzung Task 11.1 (2026-11-05)
+
+- Links die abgelaufene Kapitelzeit (passt zum Kapitel-Schieberegler), rechts die Restzeit – „Kapitel −14:20“ oder
+  „Buch −3:18:42“. **Claudes Wahl:** ein kleines Wort „Kapitel“/„Buch“ vor der Restzeit, damit klar ist, welche gezeigt wird
+  (der Platz der alten Mittelzeile ist frei); Buchzeit, nicht durch das Tempo geteilt (wie der Schieberegler). Beide Werte
+  folgen dem Daumen beim Ziehen. Fingertipp schaltet um, gespeichert in `UiSettings` (`player_remaining_time`, Standard
+  Kapitel). TalkBack: „Kapitel: noch 14 Minuten“, Aktion „Restzeit des Buchs zeigen“.
+
+## Umsetzung Task 11.6 (2026-11-05)
+
+- Der ganze Mini-Player nimmt ein senkrechtes Ziehen an; **Claudes Wahl:** entschieden beim Loslassen – mindestens 40 dp nach
+  oben oder ein Wisch mit 600 dp/s öffnet den Player über dieselbe Navigation wie ein Tipp, also mit derselben Slide-Animation
+  (kein Mitziehen, nichts konkurriert mit der Slide). Tipp bleibt Tipp (Titel öffnet, Play-Taste schaltet), nach unten oder
+  ein langsames Schieben tut nichts.
