@@ -63,6 +63,11 @@ class FinishedQuestions(
     /** The questions asked in this process and not answered yet; the first one is shown. */
     val open: StateFlow<List<FinishedQuestion>> = _open.asStateFlow()
 
+    private val titles = java.util.concurrent.ConcurrentHashMap<FinishedQuestion, String>()
+
+    /** The title the question names (several questions in a row stay apart); null if it was not known. */
+    fun titleOf(q: FinishedQuestion): String? = titles[q]
+
     /** Held in memory too: a question whose note could not be written is still never deleted in this process. */
     private val memory = MutableStateFlow<Set<FinishedQuestion>>(emptySet())
 
@@ -74,8 +79,9 @@ class FinishedQuestions(
      */
     val holds: Flow<Set<FinishedQuestion>> = combine(noted, memory) { a, b -> a + b }
 
-    /** Notes and shows the question; call before the title is marked finished. */
-    suspend fun ask(q: FinishedQuestion) {
+    /** Notes and shows the question naming [title]; call before the title is marked finished. */
+    suspend fun ask(q: FinishedQuestion, title: String? = null) {
+        if (!title.isNullOrBlank()) titles[q] = title
         memory.update { it + q }
         try {
             store.edit { it[PENDING] = it[PENDING].orEmpty() + encode(q) }
@@ -90,6 +96,7 @@ class FinishedQuestions(
     /** "Löschen": the download goes now. If that fails the title stays held (and the question closes). */
     suspend fun answerDelete(q: FinishedQuestion) = withContext(NonCancellable) {
         _open.update { it - q }
+        titles.remove(q)
         settle(q) { deleteDownload(q.serverId, q.key) }
     }
 
@@ -99,6 +106,7 @@ class FinishedQuestions(
      */
     suspend fun answerKeep(q: FinishedQuestion) = withContext(NonCancellable) {
         _open.update { it - q }
+        titles.remove(q)
         settle(q) { keep(q) }
     }
 
@@ -137,6 +145,8 @@ class FinishedQuestions(
 @HiltViewModel
 class FinishedQuestionViewModel @Inject constructor(private val questions: FinishedQuestions, settings: DownloadSettings) : ViewModel() {
     val question: StateFlow<List<FinishedQuestion>> = questions.open
+
+    fun titleOf(q: FinishedQuestion): String? = questions.titleOf(q)
 
     /** What "Behalten" means depends on the clean-up being on. */
     val autoDeleting: StateFlow<Boolean> = MutableStateFlow(false).also { flow ->

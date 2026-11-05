@@ -3,6 +3,8 @@ package io.wolftown.lauschig.ui.common
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -133,7 +135,7 @@ class FinishedQuestionTest {
         db.audioFileDao().setLocal(s, "b1", 1, file.absolutePath, 3)
         db.downloadDao().upsert(DownloadEntity(s, "b1", DownloadState.COMPLETE, 1))
         val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
-        vm = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.queueDao(), questions))
+        vm = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), questions))
     }
 
     @After fun tearDown(): Unit = runBlocking {
@@ -172,6 +174,7 @@ class FinishedQuestionTest {
         withTimeout(5_000) { while (heldWhenFinished == null) delay(10) }
         watch.cancel()
         assertEquals(true, heldWhenFinished)
+        assertEquals("the question names its title", "Book", questions.titleOf(q))
     }
 
     @Test fun noQuestion_forATitleWithoutACompleteDownload() = runBlocking {
@@ -241,7 +244,10 @@ class FinishedQuestionTest {
                 val open by questions.open.collectAsStateWithLifecycle()
                 val scope = rememberCoroutineScope()
                 open.firstOrNull()?.let { question ->
-                    FinishedQuestionDialog(true, onDelete = { scope.launch { questions.answerDelete(question) } }, onKeep = { scope.launch { questions.answerKeep(question) } })
+                    FinishedQuestionDialog(
+                        true, questions.titleOf(question),
+                        onDelete = { scope.launch { questions.answerDelete(question) } }, onKeep = { scope.launch { questions.answerKeep(question) } },
+                    )
                 }
             }
         }
@@ -253,5 +259,34 @@ class FinishedQuestionTest {
         rule.waitUntil(5_000) { runBlocking { "$s:b1" in app.cleanupIgnored.first() } }
         rule.onNodeWithTag("finishedKeep").assertDoesNotExist()
         assertNotNull(runBlocking { db.downloadDao().get(s, "b1") })
+    }
+
+    @Test fun severalQuestions_eachNameTheirTitle_anEpisodeItsOwn() {
+        runBlocking {
+            db.itemDao().upsertDetails(ItemEntity(s, "pod", "l", "Der Podcast"))
+            db.episodeDao().upsert(listOf(io.wolftown.lauschig.db.entities.EpisodeEntity(s, "pod", "ep7", "Folge 7: Ein sehr langer Titel, der in einer Zeile keinen Platz hat und darum abgeschnitten oder umbrochen wird")))
+            db.downloadDao().upsert(DownloadEntity(s, "pod~ep7", DownloadState.COMPLETE, 1))
+            vm.markFinished("b1")
+            vm.markFinished("pod~ep7")
+            withTimeout(5_000) { questions.open.first { it.size == 2 } }
+        }
+        rule.setContent {
+            LauschigTheme {
+                val open by questions.open.collectAsStateWithLifecycle()
+                val scope = rememberCoroutineScope()
+                open.firstOrNull()?.let { question ->
+                    FinishedQuestionDialog(false, questions.titleOf(question), onDelete = {}, onKeep = { scope.launch { questions.answerKeep(question) } })
+                }
+            }
+        }
+        rule.onNodeWithTag("finishedQuestionTitle").assertTextEquals("“Book” – delete download?")
+        rule.onNodeWithTag("finishedKeep").performClick()
+        rule.waitUntil(5_000) { questions.open.value.size == 1 }
+        rule.onNodeWithTag("finishedQuestionTitle").assertTextContains("“Folge 7: Ein sehr langer Titel", substring = true)
+    }
+
+    @Test fun withoutAKnownTitle_theQuestionStillAsks() {
+        rule.setContent { LauschigTheme { FinishedQuestionDialog(false, null, onDelete = {}, onKeep = {}) } }
+        rule.onNodeWithTag("finishedQuestionTitle").assertTextEquals("Delete download?")
     }
 }

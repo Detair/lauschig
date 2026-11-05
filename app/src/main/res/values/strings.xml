@@ -143,6 +143,7 @@
     <string name="progress_pull_done">Position taken from the server</string>
     <string name="progress_pull_failed">Server not reachable or no position there</string>
     <string name="progress_delete_after_finish_title">Delete download?</string>
+    <string name="progress_delete_after_finish_title_named">“%1$s” – delete download?</string>
     <string name="progress_delete_after_finish_message">Finished – delete the download to free up space? Your progress stays.</string>
     <string name="progress_delete_after_finish_auto_message">Finished – delete the download now? “Keep” leaves it out of the automatic deletion. Your progress stays.</string>
     <string name="finished_title">Finished</string>

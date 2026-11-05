@@ -57,6 +57,8 @@ import io.wolftown.lauschig.db.entities.DownloadState
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadProgress
 import io.wolftown.lauschig.db.dao.ItemDao
+import io.wolftown.lauschig.playback.PlayableKey
+import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
@@ -112,11 +114,18 @@ class ItemActionsViewModel @Inject constructor(
     private val player: PlayerController,
     private val progressActions: ProgressActions,
     private val items: ItemDao,
+    private val episodes: EpisodeDao,
     private val queue: QueueDao,
     private val questions: FinishedQuestions,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** A book's title, or an episode's own title. */
+    private suspend fun titleOf(serverId: String, key: String): String? {
+        val p = PlayableKey.parse(key)
+        return if (p.episodeId != null) episodes.get(serverId, p.libraryItemId, p.episodeId)?.title else items.get(serverId, key)?.title
+    }
 
     /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
     private fun serverOf(itemId: String): Flow<String?> = if (DeviceLibrary.isLocalKey(itemId)) flowOf(DeviceLibrary.SERVER_ID) else serverId
@@ -151,7 +160,7 @@ class ItemActionsViewModel @Inject constructor(
     fun markFinished(itemId: String) = withServer(itemId) { sid ->
         withContext(NonCancellable) {
             val complete = !DeviceLibrary.isLocal(sid, itemId) && downloads.observe(sid, itemId).first()?.state == DownloadState.COMPLETE
-            if (complete) questions.ask(FinishedQuestion(sid, itemId))
+            if (complete) questions.ask(FinishedQuestion(sid, itemId), titleOf(sid, itemId))
             progressActions.markFinished(sid, itemId)
         }
     }
@@ -304,10 +313,19 @@ fun rememberProgressActionHost(itemId: String, viewModel: ItemActionsViewModel):
  * "Behalten" – and dismissing – keeps the title from it.
  */
 @Composable
-fun FinishedQuestionDialog(autoDeleting: Boolean, onDelete: () -> Unit, onKeep: () -> Unit) {
+fun FinishedQuestionDialog(autoDeleting: Boolean, title: String?, onDelete: () -> Unit, onKeep: () -> Unit) {
     AlertDialog(
         onDismissRequest = onKeep,
-        title = { Text(stringResource(R.string.progress_delete_after_finish_title)) },
+        // The title is named: several questions in a row each say which download they mean. A long one is cut short.
+        title = {
+            Text(
+                if (title.isNullOrBlank()) stringResource(R.string.progress_delete_after_finish_title)
+                else stringResource(R.string.progress_delete_after_finish_title_named, title),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("finishedQuestionTitle"),
+            )
+        },
         text = {
             Text(stringResource(if (autoDeleting) R.string.progress_delete_after_finish_auto_message else R.string.progress_delete_after_finish_message))
         },

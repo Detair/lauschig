@@ -216,7 +216,9 @@ fun AppRoot(
             val finishedQuestion by finishedQuestions.question.collectAsStateWithLifecycle()
             val autoDeleting by finishedQuestions.autoDeleting.collectAsStateWithLifecycle()
             finishedQuestion.firstOrNull()?.let { q ->
-                io.wolftown.lauschig.ui.common.FinishedQuestionDialog(autoDeleting, onDelete = { finishedQuestions.delete(q) }, onKeep = { finishedQuestions.keep(q) })
+                io.wolftown.lauschig.ui.common.FinishedQuestionDialog(
+                    autoDeleting, finishedQuestions.titleOf(q), onDelete = { finishedQuestions.delete(q) }, onKeep = { finishedQuestions.keep(q) },
+                )
             }
         }
     }

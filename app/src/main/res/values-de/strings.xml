@@ -143,6 +143,7 @@
     <string name="progress_pull_done">Stand vom Server übernommen</string>
     <string name="progress_pull_failed">Server nicht erreichbar oder dort kein Stand</string>
     <string name="progress_delete_after_finish_title">Download löschen?</string>
+    <string name="progress_delete_after_finish_title_named">„%1$s“ – Download löschen?</string>
     <string name="progress_delete_after_finish_message">Fertig gehört – Download löschen und Platz freigeben? Dein Fortschritt bleibt erhalten.</string>
     <string name="progress_delete_after_finish_auto_message">Fertig gehört – Download jetzt löschen? „Behalten“ nimmt ihn vom automatischen Löschen aus. Dein Fortschritt bleibt erhalten.</string>
     <string name="finished_title">Fertig gehört</string>
