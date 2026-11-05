@@ -497,3 +497,25 @@ Keine Schemaänderung (DataStore).
 - **R7:** Ist der Speicher der „gesehen“-Zeiten oder der offenen Fragen beschädigt, beginnt er leer (einmal
   protokolliert) und jedes Konto nimmt eine neue Grundlinie: nichts, was jetzt gehört ist, wird gelöscht; das Aufräumen
   arbeitet weiter.
+
+### Nachtrag Task 5/6 – Fix-Runde 4 nach Re-Review 3 (2026-11-05)
+
+Keine Schemaänderung (DataStore).
+
+- **T2 – Abmelden beendet den Zeitgeber:** Meldet man sich ab (auch mit „Downloads behalten“), endet der Beobachter des
+  bisherigen Kontos samt seinem Zeitgeber. Solange niemand angemeldet ist, läuft kein Durchgang, und nichts wird
+  gelöscht.
+- **T1 – „Abmelden und löschen“ nimmt das Aufräumen mit:** Beim Löschen der Kontodaten (Abmelden mit Löschen,
+  Profil entfernen, nachgeholtes Löschen) gehen auch die Einstellung „Gehörte Downloads automatisch löschen“, die
+  offenen „Download löschen?“-Fragen und die Behalten-Einträge dieses Kontos. Meldet man sich wieder an, beginnt es wie
+  ein neues Konto mit „Nie“.
+- **T3 – neue Grundlinie auch nach Neustart:** Ist der Speicher der offenen Fragen beschädigt, steht die Bitte um eine
+  neue Grundlinie für alle Konten jetzt auf der Platte. Sie wird erst gelöscht, wenn die neue Grundlinie gespeichert
+  ist; ein Neustart vor dem ersten Durchgang verliert sie nicht mehr. Die „gesehen“-Zeiten werden nur noch nacheinander
+  abgeglichen.
+- **T4 (Log):** Der eigene Pfad der App endet am ersten Zeichen, das keine ID enthält. Damit werden auch Pfade
+  maskiert, die mit `;`, `|` oder `:` angehängt sind. Außerdem neu: DN-Werte in Anführungszeichen (mit Komma),
+  weitere Attribute (SURNAME, GIVENNAME, `OID.…` u. a.) und DNs ohne CN/O/OU (Kennung `DN:` oder zwei Felder mit
+  Komma).
+- **Claudes Wahl:** Behalten-Einträge eines gelöschten Kontos gehen mit, denn das Konto beginnt wie neu. Die
+  Aufräum-Einstellung wird vor den Datenbankzeilen gelöscht: Bricht das Löschen ab, ist das Aufräumen schon aus.
