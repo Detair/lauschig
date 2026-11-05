@@ -327,3 +327,6 @@ Paket „Darstellung“ (Branch `p6-look`); 11.1 und 11.6 gehören zu anderen Pa
   folgt dem Finger; erneutes Tippen auf den gewählten Balken, auf den Tooltip oder sein Band hebt die Auswahl auf, eine
   neue Periode auch. Für Screenreader sind die Balken jetzt Tabs einer Gruppe (eigene Klick-Aktion wählt aus). Die
   Spalten-Markierung ist der Akzent mit 16 % statt onSurface mit 8 % – sichtbar auf leeren Tagen und reinem Schwarz.
+- **Fix-Runde 2:** Das Diagramm übernimmt einen Wisch nur, wenn er flacher als steil ist (sonst scrollt die Seite),
+  und das Abfahren beginnt beim berührten Balken. Die Frage „Download abbrechen?“ gilt nur, solange der Download
+  wartet: läuft, endet oder verschwindet er, schließt sie sich, und ein spätes Bestätigen bricht nichts mehr ab.
