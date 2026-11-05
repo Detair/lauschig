@@ -37,6 +37,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.test.performScrollToNode
 import io.wolftown.lauschig.stats.Achievement
 import io.wolftown.lauschig.stats.AchievementState
@@ -375,6 +378,79 @@ class StatsScreenTest {
         rule.onNodeWithTag("barTooltip").assertTextEquals("30 s", "Wednesday, November 4 (today)")
         rule.onNodeWithTag("chartBar:2").performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+    }
+
+    @Test fun aTouchTapOnTheSelectedBar_clearsIt() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        val tapSlot2 = { rule.onNodeWithTag("chartArea").performTouchInput { click(Offset(width / 7f * 2.5f, height - 8f)) } }
+        tapSlot2()
+        rule.onNodeWithTag("chartBar:2").assertIsSelected()
+        tapSlot2()
+        rule.onNodeWithTag("chartBar:2").assertIsNotSelected()
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+    }
+
+    @Test fun aScrub_startsAtTheBarUnderTheTouchDown() {
+        rule.setContent { LauschigTheme { StatsScreen(november, onBack = {}) } }
+        rule.onNodeWithTag("chartArea").performTouchInput {
+            val slot = width / 30f
+            // Down near the right edge of the 11th, then just past the touch slop (into the 12th's slot).
+            down(Offset(slot * 10.8f, height * 0.8f))
+            moveBy(Offset(viewConfiguration.touchSlop + slot * 0.5f, 0f))
+        }
+        rule.onNodeWithTag("chartBar:10").assertIsSelected()
+        // From there on it follows the finger.
+        rule.onNodeWithTag("chartArea").performTouchInput { moveTo(Offset(width / 30f * 13.5f, height * 0.8f)) }
+        rule.onNodeWithTag("chartBar:13").assertIsSelected()
+        rule.onNodeWithTag("chartArea").performTouchInput { up() }
+    }
+
+    @Test fun aMostlyVerticalSwipe_scrollsThePage_andSelectsNothing() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        val before = rule.onNodeWithTag("chartArea").getUnclippedBoundsInRoot().top
+        rule.onNodeWithTag("chartArea").performTouchInput {
+            val slop = viewConfiguration.touchSlop
+            down(Offset(width / 7f * 3.5f, height * 0.8f))
+            // One coarse move past the slop both ways, but steeper than flat: the page's scroll gets it, not the chart.
+            moveBy(Offset(slop + 4f, -(slop + 4f) * 2f))
+            moveBy(Offset(10f, -60f))
+        }
+        // Checked with the finger still down (lifting would fling the list away).
+        values().forEach { rule.onNodeWithTag("chartBar:$it").assertIsNotSelected() }
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+        val after = rule.onNodeWithTag("chartArea").getUnclippedBoundsInRoot().top
+        assertTrue("the page did not scroll: $before -> $after", after < before)
+        rule.onNodeWithTag("chartArea").performTouchInput { up() }
+    }
+
+    private fun values() = 0 until 7
+
+    @Test fun rightToLeft_theFirstDayIsAtTheRight_andTapsFollowIt() {
+        rule.setContent {
+            LauschigTheme {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { StatsScreen(listened, onBack = {}) }
+            }
+        }
+        rule.onNodeWithTag("chartArea").performTouchInput { click(Offset(width - 4f, height - 8f)) }
+        rule.onNodeWithTag("chartBar:0").assertIsSelected()
+        val first = rule.onNodeWithTag("chartBar:0").getUnclippedBoundsInRoot()
+        val last = rule.onNodeWithTag("chartBar:6").getUnclippedBoundsInRoot()
+        assertTrue("Monday not right of Sunday in RTL", first.left > last.left)
+        rule.onNodeWithTag("chartArea").performTouchInput { click(Offset(4f, height - 8f)) }
+        rule.onNodeWithTag("chartBar:6").assertIsSelected()
+    }
+
+    @Test fun slotAt_mapsAPositionToItsBar_mirroredRightToLeft() {
+        assertEquals(0, slotAt(0f, 7, 70, rtl = false))
+        assertEquals(3, slotAt(35f, 7, 70, rtl = false))
+        assertEquals(6, slotAt(69.9f, 7, 70, rtl = false))
+        assertEquals(6, slotAt(0f, 7, 70, rtl = true))
+        assertEquals(3, slotAt(35f, 7, 70, rtl = true))
+        assertEquals(0, slotAt(69.9f, 7, 70, rtl = true))
+        // Outside the chart (a drag that leaves it) clamps to the edge bars.
+        assertEquals(0, slotAt(-20f, 7, 70, rtl = false))
+        assertEquals(6, slotAt(500f, 7, 70, rtl = false))
+        assertEquals(0, slotAt(500f, 7, 70, rtl = true))
     }
 
     @Test fun aChartWithoutTips_staysOneQuietNode() {

@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -65,6 +68,7 @@ import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.theme.contrastRatio
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -142,9 +146,20 @@ fun BarChart(
                 }
             }
             .pointerInput(count, rtl) {
-                detectHorizontalDragGestures(onDragStart = { at -> selection = slotAt(at.x, count, size.width, rtl) }) { change, _ ->
-                    change.consume()
-                    selection = slotAt(change.position.x, count, size.width, rtl)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Claimed only when the move is flatter than steep: the page keeps every vertical (and steep
+                    // diagonal) swipe for its scroll, and then this gives up.
+                    val start = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                        val moved = change.position - down.position
+                        if (abs(moved.x) > abs(moved.y)) change.consume()
+                    } ?: return@awaitEachGesture
+                    // The scrub starts at the bar that was touched, not where the slop happened to be crossed.
+                    selection = slotAt(down.position.x, count, size.width, rtl)
+                    drag(start.id) { change ->
+                        change.consume()
+                        selection = slotAt(change.position.x, count, size.width, rtl)
+                    }
                 }
             }
     } else {
