@@ -1058,4 +1058,6 @@
     <string name="profiles_remove_message">%1$s wird auf diesem Gerät abgemeldet.</string>
     <string name="profiles_remove_downloads">Die Downloads dieses Profils werden gelöscht (%1$s).</string>
     <string name="profiles_remove_checking">Prüfe, was dazugehört …</string>
+    <string name="setup_add_intro">Melde dich mit einem weiteren Konto an. Das bisherige bleibt angemeldet. Liegt das neue auf demselben Server, lass die Adressen einfach stehen.</string>
+    <string name="profiles_picker_title">Wer hört zu?</string>
 </resources>

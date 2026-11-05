@@ -37,6 +37,7 @@ import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
+import io.wolftown.lauschig.ui.profiles.ProfilePickerRoute
 import io.wolftown.lauschig.ui.review.YearReviewRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
@@ -158,7 +159,16 @@ fun AppNavHost(
         }
         composable<Setup> {
             ReadableWidth {
-                SetupRoute(onDone = { navController.finishSetup(homeRoute) })
+                SetupRoute(onDone = { navController.finishSetup(homeRoute) }, onBack = { navController.popBackStack() })
+            }
+        }
+        composable<ProfilePicker> {
+            ReadableWidth {
+                ProfilePickerRoute(
+                    onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
+                    // The last one was removed here: only the sign-in is left.
+                    onNoneLeft = { navController.navigate(Setup()) { popUpTo<ProfilePicker> { inclusive = true } } },
+                )
             }
         }
     }
@@ -191,9 +201,10 @@ fun NavHostController.finishSetup(home: Any) {
     navigate(home) { popUpTo<Setup> { inclusive = true } }
 }
 
+/** Outside the app's frame: the sign-in or the question which profile, without tabs, mini player and hints over them. */
 @Composable
 fun NavHostController.isOnSetup(): Boolean =
-    currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
+    currentBackStackEntryAsState().value?.destination?.let { it.hasRoute<Setup>() || it.hasRoute<ProfilePicker>() } == true
 
 /** The year in review is shown: a story over the whole window, without the frame's tabs and mini player. */
 @Composable

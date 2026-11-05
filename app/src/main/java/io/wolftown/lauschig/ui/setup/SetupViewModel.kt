@@ -24,9 +24,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -386,4 +389,15 @@ class SetupViewModel(
         const val STATUS_DEBOUNCE_MS = 500L
         const val RESUME_GRACE_MS = 1_000L
     }
+}
+
+/**
+ * An SSO sign-in came back from the browser: its answer waits ([OidcCallbackBus]) and no form is there to take it, when the
+ * process died and no page was saved. Only the answer to the attempt we started counts; a foreign link opens nothing.
+ */
+@HiltViewModel
+class SsoReturnViewModel @Inject constructor(callbacks: OidcCallbackBus, oidc: OidcSignIn) : ViewModel() {
+    val waiting: StateFlow<Boolean> = callbacks.pending
+        .map { entry -> entry != null && oidc.matchesPending(entry.callback) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 }

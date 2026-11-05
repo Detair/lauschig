@@ -8,6 +8,7 @@ import io.wolftown.lauschig.playback.LastTitleStarter
 import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.settings.UiSettings
+import io.wolftown.lauschig.ui.nav.ProfilePicker
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.Start
 import io.wolftown.lauschig.ui.nav.TabLayout
@@ -40,7 +41,7 @@ data class AppPages(val owner: String?, val start: Any)
  */
 @HiltViewModel
 class MainViewModel(
-    accounts: AccountStore,
+    private val accounts: AccountStore,
     appearanceSource: Flow<Appearance> = flowOf(Appearance()),
     tabLayoutSource: Flow<TabLayout> = flowOf(TabLayout.DEFAULT),
     /** "Continue on app start" (see [continueOnLauncherStart]); never blocks the start. */
@@ -106,9 +107,21 @@ class MainViewModel(
      * start). Intents (widget, links, notifications) navigate on top of it, so they keep their target.
      */
     private suspend fun pagesFor(owner: String?) {
-        val start = if (owner == null) Setup() else layouts.first().start.route()
+        val start = if (owner == null) signedOutStart() else layouts.first().start.route()
         _pages.value = AppPages(owner, start)
         _startDestination.value = start
+    }
+
+    /** Nobody active: saved profiles are asked for by name; no automatic switch, the next profile may be a protected one. */
+    private suspend fun signedOutStart(): Any {
+        val saved = try {
+            accounts.saved.first()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        return if (saved.isNotEmpty()) ProfilePicker else Setup()
     }
 
     private var continued = false

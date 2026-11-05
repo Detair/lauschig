@@ -56,6 +56,7 @@ import io.wolftown.lauschig.ui.profiles.ProfileRemoveDialog
 import io.wolftown.lauschig.ui.profiles.ProfilesSheet
 import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
 import io.wolftown.lauschig.ui.profiles.profileOutcomeText
+import io.wolftown.lauschig.ui.setup.SsoReturnViewModel
 import io.wolftown.lauschig.whatsnew.WhatsNewSheet
 import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
 import kotlinx.coroutines.flow.first
@@ -100,6 +101,7 @@ fun AppRoot(
     finishedQuestions: io.wolftown.lauschig.cleanup.FinishedQuestionViewModel = hiltViewModel(),
     pagesScope: AccountPagesScope = hiltViewModel(),
     profiles: ProfilesViewModel = hiltViewModel(),
+    ssoReturn: SsoReturnViewModel = hiltViewModel(),
     /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
     signedIn: Boolean? = null,
 ) {
@@ -159,6 +161,13 @@ fun AppRoot(
                         is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(resources.getString(target.text)) }
                     }
                     onLinkHandled()
+                }
+
+                // Back from the browser with no form there to take it (a process death and no saved page): one opens for it.
+                // The attempt itself knows what it was started as.
+                val ssoWaiting by ssoReturn.waiting.collectAsStateWithLifecycle()
+                LaunchedEffect(ssoWaiting) {
+                    if (ssoWaiting && navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Setup()) { launchSingleTop = true }
                 }
 
                 val onSetup = navController.isOnSetup()

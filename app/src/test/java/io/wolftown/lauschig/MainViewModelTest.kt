@@ -155,6 +155,30 @@ class MainViewModelTest {
         assertEquals(AppPages(null, Setup()), viewModels.own(MainViewModel(store)).pages.value)
     }
 
+    private fun withSaved(active: Account? = null) = FakeAccountStore().apply {
+        acc.value = active
+        aside.value = listOf(FakeAccountStore.Aside(account("b"), "acc", "ref", false))
+    }
+
+    @Test fun pages_noActiveAccount_savedOnes_thePicker_notTheSignIn() {
+        assertEquals(AppPages(null, io.wolftown.lauschig.ui.nav.ProfilePicker), viewModels.own(MainViewModel(withSaved())).pages.value)
+    }
+
+    @Test fun pages_signingOutWithAnotherProfileLeft_thePicker_noAutomaticSwitch() {
+        val store = withSaved(account("a"))
+        val vm = viewModels.own(MainViewModel(store))
+        kotlinx.coroutines.runBlocking { store.clear(keepDownloads = true) }
+        assertEquals(AppPages(null, io.wolftown.lauschig.ui.nav.ProfilePicker), vm.pages.value)
+        assertEquals(null, store.acc.value)
+    }
+
+    @Test fun pages_anUnreadableSavedList_isTheSignIn() {
+        val store = object : io.wolftown.lauschig.account.AccountStore by FakeAccountStore() {
+            override val saved: Flow<List<Account>> = flow { throw IOException("corrupt") }
+        }
+        assertEquals(AppPages(null, Setup()), viewModels.own(MainViewModel(store)).pages.value)
+    }
+
     @Test fun signedIn_unreadableStore_isFalse() {
         val store = object : io.wolftown.lauschig.account.AccountStore by FakeAccountStore() {
             override val account: Flow<Account?> = flow { throw IOException("corrupt") }

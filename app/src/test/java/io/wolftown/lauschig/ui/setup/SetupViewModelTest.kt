@@ -596,4 +596,26 @@ class SetupViewModelTest {
         finished.complete(Unit)
         assertEquals(1, sync.count)
     }
+
+    /** Review focus 5: back on an account whose session ran out; the form asks for exactly that one. */
+    @Test fun reauth_afterASwitch_asksForTheAccountThatIsActiveNow() {
+        val theirs = ServerAddresses(null, "https://kind.example.org".toHttpUrl())
+        val kind = Account(Account.computeServerId(theirs, "u2"), "u2", "kind", false, theirs, emptySet())
+        signedInAsFabian()
+        store.aside.value = listOf(FakeAccountStore.Aside(kind, "a1", "r1", reauth = true))
+        kotlinx.coroutines.runBlocking { store.activate(kind.serverId) }
+        assertTrue(store.reauth.value)
+
+        login.behaviour = { LoginResponse(AbsUser("u2", "kind", "user", "new-acc", "new-ref")) }
+        val v = vm()
+        assertEquals("kind", v.state.value.username)
+        assertEquals("https://kind.example.org", v.state.value.public)
+        v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(kind.serverId, store.acc.value!!.serverId)
+        assertEquals("new-acc", store.access)
+        assertFalse(store.reauth.value)
+        assertEquals(listOf(fabian), store.aside.value.map { it.account }) // the other profile is untouched
+        assertTrue(signOut.switched.isEmpty())
+    }
 }

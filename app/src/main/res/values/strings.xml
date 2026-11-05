@@ -1058,4 +1058,6 @@
     <string name="profiles_remove_message">%1$s is signed out on this device.</string>
     <string name="profiles_remove_downloads">This profile\'s downloads are deleted (%1$s).</string>
     <string name="profiles_remove_checking">Checking what belongs to it …</string>
+    <string name="setup_add_intro">Sign in with another account. The current one stays signed in. If the new one is on the same server, just leave the addresses as they are.</string>
+    <string name="profiles_picker_title">Who\'s listening?</string>
 </resources>

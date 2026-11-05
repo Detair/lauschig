@@ -17,11 +17,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,6 +43,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -48,7 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 
 @Composable
-fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: SetupViewModel = hiltViewModel()) {
+fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> Unit = {}, viewModel: SetupViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.done) { if (state.done) onDone() }
     val context = LocalContext.current
@@ -90,6 +97,7 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: Set
         onConfirmCleartext = viewModel::confirmCleartext,
         onDismissCleartext = viewModel::dismissCleartext,
         modifier = modifier,
+        onBack = onBack,
     )
 }
 
@@ -106,13 +114,23 @@ fun SetupScreen(
     onConfirmCleartext: () -> Unit,
     onDismissCleartext: () -> Unit,
     modifier: Modifier = Modifier,
+    /** „Profil hinzufügen“ only: back to the active account's pages. */
+    onBack: () -> Unit = {},
 ) {
     Column(
         modifier.verticalScroll(rememberScrollState()).imePadding().padding(16.dp).testTag("setupScreen"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+        if (state.addProfile) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
+                Text(stringResource(R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
+            }
+            Text(stringResource(R.string.setup_add_intro), style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+        }
 
         OutlinedTextField(
             state.local, onLocal, Modifier.fillMaxWidth(), singleLine = true,
@@ -159,7 +177,7 @@ fun SetupScreen(
                 stringResource(it.message()),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.testTag("setupError"),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("setupError"),
             )
         }
 

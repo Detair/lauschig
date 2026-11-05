@@ -26,6 +26,8 @@ enum class SetupMode {
 
 /** The sign-in form. Its [mode] is in the route, so it survives a rotation, a process death and the way through the SSO browser. */
 @Serializable data class Setup(val mode: SetupMode = SetupMode.SIGN_IN)
+/** „Wer hört zu?“: nobody is active, saved profiles are there. */
+@Serializable data object ProfilePicker
 @Serializable data object Settings
 /** Tab order, visibility and start screen (Einstellungen → Darstellung → Navigation anpassen). */
 @Serializable data object NavigationSettings

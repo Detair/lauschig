@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -63,6 +64,24 @@ class AppViewModelTest {
     }
 
     private fun contention(itemId: String) = DownloadPrompt.Contention("s", itemId, "T", 60, NetworkType.CONNECTED)
+
+    /** Review focus 5: the "sign in again" of the frame follows the profile it belongs to, there and back. */
+    @Test fun anExpiredSavedAccount_isAskedForOnItsReturn_theOtherOneNot() = kotlinx.coroutines.runBlocking {
+        val account = { id: String -> io.wolftown.lauschig.account.Account(id, "u", id, false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()) }
+        val accounts = FakeAccountStore().apply {
+            acc.value = account("a")
+            aside.value = listOf(FakeAccountStore.Aside(account("b"), "acc", "ref", reauth = true))
+        }
+        val vm = vm(PausePlayer("x"), accounts)
+        val seen = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val watch = launch(Dispatchers.Unconfined) { vm.needsReauth.collect { seen.value = it } }
+        assertEquals(false, seen.value)
+        accounts.activate("b")
+        assertEquals(true, seen.value)
+        accounts.activate("a")
+        assertEquals(false, seen.value)
+        watch.cancel()
+    }
 
     /** Phase 7, 1.7: a question that lands after the switch (a late worker, a late stream start) is not put to the next account. */
     @Test fun anOpenQuestion_isOnlyEverPutToTheAccountItIsAbout() {

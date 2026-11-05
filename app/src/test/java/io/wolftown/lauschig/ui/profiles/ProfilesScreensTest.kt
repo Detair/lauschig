@@ -150,4 +150,19 @@ class ProfilesScreensTest {
         showSheet(listOf(active, saved))
         rule.onNodeWithTag("profile:kind").assert(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick))
     }
+
+    @Test fun thePicker_asks_listsTheProfiles_andOffersAnother() {
+        val first = saved.copy(serverId = "cccccccccccccccc", name = "Fabian")
+        rule.setContent {
+            LauschigTheme {
+                ProfilePickerScreen(listOf(first, saved), onSwitch = { calls += "switch:${it.name}" }, onRemove = { calls += "remove:${it.name}" }, onAdd = { calls += "add" })
+            }
+        }
+        rule.onNodeWithText("Who's listening?").assertExists()
+        rule.onNodeWithText("Fabian").performClick()
+        rule.onNodeWithContentDescription("More options for kind").performClick()
+        rule.onNodeWithText("Remove").performClick()
+        rule.onNodeWithTag("addProfile").performClick()
+        assertEquals(listOf("switch:Fabian", "remove:kind", "add"), calls)
+    }
 }
