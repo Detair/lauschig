@@ -45,7 +45,7 @@ class FinishSetupTest {
     }
 
     @Test fun firstSignIn_opensTheChosenStartScreen_whichBecomesHome() {
-        show(Setup)
+        show(Setup())
         rule.runOnUiThread { nav.finishSetup(Library) }
         rule.onNodeWithText("library").assertIsDisplayed()
         assertEquals(listOf("library"), stack())
@@ -60,7 +60,7 @@ class FinishSetupTest {
 
     @Test fun reauthOnTopOfTheApp_justGoesBack() {
         show(Start)
-        rule.runOnUiThread { nav.navigate(Setup) }
+        rule.runOnUiThread { nav.navigate(Setup()) }
         rule.runOnUiThread { nav.finishSetup(Library) }
         rule.onNodeWithText("start").assertIsDisplayed()
         assertEquals(listOf("start"), stack())

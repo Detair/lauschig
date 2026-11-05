@@ -177,6 +177,14 @@ class OidcLoginTest {
         assertEquals(OidcStart.Launch(base.resolve("/realms/x/auth").toString()), oidc().start(base))
     }
 
+    @Test fun flowContext_theAddMode_survivesInPending() = runBlocking {
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", addProfile = true))
+        val state = server.takeRequest().requestUrl!!.queryParameter("state")!!
+        server.enqueue(MockResponse().setBody(loginJson))
+        assertEquals(true, oidc().finish(OidcCallback("c", state, null)).flow.addProfile)
+    }
+
     @Test fun flowContext_survivesInPending() = runBlocking {
         enqueueStart()
         val flow = OidcFlowContext("http://nas.lan:13378/", "https://abs.example.org/", true, "HomeNet", setOf("Old"))

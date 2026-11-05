@@ -76,6 +76,8 @@ data class OidcFlowContext(
     val ssidBinding: Boolean = false,
     val currentSsid: String? = null,
     val keptSsids: Set<String> = emptySet(),
+    /** Started as one more profile: however the form comes back, the active account is set aside, not signed out. */
+    val addProfile: Boolean = false,
 )
 
 /** A finished SSO login: the server's answer, the address that was used and the form values from the start. */

@@ -15,7 +15,11 @@ import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.ui.nav.SetupMode
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -413,5 +417,183 @@ class SetupViewModelTest {
         val before = v.state.value
         bus.post(OidcCallback("c", "s", null))
         assertEquals(before, v.state.value)
+    }
+
+    // --- Phase 7, 2.3: another profile. Review focus 4 and 5.
+
+    private val fabian = Account("aaaaaaaaaaaaaaaa", "u0", "root", true, ServerAddresses("http://10.0.2.2:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl(), setOf("HomeNet")), setOf("http://10.0.2.2:13378"))
+    private val added = mutableListOf<Account>()
+    private var addFails: Exception? = null
+
+    private fun addVm(mode: SetupMode = SetupMode.ADD_PROFILE) = viewModels.own(
+        SetupViewModel(store, login, net, sync, oidc, bus, signOut, addProfile = { a, acc, ref ->
+            addFails?.let { throw it }
+            added += a
+            store.add(a, acc, ref)
+        }, mode = mode),
+    )
+
+    private fun signedInAsFabian() { store.acc.value = fabian; store.access = "a0"; store.refresh = "r0" }
+
+    @Test fun addProfile_theAddressesAreThere_nameAndPasswordEmpty() {
+        signedInAsFabian()
+        val s = addVm().state.value
+        assertTrue(s.addProfile)
+        assertEquals("http://10.0.2.2:13378", s.local)
+        assertEquals("https://abs.example.org", s.public)
+        assertEquals("", s.username)
+        assertEquals("", s.password)
+        assertFalse(s.canLogin)
+    }
+
+    @Test fun addProfile_theFirstForm_isNoAddForm() {
+        signedInAsFabian()
+        val s = vm().state.value
+        assertFalse(s.addProfile)
+        assertEquals("root", s.username)
+    }
+
+    @Test fun addProfile_theKnownPlainAddress_isNotAskedAgain() {
+        signedInAsFabian()
+        val v = addVm()
+        v.fill(local = "http://10.0.2.2:13378", user = "kind")
+        v.login()
+        assertNull(v.state.value.cleartextPrompt)
+        assertEquals(1, login.calls.size)
+    }
+
+    @Test fun addProfile_fromThePicker_theAddressesOfASavedProfile() {
+        store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a0", "r0", false))
+        val s = addVm().state.value
+        assertEquals("https://abs.example.org", s.public)
+        assertEquals("", s.username)
+    }
+
+    @Test fun addProfile_signedIn_setsTheOldAccountAside_itStaysSignedIn() {
+        signedInAsFabian()
+        login.behaviour = { LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")) }
+        val v = addVm()
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        assertEquals("kind", store.acc.value!!.username)
+        assertEquals(listOf("kind"), added.map { it.username })
+        assertEquals(listOf(fabian), store.aside.value.map { it.account })
+        assertEquals("a0", store.aside.value.single().access)
+        assertTrue("no sign-out of the old account", signOut.switched.isEmpty())
+        assertTrue(v.state.value.done)
+        assertEquals("", v.state.value.password)
+    }
+
+    @Test fun addProfile_back_changesNothing() {
+        signedInAsFabian()
+        val v = addVm()
+        v.fill(public = "https://abs.example.org", user = "kind")
+        viewModels.clear()
+        assertEquals(fabian, store.acc.value)
+        assertTrue(store.aside.value.isEmpty())
+        assertTrue(added.isEmpty())
+        assertTrue(login.calls.isEmpty())
+    }
+
+    @Test fun addProfile_wrongPassword_saysSo_theOldAccountGoesOn() {
+        signedInAsFabian()
+        login.behaviour = { throw HttpException(Response.error<Any>(401, "".toResponseBody(null))) }
+        val v = addVm()
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        assertEquals(SetupError.WRONG_LOGIN, v.state.value.error)
+        assertFalse(v.state.value.loading)
+        assertFalse(v.state.value.done)
+        assertEquals(fabian, store.acc.value)
+        assertTrue(added.isEmpty())
+    }
+
+    @Test fun addProfile_serverUnreachable_saysSo_theOldAccountGoesOn() {
+        signedInAsFabian()
+        login.behaviour = { throw IOException("no route") }
+        val v = addVm()
+        v.fill(public = "https://elsewhere.example.org", user = "kind")
+        v.login()
+        assertEquals(SetupError.UNREACHABLE, v.state.value.error)
+        assertFalse(v.state.value.done)
+        assertEquals(fabian, store.acc.value)
+        assertTrue(added.isEmpty())
+    }
+
+    @Test fun addProfile_cannotBeStored_saysSo_theOldAccountGoesOn() {
+        signedInAsFabian()
+        login.behaviour = { LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")) }
+        addFails = IOException("disk full")
+        val v = addVm()
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        assertEquals(SetupError.SAVE_FAILED, v.state.value.error)
+        assertFalse(v.state.value.done)
+        assertEquals(fabian, store.acc.value)
+    }
+
+    @Test fun addProfile_theSsoAttemptCarriesTheMode() {
+        signedInAsFabian()
+        val v = addVm()
+        v.loginWithSso()
+        assertTrue(oidc.lastFlow.addProfile)
+    }
+
+    @Test fun signIn_theSsoAttemptIsNoAdd() {
+        signedInAsFabian()
+        val v = vm()
+        v.loginWithSso()
+        assertFalse(oidc.lastFlow.addProfile)
+    }
+
+    /** The process died while the browser was up; the form comes back from its route. */
+    @Test fun addProfile_ssoBackAfterAProcessDeath_addsAndKeepsTheOldAccount() {
+        signedInAsFabian()
+        oidc.finishResult = { OidcResult("https://abs.example.org".toHttpUrl(), LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")), OidcFlowContext(null, "https://abs.example.org/", addProfile = true)) }
+        val v = addVm()
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals("kind", store.acc.value!!.username)
+        assertEquals(listOf(fabian), store.aside.value.map { it.account })
+        assertTrue(signOut.switched.isEmpty())
+        assertTrue(v.state.value.done)
+    }
+
+    /** Nothing came back but the attempt (the app had to open a plain form): what it started as still counts. */
+    @Test fun addProfile_ssoBackOnAPlainForm_theAttemptDecides() {
+        signedInAsFabian()
+        oidc.finishResult = { OidcResult("https://abs.example.org".toHttpUrl(), LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")), OidcFlowContext(null, "https://abs.example.org/", addProfile = true)) }
+        addVm(SetupMode.SIGN_IN)
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(listOf("kind"), added.map { it.username })
+        assertEquals(listOf(fabian), store.aside.value.map { it.account })
+        assertTrue(signOut.switched.isEmpty())
+    }
+
+    @Test fun addProfile_ssoFailing_theOldAccountGoesOn() {
+        signedInAsFabian()
+        oidc.finishResult = { throw OidcException(OidcException.Reason.UNREACHABLE) }
+        val v = addVm()
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(SetupError.UNREACHABLE, v.state.value.error)
+        assertEquals(fabian, store.acc.value)
+        assertTrue(added.isEmpty())
+    }
+
+    /** The form belongs to the pages of the account before: it goes the moment the account changes. */
+    @Test fun aSignIn_thePageGoingAwayAtThatMoment_stillStartsTheSync() {
+        signedInAsFabian()
+        lateinit var v: SetupViewModel
+        val finished = CompletableDeferred<Unit>()
+        v = viewModels.own(
+            SetupViewModel(store, login, net, sync, oidc, bus, signOut, addProfile = { a, acc, ref ->
+                store.add(a, acc, ref)
+                v.viewModelScope.cancel()
+                finished.await()
+            }, mode = SetupMode.ADD_PROFILE),
+        )
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        finished.complete(Unit)
+        assertEquals(1, sync.count)
     }
 }

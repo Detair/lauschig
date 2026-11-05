@@ -15,7 +15,17 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 /** A cached ABS collection or playlist (by id). */
 @Serializable data class Collection(val id: String)
 @Serializable data object Player
-@Serializable data object Setup
+/** Why the sign-in form is open. */
+enum class SetupMode {
+    /** The first sign-in, or a re-auth of the active account. */
+    SIGN_IN,
+
+    /** One more account: the active one is set aside and stays signed in. */
+    ADD_PROFILE,
+}
+
+/** The sign-in form. Its [mode] is in the route, so it survives a rotation, a process death and the way through the SSO browser. */
+@Serializable data class Setup(val mode: SetupMode = SetupMode.SIGN_IN)
 @Serializable data object Settings
 /** Tab order, visibility and start screen (Einstellungen → Darstellung → Navigation anpassen). */
 @Serializable data object NavigationSettings

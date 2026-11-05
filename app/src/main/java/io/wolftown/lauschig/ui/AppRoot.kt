@@ -12,7 +12,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import io.wolftown.lauschig.AppPages
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.links.LinkTarget
@@ -22,6 +23,8 @@ import io.wolftown.lauschig.ui.adaptive.rememberNavigationRail
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.common.PositionJumpSnackbar
+import io.wolftown.lauschig.ui.nav.AccountPages
+import io.wolftown.lauschig.ui.nav.AccountPagesScope
 import io.wolftown.lauschig.ui.nav.AppNavHost
 import io.wolftown.lauschig.ui.nav.Browse
 import io.wolftown.lauschig.ui.nav.BrowseKind
@@ -39,7 +42,6 @@ import io.wolftown.lauschig.ui.nav.navigateToTab
 import io.wolftown.lauschig.ui.nav.openDetailsFromPlayer
 import io.wolftown.lauschig.ui.nav.rememberPlayerLayer
 import io.wolftown.lauschig.ui.nav.route
-import io.wolftown.lauschig.ui.nav.showSignIn
 import io.wolftown.lauschig.ui.nav.underPlayer
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.player.PlayerRoute
@@ -69,7 +71,8 @@ private const val PLAYER_OPEN_WAIT_MS = 2_000L
 /** Wires ViewModel state, navigation and the shell together; hosts the mini player above the bottom bar. */
 @Composable
 fun AppRoot(
-    startDestination: Any,
+    /** Whose pages are on screen and where they start; new pages with every other account. */
+    pages: AppPages,
     appearance: Appearance = Appearance(),
     /** The visible tabs in their order. */
     tabs: List<TopLevelTab> = TopLevelTab.entries,
@@ -85,63 +88,17 @@ fun AppRoot(
     whatsNew: WhatsNewViewModel = hiltViewModel(),
     previousAccount: PreviousAccountViewModel = hiltViewModel(),
     finishedQuestions: io.wolftown.lauschig.cleanup.FinishedQuestionViewModel = hiltViewModel(),
+    pagesScope: AccountPagesScope = hiltViewModel(),
     /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
     signedIn: Boolean? = null,
 ) {
-    val navController = rememberNavController()
-    LaunchedEffect(signedIn) {
-        if (signedIn == false) navController.showSignIn()
-    }
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(openRequest, signedIn) {
-        if (openRequest == null) return@LaunchedEffect
-        when (incomingGate(signedIn)) {
-            IncomingGate.WAIT -> return@LaunchedEffect
-            IncomingGate.DROP -> { onOpenHandled(); return@LaunchedEffect }
-            IncomingGate.OPEN -> Unit
-        }
-        when (openRequest) {
-            MainActivity.OPEN_CLEANUP -> {
-                navController.navigate(Cleanup) { launchSingleTop = true }
-                onOpenHandled()
-            }
-            MainActivity.OPEN_PLAYER -> {
-                // From the widget: the service may hold a title the app has not seen yet (it was started from the widget).
-                viewModel.player.adoptFromService()
-                val loaded = withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
-                if (loaded && navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Player) { launchSingleTop = true }
-                onOpenHandled()
-            }
-        }
-    }
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val checking by viewModel.checking.collectAsStateWithLifecycle()
     val serverId by viewModel.serverId.collectAsStateWithLifecycle()
     val needsReauth by viewModel.needsReauth.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
-    LaunchedEffect(linkRequest, signedIn) {
-        val url = linkRequest ?: return@LaunchedEffect
-        when (incomingGate(signedIn)) {
-            IncomingGate.WAIT -> return@LaunchedEffect
-            IncomingGate.DROP -> { onLinkHandled(); return@LaunchedEffect }
-            IncomingGate.OPEN -> Unit
-        }
-        when (val target = links.open(url)) {
-            is LinkTarget.Item -> navController.navigate(ItemDetail(target.itemId)) { launchSingleTop = true }
-            is LinkTarget.Series -> navController.navigate(Browse(BrowseKind.SERIES, target.name)) { launchSingleTop = true }
-            // Outside this effect: clearing the request restarts it, which would dismiss the snackbar at once.
-            is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(resources.getString(target.text)) }
-        }
-        onLinkHandled()
-    }
-
-    val onSetup = navController.isOnSetup()
-    val onReview = navController.isOnYearReview()
-    // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
-    val playerLayer = rememberPlayerLayer(navController)
-    val playerCovers = playerLayer.coversFrame
-    val playerUp = playerLayer.up
     val playerState by viewModel.player.state.collectAsStateWithLifecycle()
     // The same (activity-wide) view model as the player layer's: its state knows the loaded title's cover version.
     val playerScreen by playerViewModel.state.collectAsStateWithLifecycle()
@@ -151,67 +108,114 @@ fun AppRoot(
     val dimOffline = rememberSettledOffline(connection, checking)
     // One banner state for the frame and the player layer, so both show the same hint at the same time.
     val connectionBanner = rememberConnectionBanner(connection, checking)
-    val showReauth = needsReauth && !onSetup
-    val onReauth = { navController.navigate(Setup) { launchSingleTop = true } }
-    val onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme(appearance) {
             WindowBackground()
-            AppScaffold(
-                connection = connection,
-                // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
-                modifier = Modifier.underPlayer(playerCovers),
-                miniPlayer = {
-                    if (!onSetup && !playerCovers && !onReview) {
-                        MiniPlayer(
-                            playerState,
-                            onToggle = viewModel.player::togglePlayPause,
-                            onOpen = { navController.navigate(Player) { launchSingleTop = true } },
-                            coverVersion = playerScreen.coverVersion.takeIf { playerScreen.itemId == playerState.itemId },
-                        )
+            AccountPages(pages.owner, pagesScope) { navController, pageModels ->
+                LaunchedEffect(openRequest, signedIn) {
+                    if (openRequest == null) return@LaunchedEffect
+                    when (incomingGate(signedIn)) {
+                        IncomingGate.WAIT -> return@LaunchedEffect
+                        IncomingGate.DROP -> { onOpenHandled(); return@LaunchedEffect }
+                        IncomingGate.OPEN -> Unit
                     }
-                },
-                // The full player covers the whole window (its buttons stay above the fold); it has its own close.
-                // The year in review covers the frame too (a story over the whole window).
-                showBottomBar = !onSetup && !playerCovers && !onReview,
-                navigationRail = rememberNavigationRail(),
-                showOfflineBanner = !onSetup,
-                showReauthBanner = showReauth,
-                onReauth = onReauth,
-                connectionChecking = checking,
-                onOpenConnection = onOpenConnection,
-                selectedTab = navController.currentTab(),
-                tabs = tabs,
-                onTabSelected = navController::navigateToTab,
-                snackbarHostState = snackbarHost,
-                showSnackbars = !playerUp,
-                connectionBanner = connectionBanner,
-            ) {
-                AppNavHost(navController, startDestination, homeRoute = startTab.route(), snackbarHost = snackbarHost)
-            }
-            PlayerOverlay(
-                playerLayer.slide,
-                banner = connectionBanner.takeIf { !onSetup },
-                showReauthBanner = showReauth,
-                onReauth = onReauth,
-                onOpenConnection = onOpenConnection,
-                snackbarHostState = snackbarHost,
-                onClose = navController::closePlayer,
-            ) {
-                PlayerRoute(onClose = navController::closePlayer, onOpenDetails = navController::openDetailsFromPlayer)
+                    when (openRequest) {
+                        MainActivity.OPEN_CLEANUP -> {
+                            navController.navigate(Cleanup) { launchSingleTop = true }
+                            onOpenHandled()
+                        }
+                        MainActivity.OPEN_PLAYER -> {
+                            // From the widget: the service may hold a title the app has not seen yet (it was started from the widget).
+                            viewModel.player.adoptFromService()
+                            val loaded = withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
+                            if (loaded && navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Player) { launchSingleTop = true }
+                            onOpenHandled()
+                        }
+                    }
+                }
+                LaunchedEffect(linkRequest, signedIn) {
+                    val url = linkRequest ?: return@LaunchedEffect
+                    when (incomingGate(signedIn)) {
+                        IncomingGate.WAIT -> return@LaunchedEffect
+                        IncomingGate.DROP -> { onLinkHandled(); return@LaunchedEffect }
+                        IncomingGate.OPEN -> Unit
+                    }
+                    when (val target = links.open(url)) {
+                        is LinkTarget.Item -> navController.navigate(ItemDetail(target.itemId)) { launchSingleTop = true }
+                        is LinkTarget.Series -> navController.navigate(Browse(BrowseKind.SERIES, target.name)) { launchSingleTop = true }
+                        // Outside this effect: clearing the request restarts it, which would dismiss the snackbar at once.
+                        is LinkTarget.Message -> scope.launch { snackbarHost.showSnackbar(resources.getString(target.text)) }
+                    }
+                    onLinkHandled()
+                }
+
+                val onSetup = navController.isOnSetup()
+                val onReview = navController.isOnYearReview()
+                // The player is a layer above the frame (PlayerOverlay); the frame drops its bars only while the player covers it.
+                val playerLayer = rememberPlayerLayer(navController)
+                val playerCovers = playerLayer.coversFrame
+                val playerUp = playerLayer.up
+                val showReauth = needsReauth && !onSetup
+                val onReauth = { navController.navigate(Setup()) { launchSingleTop = true } }
+                val onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } }
+                AppScaffold(
+                    connection = connection,
+                    // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
+                    modifier = Modifier.underPlayer(playerCovers),
+                    miniPlayer = {
+                        if (!onSetup && !playerCovers && !onReview) {
+                            MiniPlayer(
+                                playerState,
+                                onToggle = viewModel.player::togglePlayPause,
+                                onOpen = { navController.navigate(Player) { launchSingleTop = true } },
+                                coverVersion = playerScreen.coverVersion.takeIf { playerScreen.itemId == playerState.itemId },
+                            )
+                        }
+                    },
+                    // The full player covers the whole window (its buttons stay above the fold); it has its own close.
+                    // The year in review covers the frame too (a story over the whole window).
+                    showBottomBar = !onSetup && !playerCovers && !onReview,
+                    navigationRail = rememberNavigationRail(),
+                    showOfflineBanner = !onSetup,
+                    showReauthBanner = showReauth,
+                    onReauth = onReauth,
+                    connectionChecking = checking,
+                    onOpenConnection = onOpenConnection,
+                    selectedTab = navController.currentTab(),
+                    tabs = tabs,
+                    onTabSelected = navController::navigateToTab,
+                    snackbarHostState = snackbarHost,
+                    showSnackbars = !playerUp,
+                    connectionBanner = connectionBanner,
+                ) {
+                    CompositionLocalProvider(LocalViewModelStoreOwner provides pageModels) {
+                        AppNavHost(navController, pages.start, homeRoute = startTab.route(), snackbarHost = snackbarHost)
+                    }
+                }
+                PlayerOverlay(
+                    playerLayer.slide,
+                    banner = connectionBanner.takeIf { !onSetup },
+                    showReauthBanner = showReauth,
+                    onReauth = onReauth,
+                    onOpenConnection = onOpenConnection,
+                    snackbarHostState = snackbarHost,
+                    onClose = navController::closePlayer,
+                ) {
+                    PlayerRoute(onClose = navController::closePlayer, onOpenDetails = navController::openDetailsFromPlayer)
+                }
+                // Once after an update (never on a first install or over the sign-in).
+                val news by whatsNew.pending.collectAsStateWithLifecycle()
+                if (news.isNotEmpty() && !onSetup) WhatsNewSheet(news, whatsNew::dismiss)
+                // Another account kept its downloads here: asked once after the sign-in.
+                val previous by previousAccount.question.collectAsStateWithLifecycle()
+                val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
+                val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
+                previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
             }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {
                 DownloadPromptDialog(it, viewModel::answerMetered, viewModel::answerContention, viewModel::dismissPrompt)
             }
-            // Once after an update (never on a first install or over the sign-in).
-            val news by whatsNew.pending.collectAsStateWithLifecycle()
-            if (news.isNotEmpty() && !onSetup) WhatsNewSheet(news, whatsNew::dismiss)
-            // Another account kept its downloads here: asked once after the sign-in.
-            val previous by previousAccount.question.collectAsStateWithLifecycle()
-            val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
-            val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
-            previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
             // "Download löschen?" after "Als gehört markieren": here it outlives the menu that asked and a rotation.
             val finishedQuestion by finishedQuestions.question.collectAsStateWithLifecycle()
             val autoDeleting by finishedQuestions.autoDeleting.collectAsStateWithLifecycle()

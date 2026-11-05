@@ -1,7 +1,9 @@
 package io.wolftown.lauschig.ui.setup
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.LoginResponse
@@ -13,8 +15,12 @@ import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.ui.nav.Setup
+import io.wolftown.lauschig.ui.nav.SetupMode
+import io.wolftown.lauschig.ui.profiles.ProfileOperations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
@@ -52,13 +59,18 @@ data class SetupUiState(
     val ssoButtonText: String? = null,
     /** One-shot: the screen opens this in a Custom Tab and reports back with [SetupViewModel.onSsoLaunched]. */
     val ssoLaunchUrl: String? = null,
+    /** One more profile ([SetupMode.ADD_PROFILE]): the active account is set aside instead of replaced. */
+    val addProfile: Boolean = false,
 ) {
     val canLogin: Boolean
         get() = !loading && (local.isNotBlank() || public.isNotBlank()) && username.isNotBlank() && password.isNotEmpty()
 }
 
+/** The form's mode, from its route: it survives a rotation, a process death and the browser of an SSO sign-in. */
+fun setupMode(savedState: SavedStateHandle): SetupMode = savedState.toRoute<Setup>().mode
+
 @HiltViewModel
-class SetupViewModel @Inject constructor(
+class SetupViewModel(
     private val accounts: AccountStore,
     private val loginClient: LoginClient,
     private val network: NetworkInfo,
@@ -66,8 +78,15 @@ class SetupViewModel @Inject constructor(
     private val oidc: OidcSignIn,
     private val callbacks: OidcCallbackBus,
     private val signOut: AccountSignOut,
+    private val addProfile: suspend (Account, accessToken: String, refreshToken: String) -> Unit = { _, _, _ -> },
+    mode: SetupMode = SetupMode.SIGN_IN,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(SetupUiState())
+    @Inject constructor(
+        savedState: SavedStateHandle, accounts: AccountStore, loginClient: LoginClient, network: NetworkInfo, sync: SyncTrigger,
+        oidc: OidcSignIn, callbacks: OidcCallbackBus, signOut: AccountSignOut, operations: ProfileOperations,
+    ) : this(accounts, loginClient, network, sync, oidc, callbacks, signOut, operations::add, setupMode(savedState))
+
+    private val _state = MutableStateFlow(SetupUiState(addProfile = mode == SetupMode.ADD_PROFILE))
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 
     private val confirmed = mutableSetOf<String>()
@@ -80,9 +99,12 @@ class SetupViewModel @Inject constructor(
     private var awaitingCallback = false
 
     init {
-        // Re-auth: pre-fill everything but the password from the current account (read locally, no network).
+        // Re-auth: pre-fill everything but the password from the current account (read locally, no network). Read once: the
+        // form belongs to that account's pages and goes with them. Another profile: only where the server is (the family's
+        // server, usually); without an active account, the addresses of a saved one.
         viewModelScope.launch {
-            val a = accounts.account.first() ?: return@launch
+            val adding = mode == SetupMode.ADD_PROFILE
+            val a = accounts.account.first() ?: (if (adding) accounts.saved.first().firstOrNull() else null) ?: return@launch
             confirmed += a.allowCleartext
             val ssids = a.addresses.homeSsids
             _state.update {
@@ -90,7 +112,7 @@ class SetupViewModel @Inject constructor(
                 else it.copy(
                     local = a.addresses.local?.toString()?.trimEnd('/').orEmpty(),
                     public = a.addresses.public?.toString()?.trimEnd('/').orEmpty(),
-                    username = a.username,
+                    username = if (adding) "" else a.username,
                     ssidBinding = ssids.isNotEmpty(),
                     currentSsid = ssids.firstOrNull(),
                     keptSsids = ssids,
@@ -211,6 +233,7 @@ class SetupViewModel @Inject constructor(
         val flow = OidcFlowContext(
             local = local?.toString(), public = public?.toString(),
             ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
+            addProfile = s.addProfile,
         )
         viewModelScope.launch {
             var failure = SetupError.UNREACHABLE
@@ -282,7 +305,8 @@ class SetupViewModel @Inject constructor(
                 val (l, p) =
                     if (local == null && public == null) (if (result.baseUrl.isHttps) null to result.baseUrl else result.baseUrl to null)
                     else local to public
-                val s = _state.value.copy(ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids)
+                // So is what it started as: the form may have come back another way, the old account must not be signed out.
+                val s = _state.value.copy(ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids, addProfile = f.addProfile)
                 complete(s, l, p, result.response)
             } finally {
                 ssoFinishing = false
@@ -327,18 +351,24 @@ class SetupViewModel @Inject constructor(
             addresses = addresses,
             allowCleartext = listOfNotNull(local, public).filter { !it.isHttps }.map { it.cleartextKey() }.toSet(),
         )
-        try {
-            // A re-auth with another account or another public address is another server id: the old one is signed
-            // out keeping its data (it then shows under „Downloads früherer Konten“), so none of its work keeps running
-            // and nothing of it is left unreachable – and replaced in the same step, so the app never shows "no account".
-            // One account operation, after any other one still running (a sign-out, a profile switch).
-            signOut.signIn(account, access, refresh)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return fail(SetupError.SAVE_FAILED)
+        // The form is one of the pages of the account before: when the account changes it goes, this view model with it. The
+        // sign-in has happened by then and goes through to the end.
+        val saved = withContext(NonCancellable) {
+            val stored = try {
+                // One more profile: the active account is set aside and stays signed in. A re-auth with another account or
+                // another public address is another server id: the old one is signed out keeping its data (it then shows
+                // under „Downloads früherer Konten“), so none of its work keeps running and nothing of it is left
+                // unreachable – and replaced in the same step, so the app never shows "no account".
+                // One account operation, after any other one still running (a sign-out, a profile switch).
+                if (s.addProfile) addProfile(account, access, refresh) else signOut.signIn(account, access, refresh)
+                true
+            } catch (e: Exception) {
+                false
+            }
+            if (stored) sync.syncNow() // not awaited; runs in WorkManager
+            stored
         }
-        sync.syncNow() // not awaited; runs in WorkManager
+        if (!saved) return fail(SetupError.SAVE_FAILED)
         _state.update { it.copy(loading = false, password = "", done = true) }
     }
 

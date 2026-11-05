@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -72,14 +73,15 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose {}
             }
-            val start by viewModel.startDestination.collectAsStateWithLifecycle()
+            // Not with the lifecycle: the first frame after a pause must already belong to the account that is active now.
+            val pages by viewModel.pages.collectAsState()
             val tabs by viewModel.tabLayout.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
             val link by linkRequest.collectAsStateWithLifecycle()
             val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
-            start?.let {
+            pages?.let {
                 AppRoot(
-                    startDestination = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
+                    pages = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
                     linkRequest = link, onLinkHandled = { linkRequest.value = null }, signedIn = signedIn,
                 )
             }

@@ -28,6 +28,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
+ * Whose pages are on screen ([owner], null: nobody is signed in) and where they [start]. A new value means new pages:
+ * nothing of the pages before stays ([io.wolftown.lauschig.ui.nav.AccountPages]).
+ */
+data class AppPages(val owner: String?, val start: Any)
+
+/**
  * Start-router input: [Setup] without an account, the chosen start tab ([TabLayout.start], default [Start]) with one;
  * null while the LOCAL account and layout reads are pending (DataStore reads, a few ms). Never touches the network, so a dead server or an expired token
  * cannot delay or redirect the start.
@@ -69,6 +75,14 @@ class MainViewModel(
     private val _startDestination = MutableStateFlow<Any?>(null)
     val startDestination: StateFlow<Any?> = _startDestination
 
+    private val _pages = MutableStateFlow<AppPages?>(null)
+
+    /**
+     * Follows the active account from the first local read on, so the app never draws the pages of one account for another.
+     * Null until that read. An unreadable store counts as signed out.
+     */
+    val pages: StateFlow<AppPages?> = _pages
+
     init {
         viewModelScope.launch {
             // An unreadable store must never crash the start: treat it as "no account".
@@ -79,10 +93,22 @@ class MainViewModel(
             } catch (e: Exception) {
                 null
             }
-            // The chosen start screen, read once (a later change applies on the next cold start). Intents (widget, links,
-            // notifications) navigate on top of it, so they keep their target.
-            _startDestination.value = if (account == null) Setup else layouts.first().start.route()
+            pagesFor(account?.serverId)
+            accounts.account.map { it?.serverId }
+                .catch { e -> if (e is CancellationException) throw e else emit(null) }
+                .distinctUntilChanged()
+                .collect { if (it != _pages.value?.owner) pagesFor(it) }
         }
+    }
+
+    /**
+     * The chosen start screen, read here (a later change applies with the next pages, at the latest on the next cold
+     * start). Intents (widget, links, notifications) navigate on top of it, so they keep their target.
+     */
+    private suspend fun pagesFor(owner: String?) {
+        val start = if (owner == null) Setup() else layouts.first().start.route()
+        _pages.value = AppPages(owner, start)
+        _startDestination.value = start
     }
 
     private var continued = false
@@ -95,8 +121,7 @@ class MainViewModel(
         if (continued) return
         continued = true
         viewModelScope.launch {
-            // Signed in = anything but Setup (the start screen may be any tab).
-            if (_startDestination.filterNotNull().first() == Setup) return@launch
+            if (_pages.filterNotNull().first().owner == null) return@launch
             try {
                 onStartWithAccount()
             } catch (e: CancellationException) {

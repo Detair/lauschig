@@ -45,7 +45,8 @@ import io.wolftown.lauschig.ui.stats.StatsRoute
 
 /**
  * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
- * stores, never from the network); the first sign-in then leads to [homeRoute] (see [finishSetup]). After a successful login [Setup] is removed from the back stack.
+ * stores, never from the network). The host lives as long as its account's pages ([AccountPages]): the first sign-in leads to new
+ * ones. After a successful login [Setup] is removed from the back stack.
  * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
@@ -183,15 +184,6 @@ fun NavHostController.finishSetup(home: Any) {
     }
     graph.setStartDestination(home)
     navigate(home) { popUpTo<Setup> { inclusive = true } }
-}
-
-/**
- * Signed out while the app runs: only [Setup] is left, so "back" never returns to the old account's pages. Already
- * the only page (a start without an account): nothing changes. The next sign-in leads to the start tab ([finishSetup]).
- */
-fun NavHostController.showSignIn() {
-    if (currentDestination?.hasRoute<Setup>() == true && previousBackStackEntry == null) return
-    navigate(Setup) { popUpTo(graph.id) { inclusive = true } }
 }
 
 @Composable
