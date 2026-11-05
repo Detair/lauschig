@@ -17,6 +17,11 @@ android {
         minSdk = 28
     }
 
+    // No resources here: no R class, no resource tasks.
+    androidResources {
+        enable = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
