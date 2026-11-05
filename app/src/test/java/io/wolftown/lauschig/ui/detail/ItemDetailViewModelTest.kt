@@ -149,6 +149,15 @@ class ItemDetailViewModelTest {
         assertEquals(Triple(sid, "b1", 0.0), player.plays.last())
     }
 
+    @Test fun quickBarFacts_publishedYear_blankIsNone() = runTest {
+        db.itemDao().upsertDetails(ItemEntity(serverId = sid, id = "b1", libraryId = "l", title = "Book", durationSec = 300.0, narrator = "Nick", publishedYear = "2024"))
+        val s = vm().await { it.found }
+        assertEquals("2024", s.publishedYear)
+        assertEquals(300.0, s.durationSec, 0.0)
+        db.itemDao().upsertDetails(ItemEntity(serverId = sid, id = "b1", libraryId = "l", title = "Book", publishedYear = " "))
+        assertEquals(null, vm().await { it.found && it.durationSec == 0.0 }.publishedYear)
+    }
+
     @Test fun detailsMissing_online_triggersLoad_once() = runTest {
         seed(loaded = false)
         val v = vm()

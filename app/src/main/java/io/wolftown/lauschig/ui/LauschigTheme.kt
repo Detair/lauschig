@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
 import io.wolftown.lauschig.settings.Appearance
+import io.wolftown.lauschig.settings.DarkThemeTone
 import io.wolftown.lauschig.settings.ThemeMode
 
 /*
@@ -133,6 +134,62 @@ internal val LauschigDarkColors = darkColorScheme(
     onTertiaryFixedVariant = Color(0xFF284E3B),
 )
 
+/*
+ * "Kaminfeuer & Bernstein" (Phase 6): the dark theme by the fireside – warm mocha-anthracite instead of night blue, soft
+ * cream instead of cool white, honey amber as the light; sand as the secondary, sage as the tertiary colour. Same rules
+ * as the night blue palette (every role, one-way containers, WCAG AA text, 3:1 controls; see ColorSchemeTest).
+ */
+internal val LauschigWarmDarkColors = darkColorScheme(
+    primary = Color(0xFFF5BA42),
+    onPrimary = Color(0xFF422C00),
+    primaryContainer = Color(0xFF5F4300),
+    onPrimaryContainer = Color(0xFFFFDEA6),
+    inversePrimary = Color(0xFF7D5800),
+    secondary = Color(0xFFD8C3AE),
+    onSecondary = Color(0xFF3A2E22),
+    secondaryContainer = Color(0xFF66544A),
+    onSecondaryContainer = Color(0xFFFAEFE6),
+    tertiary = Color(0xFFBFCB9F),
+    onTertiary = Color(0xFF2B3413),
+    tertiaryContainer = Color(0xFF5A6440),
+    onTertiaryContainer = Color(0xFFF3FBE6),
+    background = Color(0xFF161311),
+    onBackground = Color(0xFFF4ECE1),
+    surface = Color(0xFF161311),
+    onSurface = Color(0xFFF4ECE1),
+    surfaceVariant = Color(0xFF3D332C),
+    onSurfaceVariant = Color(0xFFB8ACA0),
+    surfaceTint = Color(0xFFF5BA42),
+    inverseSurface = Color(0xFFF4ECE1),
+    inverseOnSurface = Color(0xFF2E2621),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    outline = Color(0xFF9A8E84),
+    outlineVariant = Color(0xFF4A3F37),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFF3E352F),
+    surfaceContainer = Color(0xFF231C18),
+    surfaceContainerHigh = Color(0xFF2B231F),
+    surfaceContainerHighest = Color(0xFF352C27),
+    surfaceContainerLow = Color(0xFF1D1814),
+    surfaceContainerLowest = Color(0xFF100D0B),
+    surfaceDim = Color(0xFF161311),
+    primaryFixed = Color(0xFFFFDEA6),
+    primaryFixedDim = Color(0xFFF5BA42),
+    onPrimaryFixed = Color(0xFF271900),
+    onPrimaryFixedVariant = Color(0xFF5F4300),
+    secondaryFixed = Color(0xFFF5DFCB),
+    secondaryFixedDim = Color(0xFFD8C3AE),
+    onSecondaryFixed = Color(0xFF251A10),
+    onSecondaryFixedVariant = Color(0xFF54443A),
+    tertiaryFixed = Color(0xFFDBE7BA),
+    tertiaryFixedDim = Color(0xFFBFCB9F),
+    onTertiaryFixed = Color(0xFF181E05),
+    onTertiaryFixedVariant = Color(0xFF424B2A),
+)
+
 /** True when [appearance] asks for the dark theme (or follows a dark system). */
 @Composable
 fun isDarkTheme(appearance: Appearance): Boolean = when (appearance.theme) {
@@ -143,16 +200,19 @@ fun isDarkTheme(appearance: Appearance): Boolean = when (appearance.theme) {
 
 /**
  * The app's color scheme: wallpaper colors ([dynamic]) on Android 12+ when [dynamicColor] is on, else Lauschig's own
- * calm palette; [pureBlack] turns the dark scheme's background black (see [withPureBlack]). Pure function for tests.
+ * calm palette; in the dark theme the warm [tone] ([DarkThemeTone.WARM_AMBER]) wins over both. [pureBlack] turns the
+ * dark scheme's background black (see [withPureBlack]), the fireside's too. Pure function for tests.
  */
 fun colorSchemeFor(
     dark: Boolean,
     pureBlack: Boolean,
     dynamicColor: Boolean,
     sdkInt: Int,
+    tone: DarkThemeTone = DarkThemeTone.NIGHT_BLUE,
     dynamic: (dark: Boolean) -> ColorScheme,
 ): ColorScheme {
     val base = when {
+        dark && tone == DarkThemeTone.WARM_AMBER -> LauschigWarmDarkColors
         dynamicColor && sdkInt >= Build.VERSION_CODES.S -> dynamic(dark)
         dark -> LauschigDarkColors
         else -> LauschigLightColors
@@ -187,6 +247,7 @@ fun LauschigTheme(
         pureBlack = appearance.pureBlack,
         dynamicColor = appearance.dynamicColor,
         sdkInt = Build.VERSION.SDK_INT,
+        tone = appearance.darkTone,
         dynamic = { dark ->
             when {
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> if (dark) LauschigDarkColors else LauschigLightColors // never asked below 12

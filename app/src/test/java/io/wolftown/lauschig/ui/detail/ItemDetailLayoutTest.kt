@@ -24,12 +24,13 @@ import org.robolectric.annotation.Config
 class ItemDetailLayoutTest {
     @get:Rule val rule = createComposeRule()
 
-    // A title with everything a header can have: two-line title, subtitle, four chips, a download button, a description.
+    // A title with everything a header can have: two-line title, subtitle, the quick bar, three chips, a download button,
+    // a description.
     private val state = ItemDetailUiState(
         found = true, itemId = "b1", title = "Die drei ??? und der Fluch des Rubins", subtitle = "Folge 17",
         author = "Alfred Hitchcock", narrator = "Oliver Rohrbeck", seriesName = "Die drei ???", seriesSequence = "17",
         genres = listOf("Krimi"), description = "Ein Fall, so lang, dass die Beschreibung nach vier Zeilen eingeklappt wird. ".repeat(12),
-        primary = PrimaryAction.Continue(2), detailsLoaded = true, online = true,
+        primary = PrimaryAction.Continue(2), detailsLoaded = true, online = true, durationSec = 3 * 3600.0 + 1200, publishedYear = "1982",
         chapters = listOf(ChapterRow(0, "One", 100.0, false), ChapterRow(1, "Two", 100.0, true, 30.0)),
     )
 
@@ -37,10 +38,10 @@ class ItemDetailLayoutTest {
 
     private fun assertEverythingAboveTheFold() {
         val root = rule.onRoot().getUnclippedBoundsInRoot()
-        for (label in listOf("Continue · Ch. 2", "Download")) {
-            rule.onNodeWithText(label).assertIsDisplayed()
-            val b = rule.onNodeWithText(label).getUnclippedBoundsInRoot()
-            assertTrue("$label below the fold: ${b.bottom} > ${root.bottom}", b.bottom <= root.bottom)
+        for (tag in listOf("primaryButton", "downloadCompanion")) {
+            rule.onNodeWithTag(tag).assertIsDisplayed()
+            val b = rule.onNodeWithTag(tag).getUnclippedBoundsInRoot()
+            assertTrue("$tag below the fold: ${b.bottom} > ${root.bottom}", b.bottom <= root.bottom)
         }
     }
 

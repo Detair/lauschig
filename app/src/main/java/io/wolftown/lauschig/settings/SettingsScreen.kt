@@ -134,6 +134,7 @@ class SettingsViewModel @Inject constructor(
         onPureBlack = { viewModelScope.launch { ui.setPureBlack(it) } },
         onDynamicColor = { viewModelScope.launch { ui.setDynamicColor(it) } },
         onFontScale = { viewModelScope.launch { ui.setFontScale(it) } },
+        onDarkTone = { viewModelScope.launch { ui.setDarkTone(it) } },
     )
 
     val playbackActions = PlaybackPrefsActions(

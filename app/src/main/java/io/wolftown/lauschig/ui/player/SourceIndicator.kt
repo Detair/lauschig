@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import io.wolftown.lauschig.local.DeviceLibrary
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,7 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.ui.graphics.vector.ImageVector
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.OfflineIcon
 
 /** Where the loaded title plays from. */
 enum class PlaySource { STREAM, DOWNLOAD, DEVICE }
@@ -46,11 +47,7 @@ fun SourceIndicator(source: PlaySource, modifier: Modifier = Modifier, showLabel
             PlaySource.DEVICE -> R.string.source_device
         },
     )
-    val icon = when (source) {
-        PlaySource.STREAM -> Icons.Rounded.Cloud
-        PlaySource.DOWNLOAD -> Icons.Rounded.DownloadDone
-        PlaySource.DEVICE -> Icons.Rounded.PhoneAndroid
-    }
+    val icon = sourceIcon(source)
     val tag = when (source) {
         PlaySource.STREAM -> "sourceStreaming"
         PlaySource.DOWNLOAD -> "sourceLocal"
@@ -67,6 +64,13 @@ fun SourceIndicator(source: PlaySource, modifier: Modifier = Modifier, showLabel
             )
         }
     }
+}
+
+/** The source's symbol; a download is the app-wide offline symbol ([OfflineIcon]). */
+internal fun sourceIcon(source: PlaySource): ImageVector = when (source) {
+    PlaySource.STREAM -> Icons.Rounded.Cloud
+    PlaySource.DOWNLOAD -> OfflineIcon
+    PlaySource.DEVICE -> Icons.Rounded.PhoneAndroid
 }
 
 /** Spinner in place of play/pause while a title is being prepared or buffering. */

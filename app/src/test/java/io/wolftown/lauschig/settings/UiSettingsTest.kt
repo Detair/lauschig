@@ -26,6 +26,14 @@ class UiSettingsTest {
 
     @Test fun defaults_matchTheAppBefore() = runTest {
         assertEquals(Appearance(ThemeMode.SYSTEM, pureBlack = false, dynamicColor = true, fontScalePercent = 100), settings.appearance.first())
+        assertEquals(DarkThemeTone.NIGHT_BLUE, settings.appearance.first().darkTone)
+    }
+
+    @Test fun darkTone_isStored_unknownFallsBackToNightBlue() = runTest {
+        settings.setDarkTone(DarkThemeTone.WARM_AMBER)
+        assertEquals(DarkThemeTone.WARM_AMBER, UiSettings(store).appearance.first().darkTone)
+        store.edit { it[stringPreferencesKey("dark_tone")] = "SEPIA" }
+        assertEquals(DarkThemeTone.NIGHT_BLUE, settings.appearance.first().darkTone)
     }
 
     @Test fun everyAppearanceValue_isStored() = runTest {

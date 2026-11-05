@@ -11,12 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,7 +25,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -42,10 +40,11 @@ import io.wolftown.lauschig.playback.PlayableKey
 import java.io.File
 
 /**
- * Cover with series badge (top start), offline/downloading badge (top end), optional play button (bottom end) and
- * progress line (bottom). Tap = [onClick], long-press = [onLongClick] (menu), the play button = [onPlay].
- * Cover source: local file if present, else the server URL only while online, else the title's placeholder
- * (which is always drawn underneath, so a failed load degrades to the placeholder).
+ * Cover with series badge (top start), offline/downloading badge (top end) and progress line (bottom). Tap = [onClick]
+ * (the details), long-press = [onLongClick] (menu, which can play). No play button on the thumbnail: it hid the cover's
+ * typography and played by accident while scrolling a row; [onPlay] stays as a screen reader action ("Play <title>")
+ * where the title can play. Cover source: local file if present, else the server URL only while online, else the
+ * title's placeholder (which is always drawn underneath, so a failed load degrades to the placeholder).
  */
 @Composable
 fun CoverTile(
@@ -58,12 +57,16 @@ fun CoverTile(
     val base = LocalServerBaseUrl.current
     val unavailable = LocalOfflineDimming.current && !item.isDownloaded
     val unavailableText = stringResource(R.string.cover_not_available_offline)
+    val playLabel = stringResource(R.string.cover_play, item.title)
     val model = coverModel(base, item.id, item.coverPath, item.coverVersion)
     Column(
         modifier
             .clip(CoverShapes.Tile)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = if (onLongClick != null) stringResource(R.string.cover_actions) else null)
-            .semantics(mergeDescendants = true) { if (unavailable) stateDescription = unavailableText },
+            .semantics(mergeDescendants = true) {
+                if (unavailable) stateDescription = unavailableText
+                if (onPlay != null && !unavailable) customActions = listOf(CustomAccessibilityAction(playLabel) { onPlay(); true })
+            },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).alpha(if (unavailable) 0.38f else 1f).clip(CoverShapes.Tile)) {
             CoverArt(model, item.title, Modifier.matchParentSize())
@@ -82,22 +85,11 @@ fun CoverTile(
                     )
                 }
             }
-            if (onPlay != null && !unavailable) {
-                val playLabel = stringResource(R.string.cover_play, item.title)
-                // Quiet: a translucent scrim with a white icon reads on any cover without hiding much of it.
-                FilledIconButton(
-                    onClick = onPlay,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = PlayScrim, contentColor = Color.White),
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 10.dp).size(36.dp).testTag("coverPlay"),
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = playLabel, modifier = Modifier.size(22.dp))
-                }
-            }
             if (item.isDownloading) {
                 StatusBadge(Icons.Rounded.Downloading, stringResource(R.string.cover_downloading), Modifier.align(Alignment.TopEnd).testTag("coverDownloading"))
             }
             if (item.isDownloaded) {
-                StatusBadge(Icons.Rounded.DownloadDone, stringResource(R.string.cover_offline_available), Modifier.align(Alignment.TopEnd))
+                StatusBadge(OfflineIcon, stringResource(R.string.cover_offline_available), Modifier.align(Alignment.TopEnd))
             }
             if (item.progress > 0f && !item.isFinished) {
                 ProgressLine(
@@ -124,9 +116,6 @@ fun CoverTile(
         }
     }
 }
-
-/** About 45 % black: the play button's backdrop on a cover. */
-private val PlayScrim = Color.Black.copy(alpha = 0.45f)
 
 /** A small circle in a cover's corner (downloaded, downloading), in the surface colour so it reads on any cover. */
 @Composable
