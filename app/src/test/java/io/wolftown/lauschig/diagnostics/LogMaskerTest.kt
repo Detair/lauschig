@@ -259,4 +259,55 @@ class LogMaskerTest {
         masked("DN: O=Fabian Hofmann, L=Berlin", "Fabian", "Hofmann", "Berlin")
         masked("DN: CN=nas, 1.2.840.113549.1.9.1=#16106c756b6173406578616d706c652e696f", "#16106c75")
     }
+
+    // --- round 4 (re-review 3 probe lines)
+
+    @Test fun theAppsOwnPath_endsAtTheFirstCharacterNoIdHas_soAPathJoinedByAnySignIsMasked() {
+        val own = "/storage/emulated/0/Android/data/io.wolftown.lauschig/files/a.mp3"
+        for (join in listOf(";", "|", ":")) {
+            assertEquals("$own$join/storage/emulated/0/<…>.mp3", masked("$own$join/storage/emulated/0/Hörbücher/Lukas/Bibi.mp3", "Lukas", "Bibi", "Hörbücher"))
+        }
+        assertEquals("[$own|/storage/emulated/0/<…>.mp3]", masked("[$own|/storage/emulated/0/Hörbücher/Lukas/Bibi.mp3]", "Lukas", "Bibi"))
+        // The app's own download path (ids, an episode's item~episode key) still stays readable.
+        val episode = "/storage/1A2B-3C4D/Android/data/io.wolftown.lauschig/files/downloads/aaaaaaaaaaaaaaaa/li_x~ep_1/1.mp3"
+        assertEquals("open $episode failed", masked("open $episode failed"))
+    }
+
+    @Test fun certificateNames_quotedValues_moreAttributeTypes_andNamesWithoutCnOOrOu() {
+        assertEquals("DN: CN=<redacted>, O=<redacted>, L=<redacted>", masked("DN: CN=nas, O=\"Hofmann, Fabian\", L=Berlin", "Fabian", "Hofmann", "Berlin"))
+        assertEquals(
+            "DN: CN=<redacted>, GIVENNAME=<redacted>, SURNAME=<redacted>, O=<redacted>",
+            masked("DN: CN=nas, GIVENNAME=Fabian, SURNAME=Hofmann, O=x", "Fabian", "Hofmann"),
+        )
+        assertEquals("DN: CN=<redacted>, OID.2.5.4.42=<redacted>, O=<redacted>", masked("DN: CN=nas, OID.2.5.4.42=Fabian, O=x", "Fabian"))
+        assertEquals("DN: L=<redacted>, ST=<redacted>, C=<redacted>", masked("DN: L=Berlin, ST=Berlin, C=DE", "Berlin"))
+        masked("subject: L=Berlin, ST=Bayern, C=DE", "Berlin", "Bayern")
+        masked("DN: SN=Hofmann, GN=Fabian, T=Dr, INITIALS=FH, PSEUDONYM=fabi", "Hofmann", "Fabian", "fabi")
+        // A quote that is never closed goes to the end of the line.
+        masked("DN: CN=nas, O=\"Hofmann, Fabian", "Fabian", "Hofmann")
+    }
+
+    @Test fun round3ProbeLines_leakNothing() {
+        for (own in listOf(emptyList(), listOf("audiobookshelf.example.io", "example.io", "netbird.cloud", "fabian"))) {
+            LogMasker.setLiterals(own)
+            masked("OIDC: user lukas@example.io not allowed; admin mia.mueller@example.io", "lukas", "mia", "example")
+            masked("mail from lukas@abs.example.io and fabian@audiobookshelf.example.io", "lukas", "fabian", "example")
+            masked("user fabian@gmx.de signed in", "fabian@", "gmx")
+            masked("/storage/emulated/0/Android/data/io.wolftown.lauschig/files/a.mp3,/sdcard/Kinder/Mia/x.mp3,/storage/1A2B-3C4D/Lukas/y.mp3", "Kinder", "Mia", "Lukas")
+            masked("DN: CN=nas,O=Hofmann\\, Fabian,L=Berlin", "Hofmann", "Fabian", "Berlin")
+            masked("DN: OU=Familie Hofmann, L=Berlin", "Familie", "Hofmann", "Berlin")
+            masked("1.2.840.113549.1.9.1=#161466616269616e406578616d706c652e696f,CN=nas", "#1614", "nas")
+            masked("DN: CN=nas+UID=lukas, O=Hofmann", "lukas", "Hofmann")
+            masked("DN: CN=nas; O=Hofmann; L=Berlin", "Hofmann", "Berlin")
+            masked("DN: CN=nas, 2.5.4.42=Fabian, 2.5.4.4=Hofmann", "Fabian", "Hofmann")
+            masked("DN: CN=nas,2.5.4.10=#0c07486f666d616e6e", "#0c07")
+            masked("issuer: CN=Lukas Root CA, O=Lukas; subject: CN=nas", "Lukas")
+            masked(
+                "Hostname audiobookshelf.example.io not verified:\n    certificate: sha256/AbC=\n    DN: CN=audiobookshelf.example.io,O=Fabian Hofmann,L=Berlin,EMAILADDRESS=fabian@example.io\n    subjectAltNames: [audiobookshelf.example.io, *.example.io]",
+                "audiobookshelf", "example", "Fabian", "Hofmann", "Berlin",
+            )
+            masked("lukas-tablet.netbird.cloud", "lukas", "netbird")
+            masked("li_abc@audiobookshelf.example.io", "li_abc", "audiobookshelf")
+        }
+    }
 }

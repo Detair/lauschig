@@ -69,8 +69,9 @@ object LogMasker {
      */
     private fun maskUserPath(root: String, rest: String): String {
         if (rest.startsWith(OWN_DIR)) {
-            // Only the app's own path stays; what follows on the line (another path) is looked at again.
-            val own = rest.indexOfFirst { it.isWhitespace() || it == ',' }.let { if (it < 0) rest.length else it }
+            // Only the app's own path stays – it holds ids only, so it ends at the first character no id has (a space, a
+            // comma, ";", "|", ":"); what follows on the line (another path) is looked at again.
+            val own = rest.indexOfFirst { !isOwnPathChar(it) }.let { if (it < 0) rest.length else it }
             val tail = rest.substring(own)
             return root + rest.substring(0, own) + USER_PATH.replace(tail) { m -> maskUserPath(m.groupValues[1], m.groupValues[2]) }
         }
@@ -81,6 +82,8 @@ object LogMasker {
         val extension = ext?.groupValues?.get(1)?.let { ".$it" }.orEmpty()
         return "$root/$ELLIPSIS$extension" + rest.substring(end)
     }
+
+    private fun isOwnPathChar(c: Char) = c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c in "._/-"
 
     private fun maskUrl(url: String): String {
         val scheme = url.substringBefore("://").lowercase()
@@ -133,10 +136,20 @@ object LogMasker {
     private val QUOTED_SECRET = Regex("""(?i)(["'])($SECRET_KEY)\1(\s*:\s*)(["'])(?:(?!\4)[^\\]|\\.)*\4""")
     /** `key=value` / `key: value`: the value goes up to the next delimiter, several words included. */
     private val KEY_VALUE = Regex("""(?i)(?<![\w.-])($SECRET_KEY)(["']?\s*[=:]\s*)(?!["']?<)("[^"]*"|'[^']*'|[^\s"',;&)}\]][^"',;&)}\]\r\n]*)""")
-    /** The fields of a certificate's distinguished name; the value goes up to the next comma or the end of the line. */
-    private val DN_FIELD = Regex("""(?i)(?<![\w.-])(CN|O|OU|L|ST|C|STREET|E|EMAILADDRESS|UID|DC|SERIALNUMBER|\d+(?:\.\d+)+)=(?!<)(?:\\.|[^,\\\n])*""")
-    /** A distinguished name is near: a CN, O or OU attribute (a DN without CN too). */
-    private val DN_GATE = Regex("""(?i)(?<![\w.-])(?:CN|O|OU)=""")
+    /**
+     * The attribute types of a distinguished name (RFC 1779/2253/4519, Java's and BouncyCastle's names), and any in OID
+     * form (`2.5.4.42`, `OID.2.5.4.42`).
+     */
+    private const val DN_ATTRS = "CN|O|OU|L|ST|S|C|STREET|E|EMAIL|EMAILADDRESS|UID|DC|SERIALNUMBER|SURNAME|SN|GIVENNAME|GN|INITIALS|" +
+        "GENERATION|T|TITLE|DNQ|DNQUALIFIER|PSEUDONYM|NAME|POSTALCODE|POSTALADDRESS|TELEPHONENUMBER|BUSINESSCATEGORY|" +
+        "UNIQUEIDENTIFIER|ORGANIZATIONIDENTIFIER|IP|(?:OID\\.)?\\d+(?:\\.\\d+)+"
+    /**
+     * The fields of a certificate's distinguished name: a quoted value goes as a whole (commas inside included; a quote
+     * that is never closed to the end of the line), any other up to the next comma that is not escaped or the end of the line.
+     */
+    private val DN_FIELD = Regex("""(?i)(?<![\w.-])($DN_ATTRS)=(?!<)(?:"(?:\\.|[^"\\\n])*"?|(?:\\.|[^,\\\n])*)""")
+    /** A distinguished name is near: a CN, O or OU attribute, a `DN:` label, or two of its fields joined by a comma. */
+    private val DN_GATE = Regex("""(?i)(?<![\w.-])(?:CN|O|OU)=|\bDN:|(?<![\w.-])(?:$DN_ATTRS)=[^,\n]*,\s*(?:$DN_ATTRS)=""")
     private val DOMAIN_LIKE = Regex("""[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+""")
 
     /** `user:pass@host` without a scheme. */
