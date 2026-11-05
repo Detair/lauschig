@@ -311,3 +311,19 @@ Paket „Darstellung“ (Branch `p6-look`); 11.1 und 11.6 gehören zu anderen Pa
   „Datum: Zeit“ – Erkunden per Berührung liest den Balken unter dem Finger; der Tooltip selbst ist für Screenreader
   verborgen (keine Doppelung). Die Zusammenfassung hängt am Beschriftungsstreifen, weil Compose überdeckte Knoten (die
   Zeichnung unter den Balken-Knoten) vor Screenreadern verbirgt. Start-Karte und Jahresrückblick bleiben ein Knoten.
+
+### Nachtrag Task 11.3/11.5 – Fix-Runde 1 nach Review (2026-11-05)
+
+- **11.3 Download-Kreis:** Jeder Zustand nennt TalkBack, was ein Tippen tut („Herunterladen“, „Download pausieren“,
+  „Download fortsetzen“, „Download abbrechen“, „Download löschen“, „Erneut versuchen“); die Beschreibung nennt den
+  Zustand („Pausiert“ statt „Fortsetzen“). Ein *wartender* Download wird nicht mehr mit einem Tippen abgebrochen,
+  sondern fragt („Download abbrechen?“ – „Abbrechen“ / „Weiter warten“); Pausieren bleibt ein Tippen (harmlos,
+  umkehrbar). „Heruntergeladen (9,9 MB)“ bricht nie mehr um (geschütztes Leerzeichen vor der Klammer; der
+  Löschen-Knopf rückt bei Platzmangel unter den Text).
+- **Detailseite:** Die Überschrift „Kapitel“ erscheint nur noch mit Kapiteln oder mit dem Offline-Hinweis – nicht
+  über einer leeren Liste (Titel aus einer Datei, z. B. viele Hörspiele; war schon auf main so).
+- **11.5 Balken:** Die Fläche des Diagramms nimmt die Berührungen selbst: Tippen irgendwo wählt den Balken dieser
+  Spalte (dünne Monatsbalken sind keine Glückssache mehr), waagerechtes Wischen fährt die Balken ab und der Tooltip
+  folgt dem Finger; erneutes Tippen auf den gewählten Balken, auf den Tooltip oder sein Band hebt die Auswahl auf, eine
+  neue Periode auch. Für Screenreader sind die Balken jetzt Tabs einer Gruppe (eigene Klick-Aktion wählt aus). Die
+  Spalten-Markierung ist der Akzent mit 16 % statt onSurface mit 8 % – sichtbar auf leeren Tagen und reinem Schwarz.
