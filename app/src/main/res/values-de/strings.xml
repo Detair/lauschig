@@ -69,7 +69,7 @@
     <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Band %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
-    <string name="cover_offline_available">Offline verfügbar</string>
+    <string name="cover_offline_available">Auf diesem Gerät verfügbar</string>
     <string name="cover_not_available_offline">Offline nicht verfügbar</string>
     <string name="detail_back">Zurück</string>
     <string name="detail_play">Abspielen</string>
@@ -77,17 +77,26 @@
     <string name="detail_continue">Weiterhören</string>
     <string name="detail_listen_again">Nochmal hören</string>
     <string name="detail_series_band">%1$s · Band %2$s</string>
+    <string name="detail_quick_length">Länge: %1$s</string>
+    <string name="detail_quick_narrator">Gelesen von %1$s</string>
+    <string name="detail_quick_year">Erschienen: %1$s</string>
     <string name="detail_download">Herunterladen</string>
     <string name="detail_downloading">Lädt %1$d %%</string>
     <string name="detail_download_queued">Wartet auf Download</string>
     <string name="detail_download_paused">Pausiert</string>
-    <string name="detail_downloaded">Heruntergeladen (%1$s)</string>
+    <string name="detail_downloaded">Heruntergeladen\u00A0(%1$s)</string>
     <string name="detail_download_delete">Download löschen</string>
     <string name="detail_download_pause">Pausieren</string>
     <string name="detail_download_resume">Fortsetzen</string>
     <string name="detail_download_cancel">Download abbrechen</string>
     <string name="detail_download_remove">Entfernen</string>
     <string name="detail_download_retry">Erneut versuchen</string>
+    <string name="detail_download_pause_action">Download pausieren</string>
+    <string name="detail_download_resume_action">Download fortsetzen</string>
+    <string name="detail_queued_cancel_title">Download abbrechen?</string>
+    <string name="detail_queued_cancel_message">Der Titel wartet noch und wird dann nicht heruntergeladen.</string>
+    <string name="detail_queued_cancel_confirm">Abbrechen</string>
+    <string name="detail_queued_cancel_dismiss">Weiter warten</string>
     <string name="detail_download_offline">Online verfügbar</string>
     <string name="detail_delete_title">Download löschen?</string>
     <string name="detail_delete_message">Die heruntergeladenen Dateien werden von diesem Gerät entfernt. Dein Fortschritt bleibt erhalten.</string>
@@ -563,6 +572,12 @@
     <string name="settings_pure_black">Reines Schwarz</string>
     <string name="settings_pure_black_hint">Schwarzer Hintergrund im dunklen Design – schont OLED-Displays und ist nachts angenehm</string>
     <string name="settings_pure_black_light">Nur im dunklen Design</string>
+    <string name="settings_dark_tone">Dunkler Farbton</string>
+    <string name="settings_dark_tone_hint">Kaminfeuer: warmes Mokka und Bernstein, sanft für die Nacht</string>
+    <string name="settings_dark_tone_hint_dynamic">Kaminfeuer: warmes Mokka und Bernstein – auch statt der Farben des Hintergrundbilds</string>
+    <string name="dark_tone_night_blue">Nachtblau</string>
+    <string name="dark_tone_dynamic">Dynamisch</string>
+    <string name="dark_tone_warm">Kaminfeuer</string>
     <string name="settings_dynamic_color">Dynamische Farben</string>
     <string name="settings_dynamic_color_hint">Farben passend zum Hintergrundbild</string>
     <string name="settings_font_scale">Schriftgröße</string>
@@ -699,6 +714,13 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Dunkler Farbton „Kaminfeuer“: warmes Mokka, Creme und Bernstein fürs Hören im Bett – auch mit reinem Schwarz</item>
+        <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
+        <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
+        <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
+        <item>Statistik: Balken antippen oder darüberwischen zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
         <item>Eine kleine Karte auf der Startseite zeigt, wie viel du diese Woche gehört hast</item>
@@ -719,6 +741,8 @@
     <string name="stats_tile_active_days">Hörtage</string>
     <string name="stats_history_loading">Hörhistorie wird geladen …</string>
     <string name="stats_history_wifi">Die vollständige Hörhistorie wird im WLAN geladen.</string>
+    <string name="stats_bar_tip">%1$s: %2$s</string>
+    <string name="stats_bar_current">%1$s (%2$s)</string>
     <string name="stats_chart_none">Keine Hörzeit</string>
     <string name="stats_chart_today">heute</string>
     <string name="stats_chart_this_month">dieser Monat</string>

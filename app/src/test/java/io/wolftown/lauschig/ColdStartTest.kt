@@ -4,13 +4,13 @@ import android.content.Context
 import android.os.Looper
 import org.robolectric.Shadows.shadowOf
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.datastore.core.DataStore
@@ -253,6 +253,7 @@ class ColdStartTest {
         db.close()
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun coldStart_serverUnreachable_showsLibraryAndPlays() {
         ActivityScenario.launch(MainActivity::class.java).use {
@@ -263,8 +264,8 @@ class ColdStartTest {
             compose.onAllNodesWithTag("setupScreen").assertCountEquals(0)
             compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertCountEquals(0)
 
-            // The cover's play button starts it (tapping the cover opens the details).
-            compose.onNodeWithContentDescription("Play $TITLE").performClick()
+            // The cover's "Play" action starts it (tapping the cover opens the details; the tile has no play button).
+            compose.onNodeWithText(TITLE).performCustomAccessibilityActionWithLabel("Play $TITLE")
             awaitMainThread(2_000) { player.state.value.isPlaying }
             assertTrue(player.state.value.isPlaying)
             assertEquals(TITLE, player.state.value.title)

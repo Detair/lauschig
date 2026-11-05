@@ -4,11 +4,31 @@ import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.width
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.text.TextLayoutResult
+import org.robolectric.annotation.GraphicsMode
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
@@ -84,7 +104,7 @@ class ItemDetailScreenTest {
         rule.onNodeWithText("Play").assertIsNotEnabled()
         rule.onNodeWithText("Not downloaded – available when online").assertIsDisplayed()
         rule.onNodeWithText("Available when online").assertIsDisplayed()
-        rule.onNodeWithText("Download").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Download").assertIsNotEnabled()
     }
 
     @Test fun deleteDownload_asksForConfirmation() {
@@ -100,21 +120,21 @@ class ItemDetailScreenTest {
     @Test fun notSettledOffline_noDisabledReason_noHint() {
         show(base.copy(online = false, detailsLoaded = false, chapters = emptyList()), settledOffline = false)
         rule.onNodeWithText("Play").assertIsEnabled()
-        rule.onNodeWithText("Download").assertIsEnabled()
+        rule.onNodeWithContentDescription("Download").assertIsEnabled()
         rule.onNodeWithText("Not downloaded – available when online").assertDoesNotExist()
         rule.onNodeWithText("Chapters available once online").assertDoesNotExist()
     }
 
     @Test fun offline_pausedAndFailed_startDisabled_removeEnabled() {
         show(base.copy(download = DownloadUi.Paused(false)), settledOffline = true)
-        rule.onNodeWithText("Resume").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Paused").assertIsNotEnabled() // the round button says the state, its tap resumes
         rule.onNodeWithText("Available when online").assertIsDisplayed()
         rule.onNodeWithText("Cancel download").assertIsEnabled()
     }
 
     @Test fun offline_failed_retryDisabled_removeEnabled() {
         show(base.copy(download = DownloadUi.Failed(R.string.download_error_generic)), settledOffline = true)
-        rule.onNodeWithText("Retry").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Retry").assertIsNotEnabled()
         rule.onNodeWithText("Remove").assertIsEnabled()
         rule.onNodeWithText("Available when online").assertIsDisplayed()
     }
@@ -131,7 +151,7 @@ class ItemDetailScreenTest {
     @Test fun failedDownload_showsMappedError() {
         show(base.copy(download = DownloadUi.Failed(R.string.download_error_not_found)))
         rule.onNodeWithText("Not found on server").assertIsDisplayed()
-        rule.onNodeWithText("Retry").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Retry").assertIsDisplayed()
     }
 
     @Test fun longDescription_collapsedWithMore() {
@@ -155,5 +175,195 @@ class ItemDetailScreenTest {
         genres.value = listOf("Fantasy", " ", "", "  Fantasy ")
         rule.waitForIdle()
         assertEquals(before, clickable())
+    }
+
+    @Test fun quickBar_lengthNarratorYear_underTheTitle_narratorOpensItsPage() {
+        val opened = mutableListOf<Pair<BrowseKind, String>>()
+        rule.setContent {
+            LauschigTheme {
+                ItemDetailScreen(
+                    base.copy(durationSec = 14 * 3600.0 + 22 * 60, publishedYear = "2024"), {}, {}, {}, {}, {}, {},
+                    onOpenBrowse = { k, n -> opened += k to n },
+                )
+            }
+        }
+        rule.onNodeWithTag("quickBar").assertIsDisplayed()
+        rule.onNodeWithText("14 h 22 min").assertContentDescriptionEquals("Length: 14 h 22 min")
+        rule.onNodeWithText("2024").assertContentDescriptionEquals("Published: 2024")
+        // The narrator moved from the chips into the bar (with its microphone), once, and still opens the narrator's page.
+        rule.onAllNodesWithText("Nick Narrator").assertCountEquals(1)
+        rule.onNodeWithText("Nick Narrator").assertContentDescriptionEquals("Read by Nick Narrator").performClick()
+        assertEquals(listOf(BrowseKind.NARRATOR to "Nick Narrator"), opened)
+        // Under the title, above the chips and the buttons.
+        val title = rule.onNodeWithText("The Book").getUnclippedBoundsInRoot()
+        val bar = rule.onNodeWithTag("quickBar").getUnclippedBoundsInRoot()
+        val chip = rule.onNodeWithText("Ann Author").getUnclippedBoundsInRoot()
+        val primary = rule.onNodeWithTag("primaryButton").getUnclippedBoundsInRoot()
+        assertTrue(bar.top >= title.bottom && bar.bottom <= chip.top && bar.bottom <= primary.top)
+    }
+
+    @Test fun quickBar_severalNarrators_oneFact_aMenuPicksWhose() {
+        val opened = mutableListOf<Pair<BrowseKind, String>>()
+        rule.setContent {
+            LauschigTheme { ItemDetailScreen(base.copy(narrator = "Oliver Rohrbeck, Jens Wawrczeck"), {}, {}, {}, {}, {}, {}, onOpenBrowse = { k, n -> opened += k to n }) }
+        }
+        rule.onNodeWithText("Oliver Rohrbeck, Jens Wawrczeck").assertContentDescriptionEquals("Read by Oliver Rohrbeck, Jens Wawrczeck").performClick()
+        rule.onNodeWithText("Jens Wawrczeck").performClick()
+        assertEquals(listOf(BrowseKind.NARRATOR to "Jens Wawrczeck"), opened)
+    }
+
+    @Test fun quickBar_leavesOutWhatIsUnknown() {
+        show(base.copy(narrator = null, durationSec = 0.0, publishedYear = null))
+        rule.onNodeWithTag("quickBar").assertDoesNotExist()
+    }
+
+    @Test fun buttons_largePrimary_withACompactDownloadBesideIt() {
+        val calls = mutableListOf<String>()
+        rule.setContent { LauschigTheme { ItemDetailScreen(base.copy(primary = PrimaryAction.Continue(2)), {}, { calls += "play" }, { calls += "download" }, {}, {}, {}) } }
+        val primary = rule.onNodeWithTag("primaryButton").assertHeightIsAtLeast(56.dp)
+        val download = rule.onNodeWithTag("downloadCompanion").assertContentDescriptionEquals("Download").assertWidthIsAtLeast(48.dp)
+        val p = primary.getUnclippedBoundsInRoot()
+        val d = download.getUnclippedBoundsInRoot()
+        assertTrue("download not beside the primary button", d.left >= p.right && d.top < p.bottom && d.bottom > p.top)
+        assertTrue("primary not the larger one", p.width > d.width * 2)
+        primary.performClick()
+        download.performClick()
+        assertEquals(listOf("play", "download"), calls)
+    }
+
+    @Test fun downloadCompanion_followsTheState() {
+        var state by mutableStateOf(base.copy(download = DownloadUi.Running(42, true)))
+        val calls = mutableListOf<String>()
+        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, {}, { calls += "download" }, { calls += "pause" }, { calls += "delete" }, {}) } }
+        // Running: the ring shows the progress, a tap pauses (the line below still says it in words).
+        rule.onNodeWithTag("downloadCompanion").assertContentDescriptionEquals("Downloading 42 %").performClick()
+        rule.onNodeWithText("Downloading 42 %").assertIsDisplayed()
+        state = base.copy(download = DownloadUi.Complete(812_000_000))
+        rule.onNodeWithText("Downloaded\u00A0(812\u00A0MB)").assertIsDisplayed() // never breaks inside "(812 MB)"
+        rule.onNodeWithTag("downloadCompanion").assertContentDescriptionEquals("Available on this device").performClick()
+        rule.onNodeWithText("Delete download?").assertIsDisplayed()
+        rule.onNodeWithText("Delete").performClick()
+        assertEquals(listOf("pause", "delete"), calls)
+    }
+
+    @Test fun deviceTitle_noDownloadCompanion() {
+        show(base.copy(isLocal = true))
+        rule.onNodeWithTag("downloadCompanion").assertDoesNotExist()
+        rule.onNodeWithTag("localSource").assertExists()
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "de-w400dp-h2400dp")
+    fun quickBar_german() {
+        show(base.copy(durationSec = 14 * 3600.0 + 22 * 60, publishedYear = "2024"))
+        rule.onNodeWithText("14 Std. 22 Min.").assertContentDescriptionEquals("Länge: 14 Std. 22 Min.")
+        rule.onNodeWithText("Nick Narrator").assertContentDescriptionEquals("Gelesen von Nick Narrator")
+        rule.onNodeWithText("2024").assertContentDescriptionEquals("Erschienen: 2024")
+    }
+
+    /** What TalkBack says a tap does ("double-tap to …"). */
+    private fun clickLabel(label: String) = SemanticsMatcher("click label \"$label\"") { it.config.getOrNull(SemanticsActions.OnClick)?.label == label }
+
+    @Test fun downloadCompanion_saysWhatATapDoes_inEveryState() {
+        var state by mutableStateOf(base)
+        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, {}, {}) } }
+        val companion = { rule.onNodeWithTag("downloadCompanion") }
+        companion().assert(clickLabel("Download"))
+        state = base.copy(download = DownloadUi.Queued)
+        companion().assert(clickLabel("Cancel download"))
+        state = base.copy(download = DownloadUi.Running(42, true))
+        companion().assert(clickLabel("Pause download"))
+        state = base.copy(download = DownloadUi.Paused(true))
+        companion().assert(clickLabel("Resume download"))
+        state = base.copy(download = DownloadUi.Complete(812_000_000))
+        companion().assert(clickLabel("Delete download"))
+        state = base.copy(download = DownloadUi.Failed(R.string.download_error_generic))
+        companion().assert(clickLabel("Retry"))
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "de-w400dp-h2400dp")
+    fun downloadCompanion_actionLabels_german() {
+        var state by mutableStateOf(base)
+        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, {}, {}) } }
+        val companion = { rule.onNodeWithTag("downloadCompanion") }
+        companion().assert(clickLabel("Herunterladen"))
+        state = base.copy(download = DownloadUi.Queued)
+        companion().assert(clickLabel("Download abbrechen"))
+        state = base.copy(download = DownloadUi.Running(42, true))
+        companion().assert(clickLabel("Download pausieren"))
+        state = base.copy(download = DownloadUi.Paused(true))
+        companion().assert(clickLabel("Download fortsetzen"))
+        state = base.copy(download = DownloadUi.Complete(812_000_000))
+        companion().assert(clickLabel("Download löschen"))
+    }
+
+    @Test fun queuedDownload_theRoundButtonCancelsOnlyAfterAsking() {
+        var deleted = 0
+        show(base.copy(download = DownloadUi.Queued), onDelete = { deleted++ })
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        rule.onNodeWithText("Cancel download?").assertIsDisplayed()
+        rule.onNodeWithText("Keep waiting").performClick()
+        assertEquals(0, deleted)
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        rule.onNodeWithText("Cancel").performClick()
+        assertEquals(1, deleted)
+    }
+
+    @Test fun queuedCancelDialog_closesWhenTheDownloadMovesOn_andNeverDeletesAFinishedOne() {
+        var state by mutableStateOf(base.copy(download = DownloadUi.Queued))
+        var deleted = 0
+        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, { deleted++ }, {}) } }
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        rule.onNodeWithText("Cancel download?").assertIsDisplayed()
+        // It finished while the question was open: the question is gone, nothing is deleted.
+        state = base.copy(download = DownloadUi.Complete(812_000_000))
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        assertEquals(0, deleted)
+        // Waiting again later does not bring the old question back.
+        state = base.copy(download = DownloadUi.Queued)
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        // Running meanwhile: the same.
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        state = base.copy(download = DownloadUi.Running(5, true))
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        assertEquals(0, deleted)
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "de-w400dp-h2400dp")
+    fun queuedDownload_cancelDialog_german() {
+        show(base.copy(download = DownloadUi.Queued))
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        rule.onNodeWithText("Download abbrechen?").assertIsDisplayed()
+        rule.onNodeWithText("Abbrechen").assertIsDisplayed()
+        rule.onNodeWithText("Weiter warten").assertIsDisplayed()
+    }
+
+    /** With large text in a narrow window the size stays whole and the line does not break: the button moves below. */
+    @Test @Config(sdk = [35], qualifiers = "de-w360dp-h1600dp", fontScale = 1.3f)
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun downloaded_largeText_staysOneLine() {
+        show(base.copy(download = DownloadUi.Complete(9_900_000)))
+        val text = rule.onNode(hasText("Heruntergeladen", substring = true)).fetchSemanticsNode()
+        val label = text.config[SemanticsProperties.Text].single().text
+        assertTrue("no non-breaking space before the bracket: $label", label.contains("\u00A0("))
+        val layouts = mutableListOf<TextLayoutResult>()
+        text.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        assertEquals(label, 1, layouts.single().lineCount)
+        rule.onNodeWithText("Download löschen").assertIsDisplayed()
+    }
+
+    @Test fun chaptersHeading_onlyWithChaptersOrTheOfflineHint() {
+        var state by mutableStateOf(base)
+        rule.setContent {
+            CompositionLocalProvider(LocalOfflineDimming provides state.online.not()) { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, {}, {}) } }
+        }
+        rule.onNodeWithText("Chapters").assertExists()
+        // A single-file title (e.g. a radio play) has no chapters: no heading over nothing.
+        state = base.copy(chapters = emptyList())
+        rule.onNodeWithText("Chapters").assertDoesNotExist()
+        // Offline before the details were loaded: the heading stays, with the hint under it.
+        state = base.copy(chapters = emptyList(), detailsLoaded = false, online = false)
+        rule.onNodeWithText("Chapters").assertExists()
+        rule.onNodeWithText("Chapters available once online").assertExists()
     }
 }

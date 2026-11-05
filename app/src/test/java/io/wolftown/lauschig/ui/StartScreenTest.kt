@@ -60,7 +60,7 @@ class StartScreenTest {
     }
 
     @Test
-    fun rows_showSections_tapOpensDetails_playButtonPlays_longPressOpensMenu() {
+    fun rows_showSections_tapOpensDetails_noPlayOverlay_longPressOpensMenu() {
         val calls = mutableListOf<String>()
         val state = StartUiState(
             continueItems = listOf(summary("a", "Book A")),
@@ -72,9 +72,11 @@ class StartScreenTest {
         rule.onNodeWithText("Continue listening").assertIsDisplayed()
         rule.onNodeWithText("Downloaded").assertIsDisplayed()
         rule.onNodeWithText("Book A").performClick()
-        rule.onNodeWithContentDescription("Play Book B").performClick()
+        // A tile of a row has no play button any more: tapping it opens the details, too.
+        rule.onNodeWithContentDescription("Play Book B", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithText("Book B").performClick()
         rule.onNodeWithText("Book B").performTouchInput { longClick() }
-        assertEquals(listOf("open:a", "play:b", "menu:b"), calls)
+        assertEquals(listOf("open:a", "open:b", "menu:b"), calls)
     }
 
     @Test
@@ -98,8 +100,9 @@ class StartScreenTest {
         rule.onNode(hasText("Book A") and hasAnyAncestor(hasTestTag("continueHero"))).assertExists()
         // Book B is a tile of the row, not in the card.
         rule.onNode(hasText("Book B") and hasAnyAncestor(hasTestTag("continueHero"))).assertDoesNotExist()
-        rule.onNodeWithContentDescription("Play Book B").assertExists()
-        rule.onNodeWithTag("heroPlay").performClick()
+        // The card keeps its large play button; the row's tiles have none.
+        rule.onNodeWithContentDescription("Play Book B", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("heroPlay").assertContentDescriptionEquals("Play Book A").performClick()
         rule.onNodeWithText("Book A").performClick()
         assertEquals(listOf("toggle:a", "open:a"), calls)
     }

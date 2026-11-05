@@ -69,7 +69,7 @@
     <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Book %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
-    <string name="cover_offline_available">Available offline</string>
+    <string name="cover_offline_available">Available on this device</string>
     <string name="cover_not_available_offline">Not available offline</string>
     <string name="detail_back">Back</string>
     <string name="detail_play">Play</string>
@@ -77,17 +77,26 @@
     <string name="detail_continue">Continue</string>
     <string name="detail_listen_again">Listen again</string>
     <string name="detail_series_band">%1$s · Book %2$s</string>
+    <string name="detail_quick_length">Length: %1$s</string>
+    <string name="detail_quick_narrator">Read by %1$s</string>
+    <string name="detail_quick_year">Published: %1$s</string>
     <string name="detail_download">Download</string>
     <string name="detail_downloading">Downloading %1$d %%</string>
     <string name="detail_download_queued">Waiting to download</string>
     <string name="detail_download_paused">Paused</string>
-    <string name="detail_downloaded">Downloaded (%1$s)</string>
+    <string name="detail_downloaded">Downloaded\u00A0(%1$s)</string>
     <string name="detail_download_delete">Delete download</string>
     <string name="detail_download_pause">Pause</string>
     <string name="detail_download_resume">Resume</string>
     <string name="detail_download_cancel">Cancel download</string>
     <string name="detail_download_remove">Remove</string>
     <string name="detail_download_retry">Retry</string>
+    <string name="detail_download_pause_action">Pause download</string>
+    <string name="detail_download_resume_action">Resume download</string>
+    <string name="detail_queued_cancel_title">Cancel download?</string>
+    <string name="detail_queued_cancel_message">The title is still waiting and will not be downloaded.</string>
+    <string name="detail_queued_cancel_confirm">Cancel</string>
+    <string name="detail_queued_cancel_dismiss">Keep waiting</string>
     <string name="detail_download_offline">Available when online</string>
     <string name="detail_delete_title">Delete download?</string>
     <string name="detail_delete_message">The downloaded files are removed from this device. Your progress is kept.</string>
@@ -563,6 +572,12 @@
     <string name="settings_pure_black">Pure black</string>
     <string name="settings_pure_black_hint">Black background in the dark theme – easy on OLED screens and at night</string>
     <string name="settings_pure_black_light">Only in the dark theme</string>
+    <string name="settings_dark_tone">Dark tone</string>
+    <string name="settings_dark_tone_hint">Fireside: warm mocha and amber, gentle at night</string>
+    <string name="settings_dark_tone_hint_dynamic">Fireside: warm mocha and amber – also instead of the wallpaper colors</string>
+    <string name="dark_tone_night_blue">Night blue</string>
+    <string name="dark_tone_dynamic">Dynamic</string>
+    <string name="dark_tone_warm">Fireside</string>
     <string name="settings_dynamic_color">Dynamic colors</string>
     <string name="settings_dynamic_color_hint">Colors matching your wallpaper</string>
     <string name="settings_font_scale">Text size</string>
@@ -699,6 +714,13 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_4_0">
+        <item>Dark tone “Fireside”: warm mocha, cream and amber for listening in bed – also with pure black</item>
+        <item>Downloaded titles carry a new symbol, an arrow in a circle – no longer mistaken for “heard”</item>
+        <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
+        <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
+        <item>Statistics: tap or swipe across the bars to see date and listening time; with TalkBack every bar says its value</item>
+    </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
         <item>A small card on Start shows how much you listened this week</item>
@@ -719,6 +741,8 @@
     <string name="stats_tile_active_days">Days listened</string>
     <string name="stats_history_loading">Loading your listening history …</string>
     <string name="stats_history_wifi">Your full listening history loads on Wi-Fi.</string>
+    <string name="stats_bar_tip">%1$s: %2$s</string>
+    <string name="stats_bar_current">%1$s (%2$s)</string>
     <string name="stats_chart_none">No listening time</string>
     <string name="stats_chart_today">today</string>
     <string name="stats_chart_this_month">this month</string>

@@ -172,6 +172,36 @@ Android-Features nutzen:
   (Checkboxen direkt in der Benachrichtigung erlaubt Android nicht, daher die eigene
   Seite.)
 
+### 2.7c Phase 6: Qualität, Performance & Feinschliff (Review 2026-11-04)
+- **Konfigurierbare Sprungzeiten:** Getrennte Einstellungen für Vor- und Rücksprung
+  (z. B. 10s/15s zurück, 30s/45s vor) statt festen 30 s.
+- **Katalogsuche-Performance:** Facetten nur einmal bei Katalogänderung berechnen und cachen,
+  nicht bei jedem Tastendruck der Suche neu aufbauen.
+- **Sleep-Timer Hinweiston:** Dezent leiser Ton ca. 30 Sekunden vor Ablauf, damit Hörer im
+  Bett merken, dass sie schütteln müssen, bevor die Wiedergabe stoppt.
+- **SD-Karten-Auswahl:** Downloads optional auf externe MicroSD-Karten auslagern können,
+  um den internen Speicher zu schonen.
+- **Diagnose-Log teilen („Familien-Support“):** Einfacher Export der letzten Anwendungs-Logs
+  (anonymisiert/maskiert) per ShareSheet, damit Familienmitglieder ohne adb Fehler melden können.
+- **Automatisches Löschen fertig gehörter Titel:** Optionales zeitgesteuertes oder sofortiges
+  Löschen nach Beenden eines Hörbuchs.
+- **Warmes Nacht-Farbschema („Kaminfeuer & Bernstein“):** Mokka-Anthrazit (`#161311`),
+  Creme-Weiß (`#F4ECE1`) und Honig-Bernstein (`#F5BA42`) für ermüdungsfreies Hören im Bett.
+- **Player-Tastenleiste (Variante B):** Einheitliche 3-teilige Regler oben (`Tempo`, `Sleep`, `Klang`)
+  plus horizontales Auszieh-Banner für Kapitel & Notizen.
+- **Audio-Dynamikkompressor:** Nachtmodus zur Begrenzung lauter Soundeffekte und Anhebung leiser Sprache
+  via Android `DynamicsProcessing` (ab minSdk 28).
+- **Performance & Caching:** 150 MB Coil DiskCache, Room Compound-Indizes und Recomposition-Throttling.
+- **UI-Feinschliff & Ergonomie:**
+  - 2-Zeitstempel-System (abgelaufen links, verbleibend rechts mit Tap-Umschaltung für Kapitel/Gesamt).
+  - Neues Offline-Symbol (`ArrowCircleDown` / `OfflinePin` statt `DownloadDone`).
+  - Metadaten-Leiste und klare Button-Hierarchie auf der Buch-Detailseite.
+  - Entfernung störender Play-Button-Overlays auf kleinen Cover-Thumbnails.
+  - Interaktive Tooltips bei Statistik-Diagrammen und Wischgeste für den Mini-Player.
+- **Schrittweise Modularisierung:** Entflechtung in `:core:model`, `:core:database` und `:core:playback`.
+- **Ökosystem-Vorbereitung:** Schneller Profilwechsel für Familien-Tablets, Google Cast und Kapitelsuche.
+- Siehe Umsetzungsplan in [`docs/superpowers/plans/2026-11-05-phase6-quality-and-comfort.md`](../plans/2026-11-05-phase6-quality-and-comfort.md).
+
 ### 2.8 Später: TV-Modus (Android TV / Google TV)
 - Eigenes, an den Fernseher angepasstes Design (Compose for TV, Bedienung mit
   Fernbedienung/D-Pad, große Cover, 10-Fuß-Abstand). Bibliothek und Player wie auf dem

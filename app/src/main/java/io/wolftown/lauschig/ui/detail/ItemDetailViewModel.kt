@@ -84,6 +84,8 @@ data class ItemDetailUiState(
     val coverPath: String? = null,
     val coverVersion: Long = 0,
     val durationSec: Double = 0.0,
+    /** As the server has it (usually a year); null when unknown. */
+    val publishedYear: String? = null,
     val primary: PrimaryAction = PrimaryAction.Play,
     /** Playable without a connection (downloaded, or already loaded in the player). The UI combines this with the settled offline signal. */
     val playableOffline: Boolean = false,
@@ -216,6 +218,7 @@ class ItemDetailViewModel(
             coverPath = if (downloaded || isLocal) covers.pathFor(item.serverId, item.id) else null,
             coverVersion = item.coverUpdatedAt,
             durationSec = item.durationSec,
+            publishedYear = item.publishedYear?.takeIf { it.isNotBlank() },
             primary = primary,
             playableOffline = playableOffline,
             download = dl.toUi(d),
