@@ -130,6 +130,10 @@ abstract class AudioFileDao {
     )
     abstract fun observeLocalBytes(serverId: String): Flow<List<ItemBytes>>
 
+    /** True if [serverId] has a download that was begun but not finished (its `.part` file is somewhere). */
+    @Query("SELECT EXISTS(SELECT 1 FROM audio_files WHERE serverId = :serverId AND localPath IS NULL AND completedBytes > 0)")
+    abstract suspend fun hasPartial(serverId: String): Boolean
+
     /** Every recorded file of [serverId]'s downloads (the volumes they are on; sign-out with a card that is out). */
     @Query("SELECT localPath FROM audio_files WHERE serverId = :serverId AND localPath IS NOT NULL")
     abstract suspend fun localPaths(serverId: String): List<String>

@@ -24,6 +24,9 @@ interface DownloadRoots {
     /** Suspends until [target] reflects the stored setting (right after a cold start it may not yet). */
     suspend fun awaitReady() {}
 
+    /** The chosen volume's download root while that volume is not there (null: none chosen, or it is there). */
+    fun missingTarget(): File? = null
+
     /** Internal storage only (tests, and every place that never sees another volume). */
     object None : DownloadRoots {
         override fun external(): List<File> = emptyList()
@@ -76,6 +79,8 @@ class VolumeDownloadRoots(
 
     /** A volume is chosen but is not there (or not writable) now: new downloads go to the internal storage. Blocking. */
     fun chosenMissing(): Boolean = chosen() != null && target() == null
+
+    override fun missingTarget(): File? = chosen()?.takeIf { target() == null }?.let { File(it, DownloadVolume.DOWNLOADS) }
 
     /** The stored choice, kept current; [current] never blocks (null until the first read). */
     private class ChosenPath(storagePath: Flow<String?>) {

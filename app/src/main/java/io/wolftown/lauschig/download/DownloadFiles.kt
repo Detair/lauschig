@@ -111,15 +111,19 @@ class DownloadFiles(
     }
 
     /**
-     * The download roots of [serverId]'s recorded files that are not mounted now (an SD card that is out), from the
-     * files' paths in Room. Blocking.
+     * The download roots of [serverId]'s downloads that are not mounted now (an SD card that is out): of its recorded
+     * files (paths in Room) and, when a download was begun but not finished, the chosen card. The purge deletes the
+     * account's whole directory there once it is back (partial files and covers included). Blocking.
      */
     suspend fun missingRoots(serverId: String): Set<String> {
         if (!SERVER_ID.matches(serverId)) return emptySet()
         val mounted = allRoots().map { it.absolutePath }
-        return audioFiles.localPaths(serverId).filter { it.startsWith("/") && "/$serverId/" in it }
+        val recorded = audioFiles.localPaths(serverId).filter { it.startsWith("/") && "/$serverId/" in it }
             .filter { p -> mounted.none { r -> p.startsWith("$r/") } }
             .map { it.substringBefore("/$serverId/") }.toSet()
+        // A download begun on the chosen card has no recorded path yet: its `.part` files are on that card all the same.
+        val partial = roots.missingTarget()?.takeIf { audioFiles.hasPartial(serverId) }?.absolutePath
+        return recorded + listOfNotNull(partial)
     }
 
     /**

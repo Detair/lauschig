@@ -323,4 +323,30 @@ class AccountDataTest {
         assertFalse(File(card, a).exists())
         d.purge(a) // and nothing waits any more
     }
+
+    @Test fun aPurgeWithOnlyPartialDownloadsOnTheMissingCard_waitsForItToo_andTakesTheWholeFolder(): Unit = runBlocking {
+        val card = File(root.parentFile, "card2/downloads").apply { mkdirs() }
+        val cardRoots = object : io.wolftown.lauschig.download.DownloadRoots {
+            var mounted = true
+            override fun external() = if (mounted) listOf(card) else emptyList()
+            override fun target() = if (mounted) card else null
+            override fun missingTarget() = if (mounted) null else card
+        }
+        val multi = DownloadFiles(root, db.audioFileDao(), roots = cardRoots)
+        val purges = io.wolftown.lauschig.download.DataStoreVolumePurges(ctx)
+        val d = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), multi, stamps, forgottenCovers::add, kotlinx.coroutines.Dispatchers.IO, purges)
+        // A download begun on the card: a .part file and a cover, nothing recorded as complete.
+        val dir = File(card, "$a/b2").apply { mkdirs() }
+        dir.resolve("1.mp3.part").writeBytes(ByteArray(4))
+        dir.resolve("cover.jpg").writeBytes(ByteArray(2))
+        db.audioFileDao().replaceFromServer(a, "b2", listOf(io.wolftown.lauschig.db.entities.AudioFileEntity(a, "b2", 1, "i", 1.0, 8, "mp3")))
+        db.downloadDao().upsert(DownloadEntity(a, "b2", DownloadState.PAUSED, 1))
+        db.audioFileDao().setProgress(a, "b2", 1, 4)
+        cardRoots.mounted = false
+        assertTrue("the sign-out dialog says so", d.downloadsOnMissingVolume(a))
+        try { d.purge(a); org.junit.Assert.fail("not done while the card is out") } catch (e: java.io.IOException) {}
+        cardRoots.mounted = true
+        d.purge(a)
+        assertFalse("the whole folder went, partial files and cover included", File(card, a).exists())
+    }
 }
