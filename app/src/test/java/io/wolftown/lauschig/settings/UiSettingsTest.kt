@@ -63,4 +63,15 @@ class UiSettingsTest {
         settings.setTabLayout(custom)
         assertEquals(custom, UiSettings(store).tabLayout.first())
     }
+
+    @Test fun playerRemainingTime_chapterByDefault_bookStored() = runTest {
+        assertEquals(RemainingTime.CHAPTER, settings.playerRemainingTime.first())
+        settings.setPlayerRemainingTime(RemainingTime.BOOK)
+        assertEquals(RemainingTime.BOOK, UiSettings(store).playerRemainingTime.first())
+    }
+
+    @Test fun playerRemainingTime_unknownStoredValue_isChapter() = runTest {
+        store.edit { it[stringPreferencesKey("player_remaining_time")] = "WEEK" }
+        assertEquals(RemainingTime.CHAPTER, settings.playerRemainingTime.first())
+    }
 }

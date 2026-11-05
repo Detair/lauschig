@@ -113,7 +113,6 @@
     <string name="player_chapters">Kapitel</string>
     <string name="player_close">Player schließen</string>
     <string name="player_chapter_slider">Position im Kapitel</string>
-    <string name="player_book_time">%1$s / %2$s</string>
     <string name="player_mini_open">Player öffnen</string>
     <string name="actions_details">Details</string>
     <string name="actions_download_resume">Download fortsetzen</string>
@@ -387,6 +386,24 @@
     <string name="player_contents_current">Aktuell: Kap. %1$d / %2$d</string>
     <string name="player_contents_no_chapters">Warteschlange, Lesezeichen &amp; Verlauf</string>
     <string name="player_contents_chapters_empty">Dieser Titel hat keine Kapitel.</string>
+    <string name="player_remaining_chapter_short">Kapitel</string>
+    <string name="player_remaining_book_short">Buch</string>
+    <string name="player_remaining_chapter_description">Kapitel: noch %1$s</string>
+    <string name="player_remaining_book_description">Buch: noch %1$s</string>
+    <string name="player_remaining_show_book">Restzeit des Buchs zeigen</string>
+    <string name="player_remaining_show_chapter">Restzeit des Kapitels zeigen</string>
+    <plurals name="spoken_hours">
+        <item quantity="one">%d Stunde</item>
+        <item quantity="other">%d Stunden</item>
+    </plurals>
+    <plurals name="spoken_minutes">
+        <item quantity="one">%d Minute</item>
+        <item quantity="other">%d Minuten</item>
+    </plurals>
+    <plurals name="spoken_seconds">
+        <item quantity="one">%d Sekunde</item>
+        <item quantity="other">%d Sekunden</item>
+    </plurals>
     <plurals name="collection_titles">
         <item quantity="one">%d Titel</item>
         <item quantity="other">%d Titel</item>

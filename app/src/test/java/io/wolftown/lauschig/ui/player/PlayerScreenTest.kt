@@ -33,8 +33,8 @@ class PlayerScreenTest {
     @get:Rule val rule = createComposeRule()
 
     private val state = PlayerScreenState(
-        itemId = "b1", title = "The Book", chapterTitle = "Two", chapterElapsedText = "00:25", chapterTotalText = "01:40",
-        bookElapsedText = "02:05", bookTotalText = "05:00", speed = 1.25f,
+        itemId = "b1", title = "The Book", chapterTitle = "Two", chapterElapsedText = "00:25", chapterDurationSec = 100.0, chapterPositionSec = 25.0,
+        chapterRemainingSec = 75.0, bookRemainingSec = 3 * 3600.0 + 18 * 60 + 42, speed = 1.25f,
         chapters = listOf(ChapterRow(0, "One", 100.0, false), ChapterRow(1, "Two", 100.0, true, 25.0)),
     )
 
@@ -51,7 +51,28 @@ class PlayerScreenTest {
         rule.onNodeWithContentDescription("Previous chapter").performClick()
         rule.onNodeWithContentDescription("Next chapter").performClick()
         assertEquals(listOf("t", "s-15", "s30", "p", "n"), calls)
-        rule.onNodeWithText("02:05 / 05:00").assertExists()
+    }
+
+    @Test fun twoTimestamps_elapsedLeft_chapterRemainingRight() {
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}) } }
+        rule.onNodeWithTag("elapsed").assertTextEquals("00:25")
+        rule.onNodeWithTag("remaining").assert(hasText("−01:15", substring = true)).assert(hasText("Chapter", substring = true))
+        rule.onNodeWithContentDescription("Chapter: 1 minute left").assertExists()
+        rule.onNodeWithText("3:18:42", substring = true).assertDoesNotExist()
+        rule.onNodeWithTag("bookTime").assertDoesNotExist() // the old middle line is gone
+    }
+
+    @Test fun twoTimestamps_bookMode_showsTheBooksRemainingTime() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(remainingTime = io.wolftown.lauschig.settings.RemainingTime.BOOK), {}) } }
+        rule.onNodeWithTag("remaining").assert(hasText("−3:18:42", substring = true)).assert(hasText("Book", substring = true))
+        rule.onNodeWithContentDescription("Book: 3 hours 18 minutes left").assertExists()
+    }
+
+    @Test fun remaining_tapToggles() {
+        var toggles = 0
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onToggleRemaining = { toggles++ }) } }
+        rule.onNodeWithTag("remaining").performClick()
+        assertEquals(1, toggles)
     }
 
     @Test fun seekButtons_followTheSettings_andShowTheirSeconds() {

@@ -57,7 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -71,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.playback.PlayableKey
+import io.wolftown.lauschig.settings.RemainingTime
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.CoverShapes
 import io.wolftown.lauschig.ui.common.DownloadIconButton
@@ -123,6 +126,7 @@ fun PlayerRoute(
         onNext = viewModel::nextChapter,
         onChapter = viewModel::seekToChapter,
         onSpeed = viewModel::setSpeed,
+        onToggleRemaining = viewModel::toggleRemainingTime,
         contents = PlayerContents(
             queue = { done -> QueueContent(done) },
             bookmarks = { done -> itemId?.let { BookmarksContent(it, state.chapterStartSec + state.chapterPositionSec, done) } },
@@ -141,6 +145,20 @@ fun PlayerRoute(
         },
         comfortHint = { ShakeHint(comfort) },
     )
+}
+
+/** A time span as TalkBack should say it: "3 Stunden 18 Minuten", "14 Minuten", "40 Sekunden". */
+@Composable
+internal fun spokenDuration(sec: Double): String {
+    val total = sec.coerceAtLeast(0.0).toLong()
+    val h = (total / 3600).toInt()
+    val m = (total % 3600 / 60).toInt()
+    return when {
+        h > 0 && m > 0 -> pluralStringResource(R.plurals.spoken_hours, h, h) + " " + pluralStringResource(R.plurals.spoken_minutes, m, m)
+        h > 0 -> pluralStringResource(R.plurals.spoken_hours, h, h)
+        m > 0 -> pluralStringResource(R.plurals.spoken_minutes, m, m)
+        else -> pluralStringResource(R.plurals.spoken_seconds, total.toInt(), total.toInt())
+    }
 }
 
 /** "1,25×" in the user's locale. */
@@ -196,6 +214,8 @@ fun PlayerScreen(
     comfortHint: @Composable () -> Unit = {},
     /** Queue, bookmarks and history tabs of the contents sheet (the chapters are the player's own). */
     contents: PlayerContents = PlayerContents(),
+    /** The right timestamp was tapped: switch between the chapter's and the book's time left. */
+    onToggleRemaining: () -> Unit = {},
 ) {
     var showSpeed by rememberSaveable { mutableStateOf(false) }
     var contentsTab by rememberSaveable { mutableStateOf<ContentsTab?>(null) }
@@ -311,20 +331,38 @@ fun PlayerScreen(
                 onValueChangeFinished = { dragging?.let { onSeekInChapter(it); pending = it }; dragging = null },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).semantics { contentDescription = sliderLabel }.testTag("chapterSlider"),
             )
-            // Chapter elapsed and length at the ends, the position in the whole book between them.
+            // Two timestamps: the chapter's elapsed time on the left, the time left on the right – of the chapter or of
+            // the whole book, a tap switches (and is kept). Both follow the thumb while it is dragged.
+            val dragSec = dragging?.let { it * state.chapterDurationSec }
+            val elapsed = dragSec?.let { io.wolftown.lauschig.ui.detail.formatClock(it) } ?: state.chapterElapsedText
+            val ahead = dragSec?.let { it - state.chapterPositionSec } ?: 0.0
+            val book = state.remainingTime == RemainingTime.BOOK
+            val left = ((if (book) state.bookRemainingSec else state.chapterRemainingSec) - ahead).coerceAtLeast(0.0)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val shownElapsed = dragging?.let { io.wolftown.lauschig.ui.detail.formatClock(it * state.chapterDurationSec) } ?: state.chapterElapsedText
-                Text(shownElapsed, style = MaterialTheme.typography.labelLarge.merge(tabular))
-                Text(
-                    stringResource(R.string.player_book_time, state.bookElapsedText, state.bookTotalText),
-                    style = MaterialTheme.typography.bodyMedium.merge(tabular),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).testTag("bookTime"),
+                Text(elapsed, style = MaterialTheme.typography.labelLarge.merge(tabular), modifier = Modifier.testTag("elapsed"))
+                Spacer(Modifier.weight(1f))
+                val description = stringResource(
+                    if (book) R.string.player_remaining_book_description else R.string.player_remaining_chapter_description, spokenDuration(left),
                 )
-                Text(state.chapterTotalText, style = MaterialTheme.typography.labelLarge.merge(tabular))
+                val toggleLabel = stringResource(if (book) R.string.player_remaining_show_chapter else R.string.player_remaining_show_book)
+                Row(
+                    Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggleRemaining)
+                        .semantics { contentDescription = description }
+                        .heightIn(min = 40.dp)
+                        .padding(start = 8.dp)
+                        .testTag("remaining"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(if (book) R.string.player_remaining_book_short else R.string.player_remaining_chapter_short),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                    Text("−" + io.wolftown.lauschig.ui.detail.formatClock(left), style = MaterialTheme.typography.labelLarge.merge(tabular))
+                }
             }
         }
     }

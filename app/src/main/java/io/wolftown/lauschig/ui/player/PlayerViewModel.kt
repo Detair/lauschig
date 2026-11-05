@@ -12,6 +12,9 @@ import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.StreamLoad
 import io.wolftown.lauschig.settings.PlaybackSettings
+import io.wolftown.lauschig.settings.RemainingTime
+import io.wolftown.lauschig.settings.UiSettings
+import kotlinx.coroutines.launch
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import io.wolftown.lauschig.ui.detail.formatClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,9 +52,11 @@ data class PlayerScreenState(
     val chapterPositionSec: Double = 0.0,
     val chapterDurationSec: Double = 0.0,
     val chapterElapsedText: String = "00:00",
-    val chapterTotalText: String = "00:00",
-    val bookElapsedText: String = "00:00",
-    val bookTotalText: String = "00:00",
+    /** Book time left in the current chapter (whole book without chapters) and in the whole book. */
+    val chapterRemainingSec: Double = 0.0,
+    val bookRemainingSec: Double = 0.0,
+    /** What the right timestamp counts down (a setting; a tap toggles it). */
+    val remainingTime: RemainingTime = RemainingTime.CHAPTER,
     val speed: Float = 1f,
     val isStreaming: Boolean = false,
     val isLoading: Boolean = false,
@@ -76,10 +81,12 @@ data class PlayerScreenState(
 class PlayerViewModel(
     private val player: PlayerController,
     metaOf: (itemId: String) -> Flow<PlayerMeta?> = { flowOf(null) },
+    remainingTime: Flow<RemainingTime> = flowOf(RemainingTime.CHAPTER),
+    private val setRemainingTime: suspend (RemainingTime) -> Unit = {},
     chaptersOf: (itemId: String) -> Flow<List<ChapterInfo>>,
 ) : ViewModel() {
 
-    @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao) :
+    @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao, ui: UiSettings) :
         this(
             player,
             metaOf = { itemId ->
@@ -102,6 +109,8 @@ class PlayerViewModel(
                     else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
                 }
             },
+            remainingTime = ui.playerRemainingTime,
+            setRemainingTime = ui::setPlayerRemainingTime,
         )
 
     private val loadedId = player.state.map { it.itemId }.distinctUntilChanged()
@@ -117,7 +126,7 @@ class PlayerViewModel(
         if (id == null) flowOf(null to null) else metaOf(id).map { id to it }.onStart { emit(id to null) }
     }.distinctUntilChanged()
 
-    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, (metaFor, meta) ->
+    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta, remainingTime) { p, chs, (metaFor, meta), remaining ->
         val m = meta.takeIf { metaFor == p.itemId }
         // Without chapter data the whole book acts as one chapter.
         val start = if (p.chapterIndex >= 0) p.chapterStartSec else 0.0
@@ -135,9 +144,9 @@ class PlayerViewModel(
             chapterPositionSec = inChapter,
             chapterDurationSec = length,
             chapterElapsedText = formatClock(inChapter),
-            chapterTotalText = formatClock(length),
-            bookElapsedText = formatClock(p.positionSec),
-            bookTotalText = formatClock(p.durationSec),
+            chapterRemainingSec = length - inChapter,
+            bookRemainingSec = (p.durationSec - p.positionSec).coerceAtLeast(0.0),
+            remainingTime = remaining,
             speed = p.speed,
             isStreaming = p.isStreaming,
             isLoading = p.isLoading,
@@ -183,6 +192,12 @@ class PlayerViewModel(
     }
 
     fun seekToChapter(index: Int) = player.seekToChapter(index)
+
+    /** The right timestamp switches between the chapter's and the book's time left; the choice is kept. */
+    fun toggleRemainingTime() {
+        val next = if (state.value.remainingTime == RemainingTime.CHAPTER) RemainingTime.BOOK else RemainingTime.CHAPTER
+        viewModelScope.launch { setRemainingTime(next) }
+    }
 
     /** Snaps to the 0.05 grid and clamps to 0.5..3.0. */
     fun setSpeed(speed: Float) = player.setSpeed(snapSpeed(speed))
