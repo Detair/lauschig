@@ -18,8 +18,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -70,12 +68,12 @@ class TitleExtrasViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm(): TitleExtrasViewModel {
+    private fun vm(queue: io.wolftown.lauschig.db.dao.QueueDao = db.queueDao()): TitleExtrasViewModel {
         val store = FakeAccountStore()
         store.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
         return viewModels.own(
             TitleExtrasViewModel(
-                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), db.queueDao(),
+                store, db.bookmarkDao(), HistoryRepository(flowOf(null), db.historyDao(), db.sessionDao()), queue,
                 db.itemDao(), db.episodeDao(), player, flowOf(ConnectionState.Offline), sync,
             ),
         )
@@ -110,20 +108,28 @@ class TitleExtrasViewModelTest {
     /** "Play from the queue" picks the title for the automatic clean-up before it leaves the queue (no unprotected gap). */
     @Test fun playFromQueue_picksTheTitle_beforeItLeavesTheQueue() = runBlocking {
         io.wolftown.lauschig.cleanup.TitleHandover.reset()
-        db.queueDao().add(s, "c", 1)
-        var pickedWhenGone: Boolean? = null
-        val subscribed = kotlinx.coroutines.CompletableDeferred<Unit>()
-        val watch = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-            // Subscribed while "c" is still queued: the removal is seen as it happens, not before the observer started.
-            db.queueDao().observe(s).first { rows -> if (rows.any { it.itemKey == "c" }) subscribed.complete(Unit); rows.none { it.itemKey == "c" } }
-            pickedWhenGone = io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c")
+        val real = db.queueDao()
+        real.add(s, "c", 1)
+        // The removal itself records whether the title was picked at that moment.
+        val pickedAtRemoval = mutableListOf<Pair<String, Boolean>>()
+        val recording = object : io.wolftown.lauschig.db.dao.QueueDao() {
+            override fun observe(serverId: String) = real.observe(serverId)
+            override suspend fun entries(serverId: String) = real.entries(serverId)
+            override suspend fun insertAll(rows: List<io.wolftown.lauschig.db.entities.QueueEntity>) = error("not used")
+            override suspend fun clear(serverId: String) = real.clear(serverId)
+            override suspend fun add(serverId: String, itemKey: String, now: Long) = real.add(serverId, itemKey, now)
+            override suspend fun move(serverId: String, itemKey: String, delta: Int) = real.move(serverId, itemKey, delta)
+            override suspend fun replace(serverId: String, keys: List<String>, now: Long) = real.replace(serverId, keys, now)
+            override suspend fun remove(serverId: String, itemKey: String) {
+                pickedAtRemoval += itemKey to io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey(itemKey)
+                real.remove(serverId, itemKey)
+            }
         }
-        kotlinx.coroutines.withTimeout(5_000) { subscribed.await() }
         assertEquals("not picked before the start", false, io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c"))
-        vm().playFromQueue("c")
-        kotlinx.coroutines.withTimeout(5_000) { while (pickedWhenGone == null) kotlinx.coroutines.delay(10) }
-        watch.cancel()
-        assertEquals(true, pickedWhenGone)
+        vm(recording).playFromQueue("c")
+        kotlinx.coroutines.withTimeout(5_000) { while (player.calls.isEmpty()) kotlinx.coroutines.delay(10) }
+        assertEquals(listOf("c" to true), pickedAtRemoval)
+        assertEquals(emptyList<Any>(), real.entries(s))
         assertEquals(listOf("play c null"), player.calls)
         io.wolftown.lauschig.cleanup.TitleHandover.reset()
     }

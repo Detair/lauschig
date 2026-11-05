@@ -77,6 +77,11 @@ class DownloadSettings @Inject constructor(@ApplicationContext context: Context)
         store.edit { it[autoDeleteKey(serverId)] = mode.name }
     }
 
+    /** [serverId]'s data was purged: signed in again, it starts at NEVER like any new account. */
+    suspend fun clearAutoDelete(serverId: String) {
+        store.edit { it.remove(autoDeleteKey(serverId)) }
+    }
+
     /**
      * Before this setting was per account it was one value for the device: that value belongs to the account that is
      * signed in now ([activeServerId]); the others start at NEVER. Idempotent; signed out, the old value is dropped.

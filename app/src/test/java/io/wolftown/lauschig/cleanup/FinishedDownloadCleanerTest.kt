@@ -517,7 +517,7 @@ class FinishedDownloadCleanerTest {
 
     /**
      * A counting title in the queue while another one plays (picked, then loaded): nothing runs every second – over ten
-     * virtual minutes the watcher passes only on the changes and once when the pick ends.
+     * virtual minutes the watcher passes only on the changes. The end of A's pick sets no timer: A is no download.
      */
     @Test fun aQueuedCountingTitle_whileAnotherPlays_costsAHandfulOfPasses_notOnePerSecond() = onVirtualTime { scheduler, virtual, pump ->
         val base = now
@@ -537,6 +537,30 @@ class FinishedDownloadCleanerTest {
         assertTrue("passes over 10 minutes: ${c.passes}", c.passes <= 6)
     }
 
+    /**
+     * A sign-out to no account with "Downloads behalten": the last account's loop and its timer end with it. Its title due
+     * meanwhile stays, and no pass runs for it while nobody is signed in.
+     */
+    @Test fun aSignOutToNoAccount_endsTheLastAccountsTimer_itsKeptDownloadsStay() = onVirtualTime { scheduler, virtual, pump ->
+        val base = now
+        val clock = { base + scheduler.currentTime }
+        runBlocking { settings.setAutoDeleteFinished(s, AutoDeleteMode.AFTER_3_DAYS) }
+        // Due ten minutes after the start: the watcher's timer is set for then.
+        val f = runBlocking { downloaded("soon", completedAt = base - 10 * day, seenAt = base - 3 * day + 10 * 60_000) }
+        val c = cleaner(clock = clock)
+        c.start(virtual)
+        pump(1_500) { false }
+        val before = c.passes
+        assertTrue("the first pass ran: $before", before >= 1)
+        accounts.acc.value = null // signed out, the downloads kept
+        pump(500) { false }
+        scheduler.advanceTimeBy(20 * 60_000) // past the due time
+        pump(1_500) { false }
+        assertTrue("a kept download stays", f.single().isFile)
+        assertNotNull(runBlocking { db.downloadDao().get(s, "soon") })
+        assertEquals("no pass for the signed-out account", before, c.passes)
+    }
+
     /** Family device: the clean-up is each account's own setting – a parent's "Sofort" never touches the child's downloads. */
     @Test fun theModeIsPerAccount_aParentsSofort_neverDeletesTheChildsDownloads() = runBlocking {
         val b = "bbbbbbbbbbbbbbbb"
@@ -547,7 +571,11 @@ class FinishedDownloadCleanerTest {
             val kid = downloaded("kid", completedAt = now - 9 * day, seenAt = null, s = b)
             db.progressDao().replaceFromServer(ProgressEntity(b, "kid", 100.0, 100.0, true, now - 8 * day))
             store.reconcile(b, setOf("kid"), now - 8 * day)
-            // The parent (A, signed in) turns on "Sofort" – for A only.
+            // The parent (A, signed in) has a title that would count for A, and turns on "Sofort" – for A only.
+            store.reconcile(s, emptySet(), now - 10 * day)
+            val parents = downloaded("parents", completedAt = now - 9 * day, seenAt = null)
+            db.progressDao().replaceFromServer(ProgressEntity(s, "parents", 100.0, 100.0, true, now - 8 * day))
+            store.reconcile(s, setOf("parents"), now - 8 * day)
             settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
             assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(b).first())
             // Switch to the child.
@@ -559,6 +587,9 @@ class FinishedDownloadCleanerTest {
             // The child turns it on (after its own question): now only the child's goes.
             settings.setAutoDeleteFinished(b, AutoDeleteMode.IMMEDIATELY)
             withTimeout(10_000) { while (kid.single().exists()) delay(20) }
+            delay(300)
+            assertTrue("the parent's stays while the child is signed in", parents.single().isFile)
+            assertNotNull(db.downloadDao().get(s, "parents"))
         } finally {
             store.forget(s); store.forget(b)
             settings.setAutoDeleteFinished(b, AutoDeleteMode.NEVER)
@@ -587,20 +618,79 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun aCorruptQuestionStore_startsEmpty_andEveryAccountTakesANewBaseline() = runBlocking {
-        val seenStore = DataStoreFinishedSeen(ctx).apply { forget(s) }
+        val b = "bbbbbbbbbbbbbbbb"
+        val seenFile = File(root.parentFile, "seen.preferences_pb")
+        val before = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val stores = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
-            seenStore.reconcile(s, emptySet(), 1) // baseline
-            assertEquals(mapOf("q" to 10L), seenStore.reconcile(s, setOf("q"), 10)) // would count
+            // Both accounts have a title finished since their baseline: it would count.
+            DataStoreFinishedSeen(androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = before, produceFile = { seenFile })).apply {
+                reconcile(s, emptySet(), 1); reconcile(s, setOf("q"), 5)
+                reconcile(b, emptySet(), 1); reconcile(b, setOf("r"), 5)
+            }
+            before.coroutineContext[kotlinx.coroutines.Job]!!.let { it.cancel(); it.join() }
             val file = File(root.parentFile, "questions-corrupt.preferences_pb").apply { writeBytes(byteArrayOf(9, 9, 9, 9, 9, 9)) }
             val questionStore = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(
-                corruptionHandler = FinishedQuestions.corruptionHandler(), scope = CoroutineScope(SupervisorJob() + Dispatchers.IO), produceFile = { file },
+                corruptionHandler = FinishedQuestions.corruptionHandler(), scope = stores, produceFile = { file },
             )
             val questions = FinishedQuestions(questionStore, { true }, {}, { _, _ -> })
             assertEquals("it starts empty instead of failing", emptySet<FinishedQuestion>(), questions.holds.first())
-            // The lost questions' titles may be among the finished ones: nothing finished now counts any more.
-            assertEquals(mapOf("q" to FinishedSeenStore.BEFORE_BASELINE), seenStore.reconcile(s, setOf("q"), 20))
+            val seenStore = DataStoreFinishedSeen(
+                androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = stores, produceFile = { seenFile }),
+                questions::newBaselinesAsked, questions::newBaselinesTaken,
+            )
+            // The lost questions' titles may be among the finished ones: nothing finished now counts, on any account.
+            assertEquals(mapOf("q" to FinishedSeenStore.BEFORE_BASELINE), seenStore.reconcile(s, setOf("q"), 10))
+            assertEquals(mapOf("r" to FinishedSeenStore.BEFORE_BASELINE), seenStore.reconcile(b, setOf("r"), 10))
         } finally {
-            seenStore.forget(s)
+            before.cancel()
+            stores.cancel()
+        }
+    }
+
+    /**
+     * The new baselines a corrupt question store asks for are on disk: a process that dies before its first pass (nobody
+     * signed in, or killed right after the start) leaves the request to the next one. Taken once for every account.
+     */
+    @Test fun aCorruptQuestionStore_itsNewBaselinesSurviveARestartBeforeTheFirstPass() = runBlocking {
+        val b = "bbbbbbbbbbbbbbbb"
+        val seenFile = File(root.parentFile, "seen.preferences_pb")
+        val questionFile = File(root.parentFile, "questions.preferences_pb")
+        val processes = mutableListOf<CoroutineScope>()
+        fun process() = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { processes += it }
+        suspend fun end(p: CoroutineScope) = p.coroutineContext[kotlinx.coroutines.Job]!!.let { it.cancel(); it.join() }
+        fun stores(p: CoroutineScope): Pair<DataStoreFinishedSeen, FinishedQuestions> {
+            val q = FinishedQuestions(
+                androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(corruptionHandler = FinishedQuestions.corruptionHandler(), scope = p, produceFile = { questionFile }),
+                { true }, {}, { _, _ -> },
+            )
+            val store = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(corruptionHandler = FinishedSeenStore.corruptionHandler(), scope = p, produceFile = { seenFile })
+            return DataStoreFinishedSeen(store, q::newBaselinesAsked, q::newBaselinesTaken) to q
+        }
+        try {
+            // Both accounts have a baseline and a title finished since: it would count.
+            val p0 = process()
+            stores(p0).first.apply {
+                reconcile(s, emptySet(), 1); assertEquals(mapOf("q" to 10L), reconcile(s, setOf("q"), 10))
+                reconcile(b, emptySet(), 1); assertEquals(mapOf("r" to 10L), reconcile(b, setOf("r"), 10))
+            }
+            end(p0)
+            questionFile.writeBytes(byteArrayOf(9, 9, 9, 9, 9, 9)) // the open questions are lost
+            // The next start settles the questions (the corrupt file is read and healed) and dies before any pass.
+            val p1 = process()
+            val q1 = stores(p1).second
+            q1.settleLeftovers()
+            assertEquals(emptySet<FinishedQuestion>(), q1.holds.first())
+            end(p1)
+            // The start after that: its first pass takes the new baselines, for every account.
+            val (seen2, q2) = stores(process())
+            assertEquals(mapOf("q" to FinishedSeenStore.BEFORE_BASELINE), seen2.reconcile(s, setOf("q"), 20))
+            assertEquals(mapOf("r" to FinishedSeenStore.BEFORE_BASELINE), seen2.reconcile(b, setOf("r"), 20))
+            // Taken once: what is finished from now on counts again.
+            assertEquals(mapOf("q" to FinishedSeenStore.BEFORE_BASELINE, "n" to 30L), seen2.reconcile(s, setOf("q", "n"), 30))
+            assertFalse(q2.newBaselinesAsked())
+        } finally {
+            processes.forEach { it.cancel() }
         }
     }
 
@@ -613,10 +703,10 @@ class FinishedDownloadCleanerTest {
     }
 
     /**
-     * Family device: switching to another account with the clean-up on deletes nothing it already had finished (a silent
-     * baseline is taken) – only what is finished afterwards. The first account's times are kept for its return.
+     * Family device, both accounts with the clean-up on: switching to another account deletes nothing it already had
+     * finished (a silent baseline is taken) – only what is finished afterwards. The first account's times are kept for its
+     * return.
      */
-    /** Both accounts have the clean-up on: a baseline still protects what an account had finished before it was seen. */
     @Test fun anAccountSwitch_deletesNothingOfTheOtherAccount_onlyWhatIsFinishedAfterwards() = runBlocking {
         val b = "bbbbbbbbbbbbbbbb"
         val store = DataStoreFinishedSeen(ctx).apply { forget(s); forget(b) }

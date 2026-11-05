@@ -90,6 +90,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         }
     }
 
+    /** Drops every entry of [serverId] from [cleanupIgnored] (its data was purged). */
+    suspend fun forgetCleanupIgnored(serverId: String) {
+        store.edit { prefs -> prefs[CLEANUP_IGNORED] = prefs[CLEANUP_IGNORED].orEmpty().filterNot { it.startsWith("$serverId:") }.toSet() }
+    }
+
     private companion object {
         val AUTO_DOWNLOAD = stringPreferencesKey("auto_download_episodes")
         val AUTO_DOWNLOADED = stringSetPreferencesKey("auto_downloaded_episodes")

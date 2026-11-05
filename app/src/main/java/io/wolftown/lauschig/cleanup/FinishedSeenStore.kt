@@ -15,6 +15,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.diagnostics.Log
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,16 +43,6 @@ interface FinishedSeenStore {
         /** Finished before this device took the server's baseline: never counts. */
         const val BEFORE_BASELINE = -1L
 
-        @Volatile private var newBaselines = false
-
-        /**
-         * Every server takes a new baseline at its next reconcile: what is finished then never counts. Asked for when a
-         * store the clean-up relies on was corrupt and had to start empty (the seen times or the open questions).
-         */
-        fun requestNewBaselines() { newBaselines = true }
-
-        internal fun takeNewBaselinesRequest(): Boolean = newBaselines.also { newBaselines = false }
-
         /** A corrupt file starts empty – every server then takes a new baseline (safe: nothing finished goes). */
         fun corruptionHandler() = ReplaceFileCorruptionHandler { e ->
             Log.w("FinishedSeen", "seen times were corrupt; every account takes a new baseline", e)
@@ -60,11 +52,31 @@ interface FinishedSeenStore {
 }
 
 @Singleton
-class DataStoreFinishedSeen(private val store: DataStore<Preferences>) : FinishedSeenStore {
-    @Inject constructor(@ApplicationContext context: Context) : this(context.finishedSeenDataStore)
+class DataStoreFinishedSeen(
+    private val store: DataStore<Preferences>,
+    /**
+     * True while every server is to take a new baseline: a store the clean-up relies on lost what it held (the open
+     * questions, [FinishedQuestions.newBaselinesAsked]). The request is on disk until [newBaselinesTaken].
+     */
+    private val newBaselinesAsked: suspend () -> Boolean = { false },
+    /** Called once the new baselines are on disk. */
+    private val newBaselinesTaken: suspend () -> Unit = {},
+) : FinishedSeenStore {
+    @Inject constructor(@ApplicationContext context: Context, questions: FinishedQuestions) :
+        this(context.finishedSeenDataStore, questions::newBaselinesAsked, questions::newBaselinesTaken)
 
-    override suspend fun reconcile(serverId: String, finished: Set<String>, now: Long): Map<String, Long> {
-        if (FinishedSeenStore.takeNewBaselinesRequest()) store.edit { it.remove(SEEN); it.remove(BASELINES) }
+    /** Tests: the app's store, without the question store. */
+    internal constructor(context: Context) : this(context.finishedSeenDataStore)
+
+    /** One reconcile or forget at a time (the watcher, the daily worker, the preview): none reads what another replaces. */
+    private val lock = Mutex()
+
+    override suspend fun reconcile(serverId: String, finished: Set<String>, now: Long): Map<String, Long> = lock.withLock {
+        // Every server's times go first; the request ends only once that is on disk (a process killed in between asks again).
+        if (newBaselinesAsked()) {
+            store.edit { it.remove(SEEN); it.remove(BASELINES) }
+            newBaselinesTaken()
+        }
         val data = store.data.first()
         val all = data[SEEN].orEmpty()
         val mine = all.filter { it.startsWith("$serverId|") }.toSet()
@@ -79,14 +91,15 @@ class DataStoreFinishedSeen(private val store: DataStore<Preferences>) : Finishe
                 it[BASELINES] = it[BASELINES].orEmpty() + serverId
             }
         }
-        return next
+        next
     }
 
-    override suspend fun forget(serverId: String) {
+    override suspend fun forget(serverId: String) = lock.withLock {
         store.edit {
             it[SEEN] = it[SEEN].orEmpty().filterNot { e -> e.startsWith("$serverId|") }.toSet()
             it[BASELINES] = it[BASELINES].orEmpty() - serverId
         }
+        Unit
     }
 
     /** `serverId|key|millis`; keys never contain `|` (ABS ids, episode keys `item~episode`). */

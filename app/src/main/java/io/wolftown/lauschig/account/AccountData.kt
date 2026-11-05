@@ -6,6 +6,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.bookmarks.BookmarkRules
+import io.wolftown.lauschig.cleanup.AutoDeleteAccountState
 import io.wolftown.lauschig.cleanup.FinishedSeenStore
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.AccountDataDao
@@ -77,10 +78,16 @@ class DeviceAccountData(
     private val volumePurges: VolumePurges = VolumePurges.None,
     /** The automatic clean-up's "first seen finished" times of the server ([FinishedSeenStore.forget]). */
     private val forgetSeen: suspend (serverId: String) -> Unit = {},
+    /** The automatic clean-up's setting, open questions and keep entries of the server ([AutoDeleteAccountState.forget]). */
+    private val forgetAutoDelete: suspend (serverId: String) -> Unit = {},
 ) : AccountData {
     @Inject constructor(
         db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore, volumePurges: DataStoreVolumePurges, seen: FinishedSeenStore,
-    ) : this(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges, seen::forget)
+        autoDelete: AutoDeleteAccountState,
+    ) : this(
+        db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges,
+        seen::forget, autoDelete::forget,
+    )
 
     override suspend fun unsynced(serverId: String): Int {
         if (DeviceLibrary.isLocal(serverId)) return 0
@@ -96,7 +103,8 @@ class DeviceAccountData(
 
     /**
      * The sync stamps first (a kill afterwards costs at most an extra fetch, never a stamp that hides missing rows),
-     * then the rows (nothing then points at the files), then the files and caches. Downloads on a card that is out are
+     * then the automatic clean-up's setting, questions and keep entries (a purge cut short leaves the clean-up off), then
+     * the rows (nothing then points at the files), then the files and caches. Downloads on a card that is out are
      * noted first (the rows say where they are): the purge fails until the card was back and they are gone, so the
      * caller keeps it pending and the janitor finishes it.
      */
@@ -105,6 +113,7 @@ class DeviceAccountData(
         val away = withContext(io) { files.missingRoots(serverId) }
         volumePurges.add(serverId, away)
         stamps.removeServer(serverId)
+        forgetAutoDelete(serverId)
         dao.deleteServer(serverId)
         forgetSeen(serverId)
         withContext(io) {

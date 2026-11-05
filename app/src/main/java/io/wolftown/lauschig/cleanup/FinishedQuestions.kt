@@ -4,8 +4,9 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.preferencesOf
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
@@ -156,21 +157,40 @@ class FinishedQuestions(
         }
     }
 
+    /** [serverId]'s data was purged: its questions go – on disk, held in memory and shown (nothing of it is left). */
+    suspend fun forget(serverId: String) {
+        store.edit { p -> p[PENDING] = p[PENDING].orEmpty().filterNot { decode(it)?.serverId == serverId }.toSet() }
+        memory.update { held -> held.filterNot { it.serverId == serverId }.toSet() }
+        _open.update { shown -> shown.filterNot { it.serverId == serverId } }
+        titles.keys.removeAll { it.serverId == serverId }
+    }
+
+    /**
+     * True after this store was corrupt and lost its questions, until every account took a new baseline
+     * ([DataStoreFinishedSeen]); on disk, so a process that dies before its first pass leaves it to the next one.
+     */
+    suspend fun newBaselinesAsked(): Boolean = store.data.first()[NEW_BASELINES] == true
+
+    /** The new baselines are on disk: the request ends. */
+    suspend fun newBaselinesTaken() {
+        store.edit { it.remove(NEW_BASELINES) }
+    }
+
     private fun encode(q: FinishedQuestion) = "${q.serverId}|${q.key}"
     private fun decode(e: String): FinishedQuestion? = e.split('|').takeIf { it.size == 2 }?.let { FinishedQuestion(it[0], it[1]) }
 
     companion object {
         private const val TAG = "FinishedQuestions"
         private val PENDING = stringSetPreferencesKey("pending")
+        private val NEW_BASELINES = booleanPreferencesKey("new_baselines")
 
         /**
-         * A corrupt file starts empty. The open questions it held are lost, so every account takes a new baseline
-         * ([FinishedSeenStore.requestNewBaselines]): what is finished now – those titles included – never goes.
+         * A corrupt file starts without questions. Those it held are lost, so it asks every account for a new baseline
+         * ([newBaselinesAsked]; written with the healed file): what is finished now – those titles included – never goes.
          */
         fun corruptionHandler() = ReplaceFileCorruptionHandler { e ->
             Log.w(TAG, "open questions were corrupt; every account takes a new baseline", e)
-            FinishedSeenStore.requestNewBaselines()
-            emptyPreferences()
+            preferencesOf(NEW_BASELINES to true)
         }
     }
 }

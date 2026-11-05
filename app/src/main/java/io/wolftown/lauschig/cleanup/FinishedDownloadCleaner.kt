@@ -36,7 +36,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flatMapLatest
@@ -110,8 +109,9 @@ data class AutoDeletePreview(val count: Int, val bytes: Long)
  * Deletes finished downloads of the signed-in account by [AutoDeleteRules] through [DownloadManager.cancel] (files and
  * the download row; progress, sessions and bookmarks stay). In the app it watches the finished downloads, the setting,
  * the kept list, the player's title and the queue, and acts right away ("Sofort") or when the next one falls due; a title
- * the player holds is looked at again a minute later (the last played title has no change signal). While the app is not
- * running [FinishedDownloadsWorker] runs it once a day with the same guards. It always notes when titles become finished
+ * held only by a pick or by the grace after it left the player is looked at again when that ends (the last played title,
+ * which has no change signal, at the next change). Signed out, nothing runs. While the app is not running
+ * [FinishedDownloadsWorker] runs it once a day with the same guards. It always notes when titles become finished
  * ([FinishedSeenStore]), also with "Nie", so turning it on later judges re-downloads right.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -197,14 +197,16 @@ class FinishedDownloadCleaner(
     /**
      * Watches as long as [scope] lives. Passes run on changes only – the finished downloads, the setting, the kept list,
      * the player's title, the queue, the questions, the hand-over – plus one timer: the next due time or the end of a
-     * pick or grace that holds a title which would count. An error is logged once per streak and the pass is tried again.
+     * pick or grace that holds a title which would count. A sign-out ends the loop and its timer. An error is logged once
+     * per streak and the pass is tried again.
      */
     fun start(scope: CoroutineScope) {
         scope.launch {
             val departures = Departures(graceMs)
             val failing = java.util.concurrent.atomic.AtomicBoolean(false)
             accounts.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
-                if (sid == null) emptyFlow()
+                // Signed out: a null still reaches collectLatest, which ends the last account's loop and its timer.
+                if (sid == null) flowOf<Watch?>(null)
                 else combine(
                     downloads.observeFinishedComplete(sid).distinctUntilChanged(),
                     finishedKeys(sid).map { it.toSet() }.distinctUntilChanged(),
@@ -221,8 +223,9 @@ class FinishedDownloadCleaner(
                     }
             }
                 // Every change of what the player holds is noted, also one the pass below never sees (it is restarted).
-                .onEach { w -> clock().let { now -> departures.note(w.hold.keys(now, pickMs), now) } }
+                .onEach { w -> if (w != null) clock().let { now -> departures.note(w.hold.keys(now, pickMs), now) } }
                 .collectLatest { w ->
+                    if (w == null) return@collectLatest // nobody signed in: no pass, no timer
                     while (true) {
                         val next = try {
                             pass(w.serverId, w.rows, w.finished, w.mode, w.kept, w.hold, departures).nextCheck.also { failing.set(false) }

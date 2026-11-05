@@ -82,7 +82,7 @@ data class SettingsUiState(
 
 /** [count] downloads of [bytes] of the account [serverId] would go if [mode] were switched on there. */
 @Immutable
-data class AutoDeleteConfirm(val mode: AutoDeleteMode, val count: Int, val bytes: Long, val serverId: String = "")
+data class AutoDeleteConfirm(val mode: AutoDeleteMode, val count: Int, val bytes: Long, val serverId: String)
 
 @Immutable
 data class PlaybackPrefs(

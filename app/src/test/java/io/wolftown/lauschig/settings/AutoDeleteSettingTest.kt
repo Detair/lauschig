@@ -36,7 +36,7 @@ class AutoDeleteSettingTest {
     @Test fun turningItOn_withHeardDownloads_asksFirst_withCountAndSize() {
         var confirmed = 0
         var cancelled = 0
-        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.IMMEDIATELY, 3, 1_200_000_000)), onConfirm = { confirmed++ }, onCancel = { cancelled++ })
+        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.IMMEDIATELY, 3, 1_200_000_000, "aaaaaaaaaaaaaaaa")), onConfirm = { confirmed++ }, onCancel = { cancelled++ })
         rule.onNodeWithTag("autoDeleteConfirmText").assertTextEquals("3 heard downloads (1.2\u00A0GB) will be deleted right away.")
         rule.onNodeWithText("To keep a title, mark it “Keep” under “Clean up” first.").assertExists()
         rule.onNodeWithTag("autoDeleteCancel").performClick()
@@ -46,7 +46,7 @@ class AutoDeleteSettingTest {
     }
 
     @Test fun theQuestion_forADelay_saysWhen() {
-        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.AFTER_7_DAYS, 1, 50_000_000)))
+        show(SettingsUiState(autoDeleteConfirm = AutoDeleteConfirm(AutoDeleteMode.AFTER_7_DAYS, 1, 50_000_000, "aaaaaaaaaaaaaaaa")))
         rule.onNodeWithTag("autoDeleteConfirmText").assertTextEquals("1 heard download (50\u00A0MB) will be deleted, 7 days after it was heard.")
     }
 

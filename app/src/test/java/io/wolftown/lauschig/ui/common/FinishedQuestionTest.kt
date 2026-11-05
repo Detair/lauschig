@@ -267,6 +267,7 @@ class FinishedQuestionTest {
             db.episodeDao().upsert(listOf(io.wolftown.lauschig.db.entities.EpisodeEntity(s, "pod", "ep7", "Folge 7: Ein sehr langer Titel, der in einer Zeile keinen Platz hat und darum abgeschnitten oder umbrochen wird")))
             db.downloadDao().upsert(DownloadEntity(s, "pod~ep7", DownloadState.COMPLETE, 1))
             vm.markFinished("b1")
+            withTimeout(5_000) { questions.open.first { it.size == 1 } } // the order of two parallel starts is not fixed
             vm.markFinished("pod~ep7")
             withTimeout(5_000) { questions.open.first { it.size == 2 } }
         }
