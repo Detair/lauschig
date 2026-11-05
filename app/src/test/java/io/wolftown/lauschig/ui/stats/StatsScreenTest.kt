@@ -32,6 +32,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.performScrollToNode
 import io.wolftown.lauschig.stats.Achievement
 import io.wolftown.lauschig.stats.AchievementState
@@ -306,6 +311,70 @@ class StatsScreenTest {
         rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
         rule.onNodeWithTag("chartBar:0").assertContentDescriptionEquals("Montag, 2. November: 40 Min.").performClick()
         rule.onNodeWithTag("barTooltip").assertTextEquals("40 Min.", "Montag, 2. November")
+    }
+
+    private val november = listened.copy(
+        period = StatsPeriod.MONTH,
+        summary = PeriodSummary(
+            PeriodRange(StatsPeriod.MONTH, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 12, 1)), 3000.0, 2, BarUnit.DAY,
+            List(30) { Bar(LocalDate.of(2026, 11, it + 1), if (it == 2) 2400.0 else if (it == 3) 600.0 else 0.0, it == 3) },
+            emptyList(), emptyList(), emptyList(),
+        ),
+    )
+
+    @Test fun draggingAcrossTheChart_selectsTheBarUnderTheFinger() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("chartArea").performTouchInput {
+            val slot = width / 7f
+            swipe(Offset(slot * 0.5f, height * 0.8f), Offset(slot * 4.5f, height * 0.8f), durationMillis = 400)
+        }
+        rule.onNodeWithTag("chartBar:4").assertIsSelected()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("0 min", "Friday, November 6")
+        // Back again while dragging: it follows the finger, nothing toggles off.
+        rule.onNodeWithTag("chartArea").performTouchInput {
+            val slot = width / 7f
+            swipe(Offset(slot * 4.5f, height * 0.8f), Offset(slot * 2.4f, height * 0.8f), durationMillis = 400)
+        }
+        rule.onNodeWithTag("chartBar:2").assertIsSelected()
+        rule.onNodeWithTag("chartBar:4").assertIsNotSelected()
+    }
+
+    @Test fun aMonthsThinBars_aTapSelectsTheBarOfItsSlot_aDragScrubs() {
+        rule.setContent { LauschigTheme { StatsScreen(november, onBack = {}) } }
+        // Near the slot's edge and low in the chart, nowhere near the (empty) bar itself.
+        rule.onNodeWithTag("chartArea").performTouchInput { click(Offset(width / 30f * 10.9f, height - 4f)) }
+        rule.onNodeWithTag("chartBar:10").assertIsSelected()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("0 min", "Wednesday, November 11")
+        rule.onNodeWithTag("chartArea").performTouchInput {
+            val slot = width / 30f
+            swipe(Offset(slot * 10.5f, height * 0.9f), Offset(slot * 3.5f, height * 0.9f), durationMillis = 500)
+        }
+        rule.onNodeWithTag("chartBar:3").assertIsSelected()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("10 min", "Wednesday, November 4 (today)")
+    }
+
+    @Test fun tappingTheTooltipOrItsBand_clearsTheSelection() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("chartBar:0").performClick().assertIsSelected()
+        rule.onNodeWithTag("barTooltip").performClick()
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+        rule.onNodeWithTag("chartBar:0").assertIsNotSelected()
+        // The band above the bars beside the tooltip, too.
+        rule.onNodeWithTag("chartBar:0").performClick().assertIsSelected()
+        rule.onNodeWithTag("chartArea").performTouchInput { click(Offset(width - 4f, 4f)) }
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+        rule.onNodeWithTag("chartBar:6").assertIsNotSelected()
+    }
+
+    @Test fun theBars_areTabsOfOneGroup_TalkBackSelectsWithItsOwnAction() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("chartBar:2").assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+        rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup) and hasAnyAncestor(hasTestTag("statsChart"))).assertExists()
+        rule.onNodeWithTag("chartBar:2").performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithTag("chartBar:2").assertIsSelected()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("30 s", "Wednesday, November 4 (today)")
+        rule.onNodeWithTag("chartBar:2").performSemanticsAction(SemanticsActions.OnClick)
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
     }
 
     @Test fun aChartWithoutTips_staysOneQuietNode() {

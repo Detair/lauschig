@@ -719,7 +719,7 @@
         <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
         <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
         <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
-        <item>Statistik: Antippen eines Balkens zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
+        <item>Statistik: Balken antippen oder darüberwischen zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>

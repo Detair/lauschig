@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,12 +37,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
@@ -76,9 +85,10 @@ data class BarTip(val title: String, val value: String)
  * their bars.
  *
  * Without [tips] the chart is one quiet node whose [description] lists the values (the drawing and the labels are
- * hidden behind it). With [tips] (one per bar) a tap on a bar marks its column and shows a small tooltip above it with
- * its date and time – in a band kept free above the bars, so it never covers one – a second tap hides it; for a screen
- * reader the [description] comes first, then every bar is its own node that says its tip (exploring by touch reads
+ * hidden behind it). With [tips] (one per bar) a tap anywhere in a bar's slot marks its column and shows a small
+ * tooltip above it with its date and time – in a band kept free above the bars, so it never covers one; dragging
+ * across the chart scrubs from bar to bar; tapping the selected bar again or the band clears it. For a screen reader
+ * the [description] comes first, then every bar is its own tab-like node that says its tip (exploring by touch reads
  * the bar under the finger) and can be selected like a tap; the summary sits on the labels' strip, since Compose hides
  * nodes that others cover from screen readers. [height] is the bars' height; the band comes on top of it.
  */
@@ -109,9 +119,39 @@ fun BarChart(
     // Room for the tooltip above the bars: its two lines (they grow with the text size – each converted on its own, as
     // the text is: large sizes scale less on Android 14+), its padding and a gap.
     val band = if (interactive) with(LocalDensity.current) { TOOLTIP_LINE_1.toDp() + TOOLTIP_LINE_2.toDp() + TOOLTIP_PADDING * 2 + TOOLTIP_GAP } else 0.dp
-    val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    // The accent, faint: visible over an empty slot and on pure black alike.
+    val highlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val count = values.size
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val bandPx = with(LocalDensity.current) { band.toPx() }
+    val shownNow by rememberUpdatedState(selected)
+    // Touch: a tap selects the bar of its slot wherever in the chart (thin month bars are no lottery), the selected one
+    // again or the tooltip's band clears; a horizontal drag scrubs, the bar under the finger follows. Screen readers use
+    // the bars' own nodes below instead.
+    val touch = if (interactive) {
+        Modifier
+            .testTag("chartArea")
+            .pointerInput(count, rtl, bandPx) {
+                detectTapGestures { at ->
+                    val i = slotAt(at.x, count, size.width, rtl)
+                    selection = when (shownNow) {
+                        null -> i
+                        i -> null
+                        else -> if (at.y < bandPx) null else i
+                    }
+                }
+            }
+            .pointerInput(count, rtl) {
+                detectHorizontalDragGestures(onDragStart = { at -> selection = slotAt(at.x, count, size.width, rtl) }) { change, _ ->
+                    change.consume()
+                    selection = slotAt(change.position.x, count, size.width, rtl)
+                }
+            }
+    } else {
+        Modifier
+    }
     Column(modifier.then(semantics)) {
-        Box(Modifier.fillMaxWidth().height(height + band)) {
+        Box(Modifier.fillMaxWidth().height(height + band).then(touch)) {
             Canvas(Modifier.matchParentSize()) {
                 val n = values.size
                 if (n == 0) return@Canvas
@@ -149,17 +189,21 @@ fun BarChart(
             }
             if (barTips != null) {
                 val spoken = barTips.map { stringResource(R.string.stats_bar_tip, it.title, it.value) }
-                // One slot per bar over the whole height (thin bars stay easy to hit); a Row mirrors itself in RTL like the bars.
-                Row(Modifier.matchParentSize()) {
+                // For screen readers: one node per bar (its slot over the whole height, so exploring by touch finds it), tabs
+                // of one group, each selected like a tap. Touches pass through them to the chart's gestures above. A Row
+                // mirrors itself in RTL like the bars.
+                Row(Modifier.matchParentSize().selectableGroup()) {
                     values.indices.forEach { i ->
                         Box(
                             Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .selectable(selected = selected == i, interactionSource = null, indication = null) {
-                                    selection = if (selected == i) null else i
+                                .semantics {
+                                    contentDescription = spoken[i]
+                                    role = Role.Tab
+                                    this.selected = selected == i
+                                    onClick { selection = if (shownNow == i) null else i; true }
                                 }
-                                .semantics { contentDescription = spoken[i] }
                                 .testTag("chartBar:$i"),
                         )
                     }
@@ -271,6 +315,12 @@ private const val TOOLTIP_MS = 180
 
 /** Where the bars stand in a chart [height] px high: above the baseline and the room for the current bar's dot. */
 private fun Density.barFloor(height: Float): Float = height - 1.dp.toPx() - MARKER_SPACE.toPx()
+
+/** The bar whose slot holds [x] (px) among [n] in a chart [width] wide, mirrored right to left. */
+internal fun slotAt(x: Float, n: Int, width: Int, rtl: Boolean): Int {
+    val i = (x / width * n).toInt().coerceIn(0, n - 1)
+    return if (rtl) n - 1 - i else i
+}
 
 /** Bar [i]'s centre (px) among [n] in a chart [width] wide, mirrored right to left. */
 internal fun barCenterX(i: Int, n: Int, width: Float, rtl: Boolean): Float {
