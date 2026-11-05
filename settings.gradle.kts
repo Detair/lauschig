@@ -24,4 +24,5 @@ rootProject.name = "lauschig"
 
 include(":app")
 include(":abs-api")
+include(":core:model")
 include(":baselineprofile")

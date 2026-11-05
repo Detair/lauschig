@@ -160,6 +160,7 @@ room {
 
 dependencies {
     implementation(project(":abs-api"))
+    implementation(project(":core:model"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
