@@ -34,7 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
-private class FakeFacade : PlayerFacade {
+internal class FakeFacade : PlayerFacade {
     var items: List<MediaItem> = emptyList()
     var snap = PlayerSnapshot(false, 0, 0, 1f)
     var started: Pair<Int, Long>? = null
@@ -369,6 +369,7 @@ class PlayerControllerTest {
         clock: () -> Long = { 0 },
         onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
         seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
+        isSignedIn: suspend (String) -> Boolean = { true },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -386,7 +387,29 @@ class PlayerControllerTest {
         clock = clock,
         onlineBase = onlineBase,
         seekSteps = seekSteps,
+        isSignedIn = isSignedIn,
     )
+
+    /** A page that outlived a switch: A's title would stream with B's token and write under A. */
+    @Test fun play_aTitleOfAnotherAccountThanTheSignedInOne_doesNotStart() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, isSignedIn = { false })
+        c.play(s, "it")
+        assertEquals(0, f.setCalls)
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    @Test fun play_aDeviceTitle_startsWhoeverIsSignedIn() = runTest {
+        val f = FakeFacade()
+        val local = "${io.wolftown.lauschig.local.DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+        val row = ItemWithDetails(
+            ItemEntity(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local, "lib", "Vom Gerät", durationSec = 600.0),
+            emptyList(), listOf(AudioFileEntity(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local, 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null,
+        )
+        val c = controller(f, { row }, isSignedIn = { false })
+        c.play(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local)
+        assertEquals(local, c.state.value.itemId)
+    }
 
     @Test fun seekSteps_followTheSettings_andSurviveAStart() = runTest {
         val steps = MutableStateFlow(10 to 45)

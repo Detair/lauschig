@@ -13,17 +13,24 @@ import javax.inject.Inject
 /**
  * Sign-out or another server: the widget forgets the old account's title (a device title stays). Runs for the app's
  * lifetime from [io.wolftown.lauschig.LauschigApp]; the widget also hides a foreign title on its own (see
- * [WidgetMapping.forDisplay]), this clears the store so it does not come back.
+ * [WidgetMapping.forDisplay]), this clears the store so it does not come back. Another account also redraws the widget
+ * when nothing was stored: what it shows without a stored title is that account's last title ([WidgetSource]).
  */
-class WidgetAccountWatcher @Inject constructor(
-    @ApplicationContext private val context: Context,
+class WidgetAccountWatcher(
     private val accounts: AccountStore,
     private val store: WidgetStore,
+    private val update: suspend () -> Unit,
 ) {
+    @Inject constructor(@ApplicationContext context: Context, accounts: AccountStore, store: WidgetStore) :
+        this(accounts, store, { LauschigWidget().updateAll(context) })
+
     suspend fun run() {
+        var started = false
         accounts.account.map { it?.serverId }.distinctUntilChanged().collect { sid ->
+            val changed = started
+            started = true
             try {
-                if (clearIfForeign(store, sid)) LauschigWidget().updateAll(context)
+                if (clearIfForeign(store, sid) || changed) update()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

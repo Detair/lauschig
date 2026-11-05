@@ -185,6 +185,16 @@ class DiagnosticLogTest {
         assertTrue(DiagnosticLog.entries().single().endsWith("I/Home: <private> is on <private>"))
     }
 
+    /** Phase 7, 1.7: a profile set aside stays masked, like a kept account. */
+    @Test fun ownValues_ofASavedProfile_too() {
+        val saved = Account(
+            "bbbbbbbbbbbbbbbb", "uid2", "matthias", false,
+            ServerAddresses("http://192.168.178.99:13378/".toHttpUrl(), "https://abs.familie.example/".toHttpUrl(), setOf("Heimnetz")), emptySet(),
+        )
+        val literals = DiagnosticSecrets.literals(null, emptyList(), null, listOf(saved))
+        assertEquals(setOf("192.168.178.99", "abs.familie.example", "familie.example", "matthias", "Heimnetz"), literals)
+    }
+
     @Test fun preview_isTheHeadAndTheNewestEntries() {
         val text = DiagnosticReport.render(facts, (1..100).map { "2026-11-05 10:00:00.000 I/T: entry $it" })
         val preview = DiagnosticsViewModel.previewOf(text)

@@ -94,7 +94,7 @@ class ServerLogoutTest {
     private val ok get() = MockResponse().setHeader("Content-Type", "application/json").setBody("""{"redirect_url":null}""")
 
     private fun profileLogout(state: ConnectionState, timeoutMs: Long = 5_000, resolve: suspend (ServerAddresses) -> ConnectionState) =
-        ServerLogout({ state }, OkHttpClient(), timeoutMs, resolve)
+        ServerLogout({ state }, OkHttpClient(), timeoutMs, resolve, { OkHttpClient() })
 
     @Test fun aProfileOnAnotherServer_isLoggedOutThere_overItsOwnAddresses() = runBlocking {
         val current = MockWebServer().also { it.start() }
@@ -110,6 +110,19 @@ class ServerLogoutTest {
             assertEquals("not to the signed-in account's server", 0, current.requestCount)
         } finally {
             current.shutdown()
+        }
+    }
+
+    /** Its redirect does not take the refresh token elsewhere either: same rule as a sign-out. */
+    @Test fun aProfile_aRedirectToAnotherHost_isNotFollowed() = runBlocking {
+        val elsewhere = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", elsewhere.url("/logout").toString()))
+            val own = server.url("/")
+            assertFalse(profileLogout(ConnectionState.Online(own, ConnectionState.Via.LOCAL)) { error("not asked") }.logoutProfile(account(own), "refresh-2"))
+            assertEquals(0, elsewhere.requestCount)
+        } finally {
+            elsewhere.shutdown()
         }
     }
 

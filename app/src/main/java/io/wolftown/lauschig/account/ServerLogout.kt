@@ -25,11 +25,15 @@ class ServerLogout(
     private val timeoutMs: Long = TIMEOUT_MS,
     /** Which of these addresses answers now; for a saved profile, whose server need not be the connection's. */
     private val resolve: suspend (ServerAddresses) -> ConnectionState = { ConnectionState.Offline },
+    /** The client for a saved profile: the server it talks to was confirmed for that profile, not for the signed-in account. */
+    private val profileClient: (Account) -> OkHttpClient = { client },
 ) {
     @Inject constructor(api: ApiProvider, resolver: AddressResolver) :
-        this({ api.connectionState.value }, api.unauthenticatedClient(), resolve = resolver::resolveElsewhere)
+        this({ api.connectionState.value }, api.unauthenticatedClient(), resolve = resolver::resolveElsewhere, profileClient = api::unauthenticatedClient)
 
-    private val client = client.newBuilder()
+    private val client = client.forLogout()
+
+    private fun OkHttpClient.forLogout() = newBuilder()
         .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
         .followRedirects(false)
         .followSslRedirects(false)
@@ -39,7 +43,7 @@ class ServerLogout(
     suspend fun logout(account: Account, refreshToken: String): Boolean {
         val online = connection() as? ConnectionState.Online ?: return false
         if (!online.belongsTo(account.addresses)) return false
-        return bounded { post(online, refreshToken) }
+        return bounded { post(client, online, refreshToken) }
     }
 
     /**
@@ -51,10 +55,10 @@ class ServerLogout(
         val online = (connection() as? ConnectionState.Online)?.takeIf { it.belongsTo(account.addresses) }
             ?: resolve(account.addresses) as? ConnectionState.Online
             ?: return@bounded false
-        post(online, refreshToken)
+        post(profileClient(account).forLogout(), online, refreshToken)
     }
 
-    private suspend fun post(online: ConnectionState.Online, refreshToken: String): Boolean {
+    private suspend fun post(client: OkHttpClient, online: ConnectionState.Online, refreshToken: String): Boolean {
         AbsClientFactory.retrofit(online.baseUrl, client).create(AuthApi::class.java).logout(refreshToken)
         return true
     }

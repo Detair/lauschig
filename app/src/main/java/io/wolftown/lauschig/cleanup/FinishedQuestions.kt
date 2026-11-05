@@ -203,7 +203,10 @@ class FinishedQuestionViewModel @Inject constructor(
     settings: DownloadSettings,
     accounts: AccountStore,
 ) : ViewModel() {
-    val question: StateFlow<List<FinishedQuestion>> = questions.open
+    /** The open questions of the signed-in account: they answer for its downloads. Another account's waits for its return. */
+    val question: StateFlow<List<FinishedQuestion>> =
+        combine(questions.open, accounts.account.map { it?.serverId }.distinctUntilChanged()) { open, sid -> open.filter { it.serverId == sid } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun titleOf(q: FinishedQuestion): String? = questions.titleOf(q)
 

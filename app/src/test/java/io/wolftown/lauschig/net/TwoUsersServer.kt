@@ -1,16 +1,18 @@
 package io.wolftown.lauschig.net
 
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.accountConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -25,7 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * in "a-lib", "b-lib"): what a request gets shows whose token it carried, and [seen] keeps the token of every request.
  */
 class TwoUsersServer {
-    data class Seen(val method: String, val path: String, val auth: String?)
+    data class Seen(val method: String, val path: String, val auth: String?, val body: String = "", val refreshToken: String? = null)
 
     val server = MockWebServer().also { it.start() }
     val seen = CopyOnWriteArrayList<Seen>()
@@ -51,15 +53,17 @@ class TwoUsersServer {
     }
 
     /**
-     * The provider as the app builds it: every server starts with a reset, then its own probe answers. Unconfined: a switch
-     * in the store has reached the connection state when it returns, so a test never catches the moment in between.
+     * The provider as the app builds it: every server starts with a reset, then its own probe answers ([reachable]: the
+     * device is online). Unconfined: a switch in the store has reached the connection state when it returns, so a test
+     * never catches the moment in between.
      */
-    fun api(store: FakeAccountStore, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)) = ApiProvider(
+    fun api(
+        store: AccountStore,
+        reachable: StateFlow<Boolean> = MutableStateFlow(true),
+        scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+    ) = ApiProvider(
         accountConnection(store.account) { addresses ->
-            flow {
-                emit(ConnectionState.Online(addresses.local!!, ConnectionState.Via.LOCAL))
-                awaitCancellation()
-            }
+            reachable.map { up -> if (up) ConnectionState.Online(addresses.local!!, ConnectionState.Via.LOCAL) else ConnectionState.Offline }
         },
         OkHttpClient(), store, scope,
     )
@@ -82,7 +86,7 @@ class TwoUsersServer {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty()
                 val auth = request.getHeader("Authorization")
-                seen += Seen(request.method.orEmpty(), path, auth)
+                seen += Seen(request.method.orEmpty(), path, auth, request.body.clone().readUtf8(), request.getHeader("x-refresh-token"))
                 onRequest(request)
                 if (path == "/ping") return json("""{"success":true}""")
                 if (path == "/logout") return json("""{"redirect_url":null}""")
@@ -91,20 +95,30 @@ class TwoUsersServer {
                     "Bearer $TOKEN_B" -> "b"
                     else -> return MockResponse().setResponseCode(401)
                 }
-                return answer(request.method.orEmpty(), path.substringBefore('?'), who)
+                return answer(request.method.orEmpty(), path.substringBefore('?'), who, seen.last().body)
             }
         }
     }
 
-    private fun answer(method: String, path: String, who: String): MockResponse = when {
+    /** What each user created (the server's list then has them too). */
+    private val bookmarks = java.util.concurrent.ConcurrentHashMap<String, MutableList<String>>()
+
+    private fun answer(method: String, path: String, who: String, body: String): MockResponse = when {
         path == "/api/me" -> json(
             """{"id":"u-$who","username":"$who","type":"user","bookmarks":[],"mediaProgress":[
                 {"libraryItemId":"$who-book","currentTime":$position,"duration":100,"progress":0.1,"isFinished":false,"lastUpdate":1000}]}""",
         )
         method == "PATCH" && path.startsWith("/api/me/progress/") -> json("{}")
         path == "/api/session/local-all" -> json("""{"results":[]}""")
-        path == "/api/me/bookmarks" -> json("""{"bookmarks":[{"libraryItemId":"$who-book","time":5,"title":"$who"}]}""")
-        method == "POST" && path.endsWith("/bookmark") -> json("""{"libraryItemId":"$who-book","time":5,"title":"$who"}""")
+        path == "/api/me/bookmarks" -> json(
+            """{"bookmarks":[{"libraryItemId":"$who-book","time":5,"title":"$who"}${bookmarks[who].orEmpty().joinToString("") { ",$it" }}]}""",
+        )
+        method == "POST" && path.endsWith("/bookmark") -> {
+            val time = Regex("\"time\":([0-9.]+)").find(body)!!.groupValues[1]
+            val created = """{"libraryItemId":"${path.split('/')[4]}","time":$time,"title":"$who"}"""
+            bookmarks.getOrPut(who) { CopyOnWriteArrayList() } += created
+            json(created)
+        }
         path == "/api/libraries" -> json("""{"libraries":[{"id":"$who-lib","name":"$who","mediaType":"book"}]}""")
         path.endsWith("/items") -> json("""{"results":[${item(who)}],"total":1,"limit":200,"page":0}""")
         path.endsWith("/collections") -> json("""{"results":[{"id":"$who-col","name":"$who","libraryId":"$who-lib","books":[{"id":"$who-book"}],"lastUpdate":1}],"total":1}""")

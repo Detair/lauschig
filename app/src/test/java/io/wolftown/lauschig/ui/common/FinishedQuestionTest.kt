@@ -316,4 +316,19 @@ class FinishedQuestionTest {
         assertFalse("not finished without a stored question", finished())
         assertTrue(q2.holds.first().isEmpty())
     }
+
+    /** Phase 7, 1.7: the question names a title of A and answers for A's download: B never gets it, A gets it back. */
+    @Test fun aQuestion_isOnlyEverPutToItsAccount_andWaitsForItsReturn() = runBlocking {
+        val other = Account("bbbbbbbbbbbbbbbb", "u2", "m", false, ServerAddresses(null, null), emptySet())
+        val me = accounts.acc.value!!
+        val model = io.wolftown.lauschig.cleanup.FinishedQuestionViewModel(questions, settings, accounts)
+        val q = FinishedQuestion(s, "book")
+        questions.ask(q, "Titel")
+        suspend fun next(wanted: List<FinishedQuestion>) = kotlinx.coroutines.withTimeout(5_000) { model.question.first { it == wanted } }
+        assertEquals(listOf(q), next(listOf(q)))
+        accounts.acc.value = other
+        assertEquals(emptyList<FinishedQuestion>(), next(emptyList()))
+        accounts.acc.value = me
+        assertEquals(listOf(q), next(listOf(q)))
+    }
 }

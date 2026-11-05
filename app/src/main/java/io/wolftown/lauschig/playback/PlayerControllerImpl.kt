@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
@@ -79,6 +80,8 @@ class PlayerControllerImpl(
     private val onlineBase: Flow<HttpUrl?> = emptyFlow(),
     /** The seek steps of the settings (back, forward seconds); shown as [PlayerUiState.seekBackSec] / `seekForwardSec`. */
     private val seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
+    /** Whether [serverId] is the signed-in account. */
+    private val isSignedIn: suspend (serverId: String) -> Boolean = { true },
 ) : PlayerController {
 
     @Inject constructor(
@@ -93,6 +96,7 @@ class PlayerControllerImpl(
         starter: PlayDownloadStarter,
         monitor: StreamMonitor,
         playbackSettings: PlaybackSettings,
+        accounts: AccountStore,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -113,6 +117,7 @@ class PlayerControllerImpl(
         rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
         onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
         seekSteps = combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair),
+        isSignedIn = { sid -> accounts.account.first()?.serverId == sid },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -201,6 +206,8 @@ class PlayerControllerImpl(
             if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null && facade.hasMedia()) {
                 resumeLoaded(cur); return@launch
             }
+            // A page that outlived a profile switch: its title would stream with the next account's token. A device title is anyone's.
+            if (!DeviceLibrary.isLocal(serverId, itemId) && !isSignedIn(serverId)) return@launch
             var item = loadItem(serverId, itemId) ?: return@launch
             // Feedback right away: details, connection and buffering can take a few seconds when streaming.
             val previous = current

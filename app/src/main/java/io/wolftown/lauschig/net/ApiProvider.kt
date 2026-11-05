@@ -5,6 +5,7 @@ import io.wolftown.lauschig.absapi.admin.AdminApi
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
+import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
 import kotlinx.coroutines.CancellationException
@@ -35,12 +36,12 @@ import retrofit2.Retrofit
 class ApiProvider(
     /** The account server's connection; `null` = a new server, reset to Offline and checking (see `accountConnection`). */
     connection: Flow<ConnectionState?>,
-    okHttp: OkHttpClient,
+    private val baseClient: OkHttpClient,
     private val store: AccountStore,
     scope: CoroutineScope,
 ) {
     // Network interceptor: sees every hop incl. redirects. Every client (also the refresh client) refuses http:// to servers the user has not confirmed.
-    private val okHttp: OkHttpClient = okHttp.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor(store)).build()
+    private val okHttp: OkHttpClient = baseClient.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor(store)).build()
 
     /** Per (account, base URL): a client belongs to the account signed in when it was built ([AuthInterceptor]). */
     private val cache = HashMap<Pair<String?, HttpUrl>, Retrofit>()
@@ -107,6 +108,13 @@ class ApiProvider(
 
     /** Guarded client without credentials, for requests while no server is online (they fail fast). */
     fun unauthenticatedClient(): OkHttpClient = okHttp
+
+    /**
+     * A client without credentials for what concerns [account] but not the signed-in one (the logout of a removed profile):
+     * plain http:// only to the servers the user confirmed for [account].
+     */
+    fun unauthenticatedClient(account: Account): OkHttpClient =
+        baseClient.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor { account.allowCleartext }).build()
 
     /**
      * The authenticated client of whoever is signed in now, for requests that belong to no account in particular (the

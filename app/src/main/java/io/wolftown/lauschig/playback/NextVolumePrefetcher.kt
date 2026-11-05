@@ -43,6 +43,8 @@ class NextVolumePrefetcher @Inject constructor(
         if (PlayableKey.parse(itemId).episodeId != null) return // episodes have no next volume
         if (DeviceLibrary.isLocalKey(itemId)) return // nothing to download for a device title
         val serverId = accounts.account.first()?.serverId ?: return
+        // Read after the account: a title still in the player is that account's (a switch empties the player first).
+        if (player.state.value.itemId != itemId) return
         if (!handled.add("$serverId:$itemId")) return
         val next = nextVolume(items, serverId, itemId) ?: return
         if (downloadsDao.get(serverId, next.id) != null) return // already queued, downloaded or deliberately paused

@@ -43,6 +43,7 @@ import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
+import io.wolftown.lauschig.auto.carLibraryChanges
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
@@ -78,12 +79,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -154,10 +153,11 @@ class PlaybackService : MediaLibraryService() {
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
     private val subscribed = LinkedHashSet<String>()
 
-    /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
-    @Volatile private var lastOnline: ConnectionState.Online? = null
-    /** The account [lastOnline] was seen for: streams go through its client, which sends nothing once it is left. */
-    @Volatile private var lastOnlineAccount: String? = null
+    /**
+     * The last server seen online, with the account it was seen for; kept while the state flips to offline (see
+     * [onCreate]). Streams go through that account's client, which sends nothing once the account is left.
+     */
+    @Volatile private var lastOnline: Pair<String, ConnectionState.Online>? = null
     private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
 
     @OptIn(UnstableApi::class) // transfer listener, load control
@@ -168,8 +168,8 @@ class PlaybackService : MediaLibraryService() {
         // flipped to offline: a failed probe on a busy link must not turn the next stream request into a 401 that stops
         // playback. Other origins get the plain client (no credentials).
         val callFactory = Call.Factory { request ->
-            val base = lastOnline?.baseUrl?.takeIf { request.url.sameOrigin(it) }
-            (base?.let { api.clientFor(lastOnlineAccount, it) } ?: fallbackClient).newCall(request)
+            val seen = lastOnline?.takeIf { request.url.sameOrigin(it.second.baseUrl) }
+            (seen?.let { api.clientFor(it.first, it.second.baseUrl) } ?: fallbackClient).newCall(request)
         }
         connectionJob = scope.launch {
             // Another account (sign-out, new server) forgets the server, so its token never reaches an old queue's origin.
@@ -179,10 +179,7 @@ class PlaybackService : MediaLibraryService() {
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
-                    if (it is ConnectionState.Online && it.belongsTo(who.third)) {
-                        lastOnlineAccount = who.first
-                        lastOnline = it
-                    }
+                    if (it is ConnectionState.Online && it.belongsTo(who.third)) lastOnline = who.first to it
                 }
             }
         }
@@ -519,31 +516,34 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * Browsers (Android Auto) cache what they showed: when the connection comes or goes, or the catalog, the downloads,
-     * the device titles or the set of titles in progress change, the subscribed folders are told to reload.
+     * the device titles or the set of titles in progress change, or another account is active (a profile switch while the
+     * car is connected), the subscribed folders are told to reload ([carLibraryChanges]).
      */
-    @OptIn(FlowPreview::class)
     private fun watchLibrary(session: MediaLibrarySession) {
         scope.launch {
-            accountStore.account.map { it?.serverId }.distinctUntilChanged().collectLatest { sid ->
-                val dev = DeviceLibrary.SERVER_ID
-                val parts: List<Flow<Any>> = listOf(
-                    api.connection.map { it is ConnectionState.Online },
-                    coverArrivals,
-                    catalogDao.observeVersion(dev),
-                    itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
-                ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
-                    libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
-                    catalogDao.observeVersion(sid),
-                    downloadDao.observeCompleteIds(sid),
-                    itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
-                )
-                combine(parts) { it.toList() }.distinctUntilChanged().debounce(LIBRARY_DEBOUNCE_MS).collect {
-                    val ids = LinkedHashSet<String>()
-                    ids += MediaIds.of(CarNode.Root)
-                    listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach { ids += MediaIds.of(it) }
-                    ids += subscribed
-                    ids.forEach { session.notifyChildrenChanged(it, Int.MAX_VALUE, null) }
-                }
+            val dev = DeviceLibrary.SERVER_ID
+            carLibraryChanges(
+                accountStore.account.map { it?.serverId },
+                { sid ->
+                    listOf<Flow<Any>>(
+                        api.connection.map { it is ConnectionState.Online },
+                        coverArrivals,
+                        catalogDao.observeVersion(dev),
+                        itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
+                    ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
+                        libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
+                        catalogDao.observeVersion(sid),
+                        downloadDao.observeCompleteIds(sid),
+                        itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
+                    )
+                },
+                LIBRARY_DEBOUNCE_MS,
+            ).collect {
+                val ids = LinkedHashSet<String>()
+                ids += MediaIds.of(CarNode.Root)
+                listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach { ids += MediaIds.of(it) }
+                ids += subscribed
+                ids.forEach { session.notifyChildrenChanged(it, Int.MAX_VALUE, null) }
             }
         }
     }
@@ -558,7 +558,7 @@ class PlaybackService : MediaLibraryService() {
         val starter = ServiceTitleStarter(
             loadItem = { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) },
             factory = mediaItemFactory,
-            baseUrl = { lastOnline?.baseUrl },
+            baseUrl = { lastOnline?.second?.baseUrl },
             loadDetails = librarySync::loadDetailsForPlayable,
             io = Dispatchers.IO,
             setQueue = { items, index, offsetMs ->

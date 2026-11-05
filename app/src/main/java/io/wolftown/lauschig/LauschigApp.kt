@@ -48,6 +48,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var accountStore: io.wolftown.lauschig.account.AccountStore
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
     @Inject lateinit var accountState: io.wolftown.lauschig.account.AccountStateCleaner
+    @Inject lateinit var switchedDownloads: io.wolftown.lauschig.download.SwitchedDownloads
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -106,6 +107,14 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
                 throw e
             } catch (e: Exception) {
                 io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "account state not moved to the account", e)
+            }
+            // A process that died in the middle of a profile switch: the downloads it paused go on.
+            try {
+                accountStore.account.first()?.serverId?.let { switchedDownloads.resume(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "downloads paused by a switch did not go on", e)
             }
             // A "Download löschen?" question a killed process left open counts as "Behalten" – settled before the
             // clean-up looks at anything.
