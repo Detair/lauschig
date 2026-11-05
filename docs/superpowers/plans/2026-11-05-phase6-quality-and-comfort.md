@@ -401,3 +401,50 @@ Paket „Downloads & Support“ (Branch `p6-downloads`). Keine Schemaänderung (
 - **Claudes Wahl:** Solange automatisch gelöscht wird, ruht die wöchentliche Aufräum-Erinnerung (Schalter
   deaktiviert, mit Begründung). Bei „Sofort“ entfällt die Frage „Download löschen?“ nach „Als gehört markieren“ (der
   Download ist gleich weg); bei 3/7 Tagen bleibt sie (jetzt löschen schafft jetzt Platz).
+
+### Nachtrag Task 4–6 – Fix-Runde 1 nach Review (2026-11-05)
+
+Keine Schemaänderung (weiter v10 auf diesem Zweig; v12 nicht belegt).
+
+- **Task 6 – was der Player hält (D1):** Nie gelöscht wird der im Player geladene Titel (egal ob er spielt, pausiert,
+  vom Sleep-Timer gestoppt oder vom Anruf unterbrochen ist), die Titel der Warteschlange und ein Titel, dessen
+  „Download löschen?“-Frage offen ist. **Claudes Wahl:** Kennt der Controller der App keinen Titel (Auto ohne
+  verbundene App, ein vom Tages-Worker gestarteter Prozess), gilt der zuletzt gespielte Titel (`LastPlayedStore`) als
+  gehalten. Geprüft wird neu, wenn sich der geladene Titel oder die Warteschlange ändert, und eine Minute später (der
+  zuletzt gespielte Titel meldet keine Änderung). Der Controller setzt seinen Titel erst, nachdem er sein `current`
+  gewechselt und die Download-Beobachtung des alten Titels beendet hat – danach kann Löschen keinen Quellwechsel des
+  alten Titels mehr auslösen (Rennen beim Warteschlangen-Wechsel). Emulator: „Das Ende“ zu Ende gespielt, „Die Mitte“ in
+  der Warteschlange → „Die Mitte“ spielt weiter, „Das Ende“ wird 40 ms nach der Übernahme gelöscht, Fortschritt bleibt
+  „gehört“.
+- **„Gehört“ heißt zu Ende oder markiert (D1):** Die 99,5-%-Marke des Trackers zählt nicht (Position mehr als 2 s vor
+  dem Ende und ≥ 99,5 %); eine Pause kurz vor dem Ende löscht nichts.
+- **D5 – nur Gerätezeiten:** Ein Download zählt, wenn er fertig war (Änderungszeit seiner Dateien), bevor das Gerät
+  den Titel zum ersten Mal als gehört sah (`FinishedSeenStore`, DataStore, wird auch bei „Nie“ geführt). **Claudes
+  Wahl:** Damit ist weder `requestedAt` (bleibt beim Fortsetzen alt) noch die Serverzeit im Spiel. Beim ersten Start
+  dieser Version gelten alle schon gehörten Titel als „jetzt gesehen“ – wer davor einen gehörten Titel neu geladen hat,
+  bekommt ihn in der Einschalt-Frage mitgezählt. Die 3/7 Tage zählen ab diesem Gerätezeitpunkt.
+- **D3:** Einschalten (von „Nie“ auf eine Stufe) fragt, wenn es gehörte Downloads träfe: „N gehörte Downloads (X)
+  werden sofort gelöscht“ bzw. „… jeweils N Tage nachdem sie gehört wurden“, mit Hinweis auf „Behalten“; Abbrechen
+  lässt die Einstellung. Zwischen zwei Stufen wird nicht erneut gefragt.
+- **D4:** Die Frage nach „Als gehört markieren“ kommt wieder, auch bei „Sofort“; bis zur Antwort wartet das
+  Aufräumen. „Löschen“ löscht sofort, „Behalten“ (auch Wegtippen) setzt den Titel bei eingeschaltetem Aufräumen auf die
+  Behalten-Liste.
+- **D14:** Ein Löschfehler wird pro Titel abgefangen und protokolliert; der Beobachter läuft weiter.
+- **D15:** Die Aufräumen-Seite listet auch gehörte Podcast-Episoden; „Behalten“ schützt sie wie Bücher.
+- **Task 4 – V17:** Jeder Lesefehler der Speicherort-Einstellung führt zu „intern“; kein Download wartet ewig.
+- **V18:** Abmelden mit fehlender Karte: Der Dialog sagt, dass die Downloads auf der Karte gelöscht werden, sobald sie
+  wieder steckt (bzw. beim Behalten, dass sie bleiben); nur auf der Karte liegende Downloads lassen das Behalten zu.
+  Der Purge merkt sich die Download-Wurzel der Karte (aus den Pfaden in Room, `VolumePurges`), gilt als fehlgeschlagen,
+  bis die Karte wieder da und das Verzeichnis weg ist – der Purge bleibt offen, der Janitor erledigt ihn.
+- **16 – Karte aus einem anderen Gerät:** akzeptiert. Deren Lauschig-Downloads gehören zu keinem Download dieser
+  Installation (keine Zeilen) und werden beim Aufräumen gelöscht; Übernehmen wäre ein eigenes Feature.
+- **Task 5 – Maskierung (L6–L10):** Wildcard- und Punkt-Hosts (`*.example.io`), die übergeordnete Domain eigener Hosts
+  als eigener Wert, Ein-Wort-Hosts in Javas „host "nas"“/„Hostname … not verified“; Schlüssel per Namensteil
+  (newPassword, authToken, …ClientSecret, apiToken, x-refresh-token, connect.sid …) in einfachen und doppelten
+  Anführungszeichen, Werte mit mehreren Wörtern bis zum Trenner (Autorennamen bleiben); Pfade in geteiltem Speicher und
+  auf Karten behalten nur Volume und Endung (das App-Verzeichnis dort bleibt lesbar), ebenso Dokument-IDs
+  (`primary:…`); IPv4-gemappte IPv6 ganz; `user:pass@host` ohne Schema. Erst maskieren, dann kürzen.
+- **L9:** Einträge vor dem Bekanntwerden der eigenen Werte werden dann erneut maskiert und beim Teilen ein weiteres Mal.
+- **L11–L13:** Der Log-Aufruf wirft nie in die App; ein Schreiber für die Datei; die geteilte Kopie wird beim nächsten
+  Start, vor einem neuen Teilen und beim Abmelden gelöscht und ihr Lese-Grant widerrufen; **Claudes Wahl geändert:**
+  Das Diagnose-Log selbst wird bei jedem Abmelden und Kontowechsel geleert (Familiengeräte).
