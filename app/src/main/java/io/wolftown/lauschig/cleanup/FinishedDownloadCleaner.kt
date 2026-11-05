@@ -67,7 +67,8 @@ data class AutoDeleteCandidate(
  *   again to hear it once more – also a paused or failed download resumed after the title was finished – stays until it is
  *   finished again.
  * - Never: a title the user keeps ([AppSettings.cleanupIgnored], "Behalten"), a title the player holds (loaded in any
- *   state, last played on this device, in the queue, or waiting for the "Download löschen?" answer), a device title.
+ *   state – or, while the app's controller knows no title, the one last played on this device –, in the queue, or
+ *   waiting for the "Download löschen?" answer), a device title.
  * The delay of the 3- and 7-day modes counts from when the device saw the title finished.
  */
 object AutoDeleteRules {
@@ -159,10 +160,9 @@ class FinishedDownloadCleaner(
     /** One pass for the signed-in account (the daily worker); returns the keys whose downloads were deleted. */
     suspend fun runOnce(): List<String> {
         val sid = accounts.account.first()?.serverId ?: return emptyList()
-        val queued = queue(sid).first().toSet()
         return pass(
             sid, downloads.observeFinishedComplete(sid).first(), finishedKeys(sid).first().toSet(), settings.autoDeleteFinished.first(),
-            app.cleanupIgnored.first(), setOfNotNull(loadedKey.first()) + queued + held.value,
+            app.cleanupIgnored.first(), PlayerHold(loadedKey.first(), queue(sid).first().toSet() + held.value),
         ).deleted
     }
 
@@ -188,7 +188,7 @@ class FinishedDownloadCleaner(
                         finishedKeys(sid).map { it.toSet() }.distinctUntilChanged(),
                         settings.autoDeleteFinished,
                         app.cleanupIgnored,
-                        combine(loadedKey.distinctUntilChanged(), queue(sid).distinctUntilChanged(), held) { l, q, h -> setOfNotNull(l) + q + h },
+                        combine(loadedKey.distinctUntilChanged(), queue(sid).distinctUntilChanged(), held) { l, q, h -> PlayerHold(l, q.toSet() + h) },
                     ) { rows, finished, mode, kept, protected -> Watch(sid, rows, finished, mode, kept, protected) }
                 }.collectLatest { w ->
                     while (true) {
@@ -210,24 +210,31 @@ class FinishedDownloadCleaner(
         val finished: Set<String>,
         val mode: AutoDeleteMode,
         val kept: Set<String>,
-        val protected: Set<String>,
+        val protected: PlayerHold,
     )
+
+    /**
+     * What the player holds: [loaded] (the controller's title, any state; null when it knows none) and [others] (the
+     * queue and open questions). Without a loaded title the service's last played one stands in for it ([LastPlayedStore]):
+     * a title started by the car with the app's controller not connected, or a process the daily worker started.
+     */
+    private data class PlayerHold(val loaded: String?, val others: Set<String>)
 
     private class PassResult(val deleted: List<String>, val nextCheck: Long?)
 
     private suspend fun pass(
-        sid: String, rows: List<FinishedDownload>, finished: Set<String>, mode: AutoDeleteMode, kept: Set<String>, playerKeys: Set<String>,
+        sid: String, rows: List<FinishedDownload>, finished: Set<String>, mode: AutoDeleteMode, kept: Set<String>, hold: PlayerHold,
     ): PassResult {
         val seenAt = seen.reconcile(sid, finished, clock())
         if (mode == AutoDeleteMode.NEVER || rows.isEmpty()) return PassResult(emptyList(), null)
-        val last = lastPlayed()?.takeIf { it.serverId == sid }?.itemId
-        val protected = playerKeys + listOfNotNull(last)
+        val title = hold.loaded ?: lastPlayed()?.takeIf { it.serverId == sid }?.itemId
+        val protected = hold.others + listOfNotNull(title)
         val keepIgnoringPlayer = AutoDeleteRules.keeper(sid, kept, emptySet())
         val keep = AutoDeleteRules.keeper(sid, kept, protected)
         val candidates = candidates(sid, rows, seenAt, keepIgnoringPlayer)
         val now = clock()
         val deleted = delete(sid, AutoDeleteRules.due(candidates, mode, now, keep))
-        // A title the player holds waits; it is looked at again (the last played title changes without a signal here).
+        // A title the player holds waits; it is looked at again (the last played one changes without a signal here).
         val waiting = candidates.any { it.key in protected && AutoDeleteRules.counts(it, keepIgnoringPlayer) }
         val next = listOfNotNull(AutoDeleteRules.nextDue(candidates, mode, now, keep), if (waiting) now + recheckMs else null).minOrNull()
         return PassResult(deleted, next)

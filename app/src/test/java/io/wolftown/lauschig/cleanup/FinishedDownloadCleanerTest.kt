@@ -205,21 +205,39 @@ class FinishedDownloadCleanerTest {
         assertEquals(listOf("b1"), cleaner().runOnce())
     }
 
-    @Test fun runOnce_neverTheLoadedTheLastPlayedTheQueuedOrAHeldTitle() = runBlocking {
+    @Test fun runOnce_neverTheLoadedTheQueuedOrAHeldTitle() = runBlocking {
         settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
-        for (k in listOf("loaded", "lastPlayed", "queued", "held", "free")) downloaded(k, completedAt = now - 2 * day, seenAt = now - day)
+        for (k in listOf("loaded", "queued", "held", "free")) downloaded(k, completedAt = now - 2 * day, seenAt = now - day)
         loaded.value = "loaded" // paused, stopped by the sleep timer or playing: loaded is loaded
-        last = LastPlayed(s, "lastPlayed", now)
         queue.value = listOf("queued")
         val c = cleaner()
         c.hold("held")
         assertEquals(listOf("free"), c.runOnce())
         // Once the player lets go, they follow.
         loaded.value = "free"
-        last = LastPlayed("bbbbbbbbbbbbbbbb", "lastPlayed", now) // another account's last title protects nothing here
         queue.value = emptyList()
         c.release("held")
-        assertEquals(setOf("loaded", "lastPlayed", "queued", "held"), c.runOnce().toSet())
+        assertEquals(setOf("loaded", "queued", "held"), c.runOnce().toSet())
+    }
+
+    @Test fun withoutATitleInTheController_theLastPlayedOneStandsIn() = runBlocking {
+        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        downloaded("lastPlayed", completedAt = now - 2 * day, seenAt = now - day)
+        // The car started it with the app's controller not connected, or the daily worker started the process.
+        loaded.value = null
+        last = LastPlayed(s, "lastPlayed", now)
+        assertEquals(emptyList<String>(), cleaner().runOnce())
+        // Another account's last title protects nothing here.
+        last = LastPlayed("bbbbbbbbbbbbbbbb", "lastPlayed", now)
+        assertEquals(listOf("lastPlayed"), cleaner().runOnce())
+    }
+
+    @Test fun aLoadedTitle_replacesTheLastPlayedOne_theOldOneGoes() = runBlocking {
+        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        downloaded("ended", completedAt = now - 2 * day, seenAt = now - day)
+        last = LastPlayed(s, "ended", now) // the service notes the next title only at its first pause
+        loaded.value = "next"
+        assertEquals(listOf("ended"), cleaner().runOnce())
     }
 
     @Test fun aPauseAt99point6Percent_isNoEnd_theFilesStay_untilItReallyEnds() = runBlocking {
@@ -320,7 +338,7 @@ class FinishedDownloadCleanerTest {
     /**
      * The end of a title with another one queued: the service starts the next title and the app's controller adopts it a
      * little later. The finished title must not be deleted while the controller still holds it (its source re-pick would
-     * replace the next title) – only after the controller and the last played title moved on.
+     * replace the next title) – only once the controller moved on.
      */
     @Test fun queueAdvance_theFinishedTitleGoes_onlyAfterThePlayerMovedOn() = runBlocking {
         settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
@@ -346,11 +364,8 @@ class FinishedDownloadCleanerTest {
         queue.value = emptyList()
         delay(300)
         assertTrue("the controller still holds A", a.single().isFile)
-        // The controller adopted B; the service noted B as last played when it started.
+        // The controller adopted B (the service still has A as its last played title until B pauses): A may go now.
         loaded.value = "B"
-        delay(300)
-        assertTrue("A is still the last played title", a.single().isFile)
-        last = LastPlayed(s, "B", now)
         withTimeout(10_000) { while (db.downloadDao().get(s, "A") != null || a.single().exists()) delay(20) }
         assertEquals(listOf("A" to "B"), heldWhenDeleted)
         assertTrue("its progress stays finished", db.progressDao().get(s, "A")!!.isFinished)
