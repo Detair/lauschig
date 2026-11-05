@@ -110,6 +110,30 @@ class DownloadFiles(
         return dirs.map { it.deleteRecursively() }.all { it }
     }
 
+    /**
+     * The download roots of [serverId]'s recorded files that are not mounted now (an SD card that is out), from the
+     * files' paths in Room. Blocking.
+     */
+    suspend fun missingRoots(serverId: String): Set<String> {
+        if (!SERVER_ID.matches(serverId)) return emptySet()
+        val mounted = allRoots().map { it.absolutePath }
+        return audioFiles.localPaths(serverId).filter { it.startsWith("/") && "/$serverId/" in it }
+            .filter { p -> mounted.none { r -> p.startsWith("$r/") } }
+            .map { it.substringBefore("/$serverId/") }.toSet()
+    }
+
+    /**
+     * Deletes [serverId]'s directory on the download root [root] if that is a mounted volume's root now: true when it
+     * is gone, false if not everything could be deleted, null if [root] is not mounted (never a path outside a root).
+     * Blocking.
+     */
+    fun deleteServerAt(root: String, serverId: String): Boolean? {
+        if (!SERVER_ID.matches(serverId)) return true
+        val r = roots.external().firstOrNull { it.absolutePath == root } ?: return null
+        val dir = try { guard(File(r, serverId)) } catch (e: FatalDownloadException) { return null }
+        return dir.deleteRecursively()
+    }
+
     /** The server ids that have a download directory on any mounted volume (only real ids; the device library has none). Blocking. */
     fun serverIds(): List<String> =
         allRoots().flatMap { r -> r.listFiles { f -> f.isDirectory && SERVER_ID.matches(f.name) }?.map { it.name }.orEmpty() }.distinct().sorted()

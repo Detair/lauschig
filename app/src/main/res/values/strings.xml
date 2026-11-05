@@ -692,6 +692,8 @@
     <string name="previous_account_keep">Keep</string>
     <string name="kept_delete_failed">Not everything could be deleted. Please try again later.</string>
     <string name="sign_out_keep_data">Keep data on this device</string>
+    <string name="sign_out_card_missing_deleted">Downloads on the SD card, which is out right now, are deleted as soon as it is back.</string>
+    <string name="sign_out_card_missing_kept">Some downloads are on the SD card, which is out right now; they stay as well.</string>
     <string name="previous_account_message_data">Data of %1$s (%2$s) is still on this device. Delete it?</string>
     <string name="sign_out_unsynced_unknown">Whether changes are still missing on the server could not be checked.</string>
     <string name="car_sign_in">Sign in to Lauschig on your phone</string>

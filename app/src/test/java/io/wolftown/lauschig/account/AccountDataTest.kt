@@ -293,4 +293,34 @@ class AccountDataTest {
         assertTrue("another server's downloads on the card stay", File(card, "$b/other/0.mp3").isFile)
         assertEquals(listOf(b), multi.serverIds())
     }
+
+    @Test fun aPurgeWithTheCardOut_failsAndWaits_untilTheCardIsBack(): Unit = runBlocking {
+        val card = File(root.parentFile, "card/downloads").apply { mkdirs() }
+        val cardRoots = object : io.wolftown.lauschig.download.DownloadRoots {
+            var mounted = true
+            override fun external() = if (mounted) listOf(card) else emptyList()
+            override fun target() = if (mounted) card else null
+        }
+        val multi = DownloadFiles(root, db.audioFileDao(), roots = cardRoots)
+        val purges = io.wolftown.lauschig.download.DataStoreVolumePurges(ctx)
+        val d = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), multi, stamps, forgottenCovers::add, kotlinx.coroutines.Dispatchers.IO, purges)
+        val onCard = File(card, "$a/b1").apply { mkdirs() }.resolve("1.mp3").apply { writeBytes(ByteArray(4)) }
+        db.audioFileDao().replaceFromServer(a, "b1", listOf(io.wolftown.lauschig.db.entities.AudioFileEntity(a, "b1", 1, "i", 1.0, 4, "mp3")))
+        db.audioFileDao().setLocal(a, "b1", 1, onCard.absolutePath, 4)
+        assertFalse(d.downloadsOnMissingVolume(a))
+        cardRoots.mounted = false // the card is pulled
+        assertTrue(d.downloadsOnMissingVolume(a))
+        try {
+            d.purge(a)
+            org.junit.Assert.fail("a purge that left downloads on a card that is out is not done")
+        } catch (e: java.io.IOException) {
+        }
+        assertFalse("the rows went all the same", d.hasRows(a))
+        // At the next start the card is still out: still waiting.
+        try { d.purge(a); org.junit.Assert.fail("still waiting") } catch (e: java.io.IOException) {}
+        cardRoots.mounted = true
+        d.purge(a) // the card is back: done
+        assertFalse(File(card, a).exists())
+        d.purge(a) // and nothing waits any more
+    }
 }

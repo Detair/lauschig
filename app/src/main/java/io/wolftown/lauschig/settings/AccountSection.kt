@@ -68,8 +68,9 @@ sealed interface SignOutStep {
      * The question; [keepDownloads] is the checkbox (default on: no data loss by default). [unsynced] null: the check
      * failed, so whether changes are missing on the server is unknown (keeping is offered, said in a line).
      */
-    data class Confirm(val unsynced: Int?, val downloadBytes: Long, val keepDownloads: Boolean = true) : SignOutStep {
-        val hasDownloads: Boolean get() = downloadBytes > 0
+    data class Confirm(val unsynced: Int?, val downloadBytes: Long, val keepDownloads: Boolean = true, val onMissingCard: Boolean = false) : SignOutStep {
+        /** Downloads on the device – also on an SD card that is out (their size is unknown then). */
+        val hasDownloads: Boolean get() = downloadBytes > 0 || onMissingCard
 
         /**
          * Something to keep: downloads, or changes not on the server yet (then the checkbox keeps the account's data).
@@ -109,7 +110,7 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
                 null
             }
             _step.value = when {
-                check != null -> SignOutStep.Confirm(check.unsynced, check.downloadBytes)
+                check != null -> SignOutStep.Confirm(check.unsynced, check.downloadBytes, onMissingCard = check.onMissingCard)
                 // The check failed: still ask, with "unknown" instead of a count, and the downloads still named with
                 // their size (a file walk, independent of what failed).
                 failed -> SignOutStep.Confirm(unsynced = null, downloadBytes = bytesOnDisk())
@@ -206,7 +207,7 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                     Text(stringResource(R.string.sign_out_message, host))
                     if (step.canKeep) {
                         // "22 MB" never breaks between number and unit. Keeping keeps the downloads and the changes.
-                        val label = if (step.hasDownloads) {
+                        val label = if (step.downloadBytes > 0) {
                             stringResource(R.string.sign_out_keep_downloads, Formatter.formatShortFileSize(LocalContext.current, step.downloadBytes).replace(' ', '\u00A0'))
                         } else {
                             stringResource(R.string.sign_out_keep_data)
@@ -220,6 +221,14 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
                             Checkbox(checked = step.keepDownloads, onCheckedChange = null)
                             Text(label, modifier = Modifier.padding(start = 8.dp))
                         }
+                    }
+                    if (step.onMissingCard) {
+                        // Their size is not in the figure, and they cannot be deleted before the card is back.
+                        Text(
+                            stringResource(if (step.keeps) R.string.sign_out_card_missing_kept else R.string.sign_out_card_missing_deleted),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("cardMissingNote"),
+                        )
                     }
                     val unsynced = step.unsynced
                     if (unsynced == null || unsynced > 0) {

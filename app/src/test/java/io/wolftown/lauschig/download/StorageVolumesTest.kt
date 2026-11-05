@@ -131,4 +131,16 @@ class StorageVolumesTest {
         assertEquals(File(sd, "downloads"), roots.target())
         settings.setStoragePath(null)
     }
+
+    @Test fun aStoreThatFails_inAnyWay_neverLetsADownloadWait_itGoesInside() = runBlocking {
+        for (failure in listOf(java.io.IOException("corrupt"), IllegalStateException("odd"), SecurityException("denied"))) {
+            val roots = VolumeDownloadRoots(volumes(), kotlinx.coroutines.flow.flow<String?> { throw failure })
+            kotlinx.coroutines.withTimeout(5_000) { roots.awaitReady() }
+            assertNull(roots.target())
+        }
+        // A store that never answers is the only wait: it is not a failure (DataStore answers or throws).
+        val slow = VolumeDownloadRoots(volumes(), kotlinx.coroutines.flow.flow<String?> { kotlinx.coroutines.delay(50); emit(sd.path) })
+        kotlinx.coroutines.withTimeout(5_000) { slow.awaitReady() }
+        assertEquals(File(sd, "downloads"), slow.target())
+    }
 }

@@ -1,9 +1,11 @@
 package io.wolftown.lauschig.download
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
@@ -41,7 +43,10 @@ class VolumeDownloadRoots(
     private val chosen: () -> String?,
     private val ready: suspend () -> Unit = {},
 ) : DownloadRoots {
-    @Inject constructor(volumes: StorageVolumes, settings: DownloadSettings) : this(volumes, ChosenPath(settings))
+    @Inject constructor(volumes: StorageVolumes, settings: DownloadSettings) : this(volumes, ChosenPath(settings.storagePath))
+
+    /** Seam for tests: the stored choice as a flow. */
+    internal constructor(volumes: StorageVolumes, storagePath: Flow<String?>) : this(volumes, ChosenPath(storagePath))
 
     private constructor(volumes: StorageVolumes, path: ChosenPath) : this(volumes, path::current, path::awaitLoaded)
 
@@ -73,16 +78,20 @@ class VolumeDownloadRoots(
     fun chosenMissing(): Boolean = chosen() != null && target() == null
 
     /** The stored choice, kept current; [current] never blocks (null until the first read). */
-    private class ChosenPath(settings: DownloadSettings) {
+    private class ChosenPath(storagePath: Flow<String?>) {
         @Volatile private var value: String? = null
         private val loaded = CompletableDeferred<Unit>()
 
         init {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                // An unreadable store never blocks a download: it goes to the internal storage then.
+                // Whatever goes wrong reading the store, no download may wait for it: they go to the internal storage.
                 try {
-                    settings.storagePath.collect { value = it; loaded.complete(Unit) }
-                } catch (e: IOException) {
+                    storagePath.collect { value = it; loaded.complete(Unit) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    value = null
+                } finally {
                     loaded.complete(Unit)
                 }
             }
