@@ -274,7 +274,7 @@ class BrowseViewModelTest {
             listOf(mv("3"))
         }
 
-    @Test fun series_undecided_asksOnce_andLooksNothingUp() = runTest {
+    @Test fun series_undecided_asks_andLooksNothingUp() = runTest {
         ownSagaWithAsin()
         val calls = Collections.synchronizedList(mutableListOf<String>())
         val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), calls))

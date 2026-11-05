@@ -32,11 +32,20 @@ class MissingVolumesSource(
     private val lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
 ) {
     @Inject constructor(api: ApiProvider, settings: AppSettings, repository: ExternalSeriesRepository) : this(
-        api.connection.map { it is ConnectionState.Online }.distinctUntilChanged(),
-        settings.missingVolumesEnabled,
-        settings.missingVolumesUndecided,
-        settings::setMissingVolumesEnabled,
-        repository::missingFor,
+        api.connection.map { it is ConnectionState.Online }.distinctUntilChanged(), settings, repository::missingFor,
+    )
+
+    /** The consent wiring, one place: both flags are `Flow<Boolean>`, so names keep them from being swapped. */
+    internal constructor(
+        online: Flow<Boolean>,
+        settings: AppSettings,
+        lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
+    ) : this(
+        online = online,
+        enabled = settings.missingVolumesEnabled,
+        undecided = settings.missingVolumesUndecided,
+        decide = settings::setMissingVolumesEnabled,
+        lookup = lookup,
     )
 
     suspend fun answer(allow: Boolean) = decide(allow)

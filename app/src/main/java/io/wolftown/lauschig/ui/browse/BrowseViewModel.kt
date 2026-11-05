@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.absapi.library.AuthorDto
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.catalog.Catalog
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 /** One cell of an entity page: a title we have, or (series only) a gap in the volume numbers. */
@@ -121,7 +123,14 @@ class BrowseViewModel(
 
     /** The user's answer on a series page; the catalog is asked from now on only after a yes. */
     fun answerMissingVolumes(allow: Boolean) {
-        viewModelScope.launch { missingVolumes.answer(allow) }
+        viewModelScope.launch {
+            try {
+                missingVolumes.answer(allow)
+            } catch (e: IOException) {
+                // The question stays and can be answered again; nothing is sent meanwhile.
+                Log.w(TAG, "could not store the answer", e)
+            }
+        }
     }
 
     fun setKinds(kinds: Set<LibraryKind>) {
@@ -191,5 +200,6 @@ class BrowseViewModel(
     companion object {
         /** One saved filter shared by all entity pages. */
         const val SCREEN = "browse"
+        private const val TAG = "Browse"
     }
 }

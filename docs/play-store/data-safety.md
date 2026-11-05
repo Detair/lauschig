@@ -4,9 +4,9 @@ Basis: the app talks to the Audiobookshelf server the user enters, and to two se
 
 | Question | Answer |
 |---|---|
-| Does your app collect or share any of the required user data types? | **Yes, one optional case:** after the user agreed, the ASINs of their books go to the public Audible catalog (App activity → Other actions; optional; purpose: App functionality). Everything else stays on the device or goes to the user's own server. |
-| Data shared with third parties | Only that Audible lookup, based on prominent in-app disclosure and consent (Google's exemption for sharing); nothing without it. |
-| Is all of the user data encrypted in transit? | **Yes** for the declared Audible lookup (https only). For the user's own server: https, or plain http only after an explicit confirmation by the user for that address. |
+| Does your app collect or share any of the required user data types? | **Yes, collected, one optional case:** after the user agreed, the ASINs of their books go to the public Audible catalog (App activity → Other actions; optional; purpose: App functionality). Everything else stays on the device or goes to the user's own server. |
+| Data shared with third parties | **Not declared as shared:** the Audible lookup happens only after prominent in-app disclosure and consent, Google's exemption for sharing. Without consent nothing is sent. |
+| Is all of the user data encrypted in transit? | **Yes** for the declared Audible lookup (catalog and covers over https only). For the user's own server: https, or plain http only after an explicit confirmation by the user for that address. |
 | Do you provide a way for users to request that their data is deleted? | **No** for what Audible received (the developer has no influence on it). Locally: uninstalling the app or clearing its app data in Android settings removes all local data; data on the server is managed there. |
 | Analytics / ads / advertising ID | None |
 | Account creation | No account with the developer (login is to the user's own server) |
