@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -21,13 +20,11 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -136,40 +133,35 @@ private fun HistoryRow(e: HistoryEntry, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SheetTitle(text: String) =
-    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-
-@Composable
-private fun Hint(text: String) = Text(
+private fun Hint(text: String, modifier: Modifier = Modifier) = Text(
     text,
     style = MaterialTheme.typography.bodyMedium,
     color = MaterialTheme.colorScheme.onSurfaceVariant,
-    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
 )
 
-/** Bookmarks of the playing title: add one at [positionSec] (optional note), jump, edit, delete. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Bookmarks of the playing title (a tab of the player's contents sheet): add one at [positionSec] (optional note),
+ * jump ([onDone] closes the sheet), edit, delete.
+ */
 @Composable
-fun BookmarksSheet(key: String, positionSec: Double, onDismiss: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
+fun BookmarksContent(key: String, positionSec: Double, onDone: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
     val rows by remember(key) { viewModel.bookmarks(key) }.collectAsStateWithLifecycle(emptyList())
     var adding by remember { mutableStateOf<Double?>(null) }
     var editing by remember { mutableStateOf<BookmarkEntity?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("bookmarksSheet")) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            SheetTitle(stringResource(R.string.bookmarks_title))
-            FilledTonalButton(
-                onClick = { adding = kotlin.math.floor(positionSec) },
-                modifier = Modifier.padding(horizontal = 16.dp).testTag("bookmarkAdd"),
-            ) {
-                Icon(Icons.Rounded.BookmarkAdd, contentDescription = null)
-                Text(stringResource(R.string.bookmark_add_here, formatClock(positionSec)), Modifier.padding(start = 8.dp))
-            }
-            if (DeviceLibrary.isLocalKey(key)) Hint(stringResource(R.string.bookmarks_device_only))
-            else if (!BookmarkRules.isSyncable(key)) Hint(stringResource(R.string.bookmarks_local_only))
-            if (rows.isEmpty()) Hint(stringResource(R.string.bookmarks_empty))
-            LazyColumn {
-                bookmarkItems(rows, onJump = { viewModel.jumpTo(key, it.timeSec); onDismiss() }, onEdit = { editing = it }, onDelete = viewModel::deleteBookmark)
-            }
+    Column(Modifier.fillMaxWidth().testTag("bookmarksTab")) {
+        FilledTonalButton(
+            onClick = { adding = kotlin.math.floor(positionSec) },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).testTag("bookmarkAdd"),
+        ) {
+            Icon(Icons.Rounded.BookmarkAdd, contentDescription = null)
+            Text(stringResource(R.string.bookmark_add_here, formatClock(positionSec)), Modifier.padding(start = 8.dp))
+        }
+        if (DeviceLibrary.isLocalKey(key)) Hint(stringResource(R.string.bookmarks_device_only))
+        else if (!BookmarkRules.isSyncable(key)) Hint(stringResource(R.string.bookmarks_local_only))
+        if (rows.isEmpty()) Hint(stringResource(R.string.bookmarks_empty))
+        LazyColumn {
+            bookmarkItems(rows, onJump = { viewModel.jumpTo(key, it.timeSec); onDone() }, onEdit = { editing = it }, onDelete = viewModel::deleteBookmark)
         }
     }
     adding?.let { at ->
@@ -180,19 +172,15 @@ fun BookmarksSheet(key: String, positionSec: Double, onDismiss: () -> Unit, view
     }
 }
 
-/** Listening history of [key]; refreshed from the server when online, otherwise what is stored. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Listening history of [key] (a tab of the contents sheet); refreshed from the server when online, else what is stored. */
 @Composable
-fun HistorySheet(key: String, onDismiss: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
+fun HistoryContent(key: String, onDone: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
     LaunchedEffect(key) { viewModel.refreshHistory(key) }
     val history by remember(key) { viewModel.history(key) }.collectAsStateWithLifecycle(History(emptyList(), 0.0))
     val online by viewModel.online.collectAsStateWithLifecycle(true)
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("historySheet")) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            SheetTitle(stringResource(R.string.history_title))
-            HistorySummary(history, online)
-            LazyColumn { historyItems(history.entries) { viewModel.jumpTo(key, it.endSec); onDismiss() } }
-        }
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp).testTag("historyTab")) {
+        HistorySummary(history, online)
+        LazyColumn { historyItems(history.entries) { viewModel.jumpTo(key, it.endSec); onDone() } }
     }
 }
 
@@ -203,34 +191,30 @@ private fun HistorySummary(history: History, online: Boolean) {
     if (!online) Hint(stringResource(R.string.history_offline_hint))
 }
 
-/** The "play next" queue: tap plays now, arrows reorder, cross removes. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The "play next" queue (a tab of the contents sheet): tap plays now ([onDone] closes the sheet), arrows reorder, cross removes. */
 @Composable
-fun QueueSheet(onDismiss: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
+fun QueueContent(onDone: () -> Unit, viewModel: TitleExtrasViewModel = hiltViewModel()) {
     val rows by viewModel.queueRows.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("queueSheet")) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                SheetTitle(stringResource(R.string.queue_title))
-                if (rows.isNotEmpty()) TextButton(onClick = viewModel::clearQueue, modifier = Modifier.padding(end = 8.dp)) { Text(stringResource(R.string.queue_clear)) }
-            }
-            Hint(stringResource(if (rows.isEmpty()) R.string.queue_empty else R.string.queue_hint))
-            LazyColumn {
-                items(rows, key = { "q:${it.key}" }) { r ->
-                    val i = rows.indexOf(r)
-                    ListItem(
-                        headlineContent = { Text(r.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = r.subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                        trailingContent = {
-                            Row {
-                                IconButton(onClick = { viewModel.moveInQueue(r.key, -1) }, enabled = i > 0) { Icon(Icons.Rounded.KeyboardArrowUp, stringResource(R.string.queue_move_up)) }
-                                IconButton(onClick = { viewModel.moveInQueue(r.key, 1) }, enabled = i < rows.lastIndex) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.queue_move_down)) }
-                                IconButton(onClick = { viewModel.removeFromQueue(r.key) }) { Icon(Icons.Rounded.Close, stringResource(R.string.queue_remove)) }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().clickable { viewModel.playFromQueue(r.key); onDismiss() }.testTag("queue:${r.key}"),
-                    )
-                }
+    Column(Modifier.fillMaxWidth().testTag("queueTab")) {
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Hint(stringResource(if (rows.isEmpty()) R.string.queue_empty else R.string.queue_hint), Modifier.weight(1f))
+            if (rows.isNotEmpty()) TextButton(onClick = viewModel::clearQueue, modifier = Modifier.padding(end = 8.dp)) { Text(stringResource(R.string.queue_clear)) }
+        }
+        LazyColumn {
+            items(rows, key = { "q:${it.key}" }) { r ->
+                val i = rows.indexOf(r)
+                ListItem(
+                    headlineContent = { Text(r.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = r.subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+                    trailingContent = {
+                        Row {
+                            IconButton(onClick = { viewModel.moveInQueue(r.key, -1) }, enabled = i > 0) { Icon(Icons.Rounded.KeyboardArrowUp, stringResource(R.string.queue_move_up)) }
+                            IconButton(onClick = { viewModel.moveInQueue(r.key, 1) }, enabled = i < rows.lastIndex) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.queue_move_down)) }
+                            IconButton(onClick = { viewModel.removeFromQueue(r.key) }) { Icon(Icons.Rounded.Close, stringResource(R.string.queue_remove)) }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.playFromQueue(r.key); onDone() }.testTag("queue:${r.key}"),
+                )
             }
         }
     }

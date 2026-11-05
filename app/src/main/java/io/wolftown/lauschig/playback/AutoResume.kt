@@ -48,7 +48,8 @@ class LastTitleStarter @Inject constructor(
         val key = PlayableKey.parse(stored.itemId)
         val item = items.get(serverId, key.libraryItemId)
         if (item == null || item.orphaned) return null
-        if (key.episodeId != null && episodes.get(serverId, key.libraryItemId, key.episodeId) == null) return null
+        val episodeId = key.episodeId
+        if (episodeId != null && episodes.get(serverId, key.libraryItemId, episodeId) == null) return null
         val p = progress.get(serverId, stored.itemId)
         if (p != null && (p.isFinished || p.hideFromContinue)) return null
         return Last(serverId, stored.itemId, stored.pausedAt)

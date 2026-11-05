@@ -11,6 +11,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -27,6 +29,7 @@ import io.wolftown.lauschig.ui.achievements.AchievementsRoute
 import io.wolftown.lauschig.ui.adaptive.AdoptOuterPageIntoPane
 import io.wolftown.lauschig.ui.adaptive.ListDetailPane
 import io.wolftown.lauschig.ui.adaptive.ReadableWidth
+import io.wolftown.lauschig.ui.adaptive.closeDetailPane
 import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
@@ -202,18 +205,41 @@ fun NavHostController.isOnYearReview(): Boolean =
 
 @Composable
 fun NavHostController.currentTab(): TopLevelTab? {
-    val dest = currentBackStackEntryAsState().value?.destination
-    return when {
-        dest == null -> TopLevelTab.Start
-        dest.hasRoute<Start>() -> TopLevelTab.Start
-        dest.hasRoute<Library>() -> TopLevelTab.Library
-        dest.hasRoute<Discover>() -> TopLevelTab.Discover
-        dest.hasRoute<Search>() -> TopLevelTab.Search
-        else -> null
-    }
+    val dest = currentBackStackEntryAsState().value?.destination ?: return TopLevelTab.Start
+    return dest.tabRoot()
 }
 
+/**
+ * The root entry of the tab the user is in. A tab switch pops everything above the home tab (the graph's start), so the
+ * stack holds the home root and at most one other tab root: that one if present, else home.
+ */
+private fun NavHostController.activeTabRoot(): NavBackStackEntry? {
+    val home = graph.findStartDestination().tabRoot()
+    val roots = TopLevelTab.entries.mapNotNull { t -> runCatching { getBackStackEntry(t.route()) }.getOrNull() }
+    return roots.firstOrNull { it.destination.tabRoot() != home } ?: roots.firstOrNull()
+}
+
+/** The tab whose root page [this] is, null for any other page. */
+private fun NavDestination.tabRoot(): TopLevelTab? = when {
+    hasRoute<Start>() -> TopLevelTab.Start
+    hasRoute<Library>() -> TopLevelTab.Library
+    hasRoute<Discover>() -> TopLevelTab.Discover
+    hasRoute<Search>() -> TopLevelTab.Search
+    else -> null
+}
+
+/**
+ * Opens [tab] with the pages it had (each tab keeps its own stack). Tapping the tab the user is in – also with a page
+ * such as Settings or a title above its root – returns to its root instead (Material navigation): its own page, with
+ * Library's and Search's detail pane (two panes) back to empty. At the root of a one-pane tab nothing changes.
+ */
 fun NavHostController.navigateToTab(tab: TopLevelTab) {
+    val active = activeTabRoot()
+    if (active != null && active.destination.tabRoot() == tab) {
+        if (currentBackStackEntry != active) popBackStack(active.destination.id, inclusive = false)
+        active.closeDetailPane()
+        return
+    }
     navigate(tab.route()) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true

@@ -113,8 +113,14 @@
     <string name="detail_current_chapter_position">%1$s / %2$s</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
-    <string name="player_back_30">Back 30 seconds</string>
-    <string name="player_forward_30">Forward 30 seconds</string>
+    <plurals name="player_seek_back">
+        <item quantity="one">Back %d second</item>
+        <item quantity="other">Back %d seconds</item>
+    </plurals>
+    <plurals name="player_seek_forward">
+        <item quantity="one">Forward %d second</item>
+        <item quantity="other">Forward %d seconds</item>
+    </plurals>
     <string name="player_previous_chapter">Previous chapter</string>
     <string name="player_next_chapter">Next chapter</string>
     <string name="player_speed_button">Playback speed %1$s</string>
@@ -122,7 +128,6 @@
     <string name="player_chapters">Chapters</string>
     <string name="player_close">Close player</string>
     <string name="player_chapter_slider">Position in chapter</string>
-    <string name="player_book_time">%1$s / %2$s</string>
     <string name="player_mini_open">Open player</string>
     <string name="actions_details">Details</string>
     <string name="actions_download_resume">Resume download</string>
@@ -331,7 +336,6 @@
     <string name="settings_metered_wifi">Wi-Fi only</string>
     <string name="progress_mark_unfinished_keep">Mark as not finished (keep position)</string>
     <string name="player_sleep_timer">Sleep timer</string>
-    <string name="player_sleep_short">Timer</string>
     <string name="player_sleep_active">Sleep timer: %1$s left</string>
     <string name="player_sleep_chapter_active">Sleep timer: end of chapter, %1$s left</string>
     <string name="sleep_minutes">%1$d min</string>
@@ -339,9 +343,10 @@
     <string name="sleep_cancel">Turn off timer</string>
     <string name="sleep_shake_hint">Shake to extend</string>
     <string name="sleep_sheet_hint">Fades out over the last seconds. Shake the phone during the last minute to extend it.</string>
-    <string name="player_audio">Audio</string>
     <string name="audio_skip_silence">Skip silence</string>
     <string name="audio_skip_silence_hint">Applies to all titles</string>
+    <string name="audio_compressor">Speech focus &amp; night compression</string>
+    <string name="audio_compressor_hint">Turns loud noises down and quiet voices up – ideal for falling asleep. Applies to all titles</string>
     <string name="audio_boost">Volume boost</string>
     <string name="audio_boost_hint">For this title, e.g. quiet digitised tapes</string>
     <string name="audio_boost_off">Off</string>
@@ -352,6 +357,12 @@
     <string name="settings_rewind_hint">After a pause, jump back a little; after longer pauses further (up to three times).</string>
     <string name="settings_rewind_off">Off</string>
     <string name="settings_rewind_sec">%1$d s</string>
+    <string name="settings_seek_back">Skip back</string>
+    <string name="settings_seek_back_hint">The back button in the player, the notification, the car and on headphones</string>
+    <string name="settings_seek_forward">Skip forward</string>
+    <string name="settings_seek_forward_hint">The forward button in the player, the notification, the car and on headphones</string>
+    <string name="settings_sleep_chime">Hint tone before the end</string>
+    <string name="settings_sleep_chime_hint">A soft tone 30 seconds before the sleep timer fades out – time to shake if you are still awake</string>
     <string name="settings_default_speed">Default speed</string>
     <string name="settings_default_speed_hint">For titles without their own speed. Every title remembers its speed.</string>
     <string name="settings_default_boost">Default volume boost</string>
@@ -369,7 +380,6 @@
     <string name="collection_missing_titles">Some titles are not available on this device yet.</string>
     <string name="queue_add">Play next</string>
     <string name="queue_added">Added to the queue</string>
-    <string name="queue_title">Queue</string>
     <string name="queue_empty">Nothing queued. Add titles with “Play next”.</string>
     <string name="queue_hint">Starts automatically when the current title ends.</string>
     <string name="queue_move_up">Move up</string>
@@ -401,6 +411,45 @@
     <string name="player_bookmarks">Bookmarks</string>
     <string name="player_queue">Queue</string>
     <string name="player_history">History</string>
+    <string name="player_tile_speed">Speed</string>
+    <string name="player_tile_sleep">Sleep</string>
+    <string name="player_tile_sound">Sound</string>
+    <string name="player_tile_off">Off</string>
+    <string name="player_tile_no_silence">No silence</string>
+    <string name="player_tile_night">Night</string>
+    <string name="player_sleep_off_description">Sleep timer: off</string>
+    <string name="player_sound_description">Sound: %1$s</string>
+    <string name="player_contents">Chapters &amp; queue</string>
+    <string name="player_contents_current">Now: ch. %1$d / %2$d</string>
+    <string name="player_contents_no_chapters">Queue, bookmarks &amp; history</string>
+    <string name="player_contents_chapters_empty">This title has no chapters.</string>
+    <string name="chapter_search_hint">Search chapters</string>
+    <string name="chapter_search_nothing">No chapter for “%s”</string>
+    <string name="chapter_search_nothing_hint">Search for a word of the title or for the chapter number.</string>
+    <plurals name="chapter_search_hits">
+        <item quantity="one">%d chapter</item>
+        <item quantity="other">%d chapters</item>
+    </plurals>
+    <string name="chapter_number_spoken">Chapter %d</string>
+    <string name="player_remaining_chapter_short">Chapter</string>
+    <string name="player_remaining_book_short">Book</string>
+    <string name="player_remaining_chapter_description">Chapter: %1$s left</string>
+    <string name="player_remaining_book_description">Book: %1$s left</string>
+    <string name="player_remaining_description">%1$s left</string>
+    <string name="player_remaining_show_book">show the book\'s time left</string>
+    <string name="player_remaining_show_chapter">show the chapter\'s time left</string>
+    <plurals name="spoken_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="spoken_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="spoken_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
     <plurals name="collection_titles">
         <item quantity="one">%d title</item>
         <item quantity="other">%d titles</item>
@@ -479,8 +528,14 @@
     <string name="car_duration_h_min">%1$d h %2$d min</string>
     <string name="car_duration_min">%1$d min</string>
     <string name="car_volume">Volume %1$s</string>
-    <string name="car_seek_back">Back 30 seconds</string>
-    <string name="car_seek_forward">Forward 30 seconds</string>
+    <plurals name="car_seek_back">
+        <item quantity="one">Back %d second</item>
+        <item quantity="other">Back %d seconds</item>
+    </plurals>
+    <plurals name="car_seek_forward">
+        <item quantity="one">Forward %d second</item>
+        <item quantity="other">Forward %d seconds</item>
+    </plurals>
     <string name="car_speed">Speed %1$s×</string>
     <string name="car_sleep_off">Sleep timer off</string>
     <string name="car_sleep_minutes">Sleep timer: %1$d min</string>
@@ -496,8 +551,8 @@
     <string name="widget_empty">Nothing loaded – tap to open</string>
     <string name="widget_play">Play</string>
     <string name="widget_pause">Pause</string>
-    <string name="widget_back_30">Back 30 seconds</string>
-    <string name="widget_forward_30">Forward 30 seconds</string>
+    <string name="widget_seek_back">Skip back</string>
+    <string name="widget_seek_forward">Skip forward</string>
     <string name="widget_open">Open %1$s in Lauschig</string>
     <!-- Verbindungsstatus (phase 4B) -->
     <string name="connecting_banner">Connecting to the server …</string>
@@ -758,6 +813,12 @@
     </plurals>
     <string name="stats_card_open">Open statistics</string>
     <string-array name="whatsnew_0_4_0">
+        <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>
+        <item>Player: speed, sleep and sound as three equal tiles; chapters, queue, bookmarks and history in one sheet</item>
+        <item>Sleep timer: a soft hint tone 30 seconds before the end – time to shake (can be turned off)</item>
+        <item>Sound: “Speech focus &amp; night compression” turns loud passages down and quiet voices up</item>
+        <item>Two times at the progress bar: elapsed on the left, time left on the right – tap to switch between chapter and book</item>
+        <item>Swipe the mini player up to open the player</item>
         <item>Dark tone “Fireside”: warm mocha, cream and amber for listening in bed – also with pure black</item>
         <item>Downloaded titles carry a new symbol, an arrow in a circle – no longer mistaken for “heard”</item>
         <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
@@ -766,6 +827,9 @@
         <item>Downloads can go to the SD card (Settings → Storage location); while it is out they go to the internal storage</item>
         <item>Heard downloads can delete themselves – right away, after 3 or after 7 days; progress and history stay</item>
         <item>Settings → About → Share diagnostic log: helps to find problems, without passwords, tokens or server addresses</item>
+        <item>Faster search, covers stay cached after a restart, lists no longer churn while you listen</item>
+        <item>Search chapters: in long audiobooks, type a word of the title or the chapter number in the player\'s chapter sheet</item>
+        <item>Tap the open tab again to return to its first page</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>

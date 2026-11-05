@@ -368,6 +368,7 @@ class PlayerControllerTest {
         rewindAfterPause: suspend (Long) -> Long = { 0 },
         clock: () -> Long = { 0 },
         onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
+        seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -384,7 +385,30 @@ class PlayerControllerTest {
         rewindAfterPause = rewindAfterPause,
         clock = clock,
         onlineBase = onlineBase,
+        seekSteps = seekSteps,
     )
+
+    @Test fun seekSteps_followTheSettings_andSurviveAStart() = runTest {
+        val steps = MutableStateFlow(10 to 45)
+        val f = FakeFacade()
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, seekSteps = steps)
+        assertEquals(10, c.state.value.seekBackSec)
+        assertEquals(45, c.state.value.seekForwardSec)
+        c.play(s, "it") // a start replaces the state
+        assertEquals(10, c.state.value.seekBackSec)
+        assertEquals(45, c.state.value.seekForwardSec)
+        steps.value = 5 to 60
+        assertEquals(5, c.state.value.seekBackSec)
+        assertEquals(60, c.state.value.seekForwardSec)
+        c.stop()
+        assertEquals(5, c.state.value.seekBackSec)
+    }
+
+    @Test fun seekSteps_defaultFifteenBackThirtyForward() = runTest {
+        val c = controller(FakeFacade(), null)
+        assertEquals(15, c.state.value.seekBackSec)
+        assertEquals(30, c.state.value.seekForwardSec)
+    }
 
     @Test fun play_savedProgress_rewindsByThePauseSinceTheLastSave() = runTest {
         val pauses = mutableListOf<Long>()

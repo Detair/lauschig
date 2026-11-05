@@ -77,4 +77,22 @@ class CarMediaItemsTest {
         assertEquals("Sleep-Timer: 15 min", running[3].displayName)
         assertEquals(listOf(CarButtons.CHAPTER_BACK, CarButtons.CHAPTER_NEXT), running.drop(4).map { it.sessionCommand!!.customAction })
     }
+
+    @Test fun buttons_seekFollowsTheSettings_withTheMatchingIconOrTheGenericOne() {
+        val b = CarButtons(res)
+        val defaults = b.buttons(CarButtons.State(1f, null, hasChapters = false))
+        assertEquals(CommandButton.ICON_SKIP_BACK_15, defaults[0].icon)
+        assertEquals("15 Sekunden zurück", defaults[0].displayName)
+        assertEquals(CommandButton.ICON_SKIP_FORWARD_30, defaults[1].icon)
+        assertEquals("30 Sekunden vor", defaults[1].displayName)
+        val custom = b.buttons(CarButtons.State(1f, null, hasChapters = false, seekBackSec = 5, seekForwardSec = 45))
+        assertEquals(CommandButton.ICON_SKIP_BACK_5, custom[0].icon)
+        assertEquals("5 Sekunden zurück", custom[0].displayName)
+        assertEquals(CommandButton.ICON_SKIP_FORWARD, custom[1].icon) // no 45 s icon
+        assertEquals("45 Sekunden vor", custom[1].displayName)
+        assertEquals(CommandButton.ICON_SKIP_BACK_10, CarButtons.seekIcon(10, forward = false))
+        assertEquals(CommandButton.ICON_SKIP_BACK_30, CarButtons.seekIcon(30, forward = false))
+        assertEquals(CommandButton.ICON_SKIP_FORWARD_15, CarButtons.seekIcon(15, forward = true))
+        assertEquals(CommandButton.ICON_SKIP_FORWARD, CarButtons.seekIcon(60, forward = true))
+    }
 }

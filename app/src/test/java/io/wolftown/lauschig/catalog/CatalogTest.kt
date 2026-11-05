@@ -132,4 +132,19 @@ class CatalogTest {
         assertTrue(r.narrators.isEmpty())
         assertEquals(listOf("Erika Sprecher"), catalog.search(items, "sprech").narrators.map { it.name })
     }
+
+    @Test fun search_withPrecomputedFacets_isIdenticalAndDoesNotRecomputeThem() {
+        val items = listOf(
+            item("a", title = "Aaa", author = "Max Mustermann", series = "Max Reihe", seq = 1.0, genres = listOf("Maxi")),
+            item("b", title = "Max und Moritz", narrator = "Erika Sprecher"),
+        )
+        val facets = catalog.facets(items)
+        for (q in listOf("max", "sprech", "maxi", "zzz", "  ")) {
+            assertEquals(catalog.search(items, q), catalog.search(items, facets, q))
+        }
+        // Facets handed in are the ones filtered: with empty facets no person/series/genre can be found (proves they are not rebuilt).
+        val none = catalog.search(items, Facets(emptyList(), emptyList(), emptyList(), emptyList(), emptyList()), "max")
+        assertEquals(listOf("b", "a"), none.titles.map { it.id })
+        assertTrue(none.authors.isEmpty() && none.series.isEmpty() && none.genres.isEmpty())
+    }
 }

@@ -331,9 +331,8 @@ class SetupViewModel @Inject constructor(
             // A re-auth with another account or another public address is another server id: the old one is signed
             // out keeping its data (it then shows under „Downloads früherer Konten“), so none of its work keeps running
             // and nothing of it is left unreachable – and replaced in the same step, so the app never shows "no account".
-            val previous = accounts.account.first()
-            if (previous != null && previous.serverId != account.serverId) signOut.switchTo(account, access, refresh)
-            else accounts.save(account, access, refresh)
+            // One account operation, after any other one still running (a sign-out, a profile switch).
+            signOut.signIn(account, access, refresh)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

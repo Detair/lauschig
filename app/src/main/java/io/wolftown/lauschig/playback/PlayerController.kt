@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import androidx.annotation.StringRes
+import io.wolftown.lauschig.settings.PlaybackSettings
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -34,6 +35,9 @@ data class PlayerUiState(
     /** A download is being slowed down so this stream keeps playing. */
     val downloadThrottled: Boolean = false,
     @StringRes val error: Int? = null,
+    /** The seek steps of the settings (back / forward buttons), whatever is loaded. */
+    val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
+    val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
 )
 
 interface PlayerController {

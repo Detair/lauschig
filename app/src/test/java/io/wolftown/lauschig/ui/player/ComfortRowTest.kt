@@ -6,6 +6,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.hasText
 import io.wolftown.lauschig.playback.SleepMode
 import io.wolftown.lauschig.playback.SleepTimerUi
 import io.wolftown.lauschig.ui.LauschigTheme
@@ -24,7 +32,7 @@ class ComfortRowTest {
     @Test fun runningTimer_showsCountdown_andShakeHint() {
         val state = ComfortUiState(sleep = SleepTimerUi(SleepMode.Minutes(30), remainingMs = 754_200, shakeToExtend = false))
         rule.setContent { LauschigTheme { ComfortRowForTest(state, {}, {}, {}, {}) } }
-        rule.onNodeWithText("12:35").assertExists()
+        rule.onNodeWithTag("sleepButton").assert(hasText("Sleep")).assert(hasText("12:35"))
         rule.onNodeWithContentDescription("Sleep timer: 12:35 left").assertExists()
         rule.onNodeWithTag("shakeHint").assertDoesNotExist()
     }
@@ -34,6 +42,20 @@ class ComfortRowTest {
         rule.setContent { LauschigTheme { ComfortRowForTest(state, {}, {}, {}, {}) } }
         rule.onNodeWithContentDescription("Sleep timer: end of chapter, 00:30 left").assertExists()
         rule.onNodeWithTag("shakeHint").assertExists()
+    }
+
+    @Test fun sleepSheet_chimeSwitch() {
+        val chimes = mutableListOf<Boolean>()
+        rule.setContent {
+            LauschigTheme {
+                androidx.compose.foundation.layout.Row {
+                    ComfortButtons(ComfortUiState(sleepChime = true), {}, {}, {}, {}, onSleepChime = { chimes += it })
+                }
+            }
+        }
+        rule.onNodeWithTag("sleepButton").performClick()
+        rule.onNodeWithTag("sleepChimeSwitch").assertIsSelected().performClick()
+        assertEquals(listOf(false), chimes)
     }
 
     @Test fun sleepSheet_startsAndCancels() {
@@ -56,8 +78,9 @@ class ComfortRowTest {
         val skips = mutableListOf<Boolean>()
         val boosts = mutableListOf<Int?>()
         rule.setContent { LauschigTheme { ComfortRowForTest(ComfortUiState(skipSilence = false, titleBoostDb = 6, defaultBoostDb = 3), {}, {}, { skips += it }, { boosts += it }) } }
-        rule.onNodeWithText("Timer").assertExists() // no timer: the button shows its short name …
-        rule.onNodeWithContentDescription("Sleep timer").assertExists() // … and is described with the full one
+        rule.onNodeWithTag("sleepButton").assert(hasText("Sleep")).assert(hasText("Off")) // no timer: name and "off" …
+        rule.onNodeWithContentDescription("Sleep timer: off").assertExists() // … described with the full name
+        rule.onNodeWithTag("audioButton").assert(hasText("Sound")).assert(hasText("+6 dB")) // the title's boost
         rule.onNodeWithTag("audioButton").performClick()
         rule.onNodeWithTag("skipSilence").performClick()
         rule.onNodeWithText("Default (+3 dB)").assertExists()
@@ -73,5 +96,33 @@ class ComfortRowTest {
     ) = androidx.compose.foundation.layout.Column {
         androidx.compose.foundation.layout.Row { ComfortButtons(state, onStart, onCancel, onSkip, onBoost) }
         ShakeHint(state)
+    }
+
+    @Test fun soundTile_value_saysWhatIsOn() {
+        rule.setContent {
+            LauschigTheme {
+                androidx.compose.foundation.layout.Column {
+                    androidx.compose.foundation.layout.Row { ComfortButtons(ComfortUiState(defaultBoostDb = 3), {}, {}, {}, {}) }
+                    androidx.compose.foundation.layout.Row(Modifier.testTag("second")) { ComfortButtons(ComfortUiState(skipSilence = true), {}, {}, {}, {}) }
+                }
+            }
+        }
+        rule.onAllNodesWithTag("audioButton")[0].assert(hasText("+3 dB")) // the default boost applies to the title
+        rule.onAllNodesWithTag("audioButton")[1].assert(hasText("No silence"))
+        rule.onAllNodesWithContentDescription("Sound: Skip silence").assertCountEquals(1)
+    }
+
+    @Test fun audioSheet_compressorSwitch_andTheTileSaysNight() {
+        val on = mutableListOf<Boolean>()
+        rule.setContent {
+            LauschigTheme {
+                androidx.compose.foundation.layout.Row { ComfortButtons(ComfortUiState(compressor = true), {}, {}, {}, {}, onCompressor = { on += it }) }
+            }
+        }
+        rule.onNodeWithTag("audioButton").assert(hasText("Night"))
+        rule.onNodeWithContentDescription("Sound: Speech focus & night compression").assertExists()
+        rule.onNodeWithTag("audioButton").performClick()
+        rule.onNodeWithTag("compressor").assertIsSelected().performClick()
+        assertEquals(listOf(false), on)
     }
 }

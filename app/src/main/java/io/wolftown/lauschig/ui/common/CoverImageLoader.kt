@@ -5,6 +5,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
+import coil3.disk.DiskCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.net.ApiProvider
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Request
+import okio.Path.Companion.toOkioPath
 
 /**
  * Routes Coil's network requests through [ApiProvider]'s authenticated, cleartext-guarded client for the
@@ -56,9 +58,36 @@ internal fun processStarted(): Flow<Boolean> = callbackFlow {
     awaitClose { lifecycle.removeObserver(observer) }
 }.flowOn(Dispatchers.Main.immediate)
 
+/** Subfolder of the app's cache dir holding the cover images (Android may reclaim it under storage pressure; covers are re-fetched then). */
+const val COVER_CACHE_DIR = "coil_covers"
+const val COVER_CACHE_MAX_BYTES = 150L * 1024 * 1024
+
+/**
+ * Explicit cover disk cache: a known directory and a fixed 150 MB ceiling (Coil's default depends on free space and
+ * lives in `image_cache`). Covers load from here after an app restart and while offline. Sign-out empties it through
+ * `SingletonImageLoader.get(context).diskCache?.clear()` (AccountStateCleaner).
+ */
+fun newCoverDiskCache(context: Context): DiskCache = DiskCache.Builder()
+    .directory(context.cacheDir.resolve(COVER_CACHE_DIR).toOkioPath())
+    .maxSizeBytes(COVER_CACHE_MAX_BYTES)
+    .build()
+
+/** Where Coil 3 kept its default disk cache before [newCoverDiskCache] (seen on a 0.3.0 install: `coil3_disk_cache`; `image_cache` is Coil 2's). */
+private val LEGACY_COVER_CACHE_DIRS = listOf("coil3_disk_cache", "image_cache")
+
+/**
+ * Deletes the previous default Coil cache directories: nothing writes there any more, so they would keep covers of
+ * earlier accounts (and up to a few hundred MB) forever. Idempotent; a missing directory is fine; never throws.
+ * Blocking file I/O: call it off the main thread.
+ */
+fun deleteLegacyCoverCaches(context: Context) {
+    for (name in LEGACY_COVER_CACHE_DIRS) runCatching { context.cacheDir.resolve(name).deleteRecursively() }
+}
+
 fun newCoverImageLoader(context: Context, api: ApiProvider): ImageLoader {
     val calls = GuardedCallFactory(api, CoroutineScope(SupervisorJob() + Dispatchers.Default), processStarted())
     return ImageLoader.Builder(context)
         .components { add(OkHttpNetworkFetcherFactory(callFactory = { calls })) }
+        .diskCache { newCoverDiskCache(context) }
         .build()
 }

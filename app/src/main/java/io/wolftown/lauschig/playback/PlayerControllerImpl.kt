@@ -27,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,8 @@ class PlayerControllerImpl(
     private val clock: () -> Long = System::currentTimeMillis,
     /** The online server's base URL as it changes (null while offline); a streamed queue follows it. */
     private val onlineBase: Flow<HttpUrl?> = emptyFlow(),
+    /** The seek steps of the settings (back, forward seconds); shown as [PlayerUiState.seekBackSec] / `seekForwardSec`. */
+    private val seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -109,6 +112,7 @@ class PlayerControllerImpl(
         downloadThrottled = monitor.downloadThrottled,
         rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
         onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
+        seekSteps = combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair),
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -150,6 +154,15 @@ class PlayerControllerImpl(
     private var wasPlaying = false
     private var load: StreamLoad? = null
     private var throttled = false
+    private var seekBack = PlaybackSettings.DEFAULT_SEEK_BACK
+    private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
+
+    /** A fresh state for a new or no title; the settings it shows are kept. */
+    private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =
+        PlayerUiState(
+            itemId = itemId, title = title, isStreaming = isStreaming, isLoading = isLoading, downloadThrottled = throttled,
+            seekBackSec = seekBack, seekForwardSec = seekForward,
+        )
 
     init {
         facade.setOnChange { refresh() }
@@ -172,6 +185,12 @@ class PlayerControllerImpl(
         // Only what the UI shows: a playing stream's stats change constantly but map to null.
         scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
         scope.launch { downloadThrottled.collect { t -> throttled = t; _state.update { it.copy(downloadThrottled = t) } } }
+        scope.launch {
+            seekSteps.distinctUntilChanged().collect { (back, forward) ->
+                seekBack = back; seekForward = forward
+                _state.update { it.copy(seekBackSec = back, seekForwardSec = forward) }
+            }
+        }
     }
 
     override fun play(serverId: String, itemId: String, startSec: Double?) {
@@ -194,7 +213,7 @@ class PlayerControllerImpl(
             }
             starting = true
             last = serverId to itemId
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isLoading = true, downloadThrottled = throttled)
+            _state.value = freshState(itemId, item.item.title, isLoading = true)
             /** Start failed: the previous title (if any) stays loaded, the error is shown. */
             fun fail(error: Int) {
                 starting = false
@@ -245,7 +264,7 @@ class PlayerControllerImpl(
             val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
             val started = Current(item, mapper, coverPath, streaming = !allLocal, base, items)
             current = started
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, isLoading = true, downloadThrottled = throttled)
+            _state.value = freshState(itemId, item.item.title, isStreaming = !allLocal, isLoading = true)
             facade.setMediaItems(items, index, offsetMs)
             facade.play()
             refresh()
@@ -479,7 +498,7 @@ class PlayerControllerImpl(
         pendingBase = null
         wasPlaying = false
         facade.stop()
-        _state.value = PlayerUiState(downloadThrottled = throttled)
+        _state.value = freshState()
     }
 
     private fun seekGlobal(c: Current, globalSec: Double) {
@@ -559,7 +578,7 @@ class PlayerControllerImpl(
             last = serverId to itemId
             val adopted = Current(item, TimelineMapper(item.audioFiles), coverPath, streaming = !allLocal, base, items)
             current = adopted
-            _state.value = PlayerUiState(itemId = itemId, title = item.item.title, isStreaming = !allLocal, downloadThrottled = throttled)
+            _state.value = freshState(itemId, item.item.title, isStreaming = !allLocal)
             refresh()
             if (items.isNotEmpty()) watchDownloads(adopted) else watchBase(adopted)
         }

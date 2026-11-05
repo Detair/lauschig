@@ -28,7 +28,8 @@ class HistoryRepository(
         if (DeviceLibrary.isLocal(serverId, key)) return // no server knows a device title; its history is this device's
         val api = api.first() ?: return
         val parsed = PlayableKey.parse(key)
-        val page = if (parsed.episodeId != null) api.episodeListeningSessions(parsed.libraryItemId, parsed.episodeId, LIMIT)
+        val episodeId = parsed.episodeId
+        val page = if (episodeId != null) api.episodeListeningSessions(parsed.libraryItemId, episodeId, LIMIT)
         else api.itemListeningSessions(parsed.libraryItemId, LIMIT)
         history.replaceForKey(
             serverId, key,

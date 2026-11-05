@@ -28,7 +28,7 @@ data class AudioFileEntity(
     val completedBytes: Long = 0,
 )
 
-@Entity(tableName = "progress", primaryKeys = ["serverId", "itemId"])
+@Entity(tableName = "progress", primaryKeys = ["serverId", "itemId"], indices = [Index("serverId", "isFinished", "lastUpdate")])
 data class ProgressEntity(
     val serverId: String,
     val itemId: String,
@@ -56,7 +56,7 @@ data class LocalSessionEntity(
 
 enum class DownloadState { QUEUED, RUNNING, PAUSED, COMPLETE, FAILED }
 
-@Entity(tableName = "downloads", primaryKeys = ["serverId", "itemId"])
+@Entity(tableName = "downloads", primaryKeys = ["serverId", "itemId"], indices = [Index("serverId", "state")])
 data class DownloadEntity(
     val serverId: String,
     val itemId: String,

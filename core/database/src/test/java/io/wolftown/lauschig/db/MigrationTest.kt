@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -315,6 +316,39 @@ class MigrationTest {
             assertEquals(emptyList<Any>(), dao.observeAll("s").first())
             dao.insertAll(listOf(io.wolftown.lauschig.db.entities.AchievementSeenEntity("s", "streak", 2, 5)))
             assertEquals(5L, dao.observeAll("s").first().single().seenAt)
+        } finally {
+            room.close()
+        }
+    }
+
+    @Test fun v10ToV11_keepsData_andAddsTheCompoundIndexes() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = context.getDatabasePath("migration-test-v11.db").apply { parentFile!!.mkdirs(); delete() }
+        val schema = JSONObject(File("schemas/io.wolftown.lauschig.db.LauschigDatabase/10.json").readText()).getJSONObject("database")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            val entities = schema.getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val e = entities.getJSONObject(i)
+                val table = e.getString("tableName")
+                db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+                e.optJSONArray("indices")?.let { idx -> for (j in 0 until idx.length()) db.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table)) }
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO progress (serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty, hideFromContinue) VALUES ('s', 'a', 12.5, 100.0, 1, 7, 0, 0)")
+            db.execSQL("INSERT INTO downloads (serverId, itemId, state, requestedAt) VALUES ('s', 'a', 'COMPLETE', 3)")
+            db.version = 10
+        }
+        val room = Room.databaseBuilder(context, LauschigDatabase::class.java, file.path).allowMainThreadQueries().build()
+        try {
+            assertEquals(12.5, room.progressDao().get("s", "a")!!.currentTimeSec, 0.0)
+            assertEquals(listOf("a"), room.downloadDao().observeCompleteIds("s").first())
+            val c = room.openHelper.readableDatabase.query("SELECT name FROM sqlite_master WHERE type = 'index'")
+            val names = buildSet { while (c.moveToNext()) add(c.getString(0)) }
+            c.close()
+            assertTrue(names.toString(), names.containsAll(listOf(
+                "index_progress_serverId_isFinished_lastUpdate", "index_downloads_serverId_state", "index_items_serverId_seriesName_seriesSortKey",
+            )))
         } finally {
             room.close()
         }

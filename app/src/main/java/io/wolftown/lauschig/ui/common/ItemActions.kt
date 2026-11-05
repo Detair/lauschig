@@ -124,7 +124,9 @@ class ItemActionsViewModel @Inject constructor(
     /** A book's title, or an episode's own title. */
     private suspend fun titleOf(serverId: String, key: String): String? {
         val p = PlayableKey.parse(key)
-        return if (p.episodeId != null) episodes.get(serverId, p.libraryItemId, p.episodeId)?.title else items.get(serverId, key)?.title
+        // No smart cast across modules (PlayableKey lives in :core:model): read it once.
+        val episodeId = p.episodeId
+        return if (episodeId != null) episodes.get(serverId, p.libraryItemId, episodeId)?.title else items.get(serverId, key)?.title
     }
 
     /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */

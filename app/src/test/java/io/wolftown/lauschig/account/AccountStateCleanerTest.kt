@@ -96,4 +96,11 @@ class AccountStateCleanerTest {
         AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, { cleared++ }).clear(a)
         assertEquals(1, cleared)
     }
+
+    @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx).clear(a)
+        assertEquals(false, legacy.exists())
+    }
 }

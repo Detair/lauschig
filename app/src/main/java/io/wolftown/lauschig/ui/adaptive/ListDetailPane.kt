@@ -110,6 +110,16 @@ private const val HANDOFF = "listDetailPane.handoff"
  * be found again under generation 0 and bring a page back that the user had backed out of.
  */
 private const val GENERATION = "listDetailPane.generation"
+/** Set by a re-tap on the host's tab ([closeDetailPane]): the pane goes back to empty, the list stays. */
+private const val CLOSE = "listDetailPane.close"
+
+/**
+ * Asks the [ListDetailPane] of this host entry to show its list alone again (the detail pane back to empty, its pages
+ * gone): the tab's own page, as a re-tap on the tab expects. One pane: nothing to close.
+ */
+fun NavBackStackEntry.closeDetailPane() {
+    if (destination.isPaneHost()) savedStateHandle[CLOSE] = true
+}
 
 /**
  * Library and search on wide windows: the list on the start side, the details of what was tapped beside it.
@@ -139,7 +149,10 @@ fun ListDetailPane(
     paneGraph: NavGraphBuilder.(NavHostController) -> Unit = { appPaneGraph(it) },
 ) {
     val saved = host.savedStateHandle
+    val close by remember(saved) { saved.getStateFlow(CLOSE, false) }.collectAsState()
     if (!twoPane) {
+        // No pane to close: a request from the tab bar must not close a later pane's handed-over page.
+        LaunchedEffect(close) { if (close) saved[CLOSE] = false }
         LaunchedEffect(Unit) {
             // The pane's page, or one handed over just before the window shrank again, goes onto the outer stack.
             val page = PaneSelection.fromSaved(saved.remove<ArrayList<String>>(HANDOFF) ?: saved[SELECTION])
@@ -173,6 +186,12 @@ fun ListDetailPane(
             if (page != null && top != null) {
                 replace(page.route())
                 saved[HANDOFF] = null
+            }
+        }
+        LaunchedEffect(close, top) {
+            if (close && top != null) {
+                inner.popBackStack(PaneEmpty, inclusive = false)
+                saved[CLOSE] = false
             }
         }
         val opener = PaneOpener(

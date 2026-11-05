@@ -11,6 +11,10 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.StreamLoad
+import io.wolftown.lauschig.settings.PlaybackSettings
+import io.wolftown.lauschig.settings.RemainingTime
+import io.wolftown.lauschig.settings.UiSettings
+import kotlinx.coroutines.launch
 import io.wolftown.lauschig.ui.detail.ChapterRow
 import io.wolftown.lauschig.ui.detail.formatClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Minimal chapter data the player needs; [startSec]/[endSec] are book-wide. */
@@ -48,9 +53,13 @@ data class PlayerScreenState(
     val chapterPositionSec: Double = 0.0,
     val chapterDurationSec: Double = 0.0,
     val chapterElapsedText: String = "00:00",
-    val chapterTotalText: String = "00:00",
-    val bookElapsedText: String = "00:00",
-    val bookTotalText: String = "00:00",
+    /** Book time left in the current chapter (whole book without chapters) and in the whole book. */
+    val chapterRemainingSec: Double = 0.0,
+    val bookRemainingSec: Double = 0.0,
+    /** What the right timestamp counts down (a setting; a tap toggles it). */
+    val remainingTime: RemainingTime = RemainingTime.CHAPTER,
+    /** The current chapter is a part of the book (false without chapters or with one over the whole book). */
+    val splitByChapters: Boolean = true,
     val speed: Float = 1f,
     val isStreaming: Boolean = false,
     val isLoading: Boolean = false,
@@ -64,6 +73,9 @@ data class PlayerScreenState(
     val seriesSequence: String? = null,
     /** The cover's server version (see [PlayerMeta]); null until this title's row is read (no server cover until then). */
     val coverVersion: Long? = null,
+    /** The seek steps of the settings, for the back / forward buttons. */
+    val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
+    val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -72,10 +84,12 @@ data class PlayerScreenState(
 class PlayerViewModel(
     private val player: PlayerController,
     metaOf: (itemId: String) -> Flow<PlayerMeta?> = { flowOf(null) },
+    remainingTime: Flow<RemainingTime> = flowOf(RemainingTime.CHAPTER),
+    private val setRemainingTime: suspend (RemainingTime) -> Unit = {},
     chaptersOf: (itemId: String) -> Flow<List<ChapterInfo>>,
 ) : ViewModel() {
 
-    @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao) :
+    @Inject constructor(player: PlayerController, accountStore: AccountStore, itemDao: ItemDao, ui: UiSettings) :
         this(
             player,
             metaOf = { itemId ->
@@ -98,6 +112,8 @@ class PlayerViewModel(
                     else itemDao.observeChapters(sid, itemId).map { cs -> cs.map { ChapterInfo(it.title, it.startSec, it.endSec) } } // chapters live under the playable key
                 }
             },
+            remainingTime = ui.playerRemainingTime,
+            setRemainingTime = ui::setPlayerRemainingTime,
         )
 
     private val loadedId = player.state.map { it.itemId }.distinctUntilChanged()
@@ -113,7 +129,7 @@ class PlayerViewModel(
         if (id == null) flowOf(null to null) else metaOf(id).map { id to it }.onStart { emit(id to null) }
     }.distinctUntilChanged()
 
-    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta) { p, chs, (metaFor, meta) ->
+    val state: StateFlow<PlayerScreenState> = combine(player.state, chapters, meta, remainingTime) { p, chs, (metaFor, meta), remaining ->
         val m = meta.takeIf { metaFor == p.itemId }
         // Without chapter data the whole book acts as one chapter.
         val start = if (p.chapterIndex >= 0) p.chapterStartSec else 0.0
@@ -131,9 +147,11 @@ class PlayerViewModel(
             chapterPositionSec = inChapter,
             chapterDurationSec = length,
             chapterElapsedText = formatClock(inChapter),
-            chapterTotalText = formatClock(length),
-            bookElapsedText = formatClock(p.positionSec),
-            bookTotalText = formatClock(p.durationSec),
+            chapterRemainingSec = length - inChapter,
+            bookRemainingSec = (p.durationSec - p.positionSec).coerceAtLeast(0.0),
+            remainingTime = remaining,
+            // Without chapters the "chapter" is the whole book (one chapter over the whole book is the same).
+            splitByChapters = p.chapterIndex >= 0 && abs((end - start) - p.durationSec) > WHOLE_BOOK_SLACK_SEC,
             speed = p.speed,
             isStreaming = p.isStreaming,
             isLoading = p.isLoading,
@@ -149,6 +167,8 @@ class PlayerViewModel(
             seriesName = m?.seriesName,
             seriesSequence = m?.seriesSequence,
             coverVersion = m?.coverVersion,
+            seekBackSec = p.seekBackSec,
+            seekForwardSec = p.seekForwardSec,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 
@@ -178,11 +198,19 @@ class PlayerViewModel(
 
     fun seekToChapter(index: Int) = player.seekToChapter(index)
 
+    /** The right timestamp switches between the chapter's and the book's time left; the choice is kept. */
+    fun toggleRemainingTime() {
+        val next = if (state.value.remainingTime == RemainingTime.CHAPTER) RemainingTime.BOOK else RemainingTime.CHAPTER
+        viewModelScope.launch { setRemainingTime(next) }
+    }
+
     /** Snaps to the 0.05 grid and clamps to 0.5..3.0. */
     fun setSpeed(speed: Float) = player.setSpeed(snapSpeed(speed))
 
     companion object {
         const val RESTART_THRESHOLD_SEC = 3.0
+        /** A chapter this close to the book's length is the whole book. */
+        const val WHOLE_BOOK_SLACK_SEC = 1.0
         const val MIN_SPEED = 0.5f
         const val MAX_SPEED = 3.0f
         val PRESETS = listOf(1.0f, 1.25f, 1.5f, 2.0f)

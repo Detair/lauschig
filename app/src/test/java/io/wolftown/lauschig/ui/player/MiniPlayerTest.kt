@@ -15,6 +15,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.ui.LauschigTheme
@@ -108,5 +112,49 @@ class MiniPlayerTest {
     @Test fun miniPlayer_downloadedServerTitle_staysDownloaded() {
         rule.setContent { LauschigTheme { MiniPlayer(loaded, {}, {}) } }
         rule.onNodeWithContentDescription("Downloaded").assertExists()
+    }
+
+    @Test fun miniPlayer_swipeUp_opensThePlayer() {
+        var opened = 0
+        var toggles = 0
+        rule.setContent { LauschigTheme { MiniPlayer(loaded, { toggles++ }, { opened++ }) } }
+        rule.onNodeWithTag("miniPlayer").performTouchInput { swipeUp() }
+        rule.waitForIdle()
+        assertEquals(1, opened)
+        assertEquals(0, toggles)
+    }
+
+    @Test fun miniPlayer_swipeDownOrATinyNudge_opensNothing() {
+        var opened = 0
+        rule.setContent { LauschigTheme { MiniPlayer(loaded, {}, { opened++ }) } }
+        rule.onNodeWithTag("miniPlayer").performTouchInput { swipeDown() }
+        // A slow nudge of 30 dp up: past the touch slop (16 dp here), so no tap either, but far from a swipe.
+        rule.onNodeWithTag("miniPlayer").performTouchInput {
+            down(Offset(centerX, centerY))
+            repeat(30) { moveBy(Offset(0f, -1.dp.toPx()), delayMillis = 50) }
+            up()
+        }
+        rule.waitForIdle()
+        assertEquals(0, opened)
+    }
+
+    @Test fun miniPlayer_swipeUpFromThePlayButton_opensToo_butATapStillToggles() {
+        var opened = 0
+        var toggles = 0
+        rule.setContent { LauschigTheme { MiniPlayer(loaded, { toggles++ }, { opened++ }) } }
+        // A real swipe goes on past the button.
+        rule.onNodeWithContentDescription("Play").performTouchInput { swipeUp(startY = bottom, endY = top - 60.dp.toPx(), durationMillis = 150) }
+        rule.onNodeWithContentDescription("Play").performClick()
+        rule.waitForIdle()
+        assertEquals(1, opened)
+        assertEquals(1, toggles)
+    }
+
+    @Test fun opensPlayer_upFarEnoughOrFastEnough_neverDown() {
+        assertEquals(true, opensPlayer(dragPx = -50f, velocityPx = 0f, swipePx = 40f, flickPx = 600f))
+        assertEquals(true, opensPlayer(dragPx = -10f, velocityPx = -900f, swipePx = 40f, flickPx = 600f))
+        assertEquals(false, opensPlayer(dragPx = -10f, velocityPx = -100f, swipePx = 40f, flickPx = 600f))
+        assertEquals(false, opensPlayer(dragPx = 80f, velocityPx = -900f, swipePx = 40f, flickPx = 600f)) // down, a bounce back
+        assertEquals(false, opensPlayer(dragPx = 0f, velocityPx = 0f, swipePx = 40f, flickPx = 600f))
     }
 }

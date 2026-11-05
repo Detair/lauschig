@@ -19,19 +19,19 @@ class KeptAccountDeletion(
 
     /**
      * True if everything of [account] is gone. On failure (disk full, files left) the entry is put back as [account]
-     * is, so the data stays reachable and can be deleted again later. The signed-in account is never deleted here (the
-     * screens filter it out; this is the last line), nor anything while the account store cannot be read. Runs to the
-     * end even if the caller goes away.
+     * is, so the data stays reachable and can be deleted again later. The signed-in account and the saved ones (profile
+     * switch) are never deleted here (the screens filter the signed-in one out; this is the last line), nor anything while
+     * the account store cannot be read. Runs to the end even if the caller goes away.
      */
     suspend fun delete(account: KeptAccount): Boolean = withContext(NonCancellable) {
         val signedIn = try {
-            accounts.account.first()?.serverId
+            setOfNotNull(accounts.account.first()?.serverId) + accounts.saved.first().map { it.serverId }
         } catch (e: Exception) {
             Log.w(TAG, "account store unreadable; nothing deleted", e)
             return@withContext false
         }
-        if (signedIn == account.serverId) {
-            Log.w(TAG, "refused to delete the signed-in account's data")
+        if (account.serverId in signedIn) {
+            Log.w(TAG, "refused to delete the data of a signed-in account")
             return@withContext false
         }
         val deleted = try {

@@ -32,8 +32,8 @@ class DataStoreAccountStoreTest {
         store.save(account, "a1", "r1")
         store.clear(keepDownloads = false)
         // A request that was in flight during the sign-out got a 401 and refreshed: nothing comes back.
-        store.updateTokens("a2", "r2")
-        store.markNeedsReauth()
+        store.updateTokens(account.serverId, "a2", "r2")
+        store.markNeedsReauth(account.serverId)
         assertNull(store.account.first())
         assertNull(store.accessToken())
         assertNull(store.refreshToken())
@@ -42,10 +42,10 @@ class DataStoreAccountStoreTest {
 
     @Test fun whileSignedIn_refreshAndReauthWork() = runTest {
         store.save(account, "a1", "r1")
-        store.updateTokens("a2", "r2")
+        store.updateTokens(account.serverId, "a2", "r2")
         assertEquals("a2", store.accessToken())
         assertEquals("r2", store.refreshToken())
-        store.markNeedsReauth()
+        store.markNeedsReauth(account.serverId)
         assertEquals(true, store.needsReauth.first())
         assertEquals(account, store.account.first())
     }

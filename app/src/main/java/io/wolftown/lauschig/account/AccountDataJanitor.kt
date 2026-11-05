@@ -17,6 +17,7 @@ import javax.inject.Inject
  * covered (internal storage and SD card); a card that was out at sign-out is cleaned at the first start it is back. The
  * device library has no download directory, and the folders of "Auf dem Gerät" are the user's own documents: neither is
  * ever touched.
+ * Saved accounts (profile switch, [AccountStore.saved]) count as signed in.
  */
 class AccountDataJanitor(
     private val accounts: AccountStore,
@@ -42,7 +43,7 @@ class AccountDataJanitor(
             // Signed in again (read anew before each purge), or kept by a later sign-out: the data is wanted, the old
             // purge is void.
             val now = signedIn() ?: return
-            if (sid == current.id || sid == now.id || sid in keptIds) {
+            if (sid == current.id || sid == now.id || sid in keptIds || sid in current.saved) {
                 kept.removePendingPurge(sid)
                 continue
             }
@@ -56,7 +57,7 @@ class AccountDataJanitor(
                 Log.w(TAG, "purge still failing; retried at the next start", e)
             }
         }
-        val owned = kept.accounts.first().map { it.serverId }.toSet() + kept.pendingPurges.first()
+        val owned = kept.accounts.first().map { it.serverId }.toSet() + kept.pendingPurges.first() + current.saved
         for (sid in serverDirs()) {
             if (sid == current.id || sid in owned || data.hasRows(sid)) continue
             // A sign-in may have happened meanwhile: its first download must not lose its directory.
@@ -78,9 +79,9 @@ class AccountDataJanitor(
         }
     }
 
-    /** The signed-in server id right now ([SignedIn.id] null: signed out); null if the store cannot be read. */
+    /** The signed-in server id right now ([SignedIn.id] null: signed out) and the saved ones; null if the store cannot be read. */
     private suspend fun signedIn(): SignedIn? = try {
-        SignedIn(accounts.account.first()?.serverId)
+        SignedIn(accounts.account.first()?.serverId, accounts.saved.first().map { it.serverId }.toSet())
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -88,7 +89,7 @@ class AccountDataJanitor(
         null
     }
 
-    private class SignedIn(val id: String?)
+    private class SignedIn(val id: String?, val saved: Set<String>)
 
     private companion object {
         const val TAG = "AccountDataJanitor"

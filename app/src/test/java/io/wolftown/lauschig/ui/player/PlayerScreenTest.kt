@@ -10,6 +10,15 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasText
+import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performSemanticsAction
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -30,8 +39,8 @@ class PlayerScreenTest {
     @get:Rule val rule = createComposeRule()
 
     private val state = PlayerScreenState(
-        itemId = "b1", title = "The Book", chapterTitle = "Two", chapterElapsedText = "00:25", chapterTotalText = "01:40",
-        bookElapsedText = "02:05", bookTotalText = "05:00", speed = 1.25f,
+        itemId = "b1", title = "The Book", chapterTitle = "Two", chapterElapsedText = "00:25", chapterDurationSec = 100.0, chapterPositionSec = 25.0,
+        chapterRemainingSec = 75.0, bookRemainingSec = 3 * 3600.0 + 18 * 60 + 42, speed = 1.25f,
         chapters = listOf(ChapterRow(0, "One", 100.0, false), ChapterRow(1, "Two", 100.0, true, 25.0)),
     )
 
@@ -43,12 +52,144 @@ class PlayerScreenTest {
             }
         }
         rule.onNodeWithContentDescription("Play").performClick()
-        rule.onNodeWithContentDescription("Back 30 seconds").performClick()
+        rule.onNodeWithContentDescription("Back 15 seconds").performClick()
         rule.onNodeWithContentDescription("Forward 30 seconds").performClick()
         rule.onNodeWithContentDescription("Previous chapter").performClick()
         rule.onNodeWithContentDescription("Next chapter").performClick()
-        assertEquals(listOf("t", "s-30", "s30", "p", "n"), calls)
-        rule.onNodeWithText("02:05 / 05:00").assertExists()
+        assertEquals(listOf("t", "s-15", "s30", "p", "n"), calls)
+    }
+
+    @Test fun twoTimestamps_elapsedLeft_chapterRemainingRight() {
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}) } }
+        rule.onNodeWithTag("elapsed").assertTextEquals("00:25")
+        rule.onNodeWithTag("remaining").assert(hasText("−01:15", substring = true)).assert(hasText("Chapter", substring = true))
+        rule.onNodeWithContentDescription("Chapter: 1 minute left").assertExists()
+        rule.onNodeWithText("3:18:42", substring = true).assertDoesNotExist()
+        rule.onNodeWithTag("bookTime").assertDoesNotExist() // the old middle line is gone
+    }
+
+    @Test fun twoTimestamps_bookMode_showsTheBooksRemainingTime() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(remainingTime = io.wolftown.lauschig.settings.RemainingTime.BOOK), {}) } }
+        rule.onNodeWithTag("remaining").assert(hasText("−3:18:42", substring = true)).assert(hasText("Book", substring = true))
+        rule.onNodeWithContentDescription("Book: 3 hours 18 minutes left").assertExists()
+    }
+
+    // Review 3: without chapters (none, or one over the whole book) "Kapitel" and "Buch" are the same time – the book's.
+    @Test fun withoutChapters_theBooksTimeLeft_noLabel_noToggle() {
+        var toggles = 0
+        val chapterless = state.copy(chapters = emptyList(), splitByChapters = false, chapterRemainingSec = 3061.0, bookRemainingSec = 3061.0)
+        rule.setContent { LauschigTheme { PlayerScreen(chapterless, {}, onToggleRemaining = { toggles++ }) } }
+        rule.onNodeWithTag("remaining").assertTextEquals("−51:01")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+            .performClick()
+        assertEquals(0, toggles)
+        rule.onNodeWithContentDescription("51 minutes left").assertExists()
+        rule.onNodeWithText("Chapter").assertDoesNotExist()
+        rule.onNodeWithText("Book").assertDoesNotExist()
+    }
+
+    // Review 4: elapsed and time left add up to the chapter's length (the time left is rounded up, the elapsed time down).
+    @Test fun elapsedAndRemaining_addUpToTheLength() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(chapterPositionSec = 25.4, chapterRemainingSec = 74.6), {}) } }
+        rule.onNodeWithTag("elapsed").assertTextEquals("00:25")
+        rule.onNodeWithTag("remaining").assert(hasText("−01:15", substring = true))
+    }
+
+    @Test fun remainingClock_roundsUp_butNotForFloatNoise() {
+        assertEquals("01:15", remainingClock(74.6))
+        assertEquals("01:15", remainingClock(75.0))
+        assertEquals("01:15", remainingClock(75.0004))
+        assertEquals("00:00", remainingClock(0.0))
+        assertEquals("00:00", remainingClock(-3.0))
+    }
+
+    // Review 5: after the slider is let go the timestamps show the target until the seek lands, not the old position.
+    @Test fun releasedSlider_timestampsShowTheTarget_untilTheSeekLands() {
+        val seeks = mutableListOf<Float>()
+        rule.mainClock.autoAdvance = false
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onSeekInChapter = { seeks += it }) } }
+        rule.onNodeWithTag("chapterSlider").performSemanticsAction(SemanticsActions.SetProgress) { it(0.8f) }
+        rule.waitForIdle() // applies the release (the clock stands still)
+        rule.mainClock.advanceTimeBy(500) // the player has not reported the new position yet
+        assertEquals(1, seeks.size)
+        rule.onNodeWithTag("elapsed").assertTextEquals("01:20")
+        rule.onNodeWithTag("remaining").assert(hasText("−00:20", substring = true))
+    }
+
+    // Review 11: while the thumb is dragged both timestamps follow it, and they still add up to the chapter's length.
+    @Test fun draggingTheSlider_timestampsFollowTheThumb() {
+        val seeks = mutableListOf<Float>()
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onSeekInChapter = { seeks += it }) } }
+        rule.onNodeWithTag("chapterSlider").performTouchInput {
+            down(Offset(width * 0.3f, centerY))
+            moveTo(Offset(width * 0.85f, centerY))
+        }
+        rule.waitForIdle()
+        fun clock(text: String) = text.trimStart('−').split(':').let { (m, sec) -> m.toInt() * 60 + sec.toInt() }
+        val elapsed = rule.onNodeWithTag("elapsed").fetchSemanticsNode().config[SemanticsProperties.Text].single().text
+        val remaining = rule.onNodeWithTag("remaining").fetchSemanticsNode().config[SemanticsProperties.Text].map { it.text }.single { it.startsWith("−") }
+        assertTrue("elapsed did not follow the thumb: $elapsed", clock(elapsed) > 60)
+        assertEquals(100, clock(elapsed) + clock(remaining))
+        assertTrue("seeked before the release", seeks.isEmpty())
+        rule.onNodeWithTag("chapterSlider").performTouchInput { up() }
+        assertEquals(1, seeks.size)
+    }
+
+    @Test fun remaining_tapToggles() {
+        var toggles = 0
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onToggleRemaining = { toggles++ }) } }
+        rule.onNodeWithTag("remaining").performClick()
+        assertEquals(1, toggles)
+    }
+
+    @Test fun seekButtons_followTheSettings_andShowTheirSeconds() {
+        val calls = mutableListOf<Int>()
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(seekBackSec = 10, seekForwardSec = 45), {}, onSeekBy = { calls += it }) } }
+        rule.onNodeWithContentDescription("Back 10 seconds").performClick()
+        rule.onNodeWithContentDescription("Forward 45 seconds").performClick()
+        assertEquals(listOf(-10, 45), calls)
+        rule.onNodeWithTag("seekBackNumber", useUnmergedTree = true).assertTextEquals("10")
+        rule.onNodeWithTag("seekForwardNumber", useUnmergedTree = true).assertTextEquals("45")
+    }
+
+    @Test fun tiles_showNameAndValue() {
+        rule.setContent { LauschigTheme { FullPlayer() } }
+        rule.onNodeWithTag("speedButton").assert(hasText("Speed", substring = true)).assert(hasText("1.25×", substring = true))
+        rule.onNodeWithTag("sleepButton").assert(hasText("Sleep", substring = true)).assert(hasText("Off", substring = true))
+        rule.onNodeWithTag("audioButton").assert(hasText("Sound", substring = true)).assert(hasText("Off", substring = true))
+    }
+
+    @Test fun contentsBanner_showsTheChapter_andOpensTheTabbedSheet() {
+        val chapters = mutableListOf<Int>()
+        rule.setContent {
+            LauschigTheme {
+                PlayerScreen(
+                    state, {}, onChapter = { chapters += it },
+                    contents = PlayerContents(queue = { Text("queue content") }, bookmarks = { Text("bookmark content") }, history = { Text("history content") }),
+                )
+            }
+        }
+        rule.onNodeWithTag("contentsBanner").assert(hasText("Chapters & queue", substring = true)).assert(hasText("Now: ch. 2 / 2", substring = true))
+            .performClick()
+        rule.onNodeWithTag("contentsSheet").assertExists()
+        rule.onNodeWithTag("currentChapter").assertExists()
+        rule.onNodeWithTag("contentsTab:Queue").performClick()
+        rule.onNodeWithText("queue content").assertExists()
+        rule.onNodeWithTag("contentsTab:Bookmarks").performClick()
+        rule.onNodeWithText("bookmark content").assertExists()
+        rule.onNodeWithTag("contentsTab:History").performClick()
+        rule.onNodeWithText("history content").assertExists()
+        rule.onNodeWithTag("contentsTab:Chapters").performClick()
+        rule.onNodeWithText("One").performClick()
+        assertEquals(listOf(0), chapters)
+    }
+
+    @Test fun contentsBanner_withoutChapters_opensOnTheQueue() {
+        rule.setContent {
+            LauschigTheme { PlayerScreen(state.copy(chapters = emptyList()), {}, contents = PlayerContents(queue = { Text("queue content") })) }
+        }
+        rule.onNodeWithTag("contentsBanner").assert(hasText("Queue, bookmarks & history", substring = true)).performClick()
+        rule.onNodeWithText("queue content").assertExists()
     }
 
     @Test fun underTheTitle_authorAndSeriesWithVolume() {
@@ -151,17 +292,16 @@ class PlayerScreenTest {
     private fun FullPlayer(s: PlayerScreenState = state) = PlayerScreen(
         s, {},
         comfort = { ComfortButtons(ComfortUiState(), {}, {}, {}, {}) },
-        extras = { PlayerExtraButtons({}, {}, {}) },
     )
 
     private fun assertAllActionsOnScreen() {
         val root = rule.onRoot().getUnclippedBoundsInRoot()
-        for (tag in listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")) {
+        for (tag in actionTags) {
             val b = rule.onNodeWithTag(tag).getUnclippedBoundsInRoot()
             assertTrue("$tag below the fold: ${b.bottom} > ${root.bottom}", b.bottom <= root.bottom)
             assertTrue("$tag clipped sideways", b.left >= 0.dp && b.right <= root.right)
         }
-        for (d in listOf("Play", "Back 30 seconds", "Forward 30 seconds")) {
+        for (d in listOf("Play", "Back 15 seconds", "Forward 30 seconds")) {
             assertTrue("$d below the fold", rule.onNodeWithContentDescription(d).getUnclippedBoundsInRoot().bottom <= root.bottom)
         }
     }
@@ -193,7 +333,7 @@ class PlayerScreenTest {
                 androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 2f),
             ) { LauschigTheme { FullPlayer() } }
         }
-        rule.onNodeWithTag("historyButton").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("contentsBanner").performScrollTo().assertIsDisplayed()
     }
 
     // A phone in landscape: cover on the start side, controls next to it.
@@ -208,7 +348,7 @@ class PlayerScreenTest {
         assertTrue("play below the fold", play.bottom <= root.bottom)
     }
 
-    private val actionTags = listOf("speedButton", "chaptersButton", "sleepButton", "audioButton", "bookmarksButton", "queueButton", "historyButton")
+    private val actionTags = listOf("speedButton", "sleepButton", "audioButton", "contentsBanner")
 
     // A tablet in landscape (1006×601 dp minus the system bars): the cover alone on the start side, as large as fits and
     // centred; the end side holds the transport and, under it, the action grid, so nothing is left empty and nothing scrolls.

@@ -63,8 +63,8 @@ class TokenAuthenticatorTest {
         }
         val base = OkHttpClient()
         client = base.newBuilder()
-            .addInterceptor(AuthInterceptor(store, server.url("/")))
-            .authenticator(TokenAuthenticator(store, base, server.url("/")))
+            .addInterceptor(AuthInterceptor(store, server.url("/"), madeFor = "s"))
+            .authenticator(TokenAuthenticator(store, base, server.url("/"), madeFor = "s"))
             .build()
     }
 
@@ -168,5 +168,64 @@ class TokenAuthenticatorTest {
             assertEquals("old-refresh", store.refresh)
             assertFalse(store.reauth.value)
         }
+    }
+
+    // Profile switch (Phase 6, Task 12.1): tokens stay with the account that sent the request.
+
+    /** Another user on the same server. */
+    private val other by lazy { Account("t", "u2", "b", false, ServerAddresses(null, server.url("/")), emptySet()) }
+
+    @Test
+    fun aRequestOfTheOldAccount_isNeverRetriedWithTheNewAccountsToken() {
+        val seen = mutableListOf<String?>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path == "/auth/refresh") { refreshCalls.incrementAndGet(); return MockResponse().setBody(refreshBody) }
+                seen += request.getHeader("Authorization")
+                // The switch happens while the old account's request is on its way; the server answers 401.
+                runBlocking { store.add(other, "other-access", "other-refresh") }
+                return MockResponse().setResponseCode(401)
+            }
+        }
+        assertEquals(401, get().code)
+        assertEquals(listOf<String?>("Bearer old-access"), seen)
+        assertEquals(0, refreshCalls.get())
+        // Nothing written anywhere: the new account keeps its tokens, the old one (set aside) its own.
+        assertEquals("other-access", store.access)
+        val old = store.aside.value.single()
+        assertEquals(listOf("s", "old-access", "old-refresh"), listOf(old.account.serverId, old.access, old.refresh))
+        assertFalse(old.reauth)
+        assertFalse(store.reauth.value)
+    }
+
+    @Test
+    fun aRefreshThatLandsAfterASwitch_storesTheTokensWithItsOwnAccount_andDoesNotRetry() {
+        serve {
+            // The switch happens while the refresh is on its way.
+            runBlocking { store.add(other, "other-access", "other-refresh") }
+            MockResponse().setBody(refreshBody)
+        }
+        assertEquals(401, get().code)
+        assertEquals(1, refreshCalls.get())
+        assertEquals("other-access", store.access)
+        assertEquals("other-refresh", store.refresh)
+        val old = store.aside.value.single()
+        assertEquals("s", old.account.serverId)
+        assertEquals("new-access", old.access)
+        assertEquals("new-refresh", old.refresh)
+        // Only the old token went out for this request.
+        val auth = generateSequence { server.takeRequest(100, java.util.concurrent.TimeUnit.MILLISECONDS) }.filter { it.path == "/api/x" }.map { it.getHeader("Authorization") }.toList()
+        assertEquals(listOf("Bearer old-access"), auth)
+    }
+
+    @Test
+    fun aRejectedRefreshAfterASwitch_flagsTheOldAccount_notTheNewOne() {
+        serve {
+            runBlocking { store.add(other, "other-access", "other-refresh") }
+            MockResponse().setResponseCode(401)
+        }
+        assertEquals(401, get().code)
+        assertFalse(store.reauth.value)
+        assertTrue(store.aside.value.single().reauth)
     }
 }
