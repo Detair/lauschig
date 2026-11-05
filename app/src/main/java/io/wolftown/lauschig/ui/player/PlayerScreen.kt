@@ -136,6 +136,7 @@ fun PlayerRoute(
                 onSkipSilence = comfortViewModel::setSkipSilence,
                 onBoost = comfortViewModel::setBoost,
                 onSleepChime = comfortViewModel::setSleepChime,
+                onCompressor = comfortViewModel::setCompressor,
             )
         },
         comfortHint = { ShakeHint(comfort) },

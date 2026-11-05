@@ -61,4 +61,10 @@ class PlaybackSettingsTest {
         settings.setSleepChime(false)
         assertEquals(false, settings.sleepChime.first())
     }
+
+    @Test fun speechCompressor_offByDefault_andCanBeTurnedOn() = runTest {
+        assertEquals(false, settings.speechCompressor.first())
+        settings.setSpeechCompressor(true)
+        assertEquals(true, settings.speechCompressor.first())
+    }
 }

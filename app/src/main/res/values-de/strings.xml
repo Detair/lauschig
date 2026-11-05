@@ -308,6 +308,8 @@
     <string name="sleep_sheet_hint">Blendet in den letzten Sekunden aus. Schüttle das Handy in der letzten Minute, um zu verlängern.</string>
     <string name="audio_skip_silence">Stille überspringen</string>
     <string name="audio_skip_silence_hint">Gilt für alle Titel</string>
+    <string name="audio_compressor">Sprachfokus &amp; Nacht-Kompression</string>
+    <string name="audio_compressor_hint">Dämpft laute Geräusche und hebt leise Stimmen an – ideal zum Einschlafen. Gilt für alle Titel</string>
     <string name="audio_boost">Lautstärke-Boost</string>
     <string name="audio_boost_hint">Für diesen Titel, z. B. leise digitalisierte Kassetten</string>
     <string name="audio_boost_off">Aus</string>

@@ -20,8 +20,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Service-side comfort features on the ExoPlayer itself, so every controller (app, notification, headset, Auto)
- * gets them: rewind on resume ([ResumeRewind]), speed per title ([SpeedMemory]), skip silence (global) and the
- * volume boost per title (a [LoudnessEnhancer] on the player's audio session). Main thread only.
+ * gets them: rewind on resume ([ResumeRewind]), speed per title ([SpeedMemory]), skip silence (global), the
+ * volume boost per title (a [LoudnessEnhancer] on the player's audio session) and the night compressor (global, a
+ * [AudioCompressor] on the same session). Main thread only.
  */
 @OptIn(UnstableApi::class) // skip silence, audio session id
 class PlaybackComfort(
@@ -42,6 +43,7 @@ class PlaybackComfort(
     private val rewind = ResumeRewind()
     private val speeds = SpeedMemory()
     private val boost = AudioBoost()
+    private val compressor = AudioCompressor()
     private var key: Key? = null
     private var titleJob: Job? = null
     private var saveJob: Job? = null
@@ -53,6 +55,10 @@ class PlaybackComfort(
     fun start() {
         exo.addListener(this)
         boost.attach(exo.audioSessionId)
+        compressor.attach(exo.audioSessionId)
+        // One switch at a time (collect is sequential); while playing it fades around the change (no click).
+        val quiet = QuietSwitch(volume = { exo.volume }, setVolume = { exo.volume = it }, playing = { exo.isPlaying })
+        scope.launch { settings.speechCompressor.collect { on -> quiet.run { compressor.setEnabled(on) } } }
         scope.launch { settings.rewindOnResumeSec.collect { rewindSec = it } }
         scope.launch { settings.skipSilence.collect { exo.skipSilenceEnabled = it } }
         scope.launch { settings.defaultSpeed.collect { defaultSpeed = it } }
@@ -65,6 +71,7 @@ class PlaybackComfort(
         titleJob?.cancel()
         flushSpeed()
         boost.release()
+        compressor.release()
     }
 
     /** Writes a speed change that is still waiting for the slider to settle. */
@@ -130,7 +137,10 @@ class PlaybackComfort(
         if (reason == Player.DISCONTINUITY_REASON_SEEK) rewind.invalidate()
     }
 
-    override fun onAudioSessionIdChanged(audioSessionId: Int) = boost.attach(audioSessionId)
+    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+        boost.attach(audioSessionId)
+        compressor.attach(audioSessionId)
+    }
 
     private fun paused() {
         val k = key ?: return

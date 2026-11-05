@@ -49,6 +49,13 @@ class PlaybackSettings(private val store: DataStore<Preferences>) {
     /** A soft hint tone 30 s before the sleep timer ends (time to shake). Default on. */
     val sleepChime: Flow<Boolean> = store.data.map { it[SLEEP_CHIME] ?: true }.distinctUntilChanged()
 
+    /** "Sprachfokus & Nacht-Kompression": the night compressor on the player (global). Default off. */
+    val speechCompressor: Flow<Boolean> = store.data.map { it[SPEECH_COMPRESSOR] ?: false }.distinctUntilChanged()
+
+    suspend fun setSpeechCompressor(on: Boolean) {
+        store.edit { it[SPEECH_COMPRESSOR] = on }
+    }
+
     suspend fun setSleepChime(on: Boolean) {
         store.edit { it[SLEEP_CHIME] = on }
     }
@@ -103,5 +110,6 @@ class PlaybackSettings(private val store: DataStore<Preferences>) {
         private val SEEK_BACK = intPreferencesKey("seek_back_sec")
         private val SEEK_FORWARD = intPreferencesKey("seek_forward_sec")
         private val SLEEP_CHIME = booleanPreferencesKey("sleep_chime_enabled")
+        private val SPEECH_COMPRESSOR = booleanPreferencesKey("speech_compressor")
     }
 }

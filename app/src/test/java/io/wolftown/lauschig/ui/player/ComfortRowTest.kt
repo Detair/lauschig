@@ -111,4 +111,18 @@ class ComfortRowTest {
         rule.onAllNodesWithTag("audioButton")[1].assert(hasText("No silence"))
         rule.onAllNodesWithContentDescription("Sound: Skip silence").assertCountEquals(1)
     }
+
+    @Test fun audioSheet_compressorSwitch_andTheTileSaysNight() {
+        val on = mutableListOf<Boolean>()
+        rule.setContent {
+            LauschigTheme {
+                androidx.compose.foundation.layout.Row { ComfortButtons(ComfortUiState(compressor = true), {}, {}, {}, {}, onCompressor = { on += it }) }
+            }
+        }
+        rule.onNodeWithTag("audioButton").assert(hasText("Night"))
+        rule.onNodeWithContentDescription("Sound: Speech focus & night compression").assertExists()
+        rule.onNodeWithTag("audioButton").performClick()
+        rule.onNodeWithTag("compressor").assertIsSelected().performClick()
+        assertEquals(listOf(false), on)
+    }
 }

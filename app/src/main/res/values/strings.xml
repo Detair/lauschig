@@ -308,6 +308,8 @@
     <string name="sleep_sheet_hint">Fades out over the last seconds. Shake the phone during the last minute to extend it.</string>
     <string name="audio_skip_silence">Skip silence</string>
     <string name="audio_skip_silence_hint">Applies to all titles</string>
+    <string name="audio_compressor">Speech focus &amp; night compression</string>
+    <string name="audio_compressor_hint">Turns loud noises down and quiet voices up – ideal for falling asleep. Applies to all titles</string>
     <string name="audio_boost">Volume boost</string>
     <string name="audio_boost_hint">For this title, e.g. quiet digitised tapes</string>
     <string name="audio_boost_off">Off</string>
