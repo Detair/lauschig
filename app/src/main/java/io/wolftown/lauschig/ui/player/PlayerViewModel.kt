@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Minimal chapter data the player needs; [startSec]/[endSec] are book-wide. */
@@ -57,6 +58,8 @@ data class PlayerScreenState(
     val bookRemainingSec: Double = 0.0,
     /** What the right timestamp counts down (a setting; a tap toggles it). */
     val remainingTime: RemainingTime = RemainingTime.CHAPTER,
+    /** The current chapter is a part of the book (false without chapters or with one over the whole book). */
+    val splitByChapters: Boolean = true,
     val speed: Float = 1f,
     val isStreaming: Boolean = false,
     val isLoading: Boolean = false,
@@ -147,6 +150,8 @@ class PlayerViewModel(
             chapterRemainingSec = length - inChapter,
             bookRemainingSec = (p.durationSec - p.positionSec).coerceAtLeast(0.0),
             remainingTime = remaining,
+            // Without chapters the "chapter" is the whole book (one chapter over the whole book is the same).
+            splitByChapters = p.chapterIndex >= 0 && abs((end - start) - p.durationSec) > WHOLE_BOOK_SLACK_SEC,
             speed = p.speed,
             isStreaming = p.isStreaming,
             isLoading = p.isLoading,
@@ -204,6 +209,8 @@ class PlayerViewModel(
 
     companion object {
         const val RESTART_THRESHOLD_SEC = 3.0
+        /** A chapter this close to the book's length is the whole book. */
+        const val WHOLE_BOOK_SLACK_SEC = 1.0
         const val MIN_SPEED = 0.5f
         const val MAX_SPEED = 3.0f
         val PRESETS = listOf(1.0f, 1.25f, 1.5f, 2.0f)

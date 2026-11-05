@@ -395,6 +395,7 @@
     <string name="player_remaining_book_short">Book</string>
     <string name="player_remaining_chapter_description">Chapter: %1$s left</string>
     <string name="player_remaining_book_description">Book: %1$s left</string>
+    <string name="player_remaining_description">%1$s left</string>
     <string name="player_remaining_show_book">show the book\'s time left</string>
     <string name="player_remaining_show_chapter">show the chapter\'s time left</string>
     <plurals name="spoken_hours">

@@ -94,6 +94,7 @@ import io.wolftown.lauschig.ui.theme.coverTintTarget
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @Composable
@@ -146,6 +147,12 @@ fun PlayerRoute(
         comfortHint = { ShakeHint(comfort) },
     )
 }
+
+/**
+ * A time left on the clock, rounded up to the second (the elapsed time is rounded down), so the two add up to the length;
+ * a few ms over a full second are float noise, not one second more.
+ */
+internal fun remainingClock(sec: Double): String = io.wolftown.lauschig.ui.detail.formatClock(ceil(sec - 0.001).coerceAtLeast(0.0))
 
 /** A time span as TalkBack should say it: "3 Stunden 18 Minuten", "14 Minuten", "40 Sekunden". */
 @Composable
@@ -332,36 +339,45 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).semantics { contentDescription = sliderLabel }.testTag("chapterSlider"),
             )
             // Two timestamps: the chapter's elapsed time on the left, the time left on the right – of the chapter or of
-            // the whole book, a tap switches (and is kept). Both follow the thumb while it is dragged.
-            val dragSec = dragging?.let { it * state.chapterDurationSec }
-            val elapsed = dragSec?.let { io.wolftown.lauschig.ui.detail.formatClock(it) } ?: state.chapterElapsedText
-            val ahead = dragSec?.let { it - state.chapterPositionSec } ?: 0.0
-            val book = state.remainingTime == RemainingTime.BOOK
+            // the whole book, a tap switches (and is kept). Without chapters both are the book's: no word, no switch. Both
+            // follow the thumb while it is dragged and show the target until the seek lands.
+            val targetSec = (dragging ?: pending)?.let { it * state.chapterDurationSec }
+            val elapsed = targetSec?.let { io.wolftown.lauschig.ui.detail.formatClock(it) } ?: state.chapterElapsedText
+            val ahead = targetSec?.let { it - state.chapterPositionSec } ?: 0.0
+            val split = state.splitByChapters
+            val book = !split || state.remainingTime == RemainingTime.BOOK
             val left = ((if (book) state.bookRemainingSec else state.chapterRemainingSec) - ahead).coerceAtLeast(0.0)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(elapsed, style = MaterialTheme.typography.labelLarge.merge(tabular), modifier = Modifier.testTag("elapsed"))
                 Spacer(Modifier.weight(1f))
                 val description = stringResource(
-                    if (book) R.string.player_remaining_book_description else R.string.player_remaining_chapter_description, spokenDuration(left),
+                    when {
+                        !split -> R.string.player_remaining_description
+                        book -> R.string.player_remaining_book_description
+                        else -> R.string.player_remaining_chapter_description
+                    },
+                    spokenDuration(left),
                 )
                 val toggleLabel = stringResource(if (book) R.string.player_remaining_show_chapter else R.string.player_remaining_show_book)
                 Row(
                     Modifier
                         .clip(MaterialTheme.shapes.small)
-                        .clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggleRemaining)
-                        .semantics { contentDescription = description }
+                        .then(if (split) Modifier.clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggleRemaining) else Modifier)
+                        .semantics(mergeDescendants = true) { contentDescription = description }
                         .heightIn(min = 40.dp)
                         .padding(start = 8.dp)
                         .testTag("remaining"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        stringResource(if (book) R.string.player_remaining_book_short else R.string.player_remaining_chapter_short),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 6.dp),
-                    )
-                    Text("−" + io.wolftown.lauschig.ui.detail.formatClock(left), style = MaterialTheme.typography.labelLarge.merge(tabular))
+                    if (split) {
+                        Text(
+                            stringResource(if (book) R.string.player_remaining_book_short else R.string.player_remaining_chapter_short),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 6.dp),
+                        )
+                    }
+                    Text("−" + remainingClock(left), style = MaterialTheme.typography.labelLarge.merge(tabular))
                 }
             }
         }

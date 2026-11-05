@@ -71,6 +71,17 @@ class PlayerViewModelTest {
         assertEquals(175.0, s.bookRemainingSec, 0.001)
     }
 
+    @Test fun splitByChapters_onlyWhenTheChapterIsAPartOfTheBook() = runTest {
+        player.state.value = playing(125.0)
+        assertTrue(vm().state.first { it.itemId == "b1" }.splitByChapters)
+        // No chapter data: the whole book acts as the chapter.
+        player.state.value = PlayerUiState(itemId = "b2", title = "Hörspiel", positionSec = 10.0, durationSec = 3071.0)
+        assertEquals(false, vm().state.first { it.itemId == "b2" }.splitByChapters)
+        // One chapter over the whole book.
+        player.state.value = PlayerUiState(itemId = "b3", title = "Hörspiel", positionSec = 10.0, durationSec = 3071.0, chapterIndex = 0, chapterStartSec = 0.0, chapterEndSec = 3071.0)
+        assertEquals(false, vm().state.first { it.itemId == "b3" }.splitByChapters)
+    }
+
     @Test fun remainingTime_followsTheSetting_andTheToggleStoresTheOther() = runTest {
         val mode = MutableStateFlow(io.wolftown.lauschig.settings.RemainingTime.CHAPTER)
         val stored = mutableListOf<io.wolftown.lauschig.settings.RemainingTime>()

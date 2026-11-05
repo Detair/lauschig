@@ -13,6 +13,9 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasText
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performSemanticsAction
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.QuickDownload
 import io.wolftown.lauschig.ui.detail.ChapterRow
@@ -66,6 +69,48 @@ class PlayerScreenTest {
         rule.setContent { LauschigTheme { PlayerScreen(state.copy(remainingTime = io.wolftown.lauschig.settings.RemainingTime.BOOK), {}) } }
         rule.onNodeWithTag("remaining").assert(hasText("−3:18:42", substring = true)).assert(hasText("Book", substring = true))
         rule.onNodeWithContentDescription("Book: 3 hours 18 minutes left").assertExists()
+    }
+
+    // Review 3: without chapters (none, or one over the whole book) "Kapitel" and "Buch" are the same time – the book's.
+    @Test fun withoutChapters_theBooksTimeLeft_noLabel_noToggle() {
+        var toggles = 0
+        val chapterless = state.copy(chapters = emptyList(), splitByChapters = false, chapterRemainingSec = 3061.0, bookRemainingSec = 3061.0)
+        rule.setContent { LauschigTheme { PlayerScreen(chapterless, {}, onToggleRemaining = { toggles++ }) } }
+        rule.onNodeWithTag("remaining").assertTextEquals("−51:01")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+            .performClick()
+        assertEquals(0, toggles)
+        rule.onNodeWithContentDescription("51 minutes left").assertExists()
+        rule.onNodeWithText("Chapter").assertDoesNotExist()
+        rule.onNodeWithText("Book").assertDoesNotExist()
+    }
+
+    // Review 4: elapsed and time left add up to the chapter's length (the time left is rounded up, the elapsed time down).
+    @Test fun elapsedAndRemaining_addUpToTheLength() {
+        rule.setContent { LauschigTheme { PlayerScreen(state.copy(chapterPositionSec = 25.4, chapterRemainingSec = 74.6), {}) } }
+        rule.onNodeWithTag("elapsed").assertTextEquals("00:25")
+        rule.onNodeWithTag("remaining").assert(hasText("−01:15", substring = true))
+    }
+
+    @Test fun remainingClock_roundsUp_butNotForFloatNoise() {
+        assertEquals("01:15", remainingClock(74.6))
+        assertEquals("01:15", remainingClock(75.0))
+        assertEquals("01:15", remainingClock(75.0004))
+        assertEquals("00:00", remainingClock(0.0))
+        assertEquals("00:00", remainingClock(-3.0))
+    }
+
+    // Review 5: after the slider is let go the timestamps show the target until the seek lands, not the old position.
+    @Test fun releasedSlider_timestampsShowTheTarget_untilTheSeekLands() {
+        val seeks = mutableListOf<Float>()
+        rule.mainClock.autoAdvance = false
+        rule.setContent { LauschigTheme { PlayerScreen(state, {}, onSeekInChapter = { seeks += it }) } }
+        rule.onNodeWithTag("chapterSlider").performSemanticsAction(SemanticsActions.SetProgress) { it(0.8f) }
+        rule.waitForIdle() // applies the release (the clock stands still)
+        rule.mainClock.advanceTimeBy(500) // the player has not reported the new position yet
+        assertEquals(1, seeks.size)
+        rule.onNodeWithTag("elapsed").assertTextEquals("01:20")
+        rule.onNodeWithTag("remaining").assert(hasText("−00:20", substring = true))
     }
 
     @Test fun remaining_tapToggles() {
