@@ -20,18 +20,35 @@ import javax.inject.Inject
 
 /**
  * Audible volumes for a series page. Only asks while online and with the setting on; otherwise (and on any failure)
- * the result is null and the page keeps its plain gap placeholders.
+ * the result is null and the page keeps its plain gap placeholders. The setting stays off until the user agreed
+ * ([undecided], [answer]).
  */
 class MissingVolumesSource(
     private val online: Flow<Boolean>,
     private val enabled: Flow<Boolean>,
+    /** True until the user has answered whether Audible may be asked. */
+    val undecided: Flow<Boolean> = flowOf(false),
+    private val decide: suspend (Boolean) -> Unit = {},
     private val lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
 ) {
     @Inject constructor(api: ApiProvider, settings: AppSettings, repository: ExternalSeriesRepository) : this(
-        api.connection.map { it is ConnectionState.Online }.distinctUntilChanged(),
-        settings.missingVolumesEnabled,
-        repository::missingFor,
+        api.connection.map { it is ConnectionState.Online }.distinctUntilChanged(), settings, repository::missingFor,
     )
+
+    /** The consent wiring, one place: both flags are `Flow<Boolean>`, so names keep them from being swapped. */
+    internal constructor(
+        online: Flow<Boolean>,
+        settings: AppSettings,
+        lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
+    ) : this(
+        online = online,
+        enabled = settings.missingVolumesEnabled,
+        undecided = settings.missingVolumesUndecided,
+        decide = settings::setMissingVolumesEnabled,
+        lookup = lookup,
+    )
+
+    suspend fun answer(allow: Boolean) = decide(allow)
 
     /**
      * Looks up each library's part of the series (the cache is per library) and merges the answers by volume number.

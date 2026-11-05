@@ -40,6 +40,28 @@ class BrowseScreenTest {
             }
         }
 
+    @Test fun question_namesWhatIsSent_andBothAnswersWork() {
+        val answers = mutableListOf<Boolean>()
+        rule.setContent {
+            LauschigTheme {
+                BrowseScreen(
+                    BrowseUiState(BrowseKind.SERIES, "Saga", entries = listOf(tile("1", "Book One")), count = 1, loaded = true, askMissingVolumes = true),
+                    {}, {}, {}, { _, _ -> }, onAnswerMissingVolumes = { answers += it },
+                )
+            }
+        }
+        rule.onNodeWithText("Show missing volumes?").assertIsDisplayed()
+        rule.onNodeWithText("ASINs of your books and your IP address", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("No, thanks").performClick()
+        rule.onNodeWithText("Allow").performClick()
+        assertEquals(listOf(false, true), answers)
+    }
+
+    @Test fun noQuestion_withoutTheFlag() {
+        show(BrowseUiState(BrowseKind.SERIES, "Saga", entries = listOf(tile("1", "Book One")), count = 1, loaded = true))
+        rule.onAllNodesWithTag("askMissingVolumes").assertCountEquals(0)
+    }
+
     @Test fun authorPage_offline_showsBooksWithoutBio() {
         val opened = mutableListOf<String>()
         show(

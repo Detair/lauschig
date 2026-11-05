@@ -7,7 +7,10 @@ import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.settings.AppSettings
 import kotlinx.coroutines.async
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import io.wolftown.lauschig.ui.browse.MissingVolumesSource
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.Dispatcher
@@ -18,8 +21,11 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -31,6 +37,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ExternalSeriesRepositoryTest {
+    @get:Rule val tmp = TemporaryFolder()
+
     private lateinit var server: MockWebServer
     private lateinit var db: LauschigDatabase
     private lateinit var settings: AppSettings
@@ -56,7 +64,7 @@ class ExternalSeriesRepositoryTest {
         {"asin":"PARENT","relationship_to_product":"parent","relationship_type":"series","sequence":"9"}]}}"""
     private val detailBody = """{"products":[
         {"asin":"OWN1","title":"Eins","language":"german","format_type":"unabridged","release_date":"2020-01-01"},
-        {"asin":"C2","title":"Zwei","subtitle":"Sub","authors":[{"name":"A"}],"narrators":null,"language":"german","format_type":"unabridged","release_date":"2026-12-24","runtime_length_min":300,"product_images":{"500":"http://img/c2.jpg"},"merchandising_summary":"<p>hi</p>"}]}"""
+        {"asin":"C2","title":"Zwei","subtitle":"Sub","authors":[{"name":"A"}],"narrators":null,"language":"german","format_type":"unabridged","release_date":"2026-12-24","runtime_length_min":300,"product_images":{"500":"https://img/c2.jpg"},"merchandising_summary":"<p>hi</p>"}]}"""
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
@@ -81,8 +89,11 @@ class ExternalSeriesRepositoryTest {
         repo = repository()
     }
 
-    private fun repository(endpoints: AudibleEndpoints = AudibleEndpoints { server.url("/") }) =
-        ExternalSeriesRepository(AudibleApis(endpoints, AudibleClient.okHttp()), db.externalSeriesDao(), settings, clock)
+    private fun repository(
+        endpoints: AudibleEndpoints = AudibleEndpoints { server.url("/") },
+        settingsToUse: AppSettings = settings,
+    ) =
+        ExternalSeriesRepository(AudibleApis(endpoints, AudibleClient.okHttp()), db.externalSeriesDao(), settingsToUse, clock)
 
     @After fun tearDown() {
         db.close()
@@ -94,7 +105,7 @@ class ExternalSeriesRepositoryTest {
         assertEquals(listOf("C2"), r.map { it.volume.asin })
         assertEquals(true, r.single().upcoming)
         assertEquals("Sub", r.single().volume.subtitle)
-        assertEquals("http://img/c2.jpg", r.single().volume.coverUrl)
+        assertEquals("https://img/c2.jpg", r.single().volume.coverUrl)
         assertNotNull(db.externalSeriesDao().get("srv", "lib", "Die Serie"))
     }
 
@@ -142,6 +153,58 @@ class ExternalSeriesRepositoryTest {
         failing = true
         val r = repo.missingFor("srv", "lib", "Die Serie", owned)
         assertEquals(listOf("C2"), r!!.map { it.volume.asin })
+    }
+
+    /** A store nobody has written to: an install, or a 0.4.0 that never touched the switch. */
+    private fun kotlinx.coroutines.test.TestScope.freshSettings(name: String) =
+        AppSettings(PreferenceDataStoreFactory.create(scope = backgroundScope) { tmp.newFile("$name.preferences_pb") })
+
+    @Test fun neverAnswered_noRequest_andStillUndecided() = runTest {
+        val fresh = freshSettings("fresh")
+        assertEquals(true, fresh.missingVolumesUndecided.first())
+        assertEquals(false, fresh.missingVolumesEnabled.first())
+        assertNull(repository(settingsToUse = fresh).missingFor("srv", "lib", "Die Serie", owned))
+        assertEquals(0, paths.size)
+    }
+
+    @Test fun anAnswer_isNoLongerUndecided_andKeepsItsValue() = runTest {
+        val fresh = freshSettings("fresh2")
+        fresh.setMissingVolumesEnabled(false)
+        assertEquals(false, fresh.missingVolumesUndecided.first())
+        assertEquals(false, fresh.missingVolumesEnabled.first())
+        fresh.setMissingVolumesEnabled(true)
+        assertEquals(false, fresh.missingVolumesUndecided.first())
+        assertEquals(true, fresh.missingVolumesEnabled.first())
+    }
+
+    /** The real consent wiring: real settings, source and repository, no fake between them. */
+    @Test fun consent_noRequestUntilAllowed_andAskedOnlyOnce() = runTest {
+        val fresh = freshSettings("wired")
+        val repo = repository(settingsToUse = fresh)
+        val source = MissingVolumesSource(flowOf(true), fresh, repo::missingFor)
+        val byLibrary = mapOf("lib" to owned)
+
+        assertEquals(true, source.undecided.first())
+        assertNull(source.forSeries("srv", byLibrary).first())
+        assertEquals("nothing may leave before an answer", 0, paths.size)
+
+        source.answer(false)
+        assertEquals(false, source.undecided.first())
+        assertNull(source.forSeries("srv", byLibrary).first())
+        assertEquals("nothing may leave after a no", 0, paths.size)
+
+        source.answer(true)
+        assertNotNull(source.forSeries("srv", byLibrary).first())
+        assertTrue("a yes looks up", paths.isNotEmpty())
+
+        // A new page (a new source on the same store) does not ask again.
+        assertEquals(false, MissingVolumesSource(flowOf(true), fresh, repo::missingFor).undecided.first())
+    }
+
+    @Test fun aCover_isOnlyLoadedOverHttps() {
+        assertEquals("https://img/c.jpg", httpsOnly("https://img/c.jpg"))
+        assertNull(httpsOnly("http://img/c.jpg"))
+        assertNull(httpsOnly(null))
     }
 
     @Test fun disabled_noRequest() = runTest {
