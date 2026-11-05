@@ -365,7 +365,7 @@ interface DownloadDao {
         "UPDATE downloads SET state = :to, error = :error " +
             "WHERE serverId = :serverId AND itemId = :itemId AND state = :from",
     )
-    suspend fun setStateIf(serverId: String, itemId: String, from: DownloadState, to: DownloadState, error: String?)
+    suspend fun setStateIf(serverId: String, itemId: String, from: DownloadState, to: DownloadState, error: String?): Int
 
     @Query("DELETE FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun delete(serverId: String, itemId: String)

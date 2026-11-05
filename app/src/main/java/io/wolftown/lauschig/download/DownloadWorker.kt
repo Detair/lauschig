@@ -157,7 +157,9 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: StreamPriorityPause) {
             return pauseForStream(network)
         } catch (e: AccountChangedException) {
-            return wait()
+            // Its account was left. If it is still the signed-in one this is "not a server of this account" (a re-auth changed
+            // an address, an old "online" state): like any network failure.
+            return if (env.signedIn() != serverId) wait() else retryOrFail(e)
         } catch (e: CancellationException) {
             // Stopped by WorkManager (constraints/system) -> back to QUEUED; a user pause/removal already changed the row.
             withContext(NonCancellable) { downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.QUEUED, null) }
@@ -165,19 +167,26 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: FatalDownloadException) {
             return fail(e.code)
         } catch (e: Exception) {
-            val msg = if (isNoSpace(e)) return fail("storage_full") else e.message ?: e.javaClass.simpleName
-            return if (runAttemptCount + 1 >= MAX_ATTEMPTS) fail(msg) else back(msg)
+            return retryOrFail(e)
         } finally {
             monitor.setDownloadThrottled(itemId, false)
         }
     }
 
-    /** Its account is not the signed-in one: paused, and it continues when the account is back ([SwitchedDownloads]). */
+    /**
+     * Its account is not the signed-in one: paused, and it continues when the account is back ([SwitchedDownloads]). A row
+     * that was already paused (the user, in that moment) stays the user's pause.
+     */
     private suspend fun wait(): Result {
-        downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.PAUSED, null)
-        downloads.setStateIf(serverId, itemId, DownloadState.QUEUED, DownloadState.PAUSED, null)
-        switched.remember(serverId, setOf(itemId))
+        val moved = downloads.setStateIf(serverId, itemId, DownloadState.RUNNING, DownloadState.PAUSED, null) +
+            downloads.setStateIf(serverId, itemId, DownloadState.QUEUED, DownloadState.PAUSED, null)
+        if (moved > 0) switched.remember(serverId, setOf(itemId))
         return Result.success()
+    }
+
+    private suspend fun retryOrFail(e: Exception): Result {
+        val msg = if (isNoSpace(e)) return fail("storage_full") else e.message ?: e.javaClass.simpleName
+        return if (runAttemptCount + 1 >= MAX_ATTEMPTS) fail(msg) else back(msg)
     }
 
     /** Paused for the stream: ask whether to keep streaming or download, with the time the rest would take now. */

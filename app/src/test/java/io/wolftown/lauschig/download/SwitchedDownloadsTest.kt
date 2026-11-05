@@ -95,11 +95,22 @@ class SwitchedDownloadsTest {
         assertEquals(1, queued.size)
     }
 
+    /** Review M1: a process that dies after the note, before the pause: the rows still say waiting or running, their work is gone. */
+    @Test fun notedRowsThatNeverGotPaused_goOnToo() = runBlocking {
+        row(a, "running", DownloadState.RUNNING)
+        row(a, "waiting", DownloadState.QUEUED)
+        switched.rememberActive(a)
+        switched.resume(a)
+        assertEquals(setOf(Triple(a, "running", null), Triple(a, "waiting", null)), queued.toSet())
+    }
+
     @Test fun aDownloadThatIsNoLongerPaused_orGone_isLeftAlone() = runBlocking {
         row(a, "doneMeanwhile", DownloadState.QUEUED)
+        row(a, "failedMeanwhile", DownloadState.QUEUED)
         row(a, "removedMeanwhile", DownloadState.QUEUED)
         leave(a)
         row(a, "doneMeanwhile", DownloadState.COMPLETE)
+        row(a, "failedMeanwhile", DownloadState.FAILED)
         db.downloadDao().delete(a, "removedMeanwhile")
         switched.resume(a)
         assertEquals(emptyList<Triple<String, String, NetworkType?>>(), queued)

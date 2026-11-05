@@ -155,9 +155,13 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * The last server seen online, with the account it was seen for; kept while the state flips to offline (see
-     * [onCreate]). Streams go through that account's client, which sends nothing once the account is left.
+     * [onCreate]). Streams go through that account's client. It follows the signed-in account: [accountGuard] empties the
+     * player of the account that was left first, so what is streamed through it is that account's.
      */
     @Volatile private var lastOnline: Pair<String, ConnectionState.Online>? = null
+    private lateinit var accountGuard: AccountPlaybackGuard
+    /** Who is signed in as far as the service knows; a stopping title's last write still goes to the account it played for. */
+    @Volatile private var signedInAccount: String? = null
     private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
 
     @OptIn(UnstableApi::class) // transfer listener, load control
@@ -171,11 +175,19 @@ class PlaybackService : MediaLibraryService() {
             val seen = lastOnline?.takeIf { request.url.sameOrigin(it.second.baseUrl) }
             (seen?.let { api.clientFor(it.first, it.second.baseUrl) } ?: fallbackClient).newCall(request)
         }
+        accountGuard = AccountPlaybackGuard(
+            title = { player?.let(::currentKey) },
+            stop = { player?.let { it.stop(); it.clearMediaItems() } },
+            forgetShownTitle = { widgets?.forgetTitle() },
+            signedIn = { accountStore.account.first()?.serverId },
+        )
         connectionJob = scope.launch {
             // Another account (sign-out, new server) forgets the server, so its token never reaches an old queue's origin.
             // Only a state of this account's addresses counts: right after a switch the shared state may still replay the
             // previous server's Online before the reset arrives.
             accountStore.account.map { it?.let { a -> Triple(a.serverId, a.userId, a.addresses) } }.distinctUntilChanged().collectLatest { who ->
+                accountGuard.accountChanged(who?.first)
+                signedInAccount = who?.first
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
@@ -225,7 +237,8 @@ class PlaybackService : MediaLibraryService() {
         val volume = PlayerVolume { out.device.volume = it }
         comfort = PlaybackComfort(out.device, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
             val at = System.currentTimeMillis()
-            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
+            val account = signedInAccount
+            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at), account ?: accountStore.account.first()?.serverId) }
         }).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
@@ -265,6 +278,7 @@ class PlaybackService : MediaLibraryService() {
                 // What the player holds is never deleted by the automatic clean-up, also before the app adopts it.
                 TitleHandover.serviceHolds(currentKey(exo)?.second)
                 playerController.adoptFromService()
+                scope.launch { accountGuard.titleChanged() }
             }
 
             // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.

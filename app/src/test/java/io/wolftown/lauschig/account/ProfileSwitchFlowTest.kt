@@ -17,14 +17,13 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import io.wolftown.lauschig.absapi.me.DeviceInfoDto
 import io.wolftown.lauschig.connection.AddressResolver
-import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.OkHttpReachabilityProbe
-import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.BookmarkPending
 import io.wolftown.lauschig.db.entities.DownloadEntity
 import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LocalSessionEntity
 import io.wolftown.lauschig.download.DownloadEnvironment
 import io.wolftown.lauschig.download.DownloadFiles
@@ -35,6 +34,7 @@ import io.wolftown.lauschig.download.DownloadProgress
 import io.wolftown.lauschig.download.DownloadPrompts
 import io.wolftown.lauschig.download.DownloadWorker
 import io.wolftown.lauschig.download.SwitchedDownloads
+import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.net.TwoUsersServer
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.BEARER_A
@@ -48,6 +48,8 @@ import io.wolftown.lauschig.playback.LastPlayedMigration
 import io.wolftown.lauschig.playback.LastTitleStarter
 import io.wolftown.lauschig.playback.MediaItemFactory
 import io.wolftown.lauschig.playback.PlayerControllerImpl
+import io.wolftown.lauschig.playback.ShakeSource
+import io.wolftown.lauschig.playback.SleepTimer
 import io.wolftown.lauschig.playback.StreamMonitor
 import io.wolftown.lauschig.playback.forAccount
 import io.wolftown.lauschig.playback.loadPlayable
@@ -63,6 +65,7 @@ import io.wolftown.lauschig.sync.OnlineGate
 import io.wolftown.lauschig.sync.PositionJump
 import io.wolftown.lauschig.sync.PositionJumpBus
 import io.wolftown.lauschig.sync.ProgressSync
+import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.sync.SyncWorker
 import io.wolftown.lauschig.ui.search.RecentSearches
 import io.wolftown.lauschig.ui.setup.OidcLogin
@@ -70,12 +73,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -91,8 +98,9 @@ import java.io.File
 
 /**
  * Phase 7, Task 1: the switch with everything real but the server and the media player's service: the store with
- * encrypted tokens, the provider and its clients, Room, the syncs, the download worker, the sign-out flow, the player
- * controller and every per-account store. Two users on one [TwoUsersServer]: A plays and downloads, the switch to B, a late
+ * encrypted tokens, the provider and its clients, Room, the syncs, the download worker, the sign-out flow as Hilt builds it
+ * (its `@Inject` constructor), the player controller and every per-account store. [FakeFacade] stands in for the service,
+ * its pause does what the tracker does: the position lands a moment later. Two users on one [TwoUsersServer]: A plays and downloads, the switch to B, a late
  * worker of A, the way back. Asserted per request: whose token. Per row: whose account.
  *
  * The rule under test: after a switch nothing of A runs, sends or writes as B, and nothing of A is lost.
@@ -186,6 +194,29 @@ class ProfileSwitchFlowTest {
     private val kept = FakeKeptAccounts()
     private val cancelled = mutableListOf<String>()
     private var syncs = 0
+    /** Runs while the account's work is cancelled: the gap between the first stop and the account's change. */
+    private var whileCancelling: suspend (serverId: String) -> Unit = {}
+
+    /** `withContext(Dispatchers.Main.immediate)` of the production lambdas: not this thread, which blocks in the test. */
+    private val mainThread = kotlinx.coroutines.newSingleThreadContext("test-main")
+
+    init {
+        Dispatchers.setMain(mainThread)
+        facade.onPause = { title ->
+            if (title != null) scope.launch {
+                delay(TRACKER_SAVE_MS) // well inside the settle time of the sign-out flow; without it the push finds nothing new
+                db.progressDao().saveLocal(title.first, title.second, finalPosition, 100.0, false, ++clock)
+                db.sessionDao().upsert(LocalSessionEntity("session-${title.first}-$clock", title.first, title.second, 0.0, finalPosition, finalPosition, 1_000, clock))
+            }
+        }
+    }
+
+    private val sleepTimer by lazy {
+        SleepTimer(player, object : ShakeSource {
+            override fun start(onShake: () -> Unit) {}
+            override fun stop() {}
+        }, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
+    }
 
     private val serverLogout by lazy {
         val net = object : NetworkInfo {
@@ -198,38 +229,22 @@ class ProfileSwitchFlowTest {
         )
     }
 
+    /** As Hilt builds it. */
     private val signOut by lazy {
         SignOut(
-            accounts = store,
-            data = DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, {}),
-            kept = kept,
-            work = object : AccountWork {
-                override suspend fun cancel(serverId: String) { cancelled += serverId }
+            store,
+            DeviceAccountData(db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, {}),
+            kept,
+            object : AccountWork {
+                override suspend fun cancel(serverId: String) {
+                    cancelled += serverId
+                    whileCancelling(serverId)
+                }
                 override suspend fun cancelOwn(serverId: String) { cancelled += "own:$serverId" }
             },
-            lastPlayed = lastPlayed,
-            pausePlayback = {
-                val s = player.state.value
-                if (s.isPlaying) {
-                    player.pause()
-                    val sid = store.account.first()!!.serverId
-                    db.progressDao().saveLocal(sid, s.itemId!!, finalPosition, 100.0, false, ++clock)
-                    db.sessionDao().upsert(LocalSessionEntity("session-$sid-$clock", sid, s.itemId!!, 0.0, finalPosition, finalPosition, 1_000, clock))
-                }
-            },
-            stopPlayback = { player.stop() },
-            pushes = listOf({ sid -> progressSync.sync(sid) }, { sid -> bookmarkSync.sync(sid) }),
-            awaitOnline = { awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS) },
-            logout = serverLogout::logout,
-            clearAccountState = cleaner::clear,
-            setAsideState = cleaner::setAside,
-            forgetSavedState = cleaner::forget,
-            noteDownloads = switched::rememberActive,
-            resumeDownloads = switched::resume,
-            forgetDownloads = switched::forget,
-            syncNow = { syncs++ },
-            showLastTitle = { sid -> starter.last()?.takeIf { it.serverId == sid }?.let { player.showPaused(it.serverId, it.itemId) } },
-            logoutProfile = serverLogout::logoutProfile,
+            lastPlayed, player, sleepTimer, progressSync, bookmarkSync, api, serverLogout, cleaner, switched,
+            object : SyncTrigger { override fun syncNow() { syncs++ } },
+            starter,
         )
     }
 
@@ -313,6 +328,8 @@ class ProfileSwitchFlowTest {
     @After fun tearDown() {
         keepAlive.cancel()
         scope.cancel()
+        Dispatchers.resetMain()
+        mainThread.close()
         db.close()
         web.shutdown()
         dir.deleteRecursively()
@@ -341,7 +358,6 @@ class ProfileSwitchFlowTest {
         assertEquals("a-refresh", store.savedCredentials(a)!!.refreshToken)
 
         // Nothing of A plays or shows: the player is empty, no mini player, no question, nothing that could start it.
-        assertEquals(1, facade.stops)
         assertEquals(0, facade.items.size)
         assertEquals(null, player.state.value.itemId)
         assertNull(starter.last())
@@ -383,7 +399,6 @@ class ProfileSwitchFlowTest {
         player.play(a, "a-book")
         assertEquals(null, player.state.value.itemId)
         assertEquals(0, facade.items.size)
-        // And an open question about A's download, landing late, is cleared at the way back at the latest (AppViewModelTest: not shown).
         assertNull("B's turn: its last title is not A's", starter.last())
 
         // --- B works: its token, its rows.
@@ -502,11 +517,82 @@ class ProfileSwitchFlowTest {
         assertEquals(listOf<String?>(BEARER_B), web.tokens())
     }
 
-    @Test fun anOpenDownloadQuestion_goesAtTheSwitch_anotherAccountsStays(): Unit = runBlocking {
+    @Test fun anOpenDownloadQuestion_goesWithItsAccount_anotherAccountsStays(): Unit = runBlocking {
         signedIn()
         prompts.show(DownloadPrompt.Metered(a, "a-book", "Titel", 1))
         assertTrue(signOut.switchProfile(b))
         assertNull(prompts.prompt.value)
+
+        // One about A that lands while B is active (not shown to B, see AppViewModelTest) stays for A's return.
+        val late = DownloadPrompt.Metered(a, "a-book", "Titel", 1)
+        prompts.show(late)
+        assertTrue(signOut.switchProfile(a))
+        assertEquals(late, prompts.prompt.value)
+    }
+
+    // Review I1: a title started in the gap between the first stop and the account's change.
+
+    private suspend fun rowsToPlay() {
+        librarySync.syncAll(a)
+        librarySync.loadDetails(a, "a-book")
+        db.itemDao().upsertDetails(ItemEntity(b, "b-book", "b-lib", "Title b", durationSec = 100.0))
+        lastPlayed.set(LastPlayed(b, "b-book", 1_000))
+        web.seen.clear()
+    }
+
+    private fun aStartsInTheGap() {
+        whileCancelling = { sid ->
+            if (sid == a) {
+                player.play(a, "a-book")
+                awaitPlaying("a-book")
+            }
+        }
+    }
+
+    @Test fun aTitleStartedWhileTheAccountIsLeft_doesNotSurviveTheSwitch(): Unit = runBlocking {
+        signedIn()
+        rowsToPlay()
+        aStartsInTheGap()
+
+        assertTrue(signOut.switchProfile(b))
+
+        assertEquals(emptyList<String>(), facade.items.map { it.mediaId })
+        assertFalse(facade.snap.isPlaying)
+        assertFalse("no request of A's title with B's token", web.seen.any { it.auth == BEARER_B && it.path.contains("a-book") })
+        // B starts quietly, with its own title in the mini player, not A's.
+        awaitShownPaused("b-book")
+        assertEquals("b-book", starter.last()!!.itemId)
+    }
+
+    @Test fun aTitleStartedWhileTheAccountSignsOut_doesNotSurviveIt(): Unit = runBlocking {
+        signedIn()
+        rowsToPlay()
+        aStartsInTheGap()
+
+        signOut.execute(keepDownloads = true)
+
+        assertNull(store.account.first())
+        assertEquals(emptyList<String>(), facade.items.map { it.mediaId })
+        assertEquals(null, player.state.value.itemId)
+    }
+
+    // Review I2: B's last title through a device title A heard afterwards.
+
+    @Test fun aDeviceTitleAHeard_leavesBsLastTitleToB_andIsAsOnItsReturn(): Unit = runBlocking {
+        signedIn()
+        rowsToPlay()
+        val dev = DeviceLibrary.SERVER_ID
+        val local = "${DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+        db.itemDao().upsertDetails(ItemEntity(dev, local, "dev-lib", "Vom Gerät", durationSec = 100.0))
+        lastPlayed.set(LastPlayed(dev, local, 2_000), account = a) // newer than B's title
+
+        assertTrue(signOut.switchProfile(b))
+        awaitShownPaused("b-book")
+        assertEquals("the play key, the car, the widget", "b-book", starter.last()!!.itemId)
+
+        assertTrue(signOut.switchProfile(a))
+        awaitShownPaused(local)
+        assertEquals(local, starter.last()!!.itemId)
     }
 
     /** B on another server: its token never reaches A's server, and removing it logs it out over its own addresses. */
@@ -539,7 +625,9 @@ class ProfileSwitchFlowTest {
             assertEquals(emptyList<TwoUsersServer.Seen>(), second.seen.toList())
 
             // The removal: the logout to B's server, its refresh token, no credentials; its data goes, A's stays.
+            val coversBefore = diskCovers
             assertTrue(signOut.removeProfile(b))
+            assertEquals("its covers go, like at a sign-out; A fetches its own again", coversBefore + 1, diskCovers)
             val logout = second.seen.single { it.path == "/logout" }
             assertEquals("b-refresh", logout.refreshToken)
             assertNull(logout.auth)
@@ -622,5 +710,10 @@ class ProfileSwitchFlowTest {
         assertNull(lastPlayed.get(a))
         assertEquals("b-book", lastPlayed.get(b)!!.itemId)
         assertNull(db.itemDao().get(a, "a-book"))
+    }
+
+    private companion object {
+        /** When the tracker's save lands after the pause. */
+        const val TRACKER_SAVE_MS = 150L
     }
 }

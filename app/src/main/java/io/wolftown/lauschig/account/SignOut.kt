@@ -129,8 +129,8 @@ interface ProfileSwitch {
  * pause and the account is remembered for the next one's question ([KeptAccountStore]); else every row, file and cache of
  * the server id goes ([AccountData.purge]) → the last-played server title, the RMAB connection, a pending SSO attempt,
  * recent searches, an open download question and the cover caches go → the account and its tokens go **last**
- * ([AccountStore.clear]), so the app turns to the sign-in only when the data is in its final state. Device titles are
- * never touched. Runs to the end even if the caller is cancelled; a failing step is logged and the rest still runs.
+ * ([AccountStore.clear]), so the app turns to the sign-in only when the data is in its final state; only a last stop
+ * follows, for a title that started in the meantime. Device titles are never touched. Runs to the end even if the caller is cancelled; a failing step is logged and the rest still runs.
  * The same steps leave an account for a [ProfileSwitch], without the logout and without forgetting what is its own.
  *
  * One instance for the app: its account operations (sign-out, sign-in, switches, removing a profile) run one after the
@@ -170,6 +170,8 @@ class SignOut(
     private val showLastTitle: suspend (serverId: String) -> Unit = {},
     /** The server logout of a saved profile, over its own addresses. */
     private val logoutProfile: suspend (Account, refreshToken: String) -> Boolean = logout,
+    /** Once the account has changed: stops what started since [stopPlayback] (a headset key, the car, a tap on the old page). */
+    private val stopAgain: suspend () -> Unit = {},
 ) : AccountSignOut, ProfileSwitch {
     @Inject constructor(
         accounts: AccountStore,
@@ -198,10 +200,7 @@ class SignOut(
                 }
             }
         },
-        stopPlayback = {
-            withContext(Dispatchers.Main.immediate) { sleepTimer.cancel() }
-            player.stop()
-        },
+        stopPlayback = stopping(player, sleepTimer),
         pushes = listOf({ sid -> progressSync.sync(sid) }, { sid -> bookmarkSync.sync(sid) }),
         awaitOnline = { awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS) },
         logout = serverLogout::logout,
@@ -212,13 +211,14 @@ class SignOut(
         resumeDownloads = switched::resume,
         forgetDownloads = switched::forget,
         syncNow = sync::syncNow,
-        // Its own title only: a device title that was played last stays with the play keys, the next person's screen starts clean.
-        showLastTitle = { serverId ->
-            lastTitle.last()?.takeIf { it.serverId == serverId }?.let {
+        // Only what the account itself played: the device's own entry stays with the play keys, its screen starts clean.
+        showLastTitle = {
+            lastTitle.last(ownOnly = true)?.let {
                 withContext(Dispatchers.Main.immediate) { player.showPaused(it.serverId, it.itemId) }
             }
         },
         logoutProfile = serverLogout::logoutProfile,
+        stopAgain = stopping(player, sleepTimer),
     )
 
     override suspend fun check(): SignOutCheck? {
@@ -373,7 +373,7 @@ class SignOut(
         // Only a sign-out ends the session on the server; a profile set aside keeps it for the way back.
         val refresh = if (mode == Leave.SET_ASIDE) null
         else try { accounts.credentials()?.takeIf { it.serverId == serverId }?.refreshToken } catch (e: Exception) { null }
-        step("stop playback") { stopPlayback() }
+        stopWithin("stop playback", stopPlayback)
         if (mode == Leave.PURGE && shownUnsynced != null) {
             val now = step("recount") { data.unsynced(serverId) }
             if (now != null && now > shownUnsynced) {
@@ -381,13 +381,16 @@ class SignOut(
                 return@withContext SignOutResult.Changed(SignOutCheck(now, step("size") { data.downloadBytes(serverId) } ?: 0))
             }
         }
+        // What a switch pauses goes on when the account is back; after a sign-out the user decides. Noted before the work goes:
+        // a process that dies from here on leaves rows without work, and the note brings them back.
+        if (mode == Leave.SET_ASIDE) step("note downloads") { noteDownloads(serverId) }
         step("cancel work") { work.cancel(serverId) }
         val loggedOut = async {
             if (refresh == null) false
             else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true
         }
         if (mode != Leave.PURGE) {
-            // What a switch pauses goes on when the account is back; after a sign-out the user decides.
+            // Once more: the cancel can take seconds, and what was queued in them is paused here too.
             if (mode == Leave.SET_ASIDE) step("note downloads") { noteDownloads(serverId) }
             step("pause downloads") { data.pauseDownloads(serverId) }
             step("remember") {
@@ -416,7 +419,14 @@ class SignOut(
         if (mode == Leave.SET_ASIDE) Log.i(TAG, "set aside for another profile")
         else Log.i(TAG, "signed out (kept downloads: ${mode == Leave.KEEP}, server logout: $serverConfirmed)")
         finish()
+        // The account stayed the active one until now, so a title could still start; before the next account arrives it goes.
+        stopWithin("stop again", stopAgain)
         SignOutResult.Done
+    }
+
+    /** A stop that hangs must not hold [operations], and with it every sign-in, sign-out and switch, for good. */
+    private suspend fun stopWithin(name: String, stop: suspend () -> Unit) {
+        if (step(name) { withTimeoutOrNull(STOP_TIMEOUT_MS) { stop() } } == null) Log.w(TAG, "'$name' did not finish in time or failed")
     }
 
     companion object {
@@ -426,8 +436,16 @@ class SignOut(
         const val LOGOUT_TIMEOUT_MS = 5_000L
         /** The push of pending changes before a profile switch: the person is waiting for the other profile. */
         const val SWITCH_PUSH_TIMEOUT_MS = 5_000L
+        /** The player's stop, each time. */
+        const val STOP_TIMEOUT_MS = 5_000L
         /** After pausing a playing title, before its position is pushed. */
         private const val SAVE_SETTLE_MS = 300L
+
+        /** Stops playback entirely and empties the queue, and with it the sleep timer. */
+        private fun stopping(player: PlayerController, sleepTimer: SleepTimer): suspend () -> Unit = {
+            withContext(Dispatchers.Main.immediate) { sleepTimer.cancel() }
+            player.stop()
+        }
 
         /** Runs [block]; a failure (not a cancellation) is logged and yields null, so the next step still runs. */
         private suspend fun <T> step(name: String, block: suspend () -> T): T? = try {

@@ -82,6 +82,7 @@ class SignOutTest {
         purgeData: AccountData = data,
         stopPlayback: suspend () -> Unit = { calls += "stop" },
         logoutProfile: suspend (Account, String) -> Boolean = logout,
+        stopAgain: suspend () -> Unit = {},
     ) = SignOut(
         accounts = accounts,
         data = Recording(purgeData),
@@ -102,6 +103,7 @@ class SignOutTest {
         syncNow = { calls += "syncNow" },
         showLastTitle = { sid -> calls += "lastTitle:$sid" },
         logoutProfile = logoutProfile,
+        stopAgain = stopAgain,
     )
 
     /** [cancelOwn] calls of the account work (a removed profile's own work). */
@@ -263,7 +265,7 @@ class SignOutTest {
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
         assertEquals(emptySet<String>(), kept.pending.value)
         assertEquals(
-            listOf("pause", "stop", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
+            listOf("pause", "stop", "note:$a", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
             calls,
         )
         assertNull(accounts.clearedKeeping)
@@ -360,6 +362,30 @@ class SignOutTest {
         assertFalse(calls.any { it.startsWith("push") })
     }
 
+    // Review I1: what started between the first stop and the account's change does not survive it.
+
+    @Test fun afterTheAccountChanged_whatStartedMeanwhileIsStopped_beforeTheNextAccountArrives() = runTest {
+        aSavedProfile()
+        assertTrue(signOut(stopAgain = { calls += "stopAgain" }).switchProfile(b))
+        assertEquals(listOf("switch", "stopAgain", "resume:$b", "lastTitle:$b", "syncNow"), calls.takeLast(5))
+    }
+
+    @Test fun afterASignOut_whatStartedMeanwhileIsStopped_too() = runTest {
+        signOut(stopAgain = { calls += "stopAgain" }).execute(keepDownloads = true)
+        assertEquals(listOf("clear", "stopAgain"), calls.takeLast(2))
+    }
+
+    // Review M6: a hanging stop does not hold every account operation.
+
+    @Test fun aStopThatHangs_costsAtMostItsLimit_theSwitchGoesOn() = runTest {
+        aSavedProfile()
+        // A long delay, no real hang: inside NonCancellable nothing could end the test if the limit were missing.
+        assertTrue(signOut(stopPlayback = { kotlinx.coroutines.delay(3_600_000) }, stopAgain = { kotlinx.coroutines.delay(3_600_000) }).switchProfile(b))
+        assertEquals(2 * SignOut.STOP_TIMEOUT_MS, testScheduler.currentTime)
+        assertEquals(5_000L, SignOut.STOP_TIMEOUT_MS)
+        assertEquals(lukas, accounts.acc.value)
+    }
+
     // Task 1.4 and failures: what arrives, what stays.
 
     @Test fun switchProfile_aFailedActivation_keepsTheOldAccount_andItGoesOn() = runTest {
@@ -403,7 +429,7 @@ class SignOutTest {
         assertEquals(emptyList<String>(), logouts)
         assertEquals(LastPlayed(a, "book1", 1), lastPlayed.get(a))
         assertEquals(
-            listOf("pause", "stop", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
+            listOf("pause", "stop", "note:$a", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
             calls,
         )
         assertEquals(lukas, accounts.acc.value)

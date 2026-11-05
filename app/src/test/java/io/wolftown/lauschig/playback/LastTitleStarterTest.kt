@@ -109,6 +109,32 @@ class LastTitleStarterTest {
         assertNull(starter().last())
     }
 
+    /** Review I2: B listens, A hears a device title afterwards, back on B its own title is what resumes. */
+    @Test fun aDeviceTitleAPlayed_doesNotTakeBsLastTitle() = runTest {
+        val b = "bbbbbbbbbbbbbbbb"
+        val local = "${DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+        db.itemDao().upsertDetails(io.wolftown.lauschig.db.entities.ItemEntity(b, "theirs", "l", "T", durationSec = 100.0))
+        db.itemDao().upsertDetails(io.wolftown.lauschig.db.entities.ItemEntity(DeviceLibrary.SERVER_ID, local, "l", "Vom Gerät", durationSec = 100.0))
+        store.set(LastPlayed(b, "theirs", 100))
+        store.set(LastPlayed(DeviceLibrary.SERVER_ID, local, 200), account = s)
+        accounts.acc.value = Account(b, "u2", "m", false, ServerAddresses(null, null), emptySet())
+        assertEquals("theirs", starter().last()!!.itemId)
+        assertEquals("theirs", starter().last(ownOnly = true)!!.itemId)
+        // A has its device title back, as the play key and as the mini player.
+        accounts.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
+        assertEquals(local, starter().last()!!.itemId)
+        assertEquals(local, starter().last(ownOnly = true)!!.itemId)
+    }
+
+    /** The shared entry (from before the first new write) still resumes, but it is nobody's own: no mini player for it. */
+    @Test fun theSharedDeviceTitle_resumes_butIsNotShownAsTheAccountsOwn() = runTest {
+        val local = "${DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+        db.itemDao().upsertDetails(io.wolftown.lauschig.db.entities.ItemEntity(DeviceLibrary.SERVER_ID, local, "l", "Vom Gerät", durationSec = 100.0))
+        store.set(LastPlayed(DeviceLibrary.SERVER_ID, local, 200))
+        assertEquals(local, starter().last()!!.itemId)
+        assertNull(starter().last(ownOnly = true))
+    }
+
     @Test fun afterASwitch_eachAccountHasItsOwnLastTitle_andNothingStartsByItself() = runTest {
         val b = "bbbbbbbbbbbbbbbb"
         book("mine")

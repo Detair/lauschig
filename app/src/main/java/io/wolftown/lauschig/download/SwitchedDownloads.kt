@@ -44,7 +44,9 @@ class SwitchedDownloads(
     }
 
     /**
-     * [serverId] is active again: its noted downloads that are still paused go on. A download that could not be queued
+     * [serverId] is active again: its noted downloads go on. Also those still waiting or running: a process that died
+     * during the switch left them so, without their work; [DownloadManager.enqueue] gives it back and leaves work that is
+     * still there alone. What is complete, failed or removed by now stays as it is. A download that could not be queued
      * stays noted for the next start.
      */
     suspend fun resume(serverId: String) {
@@ -52,7 +54,8 @@ class SwitchedDownloads(
         if (noted.isEmpty()) return
         val done = noted.filterTo(HashSet()) { item ->
             try {
-                if (rows.get(serverId, item)?.state == DownloadState.PAUSED) manager.enqueue(serverId, item)
+                val state = rows.get(serverId, item)?.state
+                if (state == DownloadState.PAUSED || state == DownloadState.QUEUED || state == DownloadState.RUNNING) manager.enqueue(serverId, item)
                 true
             } catch (e: CancellationException) {
                 throw e

@@ -73,4 +73,37 @@ class WidgetAccountWatcherTest {
         assertEquals(1, updates)
         assertEquals(null, store.state.first())
     }
+
+    /** Review I2: a device title in the store is the left account's; the next one's own last title shows instead. */
+    @Test fun aSwitch_aDeviceTitleOfTheLeftAccount_goesToo() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val device = title.copy(serverId = "device", key = "local:0123456789abcdef01234567")
+        val accounts = io.wolftown.lauschig.net.FakeAccountStore().apply { acc.value = account(a) }
+        val store = FakeStore(device)
+        backgroundScope.launch { WidgetAccountWatcher(accounts, store) {}.run() }
+        assertEquals("the start keeps it", device, store.state.first())
+        accounts.acc.value = account(b)
+        assertEquals(null, store.state.first())
+    }
+
+    @Test fun aSwitch_aTitleOfTheNewAccount_stays() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val own = title.copy(serverId = b)
+        val accounts = io.wolftown.lauschig.net.FakeAccountStore().apply { acc.value = account(a) }
+        val store = FakeStore(own)
+        backgroundScope.launch { WidgetAccountWatcher(accounts, store) {}.run() }
+        assertEquals("not A's: it is cleared at the start, as before", null, store.state.first())
+        store.flow.value = own
+        accounts.acc.value = account(b)
+        assertEquals(own, store.state.first())
+    }
+
+    @Test fun aSignOutAndASignIn_keepADeviceTitle_asBefore() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val device = title.copy(serverId = "device", key = "local:0123456789abcdef01234567")
+        val accounts = io.wolftown.lauschig.net.FakeAccountStore().apply { acc.value = account(a) }
+        val store = FakeStore(device)
+        backgroundScope.launch { WidgetAccountWatcher(accounts, store) {}.run() }
+        accounts.acc.value = null
+        assertEquals(device, store.state.first())
+        accounts.acc.value = account(b)
+        assertEquals(device, store.state.first())
+    }
 }

@@ -37,7 +37,6 @@ class RecentSearches(private val store: DataStore<Preferences>, private val acti
         }
     }
 
-    /** Sign-out: the next account does not see this user's searches. */
     /**
      * Before profiles there was one list on the device: it belongs to the account signed in at the upgrade
      * ([activeServerId]); signed out it has no owner and goes. Idempotent; never over a list the account has.

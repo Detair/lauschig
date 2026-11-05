@@ -68,16 +68,25 @@ class CarStarts(
     /** A title of the signed-in account's server or of this device; ids of another (earlier) account never play. */
     private suspend fun allowed(t: CarNode.Title): Boolean = DeviceLibrary.isLocal(t.serverId) || t.serverId == accountServer()
 
-    private suspend fun start(title: CarNode.Title): Outcome = when (val r = pick(title.key).let { resolveTitle(title.serverId, title.key, true) }) {
-        is ServiceTitleStarter.Resolved.Ready -> Outcome.Ready(title, r.items, r.index, r.offsetMs, r.streaming)
-        is ServiceTitleStarter.Resolved.Failed -> Outcome.Failed(
-            when (r.reason) {
-                ServiceTitleStarter.Failure.NOT_FOUND -> Reason.NOT_FOUND
-                ServiceTitleStarter.Failure.OFFLINE -> Reason.OFFLINE
-                ServiceTitleStarter.Failure.LOCAL_UNAVAILABLE -> Reason.LOCAL_UNAVAILABLE
-                ServiceTitleStarter.Failure.NOT_PLAYABLE -> Reason.NOT_PLAYABLE
-            },
-        )
+    private suspend fun start(title: CarNode.Title): Outcome {
+        val account = accountServer()
+        pick(title.key)
+        val r = resolveTitle(title.serverId, title.key, true)
+        // The resolve may wait seconds for a connection check. If the account changed meanwhile this start was for the one
+        // that left: nothing plays for the next, also no device title.
+        val now = accountServer() ?: return Outcome.Failed(Reason.SIGNED_OUT)
+        if (now != account) return Outcome.Failed(Reason.NOT_FOUND)
+        return when (r) {
+            is ServiceTitleStarter.Resolved.Ready -> Outcome.Ready(title, r.items, r.index, r.offsetMs, r.streaming)
+            is ServiceTitleStarter.Resolved.Failed -> Outcome.Failed(
+                when (r.reason) {
+                    ServiceTitleStarter.Failure.NOT_FOUND -> Reason.NOT_FOUND
+                    ServiceTitleStarter.Failure.OFFLINE -> Reason.OFFLINE
+                    ServiceTitleStarter.Failure.LOCAL_UNAVAILABLE -> Reason.LOCAL_UNAVAILABLE
+                    ServiceTitleStarter.Failure.NOT_PLAYABLE -> Reason.NOT_PLAYABLE
+                },
+            )
+        }
     }
 
     companion object {

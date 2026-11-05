@@ -28,8 +28,9 @@ import javax.inject.Inject
  * - [setAside], a profile switch: the same, but the account's own RMAB connection and searches wait for its return, and
  *   the covers on disk stay. Their keys are the cover URLs, without any token ([io.wolftown.lauschig.ui.common.coverModel]),
  *   and the next account only asks for the titles of its own rows; back on the account its covers are there at once.
- * - [forget], a saved profile is removed while another account is active: only its connection and searches. Everything
- *   else here is the active account's by now.
+ * - [forget], a saved profile is removed while another account is active: its connection and searches, and like at a
+ *   sign-out the image caches (the active account fetches its own covers again; they cannot be told apart by account).
+ *   Everything else here is the active account's by now.
  */
 class AccountStateCleaner(
     private val rmab: RmabRepository,
@@ -90,6 +91,7 @@ class AccountStateCleaner(
     suspend fun forget(serverId: String) {
         part("rmab") { rmab.forget(serverId) }
         part("searches") { recentSearches.clear(serverId) }
+        part("images") { clearImageCaches() }
     }
 
     /**

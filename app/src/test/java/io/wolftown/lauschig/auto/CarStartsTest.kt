@@ -139,4 +139,32 @@ class CarStartsTest {
             pickedWhenResolved,
         )
     }
+
+    // Phase 7, review I1: the resolve may wait seconds for a connection check; a switch in between starts nothing.
+
+    private val accountB = "bbbbbbbbbbbbbbbb"
+
+    private fun startsWhereTheAccountChangesWhileResolving(to: String?) = CarStarts(
+        resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); account = to; result },
+        searchTitle = { _, _ -> found },
+        lastTitle = { last },
+        accountServer = { account },
+        current = { loaded },
+        pick = { picked += it },
+    )
+
+    @Test fun aSwitchWhileResolving_aBrowsedTitleDoesNotStart() = runTest {
+        val out = startsWhereTheAccountChangesWhileResolving(accountB).forRequest(listOf(byId(MediaIds.of(CarNode.Title(s, "b")))), 0)
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), out)
+    }
+
+    @Test fun aSwitchWhileResolving_theResumptionDoesNotStart_notEvenADeviceTitle() = runTest {
+        last = CarNode.Title(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:aaaaaaaaaaaaaaaaaaaaaaaa")
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), startsWhereTheAccountChangesWhileResolving(accountB).forResumption())
+    }
+
+    @Test fun aSignOutWhileResolving_saysSignedOut() = runTest {
+        last = CarNode.Title(s, "b")
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.SIGNED_OUT), startsWhereTheAccountChangesWhileResolving(null).forResumption())
+    }
 }

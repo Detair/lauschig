@@ -23,21 +23,36 @@ private val Context.lastPlayedDataStore by preferencesDataStore(
 data class LastPlayed(val serverId: String, val itemId: String, val pausedAt: Long)
 
 /**
- * One title per account, kept while the account is set aside for another profile: back on it, the play keys, resumption
- * and the car find its title again. The device's own titles are one more entry ([DeviceLibrary.SERVER_ID]): they are this
- * device's, whoever is signed in.
+ * The last title per account, kept while the account is set aside for another profile: back on it, the mini player, the
+ * play keys, resumption, the car and the widget find its title again. For each account its last server title and the last
+ * device title it played: what one profile hears on the device does not take another's place. One more entry is
+ * the device's alone ([DeviceLibrary.SERVER_ID]): the single title of a version before profiles if it was a device title,
+ * one played signed out, or what a signed-out account left. An account that played nothing itself gets that one, until
+ * the next title is played by anyone.
  */
 interface LastPlayedStore {
-    /** The title last played under [serverId]: an account's server title, or with [DeviceLibrary.SERVER_ID] the device title. */
+    /** The title last played under [serverId]: an account's server title, or with [DeviceLibrary.SERVER_ID] the device's own entry. */
     suspend fun get(serverId: String): LastPlayed?
-    suspend fun set(last: LastPlayed)
-    /** Sign-out or a removed profile: play keys, resumption and the car cannot start its title any more. Other entries stay. */
+
+    /** The device title [account] played last. */
+    suspend fun deviceTitleOf(account: String): LastPlayed?
+
+    /** [account]: who was signed in when it played; it owns a device title. A server title is its server's. */
+    suspend fun set(last: LastPlayed, account: String? = null)
+
+    /**
+     * Sign-out or a removed profile: play keys, resumption and the car cannot start [serverId]'s title any more. If that was
+     * a device title it stays on the device, as the device's own entry unless that is newer. Other accounts' entries stay.
+     */
     suspend fun forget(serverId: String)
 }
 
-/** What resumes for the signed-in account [serverId]: its own title or the device title, whichever was played last. */
-suspend fun LastPlayedStore.forAccount(serverId: String): LastPlayed? =
-    listOfNotNull(get(serverId), get(DeviceLibrary.SERVER_ID)).maxByOrNull { it.pausedAt }
+/** What [serverId] itself played last: its server title or a device title. */
+suspend fun LastPlayedStore.ownOf(serverId: String): LastPlayed? =
+    listOfNotNull(get(serverId), deviceTitleOf(serverId)).maxByOrNull { it.pausedAt }
+
+/** What resumes for the signed-in account [serverId]: its own last title; if it has none, the device's own entry. */
+suspend fun LastPlayedStore.forAccount(serverId: String): LastPlayed? = ownOf(serverId) ?: get(DeviceLibrary.SERVER_ID)
 
 /** Before profiles there was one title on the device, with its server id: it moves to the entry of that id. */
 object LastPlayedMigration : DataMigration<Preferences> {
@@ -75,17 +90,44 @@ class DataStoreLastPlayedStore(private val store: DataStore<Preferences>) : Last
         return LastPlayed(serverId, p[LastPlayedMigration.itemKey(serverId)] ?: return null, p[LastPlayedMigration.atKey(serverId)] ?: return null)
     }
 
-    override suspend fun set(last: LastPlayed) {
+    override suspend fun deviceTitleOf(account: String): LastPlayed? {
+        val p = store.data.first()
+        val entry = ownedDevice(account)
+        return LastPlayed(DeviceLibrary.SERVER_ID, p[LastPlayedMigration.itemKey(entry)] ?: return null, p[LastPlayedMigration.atKey(entry)] ?: return null)
+    }
+
+    override suspend fun set(last: LastPlayed, account: String?) {
+        val device = DeviceLibrary.SERVER_ID
+        val entry = if (DeviceLibrary.isLocal(last.serverId) && account != null) ownedDevice(account) else last.serverId
         store.edit {
-            it[LastPlayedMigration.itemKey(last.serverId)] = last.itemId
-            it[LastPlayedMigration.atKey(last.serverId)] = last.pausedAt
+            it[LastPlayedMigration.itemKey(entry)] = last.itemId
+            it[LastPlayedMigration.atKey(entry)] = last.pausedAt
+            // Someone's own title now: the device's entry was only for the time before.
+            if (entry != device) {
+                it.remove(LastPlayedMigration.itemKey(device))
+                it.remove(LastPlayedMigration.atKey(device))
+            }
         }
     }
 
     override suspend fun forget(serverId: String) {
+        val own = ownedDevice(serverId)
+        val device = DeviceLibrary.SERVER_ID
         store.edit {
+            val serverAt = it[LastPlayedMigration.atKey(serverId)]
             it.remove(LastPlayedMigration.itemKey(serverId))
             it.remove(LastPlayedMigration.atKey(serverId))
+            val item = it[LastPlayedMigration.itemKey(own)]
+            val at = it[LastPlayedMigration.atKey(own)]
+            val wasItsLast = at != null && (serverAt == null || at > serverAt)
+            if (item != null && wasItsLast && (it[LastPlayedMigration.atKey(device)] ?: Long.MIN_VALUE) < at!!) {
+                it[LastPlayedMigration.itemKey(device)] = item
+                it[LastPlayedMigration.atKey(device)] = at
+            }
+            it.remove(LastPlayedMigration.itemKey(own))
+            it.remove(LastPlayedMigration.atKey(own))
         }
     }
+
+    private fun ownedDevice(account: String) = "${DeviceLibrary.SERVER_ID}:$account"
 }

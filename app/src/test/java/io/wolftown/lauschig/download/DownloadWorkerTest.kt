@@ -123,10 +123,10 @@ class DownloadWorkerTest {
     private suspend fun run(
         attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false,
         library: LibraryApi? = null, monitor: StreamMonitor = StreamMonitor { 0L },
-        signedIn: String? = s, client: OkHttpClient = OkHttpClient(),
+        signedIn: String? = s, signedInNow: () -> String? = { signedIn }, client: OkHttpClient = OkHttpClient(),
     ): ListenableWorker.Result {
         val base = server.url("/")
-        val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC)), { signedIn }) { sid, _ -> clients += sid; client }
+        val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC)), { signedInNow() }) { sid, _ -> clients += sid; client }
         val sync = LibrarySync({ flowOf(library) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() })
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
@@ -169,15 +169,42 @@ class DownloadWorkerTest {
         assertEquals(listOf(item), resumed)
     }
 
+    /** A client that refuses, as [AuthInterceptor] does; [then] is what changed in that moment. */
+    private fun refusing(then: suspend () -> Unit = {}) = OkHttpClient.Builder().addInterceptor {
+        runBlocking { then() }
+        throw io.wolftown.lauschig.net.AccountChangedException("made for another account")
+    }.build()
+
     @Test fun aSwitchInTheMiddleOfADownload_keepsItsPart_waitsPaused_andGoesOnWhenItIsBack() = runBlocking {
-        val refused = OkHttpClient.Builder().addInterceptor { throw io.wolftown.lauschig.net.AccountChangedException("made for another account") }.build()
-        assertEquals("no retry, no failure count: the download is fine", ListenableWorker.Result.success(), run(client = refused))
+        var signedIn: String? = s
+        assertEquals("no retry, no failure count: the download is fine", ListenableWorker.Result.success(), run(signedInNow = { signedIn }, client = refusing { signedIn = "bbbbbbbbbbbbbbbb" }))
         assertEquals(listOf(s), clients.distinct())
         val row = db.downloadDao().get(s, item)!!
         assertEquals(DownloadState.PAUSED, row.state)
         assertEquals(null, row.error)
         switched.resume(s)
         assertEquals(listOf(item), resumed)
+    }
+
+    /** Review M2: the refusal also means "not a server of this account" (a re-auth changed an address): the account is still here, it retries. */
+    @Test fun aRefusalWhileTheAccountIsStillSignedIn_retriesAsBefore() = runBlocking {
+        assertEquals(ListenableWorker.Result.retry(), run(client = refusing()))
+        assertEquals(DownloadState.QUEUED, db.downloadDao().get(s, item)!!.state)
+        switched.resume(s)
+        assertEquals("nothing noted", emptyList<String>(), resumed)
+    }
+
+    /** Review M2: the user paused it in that moment: that stays a pause by the user, the way back does not resume it. */
+    @Test fun aRowTheUserPausedInThatMoment_isNotNoted() = runBlocking {
+        var signedIn: String? = s
+        val client = refusing {
+            db.downloadDao().setState(s, item, DownloadState.PAUSED, null)
+            signedIn = "bbbbbbbbbbbbbbbb"
+        }
+        assertEquals(ListenableWorker.Result.success(), run(signedInNow = { signedIn }, client = client))
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(s, item)!!.state)
+        switched.resume(s)
+        assertEquals(emptyList<String>(), resumed)
     }
 
     @Test fun episode_downloadUsesParentItemIdInUrl() = runBlocking {

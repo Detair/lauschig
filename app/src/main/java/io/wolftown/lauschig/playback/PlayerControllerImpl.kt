@@ -587,6 +587,8 @@ class PlayerControllerImpl(
         if (adoptJob?.isActive == true && adopting == itemId) return
         adopting = itemId
         adoptJob = scope.launch {
+            // What the service still holds of an account that was left is on its way out; the mini player does not take it over.
+            if (!DeviceLibrary.isLocal(serverId, itemId) && !isSignedIn(serverId)) return@launch
             val item = loadItem(serverId, itemId) ?: return@launch
             if (facade.currentKey()?.second != itemId) return@launch
             localJob?.cancel(); localJob = null

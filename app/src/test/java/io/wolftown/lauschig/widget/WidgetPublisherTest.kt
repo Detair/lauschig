@@ -98,4 +98,23 @@ class WidgetPublisherTest {
         assertEquals(12_000L, last.positionMs)
         assertEquals("li_1", last.key)
     }
+
+    /** Review I2: the empty player keeps the last title for the widget; after a switch that title must not come back. */
+    @Test fun afterASwitch_theOldTitleDoesNotComeBack() = runTest {
+        val store = FakeStore(null)
+        val pub = publisher(store)
+        pub.start()
+        snap = playing(1_000, play = false)
+        pub.changed()
+        testScheduler.runCurrent()
+        assertEquals("Titel", store.flow.value?.title)
+        snap = empty
+        pub.forgetTitle()
+        testScheduler.runCurrent()
+        assertEquals(null, store.flow.value)
+        pub.changed()
+        pub.release()
+        testScheduler.runCurrent()
+        assertEquals(null, store.flow.value)
+    }
 }

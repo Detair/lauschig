@@ -148,10 +148,10 @@ class AccountStateCleanerTest {
         var images = 0; var diagnostics = 0
         val otherPrompt = DownloadPrompt.Metered(b, "x", "T", 1)
         prompts.show(otherPrompt)
-        cleaner({ images++ }, { images++ }, {}, { diagnostics++ }).forget(a)
+        cleaner({ images++ }, {}, {}, { diagnostics++ }).forget(a)
         assertEquals("the active account's search stays", listOf("Bibi"), searches.queries.first())
         assertEquals(otherPrompt, prompts.prompt.value)
-        assertEquals(0, images)
+        assertEquals("like a sign-out: its covers go, the signed-in account fetches its own again (review M5)", 1, images)
         assertEquals(0, diagnostics)
         active.value = a
         assertNull(rmab.config.first())

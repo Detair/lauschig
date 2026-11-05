@@ -49,8 +49,10 @@ internal class FakeFacade : PlayerFacade {
     /** ExoPlayer's intent to play; kept across errors and queue swaps, so a rebuilt queue plays on only if it was true. */
     var playWhenReady = false
     var playCalls = 0
+    /** What the service's tracker does on a pause: it saves the title's position, a moment later. */
+    var onPause: (title: Pair<String, String>?) -> Unit = {}
     override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
-    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false }
+    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false; onPause(currentKey()) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
@@ -396,6 +398,16 @@ class PlayerControllerTest {
         val c = controller(f, { item(listOf(file(0, 1800.0))) }, isSignedIn = { false })
         c.play(s, "it")
         assertEquals(0, f.setCalls)
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    /** Review I1: the service's player holds a title of the account that was left: the mini player does not take it over. */
+    @Test fun aTitleOfAnotherAccountInTheService_isNotAdopted() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, isSignedIn = { false })
+        f.key = s to "it"
+        c.adoptFromService()
+        testScheduler.advanceUntilIdle()
         assertEquals(null, c.state.value.itemId)
     }
 
