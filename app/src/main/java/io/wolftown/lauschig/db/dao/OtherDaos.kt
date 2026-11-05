@@ -263,8 +263,19 @@ data class DownloadEntryRow(
     val isFinished: Boolean,
 )
 
+/** A complete download of a finished title: [finishedAt] is its progress's `lastUpdate`. */
+data class FinishedDownload(val itemKey: String, val requestedAt: Long, val finishedAt: Long)
+
 @Dao
 interface DownloadDao {
+    /** Complete downloads (books and episodes) of [serverId] whose title is marked finished; for the automatic clean-up. */
+    @Query(
+        """SELECT d.itemId AS itemKey, d.requestedAt AS requestedAt, p.lastUpdate AS finishedAt
+           FROM downloads d JOIN progress p ON p.serverId = d.serverId AND p.itemId = d.itemId
+           WHERE d.serverId = :serverId AND d.state = 'COMPLETE' AND p.isFinished = 1""",
+    )
+    fun observeFinishedComplete(serverId: String): Flow<List<FinishedDownload>>
+
     /** Every download of [serverId] (books and episodes) for the download management page. */
     @Query(
         """SELECT d.itemId AS itemKey, d.state AS state, d.error AS error, d.requestedAt AS requestedAt,

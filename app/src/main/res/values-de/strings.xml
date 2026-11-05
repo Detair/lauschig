@@ -163,7 +163,7 @@
     <string name="cleanup_title">Aufräumen</string>
     <string name="cleanup_empty">Keine fertig gehörten Bücher heruntergeladen.</string>
     <string name="cleanup_hint">Fertig gehörte Bücher, die noch auf dem Gerät liegen. Ausgewählte Downloads werden gelöscht, dein Fortschritt bleibt.</string>
-    <string name="cleanup_dont_remind">Nicht mehr an dieses Buch erinnern</string>
+    <string name="cleanup_dont_remind">Behalten: keine Erinnerung, kein automatisches Löschen</string>
     <string name="cleanup_channel_name">Aufräum-Erinnerungen</string>
     <string name="cleanup_delete_selected">%1$d löschen (%2$s)</string>
     <plurals name="cleanup_notification_title">
@@ -279,6 +279,15 @@
     <string name="settings_auto_download_hint">Nach einem Abgleich, je Podcast. Die WLAN-Einstellung gilt.</string>
     <string name="settings_auto_download_off">Aus</string>
     <string name="settings_auto_download_newest">Neueste %1$d</string>
+    <string name="settings_auto_delete">Gehörte Downloads automatisch löschen</string>
+    <string name="settings_auto_delete_hint">Nur die Dateien gehen, dein Fortschritt und dein Hörverlauf bleiben. Titel, die du beim Aufräumen behältst, und Titel aus deinen Ordnern werden nie gelöscht.</string>
+    <string name="settings_auto_delete_never">Nie</string>
+    <string name="settings_auto_delete_immediately">Sofort</string>
+    <plurals name="settings_auto_delete_after_days">
+        <item quantity="one">Nach %1$d Tag</item>
+        <item quantity="other">Nach %1$d Tagen</item>
+    </plurals>
+    <string name="settings_cleanup_reminder_auto">Nicht nötig, solange gehörte Downloads automatisch gelöscht werden.</string>
     <!-- Stream + Download -->
     <string name="download_notification_throttled">Gedrosselt – Stream hat Vorrang</string>
     <string name="player_download_throttled">Download langsam – Stream hat Vorrang</string>

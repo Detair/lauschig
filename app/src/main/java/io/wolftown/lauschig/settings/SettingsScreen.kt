@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.download.MeteredDownload
 import io.wolftown.lauschig.external.AudibleRegions
@@ -61,6 +63,7 @@ data class SettingsUiState(
     val autoDownload: AutoDownloadMode = AutoDownloadMode.OFF,
     val downloadOnPlay: Boolean = true,
     val meteredOnPlay: MeteredDownload = MeteredDownload.ASK,
+    val autoDelete: AutoDeleteMode = AutoDeleteMode.NEVER,
     val playback: PlaybackPrefs = PlaybackPrefs(),
     val appearance: Appearance = Appearance(),
 )
@@ -109,6 +112,7 @@ class SettingsViewModel @Inject constructor(
         playback,
     ) { base, auto, onPlay, metered, pb -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered, playback = pb) }
         .combine(ui.appearance) { s, look -> s.copy(appearance = look) }
+        .combine(download.autoDeleteFinished) { s, mode -> s.copy(autoDelete = mode) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -119,6 +123,7 @@ class SettingsViewModel @Inject constructor(
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }
     fun setMeteredOnPlay(mode: MeteredDownload) { viewModelScope.launch { download.setMeteredOnPlay(mode) } }
+    fun setAutoDelete(mode: AutoDeleteMode) { viewModelScope.launch { download.setAutoDeleteFinished(mode) } }
 
     val appearanceActions = AppearanceActions(
         onTheme = { viewModelScope.launch { ui.setTheme(it) } },
@@ -153,6 +158,7 @@ fun SettingsRoute(
     SettingsScreen(state, onBack, onOpenCleanup, viewModel::setNextVolume, viewModel::setWifiOnly, viewModel::setCleanupReminder,
         viewModel::setMissingVolumes, viewModel::setAudibleRegion, viewModel::setAutoDownload,
         onDownloadOnPlay = viewModel::setDownloadOnPlay, onMeteredOnPlay = viewModel::setMeteredOnPlay,
+        onAutoDelete = viewModel::setAutoDelete,
         playbackActions = viewModel.playbackActions,
         appearanceActions = viewModel.appearanceActions,
         onOpenNavigation = onOpenNavigation,
@@ -181,6 +187,7 @@ fun SettingsScreen(
     onAutoDownload: (AutoDownloadMode) -> Unit = {},
     onDownloadOnPlay: (Boolean) -> Unit = {},
     onMeteredOnPlay: (MeteredDownload) -> Unit = {},
+    onAutoDelete: (AutoDeleteMode) -> Unit = {},
     playbackActions: PlaybackPrefsActions = PlaybackPrefsActions(),
     modifier: Modifier = Modifier,
     appearanceActions: AppearanceActions = AppearanceActions(),
@@ -242,7 +249,16 @@ fun SettingsScreen(
         SwitchRow(R.string.settings_download_on_play, R.string.settings_download_on_play_hint, state.downloadOnPlay, onDownloadOnPlay, Modifier.testTag("downloadOnPlay"))
         MeteredRow(state.meteredOnPlay, state.downloadOnPlay, onMeteredOnPlay)
         AutoDownloadRow(state.autoDownload, onAutoDownload)
-        SwitchRow(R.string.settings_cleanup_reminder, R.string.settings_cleanup_reminder_hint, state.cleanupReminder, onCleanupReminder)
+        ChoiceRow(
+            R.string.settings_auto_delete, R.string.settings_auto_delete_hint, "autoDelete", AutoDeleteMode.entries, state.autoDelete, onAutoDelete,
+        ) { autoDeleteLabel(it) }
+        // The automatic clean-up deletes what the reminder would name.
+        val autoDeleting = state.autoDelete != AutoDeleteMode.NEVER
+        SwitchRow(
+            R.string.settings_cleanup_reminder,
+            if (autoDeleting) R.string.settings_cleanup_reminder_auto else R.string.settings_cleanup_reminder_hint,
+            state.cleanupReminder && !autoDeleting, onCleanupReminder, Modifier.testTag("cleanupReminder"), enabled = !autoDeleting,
+        )
         ListItem(
             headlineContent = { Text(stringResource(R.string.cleanup_title)) },
             supportingContent = { Text(stringResource(R.string.settings_cleanup_open_hint)) },
@@ -338,6 +354,14 @@ private fun AutoDownloadRow(current: AutoDownloadMode, onSelect: (AutoDownloadMo
             }
         }
     }
+}
+
+@Composable
+private fun autoDeleteLabel(mode: AutoDeleteMode): String = when (mode) {
+    AutoDeleteMode.NEVER -> stringResource(R.string.settings_auto_delete_never)
+    AutoDeleteMode.IMMEDIATELY -> stringResource(R.string.settings_auto_delete_immediately)
+    AutoDeleteMode.AFTER_3_DAYS -> pluralStringResource(R.plurals.settings_auto_delete_after_days, 3, 3)
+    AutoDeleteMode.AFTER_7_DAYS -> pluralStringResource(R.plurals.settings_auto_delete_after_days, 7, 7)
 }
 
 @Composable

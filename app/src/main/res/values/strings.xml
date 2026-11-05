@@ -163,7 +163,7 @@
     <string name="cleanup_title">Clean up</string>
     <string name="cleanup_empty">No finished books are downloaded.</string>
     <string name="cleanup_hint">Finished books that are still on this device. Selected downloads are deleted; your progress stays.</string>
-    <string name="cleanup_dont_remind">Don\'t remind me about this book</string>
+    <string name="cleanup_dont_remind">Keep: no reminder, no automatic deletion</string>
     <string name="cleanup_channel_name">Clean-up reminders</string>
     <string name="cleanup_delete_selected">Delete %1$d (%2$s)</string>
     <plurals name="cleanup_notification_title">
@@ -279,6 +279,15 @@
     <string name="settings_auto_download_hint">After a sync, per podcast. The Wi-Fi setting applies.</string>
     <string name="settings_auto_download_off">Off</string>
     <string name="settings_auto_download_newest">Newest %1$d</string>
+    <string name="settings_auto_delete">Delete heard downloads automatically</string>
+    <string name="settings_auto_delete_hint">Only the files go; your progress and listening history stay. Titles you keep on the clean-up page and titles from your folders are never deleted.</string>
+    <string name="settings_auto_delete_never">Never</string>
+    <string name="settings_auto_delete_immediately">Right away</string>
+    <plurals name="settings_auto_delete_after_days">
+        <item quantity="one">After %1$d day</item>
+        <item quantity="other">After %1$d days</item>
+    </plurals>
+    <string name="settings_cleanup_reminder_auto">Not needed while heard downloads are deleted automatically.</string>
     <!-- Stream + download -->
     <string name="download_notification_throttled">Throttled – stream has priority</string>
     <string name="player_download_throttled">Download slow – stream has priority</string>

@@ -17,6 +17,19 @@ private val Context.downloadDataStore by preferencesDataStore(name = "download_s
 enum class MeteredDownload { ASK, ALWAYS, WIFI }
 
 /**
+ * Deleting the download of a finished title by itself: never (default), right away, or once it has been finished for
+ * [afterMs]. Only the files go; progress and listening history stay (see `FinishedDownloadCleaner`).
+ */
+enum class AutoDeleteMode(val afterMs: Long?) {
+    NEVER(null),
+    IMMEDIATELY(0),
+    AFTER_3_DAYS(3 * DAY_MS),
+    AFTER_7_DAYS(7 * DAY_MS),
+}
+
+private const val DAY_MS = 24L * 60 * 60 * 1000
+
+/**
  * Download preferences. [wifiOnly] (default `true`) maps to the WorkManager network constraint
  * `UNMETERED` (else `CONNECTED`) when a download is enqueued. Phase 1: changing it does not retarget
  * work that is already queued; it applies to downloads enqueued afterwards.
@@ -52,6 +65,13 @@ class DownloadSettings @Inject constructor(@ApplicationContext context: Context)
      */
     val storagePath: Flow<String?> = store.data.map { it[STORAGE_PATH]?.takeIf { p -> p.isNotBlank() } }
 
+    val autoDeleteFinished: Flow<AutoDeleteMode> =
+        store.data.map { p -> p[AUTO_DELETE]?.let { v -> AutoDeleteMode.entries.firstOrNull { it.name == v } } ?: AutoDeleteMode.NEVER }
+
+    suspend fun setAutoDeleteFinished(mode: AutoDeleteMode) {
+        store.edit { it[AUTO_DELETE] = mode.name }
+    }
+
     suspend fun setStoragePath(path: String?) {
         store.edit { if (path.isNullOrBlank()) it.remove(STORAGE_PATH) else it[STORAGE_PATH] = path }
     }
@@ -61,5 +81,6 @@ class DownloadSettings @Inject constructor(@ApplicationContext context: Context)
         val DOWNLOAD_ON_PLAY = booleanPreferencesKey("download_on_play")
         val METERED_ON_PLAY = stringPreferencesKey("metered_on_play")
         val STORAGE_PATH = stringPreferencesKey("storage_path")
+        val AUTO_DELETE = stringPreferencesKey("auto_delete_finished")
     }
 }
