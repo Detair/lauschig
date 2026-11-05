@@ -33,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -113,7 +114,8 @@ fun ContentsSheet(
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.testTag("contentsSheet")) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).navigationBarsPadding()) {
-            PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = Spacing.s) {
+            // On the sheet's own colour, so the tabs read as part of the sheet, not as a bar on it.
+            PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = Spacing.s, containerColor = Color.Transparent) {
                 ContentsTab.entries.forEach { t ->
                     Tab(
                         selected = t == tab,

@@ -74,6 +74,7 @@ class AudioTrackChime @Inject constructor() : SleepChime {
             try {
                 track.write(pcm, 0, pcm.size)
                 track.play()
+                Log.i(TAG, "sleep timer hint tone")
                 Handler(Looper.getMainLooper()).postDelayed({ release(track) }, (SoftChime.LENGTH_SEC * 1000).toLong() + RELEASE_MARGIN_MS)
             } catch (e: Exception) {
                 release(track)
