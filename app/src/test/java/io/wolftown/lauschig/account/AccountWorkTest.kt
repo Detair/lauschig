@@ -128,4 +128,25 @@ class AccountWorkTest {
         WorkManagerAccountWork({ wm }, { emptyList() }, waitMs = 1_000, cancelOther = { cancelled += it }).cancel(a)
         assertEquals(listOf(a), cancelled)
     }
+
+    // Fix round 2, N1: removing a saved profile stops its own work only – the signed-in account's syncs keep running.
+    @Test fun cancelOwn_leavesTheSyncs_andOtherServers_stopsOnlyThisServersOwnWork() = runBlocking {
+        SyncScheduler.ACCOUNT_WORK.filter { it != SyncScheduler.PERIODIC }.forEach { wm.enqueueUniqueWork(it, ExistingWorkPolicy.REPLACE, waiting()) }
+        wm.enqueueUniquePeriodicWork(
+            SyncScheduler.PERIODIC, ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<IdleWorker>(15, TimeUnit.MINUTES).setInitialDelay(1, TimeUnit.HOURS).build(),
+        )
+        wm.enqueueUniqueWork(DefaultDownloadManager.workName(b, "book1"), ExistingWorkPolicy.KEEP, waiting())
+        wm.enqueueUniqueWork(DefaultDownloadManager.workName(b, "pod~ep1"), ExistingWorkPolicy.KEEP, waiting(DefaultDownloadManager.serverTag(b)))
+        wm.enqueueUniqueWork(DefaultDownloadManager.workName(a, "book1"), ExistingWorkPolicy.KEEP, waiting(DefaultDownloadManager.serverTag(a)))
+        val other = mutableListOf<String>()
+
+        WorkManagerAccountWork({ wm }, { sid -> if (sid == b) listOf("book1") else emptyList() }, waitMs = 1_000, cancelOther = { other += it }).cancelOwn(b)
+
+        SyncScheduler.ACCOUNT_WORK.forEach { assertEquals(it, WorkInfo.State.ENQUEUED, state(it)) }
+        assertEquals(WorkInfo.State.CANCELLED, state(DefaultDownloadManager.workName(b, "book1")))
+        assertEquals(WorkInfo.State.CANCELLED, state(DefaultDownloadManager.workName(b, "pod~ep1")))
+        assertEquals(WorkInfo.State.ENQUEUED, state(DefaultDownloadManager.workName(a, "book1")))
+        assertEquals(listOf(b), other)
+    }
 }

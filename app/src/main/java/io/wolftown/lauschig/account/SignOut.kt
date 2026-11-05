@@ -15,14 +15,18 @@ import io.wolftown.lauschig.playback.forgetServerTitle
 import io.wolftown.lauschig.sync.BookmarkSync
 import io.wolftown.lauschig.sync.ProgressSync
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import javax.inject.Singleton
 
 /** What the sign-out dialog shows, after the pending changes were pushed. */
 data class SignOutCheck(
@@ -69,6 +73,13 @@ interface AccountSignOut {
      * (another server id). Without a stored account it just saves [next].
      */
     suspend fun switchTo(next: Account, accessToken: String, refreshToken: String)
+
+    /**
+     * A sign-in (setup, re-auth): another account than the stored one goes through [switchTo] (the old one keeps its
+     * data), the same one – or none stored – just saves the new tokens. Waits for any other account operation to finish
+     * (sign-out, switch, removing a profile), like each of those.
+     */
+    suspend fun signIn(next: Account, accessToken: String, refreshToken: String)
 }
 
 /**
@@ -89,10 +100,15 @@ interface ProfileSwitch {
     suspend fun addProfile(next: Account, accessToken: String, refreshToken: String)
 
     /**
-     * Removes the saved (not active) account [serverId] like a sign-out without keeping: its session on the server ends
-     * (at most [SignOut.LOGOUT_TIMEOUT_MS]), its rows and downloads are purged, it is forgotten. The purge is owed
+     * Removes the saved (not active) account [serverId] like a sign-out without keeping: its session on the server is
+     * ended where it can be (at most [SignOut.LOGOUT_TIMEOUT_MS], see below), its rows and downloads are purged, it is
+     * forgotten. The purge is owed
      * before the account is forgotten (a pending purge the next start finishes), so its data never stays without an
-     * owner. False, touching nothing, if [serverId] is not saved; the active account is never removed here.
+     * owner. False, touching nothing, if [serverId] is not saved; the active account is never removed here – also not
+     * when it became the active one just before (the account operations run one after the other).
+     *
+     * The server logout needs the current connection to be on that profile's server (the same server as the signed-in
+     * account – the family case); a profile on another server is not logged out there, its session runs out on its own.
      */
     suspend fun removeProfile(serverId: String): Boolean
 }
@@ -106,7 +122,11 @@ interface ProfileSwitch {
  * ([AccountStore.clear]), so the app turns to the sign-in only when the data is in its final state. Device titles are
  * never touched. Runs to the end even if the caller is cancelled; a failing step is logged and the rest still runs.
  * The same steps leave an account for a [ProfileSwitch], without the logout and without forgetting anything.
+ *
+ * One instance for the app: its account operations (sign-out, sign-in, switches, removing a profile) run one after the
+ * other ([operations]), so none of them works on an account another one is just changing.
  */
+@Singleton
 class SignOut(
     private val accounts: AccountStore,
     private val data: AccountData,
@@ -179,43 +199,65 @@ class SignOut(
         0
     }
 
-    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult =
-        leave(if (keepDownloads) Leave.KEEP else Leave.PURGE, shownUnsynced) { accounts.clear(keepDownloads) }
+    /** Account operations run one after the other: one never works on an account another one is just changing. */
+    private val operations = Mutex()
 
-    override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) {
-        withContext(NonCancellable) {
-            if (accounts.account.first() == null) accounts.save(next, accessToken, refreshToken)
-            else leave(Leave.KEEP, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
-        }
+    /** [block] under [operations], to the end even if the caller goes away. */
+    private suspend fun <T> exclusive(block: suspend CoroutineScope.() -> T): T = withContext(NonCancellable) {
+        val scope = this
+        operations.withLock { scope.block() }
     }
 
-    override suspend fun switchProfile(serverId: String): Boolean = withContext(NonCancellable) {
-        if (accounts.saved.first().none { it.serverId == serverId }) return@withContext false
-        if (accounts.account.first() == null) return@withContext accounts.activate(serverId)
+    override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult = exclusive {
+        leave(if (keepDownloads) Leave.KEEP else Leave.PURGE, shownUnsynced) { accounts.clear(keepDownloads) }
+    }
+
+    override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) = exclusive { replaceWith(next, accessToken, refreshToken) }
+
+    override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
+        val previous = accounts.account.first()
+        if (previous != null && previous.serverId != next.serverId) replaceWith(next, accessToken, refreshToken)
+        else accounts.save(next, accessToken, refreshToken)
+    }
+
+    /** [switchTo] itself (callers hold [operations]). */
+    private suspend fun replaceWith(next: Account, accessToken: String, refreshToken: String) {
+        if (accounts.account.first() == null) accounts.save(next, accessToken, refreshToken)
+        else leave(Leave.KEEP, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
+    }
+
+    override suspend fun switchProfile(serverId: String): Boolean = exclusive {
+        if (accounts.saved.first().none { it.serverId == serverId }) return@exclusive false
+        if (accounts.account.first() == null) return@exclusive accounts.activate(serverId)
         var switched = false
         leave(Leave.SET_ASIDE, shownUnsynced = null) { switched = accounts.activate(serverId) }
         switched
     }
 
-    override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) {
-        withContext(NonCancellable) {
-            val current = accounts.account.first()
-            if (current == null || current.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
-            else leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
-        }
+    override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
+        val current = accounts.account.first()
+        if (current == null || current.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
+        else leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
     }
 
-    override suspend fun removeProfile(serverId: String): Boolean = withContext(NonCancellable) {
-        val account = accounts.saved.first().firstOrNull { it.serverId == serverId } ?: return@withContext false
+    override suspend fun removeProfile(serverId: String): Boolean = exclusive {
+        val account = accounts.saved.first().firstOrNull { it.serverId == serverId } ?: return@exclusive false
         val refresh = try { accounts.savedCredentials(serverId)?.refreshToken } catch (e: Exception) { null }
         // Owed first: should anything stop here, the next start finishes the purge (the janitor), the data is never ownerless.
-        if (step("pending purge") { kept.addPendingPurge(serverId); true } != true) return@withContext false
-        if (step("forget") { accounts.forget(serverId); true } != true) {
-            // Still saved: its data stays wanted.
+        if (step("pending purge") { kept.addPendingPurge(serverId); true } != true) return@exclusive false
+        // Forgotten only if it still was a saved one (decided in the same write as the removal).
+        if (step("forget") { accounts.forget(serverId) } != true) {
+            // Still saved, or the signed-in one by now: its data stays wanted.
             step("keep") { kept.removePendingPurge(serverId) }
-            return@withContext false
+            return@exclusive false
         }
-        step("cancel work") { work.cancel(serverId) }
+        if (step("still away") { accounts.account.first()?.serverId != serverId } != true) {
+            // Signed in as that account from outside these operations meanwhile: never purge the signed-in account.
+            step("keep") { kept.removePendingPurge(serverId) }
+            return@exclusive false
+        }
+        // Its own work only (its downloads were paused when it was set aside): the syncs are the signed-in account's.
+        step("cancel work") { work.cancelOwn(serverId) }
         val loggedOut = async {
             if (refresh == null) false
             else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true

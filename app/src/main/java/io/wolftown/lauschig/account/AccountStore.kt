@@ -55,9 +55,10 @@ interface AccountStore {
     /**
      * Removes the saved account [serverId] with its tokens; the active account is never touched here. Only the store's
      * last step of removing a profile: [ProfileSwitch.removeProfile] owes the account's purge first (as a sign-out does),
-     * so its rows and downloads never stay without an owner.
+     * so its rows and downloads never stay without an owner. True if it was a saved account and is gone now (decided
+     * in the same write).
      */
-    suspend fun forget(serverId: String)
+    suspend fun forget(serverId: String): Boolean
 
     /** The saved account [serverId]'s tokens (decrypted), for its server logout when it is removed; null if not saved. */
     suspend fun savedCredentials(serverId: String): Credentials?

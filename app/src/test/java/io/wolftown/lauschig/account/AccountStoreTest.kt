@@ -161,8 +161,9 @@ class AccountStoreTest {
     @Test fun forget_removesASavedAccountAndItsTokens_neverTheActiveOne() = runTest {
         store.save(fabian, "a1", "r1")
         store.add(matthias, "a2", "r2")
-        store.forget(matthias.serverId) // the active account: no effect
-        store.forget(fabian.serverId)
+        assertFalse(store.forget(matthias.serverId)) // the active account: no effect
+        assertTrue(store.forget(fabian.serverId))
+        assertFalse(store.forget(fabian.serverId))
         assertEquals(matthias, store.account.first())
         assertEquals(Credentials(matthias.serverId, "a2", "r2"), store.credentials())
         assertEquals(emptyList<Account>(), store.saved.first())

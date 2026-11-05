@@ -94,8 +94,15 @@ class DataStoreAccountStore(
         return done
     }
 
-    override suspend fun forget(serverId: String) {
-        store.edit { it.putSaved(it.savedList().filterNot { s -> s.account.serverId == serverId }) }
+    override suspend fun forget(serverId: String): Boolean {
+        var forgotten = false
+        store.edit {
+            val list = it.savedList()
+            if (list.none { s -> s.account.serverId == serverId }) return@edit
+            it.putSaved(list.filterNot { s -> s.account.serverId == serverId })
+            forgotten = true
+        }
+        return forgotten
     }
 
     override suspend fun savedCredentials(serverId: String): Credentials? {

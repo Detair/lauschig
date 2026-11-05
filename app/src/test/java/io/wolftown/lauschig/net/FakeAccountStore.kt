@@ -68,7 +68,12 @@ class FakeAccountStore : AccountStore {
     }
     /** Called on [forget] (tests that record the order of a removal). */
     var onForget: () -> Unit = {}
-    override suspend fun forget(serverId: String) { onForget(); aside.value = aside.value.filterNot { it.account.serverId == serverId } }
+    override suspend fun forget(serverId: String): Boolean {
+        onForget()
+        val before = aside.value
+        aside.value = before.filterNot { it.account.serverId == serverId }
+        return aside.value.size != before.size
+    }
     override suspend fun savedCredentials(serverId: String) =
         aside.value.firstOrNull { it.account.serverId == serverId }?.let { Credentials(serverId, it.access, it.refresh) }
 }

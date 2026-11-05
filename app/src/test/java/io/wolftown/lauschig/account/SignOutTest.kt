@@ -14,6 +14,7 @@ import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.playback.LastPlayed
 import io.wolftown.lauschig.playback.LastPlayedStore
 import io.wolftown.lauschig.sync.InMemorySyncStamps
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -78,19 +79,29 @@ class SignOutTest {
         online: suspend () -> Boolean = { true },
         pushes: List<suspend (String) -> Unit> = emptyList(),
         purgeData: AccountData = data,
+        stopPlayback: suspend () -> Unit = { calls += "stop" },
     ) = SignOut(
         accounts = accounts,
         data = Recording(purgeData),
         kept = recordingKept,
-        work = { sid -> cancelled += sid; calls += "work" },
+        work = recordingWork { sid -> cancelled += sid; calls += "work" },
         lastPlayed = lastPlayed,
         pausePlayback = { calls += "pause" },
-        stopPlayback = { calls += "stop" },
+        stopPlayback = stopPlayback,
         pushes = pushes,
         awaitOnline = online,
         logout = logout,
         clearAccountState = { sid -> calls += "state:$sid" },
     )
+
+    /** [cancelOwn] calls of the account work (a removed profile's own work). */
+    private val cancelledOwn = mutableListOf<String>()
+
+    /** Records [AccountWork.cancel] with [onCancel] and [AccountWork.cancelOwn] in [cancelledOwn]: the two differ. */
+    private fun recordingWork(onCancel: (String) -> Unit) = object : AccountWork {
+        override suspend fun cancel(serverId: String) = onCancel(serverId)
+        override suspend fun cancelOwn(serverId: String) { cancelledOwn += serverId }
+    }
 
     /** Records the data steps of a sign-out in [calls]. */
     private inner class Recording(private val inner: AccountData) : AccountData by inner {
@@ -300,7 +311,9 @@ class SignOutTest {
         assertEquals(List(6) { false }, rows(b))
         assertFalse(File(root, b).exists())
         assertEquals(listOf("refresh-2"), logouts)
-        assertEquals(listOf(b), cancelled)
+        // Its own work only; the signed-in account's syncs are not touched (WorkManager side: AccountWorkTest).
+        assertEquals(listOf(b), cancelledOwn)
+        assertEquals(emptyList<String>(), cancelled)
         assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
         assertEquals(emptySet<String>(), kept.pending.value)
         // The signed-in account and its data are untouched.
@@ -330,10 +343,85 @@ class SignOutTest {
         assertEquals(emptySet<String>(), kept.pending.value)
     }
 
+    // Fix round 2, N2: account operations run one after the other – a profile that has just become the signed-in one
+    // is never purged, and a removal never races a switch.
+
+    @Test fun aSwitchToAProfile_thenItsRemoval_neverPurgesTheSignedInAccount() = runTest {
+        seed(a); seed(b)
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val out = signOut(stopPlayback = { gate.await() }) // the switch holds on while stopping playback
+
+        val switching = async { out.switchProfile(b) }
+        val removing = async { out.removeProfile(b) }
+        testScheduler.runCurrent()
+        assertFalse("the removal waits for the switch", removing.isCompleted)
+        gate.complete(Unit)
+
+        assertTrue(switching.await())
+        assertFalse(removing.await())
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals(List(6) { true }, rows(b))
+        assertTrue(File(root, "$b/book1/0.mp3").isFile)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        assertEquals(emptyList<String>(), logouts)
+    }
+
+    @Test fun aRemoval_thenASwitchToTheSameProfile_findsNothingToSwitchTo() = runTest {
+        seed(a); seed(b)
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val out = signOut(logout = { _, token -> logouts += token; gate.await(); true }) // the removal holds on in its logout
+
+        val removing = async { out.removeProfile(b) }
+        val switching = async { out.switchProfile(b) }
+        testScheduler.runCurrent()
+        assertFalse("the switch waits for the removal", switching.isCompleted)
+        gate.complete(Unit)
+
+        assertTrue(removing.await())
+        assertFalse(switching.await())
+        assertEquals(account, accounts.acc.value)
+        assertEquals(List(6) { false }, rows(b))
+        assertEquals(List(6) { true }, rows(a))
+        assertEquals(listOf("refresh-2"), logouts)
+    }
+
+    @Test fun aSignInWhileASignOutRuns_waitsForIt() = runTest {
+        seed(a)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val out = signOut(stopPlayback = { gate.await() })
+        val signingOut = async { out.execute(keepDownloads = false) }
+        val signingIn = async { out.signIn(lukas, "access-2", "refresh-2") }
+        testScheduler.runCurrent()
+        assertFalse(signingIn.isCompleted)
+        gate.complete(Unit)
+        signingOut.await(); signingIn.await()
+        // Signed out completely first (purge, clear), then signed in – not the other way round.
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals("access-2", accounts.access)
+        assertEquals(List(6) { false }, rows(a))
+    }
+
+    @Test fun signIn_anotherAccount_switches_theSameOne_justSaves() = runTest {
+        seed(a)
+        signOut().signIn(account, "access-9", "refresh-9")
+        assertTrue(calls.isEmpty())
+        assertEquals("access-9", accounts.access)
+        signOut().signIn(lukas, "access-2", "refresh-2")
+        // Like switchTo: the old one keeps its data and is remembered, never "no account" in between.
+        assertEquals(listOf(KeptAccount(a, "fabian", "abs.example.org", userId = "u1")), kept.list.value)
+        assertEquals(List(6) { true }, rows(a))
+        assertEquals(lukas, accounts.acc.value)
+        accounts.acc.value = null
+        signOut().signIn(account, "access-1", "refresh-1")
+        assertEquals(account, accounts.acc.value)
+    }
+
     @Test fun moreChangesAfterStopping_thanShown_abortWithoutDeleting() = runTest {
         seed(a) // 2 unsynced: the dirty progress row and the pending bookmark
         val out = SignOut(
-            accounts, Recording(data), recordingKept, { calls += "work" }, lastPlayed,
+            accounts, Recording(data), recordingKept, recordingWork { calls += "work" }, lastPlayed,
             pausePlayback = {},
             // Playback was resumed while the dialog was open: stopping it saves one more listening session.
             stopPlayback = { calls += "stop"; db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("s", a, "book1", 0.0, 9.0, 9.0, 1, 2)) },
@@ -391,7 +479,7 @@ class SignOutTest {
         seed(a)
         // The stopping service's last progress save lands after the purge (it runs on the service's own scope).
         val out = SignOut(
-            accounts, Recording(data), recordingKept, { calls += "work" }, lastPlayed,
+            accounts, Recording(data), recordingKept, recordingWork { calls += "work" }, lastPlayed,
             pausePlayback = {}, stopPlayback = {}, pushes = emptyList(), awaitOnline = { true },
             logout = { _, _ -> db.progressDao().saveLocal(a, "book1", 20.0, 100.0, false, 2); true },
             clearAccountState = { db.sessionDao().upsert(io.wolftown.lauschig.db.entities.LocalSessionEntity("late", a, "book1", 0.0, 1.0, 1.0, 1, 2)) },
@@ -405,7 +493,7 @@ class SignOutTest {
         seed(a)
         val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
         val out = SignOut(
-            accounts, Recording(data), recordingKept, { sid -> cancelled += sid; calls += "work" }, lastPlayed,
+            accounts, Recording(data), recordingKept, recordingWork { sid -> cancelled += sid; calls += "work" }, lastPlayed,
             pausePlayback = {}, stopPlayback = { calls += "stop"; gate.await() }, pushes = emptyList(), awaitOnline = { true },
             logout = { _, _ -> true }, clearAccountState = { calls += "state:$it" },
         )
