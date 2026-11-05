@@ -15,6 +15,7 @@ import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
+import io.wolftown.lauschig.ui.common.throttleUnchangedKey
 import io.wolftown.lauschig.ui.common.toSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -120,6 +121,9 @@ class LibraryViewModel @Inject constructor(
                 LibraryTab.Collections, LibraryTab.Playlists, LibraryTab.Device -> flowOf(emptyList())
             }
             val rows = combine(source, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Rows)
+                // Playback writes the position every few seconds, which re-emits every one of these queries; recompute the
+                // list once per window for those, but at once for anything else (finished, hidden, a new entry, a download).
+                .throttleUnchangedKey(PROGRESS_THROTTLE_MS, Rows::structure)
             combine(rows, tag) { (items, progress, downloaded, active), wanted ->
                 val byId = progress.associateBy { it.itemId }
                 val downloadedIds = downloaded.mapTo(HashSet()) { it.id }
@@ -148,7 +152,15 @@ class LibraryViewModel @Inject constructor(
         val progress: List<io.wolftown.lauschig.db.entities.ProgressEntity>,
         val downloaded: List<ItemEntity>,
         val active: List<String>,
-    )
+    ) {
+        /** Everything the lists show except a title's position: while this stays equal, only the playing title's progress moved. */
+        val structure: List<Any?> by lazy {
+            listOf(
+                items.map { it.id }, downloaded.map { it.id }, active,
+                progress.map { listOf(it.itemId, it.isFinished, it.hideFromContinue, it.currentTimeSec == 0.0) },
+            )
+        }
+    }
 
     private data class Filter(
         val available: Set<LibraryKind>,
@@ -159,6 +171,9 @@ class LibraryViewModel @Inject constructor(
 
     companion object {
         const val SCREEN = "library"
+
+        /** At most one recomputation per this long for position-only progress writes while playing. */
+        const val PROGRESS_THROTTLE_MS = 1_500L
     }
 }
 

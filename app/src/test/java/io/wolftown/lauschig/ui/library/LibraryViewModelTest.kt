@@ -14,6 +14,8 @@ import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -242,5 +244,44 @@ class LibraryViewModelTest {
         val s = vm.await { it.tab == LibraryTab.Series && it.selectedTag != null }
         assertEquals(listOf("Saga"), s.series.map { it.name })
         assertEquals(listOf("s1"), s.series.single().items.map { it.id })
+    }
+
+    @Test fun playbackTicks_doNotRecomputeTheListEveryWrite_butUserActionsAreImmediate() = runTest {
+        libs()
+        db.itemDao().upsertFromList(listOf(item("a"), item("b")))
+        listen("a", t = 10.0, last = 1)
+        listen("b", t = 5.0, last = 1)
+        val vm = vm()
+        val emissions = java.util.concurrent.atomic.AtomicInteger()
+        val job = CoroutineScope(Dispatchers.Default).launch { vm.state.collect { if (it.loaded) emissions.incrementAndGet() } }
+        try {
+            vm.await { it.items.map { i -> i.id }.toSet() == setOf("a", "b") }
+            withContext(Dispatchers.Default) { delay(300) }
+            val before = emissions.get()
+            // 20 position writes of the playing title, one per 100 ms (about 2 s): as when playing at ten writes a second.
+            val ticks = 20
+            withContext(Dispatchers.Default) {
+                repeat(ticks) { n ->
+                    db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "a", 11.0 + n, 100.0, false, 100L + n, false)))
+                    delay(100)
+                }
+            }
+            val during = emissions.get() - before
+            println("MEASURE emissions for $ticks progress writes: $during (before the throttle: one per write)")
+            assertTrue("$during emissions for $ticks writes", during <= 3)
+            // The newest position still arrives once the window ends.
+            val shown = vm.await { s -> s.items.first { it.id == "a" }.let { (it.progress ?: 0f) > 0.2f } }
+            assertEquals(setOf("a", "b"), shown.items.map { it.id }.toSet())
+
+            // A user action in the middle of ticks is not held back: "a" is marked finished and leaves the tab at once.
+            val t0 = System.nanoTime()
+            db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "a", 100.0, 100.0, true, 1_000L, false)))
+            withContext(Dispatchers.Default) { withTimeout(10_000) { vm.state.first { s -> s.items.none { it.id == "a" } } } }
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            println("MEASURE mark-finished latency: $ms ms")
+            assertTrue("took $ms ms", ms < 1_000)
+        } finally {
+            job.cancel()
+        }
     }
 }
