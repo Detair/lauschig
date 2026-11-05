@@ -238,14 +238,18 @@ fun ItemDetailScreen(
             item("header") { Header(state, sideCover, marks, onPrimary, onDownload, onPause, onDeleteDownload, onOpenBrowse) }
             item("finished") { Box(Modifier.padding(horizontal = 16.dp)) { finished() } }
             extras()
-            item("chapters-title") {
-                Text(
-                    stringResource(R.string.detail_chapters),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
-                )
+            val chaptersOffline = state.chapters.isEmpty() && !state.detailsLoaded && settledOffline
+            // A title without chapters (one file, e.g. a radio play) gets no heading over nothing.
+            if (state.chapters.isNotEmpty() || chaptersOffline) {
+                item("chapters-title") {
+                    Text(
+                        stringResource(R.string.detail_chapters),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
+                    )
+                }
             }
-            if (state.chapters.isEmpty() && !state.detailsLoaded && settledOffline) {
+            if (chaptersOffline) {
                 item("chapters-offline") {
                     Text(
                         stringResource(R.string.detail_chapters_offline_hint),

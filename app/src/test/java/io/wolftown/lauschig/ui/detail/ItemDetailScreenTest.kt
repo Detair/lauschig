@@ -331,4 +331,19 @@ class ItemDetailScreenTest {
         assertEquals(label, 1, layouts.single().lineCount)
         rule.onNodeWithText("Download löschen").assertIsDisplayed()
     }
+
+    @Test fun chaptersHeading_onlyWithChaptersOrTheOfflineHint() {
+        var state by mutableStateOf(base)
+        rule.setContent {
+            CompositionLocalProvider(LocalOfflineDimming provides state.online.not()) { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, {}, {}) } }
+        }
+        rule.onNodeWithText("Chapters").assertExists()
+        // A single-file title (e.g. a radio play) has no chapters: no heading over nothing.
+        state = base.copy(chapters = emptyList())
+        rule.onNodeWithText("Chapters").assertDoesNotExist()
+        // Offline before the details were loaded: the heading stays, with the hint under it.
+        state = base.copy(chapters = emptyList(), detailsLoaded = false, online = false)
+        rule.onNodeWithText("Chapters").assertExists()
+        rule.onNodeWithText("Chapters available once online").assertExists()
+    }
 }
