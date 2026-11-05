@@ -685,7 +685,7 @@ außer denen, die `main` ↔ `p6-downloads` ohnehin hat).
     `app/proguard-rules.pro` gilt für Library-Klassen genauso). Der Baseline-Profile der App nennt Klassen beim Namen
     und wird auf den gesamten Dex angewandt – Namen und Pakete sind gleich geblieben.
 - **10.3 `:core:playback` wartet.** **Claudes Wahl**, Begründung: Die genannten Klassen sind kein abgrenzbarer Kern.
-  `PlaybackService` importiert elf Klassen aus `auto` (Android Auto: `CarLibrary`, `CarButtons`, `LibraryCallback` …),
+  `PlaybackService` importiert vierzehn Klassen aus `auto` (Android Auto: `CarLibrary`, `CarButtons`, `LibraryCallback` …),
   dazu `widget`, `sync`, `connection`, `queue`, `download`, `net`, `account`, `settings`, `R` und `MainActivity`;
   `PlayerControllerImpl` braucht `sync`, `download`, `net`, `connection`; `SleepTimer` und `PlayerController` hängen an
   `settings.PlaybackSettings`, `CarSafePlayer` an `auto.CarControls`. `auto` wiederum importiert `playback` (sieben
