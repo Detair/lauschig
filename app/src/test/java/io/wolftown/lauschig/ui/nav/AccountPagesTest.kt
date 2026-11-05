@@ -53,7 +53,7 @@ class AccountPagesTest {
     private val everModel = mutableListOf<PageModel>()
 
     @Composable
-    private fun page(name: String) {
+    private fun Page(name: String) {
         val model = viewModel<PageModel>()
         if (model !in everModel) everModel += model
         models[name] = model
@@ -62,23 +62,23 @@ class AccountPagesTest {
     }
 
     @Composable
-    private fun pages() {
+    private fun Pages() {
         AccountPages(owner, scope) { navController, pageModels ->
             nav = navController
             CompositionLocalProvider(LocalViewModelStoreOwner provides pageModels) {
                 NavHost(navController, startDestination = if (owner == null) Setup() else Start) {
-                    composable<Setup> { page("setup") }
-                    composable<Start> { page("start") }
-                    composable<Library> { page("library") }
-                    composable<Settings> { page("settings") }
-                    composable<ItemDetail> { page("item") }
-                    composable<Player> { page("player") }
+                    composable<Setup> { Page("setup") }
+                    composable<Start> { Page("start") }
+                    composable<Library> { Page("library") }
+                    composable<Settings> { Page("settings") }
+                    composable<ItemDetail> { Page("item") }
+                    composable<Player> { Page("player") }
                 }
             }
         }
     }
 
-    private fun show() = rule.setContent { pages() }
+    private fun show() = rule.setContent { Pages() }
 
     private fun stack() = nav.currentBackStack.value.mapNotNull { e ->
         when {
@@ -148,6 +148,19 @@ class AccountPagesTest {
         go { assertFalse(nav.popBackStack()) }
     }
 
+    @Test fun theSystemBack_isNotHeldByTheNavigationBefore() {
+        lateinit var back: androidx.activity.OnBackPressedDispatcher
+        rule.setContent {
+            back = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current!!.onBackPressedDispatcher
+            Pages()
+        }
+        go { nav.navigate(Settings) }
+        rule.runOnUiThread { assertTrue(back.hasEnabledCallbacks()) }
+        owner = "b"
+        rule.waitForIdle()
+        rule.runOnUiThread { assertFalse(back.hasEnabledCallbacks()) }
+    }
+
     @Test fun thereAndBackAgain_startsAfresh() {
         show()
         go { nav.navigateToTab(TopLevelTab.Library) }
@@ -179,7 +192,7 @@ class AccountPagesTest {
 
     @Test fun turningTheDevice_keepsThePagesAndTheirViewModels() {
         val restore = StateRestorationTester(rule)
-        restore.setContent { pages() }
+        restore.setContent { Pages() }
         go { nav.navigateToTab(TopLevelTab.Library) }
         go { nav.navigate(Settings) }
         val settings = models.getValue("settings")
@@ -193,7 +206,7 @@ class AccountPagesTest {
 
     @Test fun aProcessDeath_bringsThePagesBack_withNewViewModels() {
         val restore = StateRestorationTester(rule)
-        restore.setContent { pages() }
+        restore.setContent { Pages() }
         go { nav.navigateToTab(TopLevelTab.Library) }
         go { nav.navigate(Settings) }
 
@@ -205,7 +218,7 @@ class AccountPagesTest {
 
     @Test fun aSwitchThatEndedWhileTheProcessWasGone_doesNotBringTheOtherPagesBack() {
         val restore = StateRestorationTester(rule)
-        restore.setContent { pages() }
+        restore.setContent { Pages() }
         go { nav.navigate(Settings) }
 
         scope = AccountPagesScope()
@@ -220,7 +233,7 @@ class AccountPagesTest {
             val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
             override val lifecycle: Lifecycle get() = registry
         }
-        rule.setContent { CompositionLocalProvider(LocalLifecycleOwner provides host) { pages() } }
+        rule.setContent { CompositionLocalProvider(LocalLifecycleOwner provides host) { Pages() } }
         rule.waitForIdle()
         val atFirst = host.registry.observerCount
         repeat(4) {

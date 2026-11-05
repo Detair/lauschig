@@ -724,7 +724,6 @@
     </string-array>
     <string name="pane_empty">Wähle einen Titel, um hier seine Details zu sehen.</string>
     <string name="settings_section_account">Konto</string>
-    <string name="account_admin">Admin</string>
     <string name="sign_out">Abmelden</string>
     <string name="sign_out_hint">Deine Downloads können auf dem Gerät bleiben</string>
     <string name="sign_out_title">Abmelden?</string>

@@ -724,7 +724,6 @@
     </string-array>
     <string name="pane_empty">Choose a title to see its details here.</string>
     <string name="settings_section_account">Account</string>
-    <string name="account_admin">Admin</string>
     <string name="sign_out">Sign out</string>
     <string name="sign_out_hint">Your downloads can stay on this device</string>
     <string name="sign_out_title">Sign out?</string>

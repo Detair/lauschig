@@ -68,11 +68,11 @@ fun AccountPages(owner: String?, scope: AccountPagesScope, content: @Composable 
 }
 
 /** Off the host's lifecycle: the activity would otherwise keep every navigation of its lifetime as an observer. */
-private fun NavHostController.retire() = setLifecycleOwner(NoHost)
+private fun NavHostController.retire() = setLifecycleOwner(EndedHost())
 
-/** A lifecycle at its end: observers get no event. */
-private object NoHost : LifecycleOwner {
-    override val lifecycle: Lifecycle = LifecycleRegistry.createUnsafe(this).apply {
+/** A lifecycle at its end: its observers get no event. One each: it holds them, and goes with the navigation it was given to. */
+private class EndedHost : LifecycleOwner {
+    override val lifecycle: Lifecycle = LifecycleRegistry(this).apply {
         currentState = Lifecycle.State.CREATED
         currentState = Lifecycle.State.DESTROYED
     }

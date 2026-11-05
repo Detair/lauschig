@@ -70,6 +70,11 @@ class ProfilesScreensTest {
         assertEquals("?", profileInitials("  "))
     }
 
+    @Test fun theAvatarIsDecoration_theRowSaysTheName() {
+        showSheet(listOf(active, saved))
+        rule.onNodeWithText("F").assertDoesNotExist() // TalkBack does not spell the initials before the name
+    }
+
     @Test fun theHeaderButton_nothingWithOneProfile() {
         rule.setContent { LauschigTheme { ProfileHeaderButton(listOf(active), onClick = { calls += "open" }) } }
         rule.onNodeWithTag("profileAvatar").assertDoesNotExist()

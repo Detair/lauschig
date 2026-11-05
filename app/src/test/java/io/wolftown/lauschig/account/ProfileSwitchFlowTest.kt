@@ -37,7 +37,18 @@ import io.wolftown.lauschig.download.SwitchedDownloads
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.net.TwoUsersServer
+import io.wolftown.lauschig.MainViewModel
+import io.wolftown.lauschig.TestViewModels
+import io.wolftown.lauschig.download.MeteredDownload
+import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.BEARER_A
+import io.wolftown.lauschig.ui.AppViewModel
+import io.wolftown.lauschig.ui.nav.Start
+import io.wolftown.lauschig.ui.profiles.ProfileOperations
+import io.wolftown.lauschig.ui.profiles.ProfileOutcome
+import io.wolftown.lauschig.ui.profiles.ProfileWork
+import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
+import io.wolftown.lauschig.ui.profiles.RemovalFacts
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.BEARER_B
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.TOKEN_A
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.TOKEN_B
@@ -515,6 +526,54 @@ class ProfileSwitchFlowTest {
         web.keepOnline(api, keepAlive)
         progressSync.sync(b)
         assertEquals(listOf<String?>(BEARER_B), web.tokens())
+    }
+
+    /**
+     * Review focus 1, what the screens are told through a real switch ([AppViewModel], the start router and the profile
+     * screens on the real flow): which pages, the running display and its result, no mini player and no question of A; and
+     * on the way back A's title waits paused.
+     */
+    @Test fun whatTheScreensSee_throughARealSwitch_andBack(): Unit = runBlocking {
+        signedIn()
+        aListensAndDownloads()
+        prompts.show(DownloadPrompt.Metered(a, "a-book", "Titel", 1))
+        val viewModels = TestViewModels()
+        try {
+            val operations = ProfileOperations(signOut, scope)
+            val main = viewModels.own(MainViewModel(store))
+            val profiles = viewModels.own(ProfilesViewModel(store, operations) { RemovalFacts(0, 0, false) })
+            val starter = PlayDownloadStarter(flowOf(true), flowOf(MeteredDownload.ASK), {}, { false }, { _, _ -> null }, { _, _ -> null }, manager, prompts, scope)
+            val frame = viewModels.own(AppViewModel(api, store, jumps, player, prompts, starter))
+            suspend fun <T> soon(what: suspend () -> T): T = kotlinx.coroutines.withTimeout(10_000) { what() }
+            val row = { id: String -> profiles.profiles.value!!.single { it.serverId == id } }
+            soon { main.pages.first { it?.owner == a } }
+            soon { profiles.profiles.first { it?.size == 2 } }
+            soon { frame.downloadPrompt.first { it != null } }
+
+            profiles.switchTo(row(b))
+            assertEquals(ProfileWork.Switching(web.b.username), profiles.busy.value)
+            val done = soon { profiles.outcome.first { it != null } }!!
+            assertEquals(ProfileOutcome.Kind.SWITCHED, done.kind)
+            assertEquals(web.b.username, done.name)
+            assertNull(profiles.busy.value)
+
+            // New pages on the start tab, the player closed, no mini player and no question of A.
+            soon { main.pages.first { it?.owner == b } }
+            assertEquals(Start, main.pages.value!!.start)
+            assertEquals(null, player.state.value.itemId)
+            assertEquals(null, frame.downloadPrompt.value)
+            assertTrue(row(b).active)
+            assertEquals(true, soon { frame.serverId.first { it == b } } == b)
+            operations.shown(done)
+
+            profiles.switchTo(row(a))
+            val back = soon { profiles.outcome.first { it != null } }!!
+            assertEquals(ProfileOutcome.Kind.SWITCHED, back.kind)
+            soon { main.pages.first { it?.owner == a } }
+            awaitShownPaused("a-book")
+        } finally {
+            viewModels.clear()
+        }
     }
 
     @Test fun anOpenDownloadQuestion_goesWithItsAccount_anotherAccountsStays(): Unit = runBlocking {

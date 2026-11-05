@@ -28,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -44,12 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -72,7 +75,7 @@ fun profileInitials(name: String): String =
 fun ProfileAvatar(name: String, serverId: String, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val tone = placeholderToneFor(serverId, MaterialTheme.colorScheme)
     Box(
-        modifier.size(size).clip(CircleShape).background(Brush.linearGradient(listOf(tone.start, tone.end))),
+        modifier.size(size).clip(CircleShape).background(Brush.linearGradient(listOf(tone.start, tone.end))).clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
         Text(profileInitials(name), color = tone.content, style = MaterialTheme.typography.labelLarge, maxLines = 1)
@@ -104,7 +107,7 @@ fun ProfilesSheetContent(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit,
         Text(
             stringResource(R.string.profiles_title),
             style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(horizontal = Spacing.xl).padding(bottom = Spacing.s),
+            modifier = Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
         )
         ProfileList(rows, onSwitch, onRemove, onAdd)
     }
@@ -117,6 +120,7 @@ fun ProfileList(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove
     ListItem(
         headlineContent = { Text(stringResource(R.string.profiles_add)) },
         leadingContent = { Icon(Icons.Rounded.PersonAdd, contentDescription = null, modifier = Modifier.size(40.dp).padding(Spacing.s)) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onAdd).testTag("addProfile"),
     )
 }
@@ -140,6 +144,8 @@ private fun ProfileListRow(row: ProfileRow, onSwitch: (ProfileRow) -> Unit, onRe
             if (row.active) Icon(Icons.Rounded.Check, stringResource(R.string.profiles_active), tint = MaterialTheme.colorScheme.primary)
             else ProfileMenu(row, onRemove)
         },
+        // On whatever it lies on, the sheet or the page of the picker.
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.fillMaxWidth().selectable(selected = row.active, role = Role.Button, onClick = { onSwitch(row) }).testTag("profile:${row.name}"),
     )
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -122,7 +123,8 @@ fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (state.addProfile) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // The arrow's own inset makes it line up with the text below.
+            Row(Modifier.offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
                 Text(stringResource(R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
             }
