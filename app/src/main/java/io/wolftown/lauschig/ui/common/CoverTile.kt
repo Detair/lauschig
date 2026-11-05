@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.FilledIconButton
@@ -97,7 +96,7 @@ fun CoverTile(
                 StatusBadge(Icons.Rounded.Downloading, stringResource(R.string.cover_downloading), Modifier.align(Alignment.TopEnd).testTag("coverDownloading"))
             }
             if (item.isDownloaded) {
-                StatusBadge(Icons.Rounded.DownloadDone, stringResource(R.string.cover_offline_available), Modifier.align(Alignment.TopEnd))
+                StatusBadge(OfflineIcon, stringResource(R.string.cover_offline_available), Modifier.align(Alignment.TopEnd))
             }
             if (item.progress > 0f && !item.isFinished) {
                 ProgressLine(

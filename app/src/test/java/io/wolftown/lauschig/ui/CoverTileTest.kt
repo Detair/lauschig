@@ -34,21 +34,21 @@ class CoverTileTest {
         rule.setContent { LauschigTheme { CoverTile(item(downloaded = true)) } }
         rule.onNodeWithContentDescription("Book 3", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithText("#3", useUnmergedTree = true).assertIsDisplayed()
-        rule.onNodeWithContentDescription("Available offline", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithContentDescription("Available on this device", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithTag("coverProgress", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithText("DB", useUnmergedTree = true).assertIsDisplayed() // placeholder initials
     }
 
     @Test @Config(sdk = [35], application = android.app.Application::class, qualifiers = "de")
-    fun coverTile_german_usesBandAndOfflineVerfuegbar() {
+    fun coverTile_german_usesBandAndAufDiesemGeraet() {
         rule.setContent { LauschigTheme { CoverTile(item(downloaded = true)) } }
         rule.onNodeWithContentDescription("Band 3", useUnmergedTree = true).assertIsDisplayed()
-        rule.onNodeWithContentDescription("Offline verfügbar", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithContentDescription("Auf diesem Gerät verfügbar", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun coverTile_withoutSeriesOrDownload_hasNoBadgeNorIcon() {
         rule.setContent { LauschigTheme { CoverTile(item(downloaded = false, seq = null)) } }
-        rule.onNodeWithContentDescription("Available offline", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithContentDescription("Available on this device", useUnmergedTree = true).assertDoesNotExist()
         rule.onNodeWithText("#3", useUnmergedTree = true).assertDoesNotExist()
     }
 

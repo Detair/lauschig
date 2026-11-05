@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CollectionsBookmark
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -52,6 +51,7 @@ import io.wolftown.lauschig.ui.common.ItemActionsSheet
 import io.wolftown.lauschig.ui.common.ItemActionsViewModel
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
+import io.wolftown.lauschig.ui.common.OfflineIcon
 import io.wolftown.lauschig.ui.detail.formatClock
 
 /** Content of the Library tabs "Collections" and "Playlists": the cached lists, newest from the server when online. */
@@ -181,7 +181,7 @@ private fun EpisodeEntryRow(e: CollectionEntryUi.Episode, enabled: Boolean, onPl
         leadingContent = {
             when {
                 e.finished -> Icon(Icons.Rounded.CheckCircle, stringResource(R.string.podcast_episode_heard), tint = MaterialTheme.colorScheme.primary)
-                e.downloaded -> Icon(Icons.Rounded.DownloadDone, stringResource(R.string.cover_offline_available), tint = MaterialTheme.colorScheme.primary)
+                e.downloaded -> Icon(OfflineIcon, stringResource(R.string.cover_offline_available), tint = MaterialTheme.colorScheme.primary)
                 else -> Icon(Icons.Rounded.PlayArrow, contentDescription = null)
             }
         },

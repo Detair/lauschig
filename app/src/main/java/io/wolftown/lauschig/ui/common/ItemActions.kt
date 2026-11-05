@@ -15,7 +15,6 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
@@ -355,7 +354,7 @@ fun DownloadIconButton(state: QuickDownload, onDownload: () -> Unit, onDelete: (
             }
         }
         QuickDownload.Complete -> IconButton(onClick = { confirmDelete = true }, modifier = modifier.testTag("downloadButton")) {
-            Icon(Icons.Rounded.DownloadDone, stringResource(R.string.cover_offline_available), tint = MaterialTheme.colorScheme.primary)
+            Icon(OfflineIcon, stringResource(R.string.cover_offline_available), tint = MaterialTheme.colorScheme.primary)
         }
     }
     if (confirmDelete) DeleteDownloadDialog(onConfirm = { confirmDelete = false; onDelete() }, onDismiss = { confirmDelete = false })

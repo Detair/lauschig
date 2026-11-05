@@ -69,7 +69,7 @@
     <string name="filter_tag_count">%1$s (%2$d)</string>
     <string name="cover_badge_description">Band %1$s</string>
     <string name="cover_badge_text">#%1$s</string>
-    <string name="cover_offline_available">Offline verfügbar</string>
+    <string name="cover_offline_available">Auf diesem Gerät verfügbar</string>
     <string name="cover_not_available_offline">Offline nicht verfügbar</string>
     <string name="detail_back">Zurück</string>
     <string name="detail_play">Abspielen</string>
@@ -707,6 +707,7 @@
     <string name="stats_card_open">Statistik öffnen</string>
     <string-array name="whatsnew_0_4_0">
         <item>Dunkler Farbton „Kaminfeuer“: warmes Mokka, Creme und Bernstein fürs Hören im Bett – auch mit reinem Schwarz</item>
+        <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
