@@ -81,6 +81,7 @@ fun RowScope.ComfortButtons(
     onCancelSleep: () -> Unit,
     onSkipSilence: (Boolean) -> Unit,
     onBoost: (Int?) -> Unit,
+    onSleepChime: (Boolean) -> Unit = {},
 ) {
     var showSleep by rememberSaveable { mutableStateOf(false) }
     var showAudio by rememberSaveable { mutableStateOf(false) }
@@ -107,7 +108,10 @@ fun RowScope.ComfortButtons(
     )
     if (showSleep) {
         ModalBottomSheet(onDismissRequest = { showSleep = false }) {
-            SleepSheet(state.sleep, onStart = { onStartSleep(it); showSleep = false }, onCancel = { onCancelSleep(); showSleep = false })
+            SleepSheet(
+                state.sleep, state.sleepChime, onStart = { onStartSleep(it); showSleep = false }, onCancel = { onCancelSleep(); showSleep = false },
+                onChime = onSleepChime,
+            )
         }
     }
     if (showAudio) {
@@ -130,7 +134,7 @@ fun ShakeHint(state: ComfortUiState, modifier: Modifier = Modifier) {
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCancel: () -> Unit) {
+private fun SleepSheet(sleep: SleepTimerUi?, chime: Boolean, onStart: (SleepMode) -> Unit, onCancel: () -> Unit, onChime: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 16.dp).testTag("sleepSheet")) {
         Text(stringResource(R.string.player_sleep_timer), style = MaterialTheme.typography.titleMedium)
         if (sleep != null) {
@@ -158,6 +162,13 @@ private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCan
                 modifier = Modifier.testTag("sleep:chapter"),
             )
         }
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_sleep_chime)) },
+            supportingContent = { Text(stringResource(R.string.settings_sleep_chime_hint)) },
+            trailingContent = { Switch(checked = chime, onCheckedChange = null) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).selectable(selected = chime, role = Role.Switch) { onChime(!chime) }
+                .testTag("sleepChimeSwitch"),
+        )
         if (sleep != null) {
             TextButton(onClick = onCancel, modifier = Modifier.padding(top = 8.dp).testTag("sleepCancel")) { Text(stringResource(R.string.sleep_cancel)) }
         }

@@ -55,4 +55,10 @@ class PlaybackSettingsTest {
         assertEquals(15, settings.seekBackSec.first())
         assertEquals(30, settings.seekForwardSec.first())
     }
+
+    @Test fun sleepChime_onByDefault_andCanBeTurnedOff() = runTest {
+        assertEquals(true, settings.sleepChime.first())
+        settings.setSleepChime(false)
+        assertEquals(false, settings.sleepChime.first())
+    }
 }

@@ -322,6 +322,8 @@
     <string name="settings_seek_back_hint">The back button in the player, the notification, the car and on headphones</string>
     <string name="settings_seek_forward">Skip forward</string>
     <string name="settings_seek_forward_hint">The forward button in the player, the notification, the car and on headphones</string>
+    <string name="settings_sleep_chime">Hint tone before the end</string>
+    <string name="settings_sleep_chime_hint">A soft tone 30 seconds before the sleep timer fades out – time to shake if you are still awake</string>
     <string name="settings_default_speed">Default speed</string>
     <string name="settings_default_speed_hint">For titles without their own speed. Every title remembers its speed.</string>
     <string name="settings_default_boost">Default volume boost</string>

@@ -38,8 +38,30 @@ class SleepTimerTest {
     private val player = VolumePlayer()
     private val shakes = FakeShakes()
     private var extended = 0
+    private var chimes = 0
+    private val chimeOn = MutableStateFlow(true)
     // A huge tick: the loop runs once per start; the test drives step() itself.
-    private val timer = SleepTimer(player, shakes, CoroutineScope(UnconfinedTestDispatcher()), clock = { 0L }, tickMs = Long.MAX_VALUE / 4, onExtended = { extended++ })
+    private val timer = SleepTimer(
+        player, shakes, CoroutineScope(UnconfinedTestDispatcher()), clock = { 0L }, tickMs = Long.MAX_VALUE / 4, onExtended = { extended++ },
+        chime = { chimes++ }, chimeEnabled = chimeOn,
+    )
+
+    @Test fun chime_soundsOnceThirtySecondsBeforeTheEnd() {
+        timer.start(SleepMode.Minutes(1))
+        timer.step(29_000)
+        assertEquals(0, chimes)
+        timer.step(2_000)
+        assertEquals(1, chimes)
+        timer.step(1_000)
+        assertEquals(1, chimes)
+    }
+
+    @Test fun chime_silentWhenTurnedOff() {
+        chimeOn.value = false
+        timer.start(SleepMode.Minutes(1))
+        timer.step(31_000)
+        assertEquals(0, chimes)
+    }
 
     @Test fun countdown_fade_shake_andEnd() {
         timer.start(SleepMode.Minutes(1))

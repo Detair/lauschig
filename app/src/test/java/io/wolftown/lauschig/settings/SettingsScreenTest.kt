@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsSelected
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -45,5 +46,12 @@ class SettingsScreenTest {
         rule.onNodeWithTag("seekBack").performScrollTo().assert(hasText("15 s", substring = true)).performClick()
         PlaybackSettings.SEEK_BACK_CHOICES.forEach { rule.onNodeWithTag("seekBack:$it").assertExists() }
         rule.onNodeWithTag("seekBack:45").assertDoesNotExist()
+    }
+
+    @Test fun sleepChime_switch() {
+        val chimes = mutableListOf<Boolean>()
+        show(PlaybackPrefs(sleepChime = true), PlaybackPrefsActions(onSleepChime = { chimes += it }))
+        rule.onNodeWithTag("sleepChime").performScrollTo().assertIsSelected().performClick()
+        assertEquals(listOf(false), chimes)
     }
 }

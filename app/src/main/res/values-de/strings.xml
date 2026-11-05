@@ -322,6 +322,8 @@
     <string name="settings_seek_back_hint">Die Zurück-Taste im Player, in der Benachrichtigung, im Auto und am Kopfhörer</string>
     <string name="settings_seek_forward">Vorspringen</string>
     <string name="settings_seek_forward_hint">Die Vor-Taste im Player, in der Benachrichtigung, im Auto und am Kopfhörer</string>
+    <string name="settings_sleep_chime">Hinweiston vor dem Ende</string>
+    <string name="settings_sleep_chime_hint">Ein leiser Ton 30 Sekunden bevor der Sleep-Timer ausblendet – Zeit zum Schütteln, falls du noch wach bist</string>
     <string name="settings_default_speed">Standardtempo</string>
     <string name="settings_default_speed_hint">Für Titel ohne eigenes Tempo. Jeder Titel merkt sich sein Tempo.</string>
     <string name="settings_default_boost">Standard-Boost</string>

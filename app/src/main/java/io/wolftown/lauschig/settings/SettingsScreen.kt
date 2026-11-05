@@ -75,6 +75,7 @@ data class PlaybackPrefs(
     val continueOnStart: Boolean = false,
     val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
     val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
+    val sleepChime: Boolean = true,
 )
 
 /** Callbacks of the playback section. */
@@ -87,6 +88,7 @@ class PlaybackPrefsActions(
     val onContinueOnStart: (Boolean) -> Unit = {},
     val onSeekBack: (Int) -> Unit = {},
     val onSeekForward: (Int) -> Unit = {},
+    val onSleepChime: (Boolean) -> Unit = {},
 )
 
 @HiltViewModel
@@ -102,8 +104,8 @@ class SettingsViewModel @Inject constructor(
         playbackSettings.autoResumeOnConnect,
         playbackSettings.continueOnStart,
     ) { (r, sp, sk), boost, auto, cont -> PlaybackPrefs(r, sp, sk, boost, auto, cont) }
-        .combine(combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair)) { p, (back, forward) ->
-            p.copy(seekBackSec = back, seekForwardSec = forward)
+        .combine(combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, playbackSettings.sleepChime, ::Triple)) { p, (back, forward, chime) ->
+            p.copy(seekBackSec = back, seekForwardSec = forward, sleepChime = chime)
         }
 
     val state: StateFlow<SettingsUiState> = combine(
@@ -143,6 +145,7 @@ class SettingsViewModel @Inject constructor(
         onContinueOnStart = { viewModelScope.launch { playbackSettings.setContinueOnStart(it) } },
         onSeekBack = { viewModelScope.launch { playbackSettings.setSeekBackSec(it) } },
         onSeekForward = { viewModelScope.launch { playbackSettings.setSeekForwardSec(it) } },
+        onSleepChime = { viewModelScope.launch { playbackSettings.setSleepChime(it) } },
     )
 }
 
@@ -390,6 +393,7 @@ private fun PlaybackSection(p: PlaybackPrefs, a: PlaybackPrefsActions) {
     ChoiceRow(
         R.string.settings_default_boost, R.string.settings_default_boost_hint, "defaultBoost", PlaybackSettings.BOOST_CHOICES, p.defaultBoostDb, a.onDefaultBoost,
     ) { io.wolftown.lauschig.ui.player.boostLabel(it) }
+    SwitchRow(R.string.settings_sleep_chime, R.string.settings_sleep_chime_hint, p.sleepChime, a.onSleepChime, Modifier.testTag("sleepChime"))
     SwitchRow(R.string.settings_auto_resume, R.string.settings_auto_resume_hint, p.autoResume, a.onAutoResume, Modifier.testTag("autoResume"))
     SwitchRow(R.string.settings_continue_on_start, R.string.settings_continue_on_start_hint, p.continueOnStart, a.onContinueOnStart, Modifier.testTag("continueOnStart"))
 }

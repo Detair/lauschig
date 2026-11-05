@@ -135,6 +135,7 @@ fun PlayerRoute(
                 onCancelSleep = comfortViewModel::cancelSleep,
                 onSkipSilence = comfortViewModel::setSkipSilence,
                 onBoost = comfortViewModel::setBoost,
+                onSleepChime = comfortViewModel::setSleepChime,
             )
         },
         comfortHint = { ShakeHint(comfort) },

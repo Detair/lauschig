@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -41,6 +42,20 @@ class ComfortRowTest {
         rule.setContent { LauschigTheme { ComfortRowForTest(state, {}, {}, {}, {}) } }
         rule.onNodeWithContentDescription("Sleep timer: end of chapter, 00:30 left").assertExists()
         rule.onNodeWithTag("shakeHint").assertExists()
+    }
+
+    @Test fun sleepSheet_chimeSwitch() {
+        val chimes = mutableListOf<Boolean>()
+        rule.setContent {
+            LauschigTheme {
+                androidx.compose.foundation.layout.Row {
+                    ComfortButtons(ComfortUiState(sleepChime = true), {}, {}, {}, {}, onSleepChime = { chimes += it })
+                }
+            }
+        }
+        rule.onNodeWithTag("sleepButton").performClick()
+        rule.onNodeWithTag("sleepChimeSwitch").assertIsSelected().performClick()
+        assertEquals(listOf(false), chimes)
     }
 
     @Test fun sleepSheet_startsAndCancels() {

@@ -46,6 +46,13 @@ class PlaybackSettings(private val store: DataStore<Preferences>) {
     /** Seconds the forward button jumps; one of [SEEK_FORWARD_CHOICES]. Default 30. */
     val seekForwardSec: Flow<Int> = store.data.map { p -> p[SEEK_FORWARD]?.takeIf { it in SEEK_FORWARD_CHOICES } ?: DEFAULT_SEEK_FORWARD }.distinctUntilChanged()
 
+    /** A soft hint tone 30 s before the sleep timer ends (time to shake). Default on. */
+    val sleepChime: Flow<Boolean> = store.data.map { it[SLEEP_CHIME] ?: true }.distinctUntilChanged()
+
+    suspend fun setSleepChime(on: Boolean) {
+        store.edit { it[SLEEP_CHIME] = on }
+    }
+
     suspend fun setSeekBackSec(sec: Int) {
         if (sec in SEEK_BACK_CHOICES) store.edit { it[SEEK_BACK] = sec }
     }
@@ -95,5 +102,6 @@ class PlaybackSettings(private val store: DataStore<Preferences>) {
         private val CONTINUE_ON_START = booleanPreferencesKey("continue_on_start")
         private val SEEK_BACK = intPreferencesKey("seek_back_sec")
         private val SEEK_FORWARD = intPreferencesKey("seek_forward_sec")
+        private val SLEEP_CHIME = booleanPreferencesKey("sleep_chime_enabled")
     }
 }

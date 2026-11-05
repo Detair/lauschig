@@ -32,6 +32,8 @@ data class ComfortUiState(
     val skipSilence: Boolean = false,
     val titleBoostDb: Int? = null,
     val defaultBoostDb: Int = 0,
+    /** The hint tone 30 s before the sleep timer ends. */
+    val sleepChime: Boolean = true,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -50,13 +52,14 @@ class ComfortViewModel @Inject constructor(
 
     private val titleBoost = key.flatMapLatest { k -> if (k == null) flowOf(null) else titleAudio.observe(k.first, k.second).map { it?.boostDb } }
 
-    val state: StateFlow<ComfortUiState> = combine(timer.state, settings.skipSilence, titleBoost, settings.defaultBoostDb) { sleep, skip, boost, def ->
-        ComfortUiState(sleep, skip, boost, def)
+    val state: StateFlow<ComfortUiState> = combine(timer.state, settings.skipSilence, titleBoost, settings.defaultBoostDb, settings.sleepChime) { sleep, skip, boost, def, chime ->
+        ComfortUiState(sleep, skip, boost, def, chime)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ComfortUiState(sleep = timer.state.value))
 
     fun startSleep(mode: SleepMode) = timer.start(mode)
     fun cancelSleep() = timer.cancel()
     fun setSkipSilence(on: Boolean) { viewModelScope.launch { settings.setSkipSilence(on) } }
+    fun setSleepChime(on: Boolean) { viewModelScope.launch { settings.setSleepChime(on) } }
 
     /** null: back to the default boost. */
     fun setBoost(db: Int?) {
