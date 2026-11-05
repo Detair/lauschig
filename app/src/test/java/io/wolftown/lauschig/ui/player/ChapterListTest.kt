@@ -2,7 +2,14 @@ package io.wolftown.lauschig.ui.player
 
 import android.app.Application
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -32,23 +39,37 @@ class ChapterListTest {
 
     private val picked = mutableListOf<Int>()
 
-    private fun show(chapters: List<ChapterRow> = long) = rule.setContent {
-        LauschigTheme {
-            ContentsSheet(
-                ContentsTab.Chapters, chapters, onChapter = { picked += it },
-                contents = PlayerContents(queue = { Text("queue content") }), onDismiss = {},
-            )
+    private val loaded = mutableStateOf("b1" to long)
+
+    private fun show(chapters: List<ChapterRow> = long) {
+        loaded.value = "b1" to chapters
+        rule.setContent {
+            LauschigTheme {
+                ContentsSheet(
+                    ContentsTab.Chapters, loaded.value.second, onChapter = { picked += it },
+                    contents = PlayerContents(queue = { Text("queue content") }), onDismiss = {}, titleKey = loaded.value.first,
+                )
+            }
+        }
+    }
+
+    /** Types [text] and waits for the answer (the chapter words are prepared off the main thread). */
+    private fun search(text: String) {
+        rule.onNodeWithTag("chapterSearch").performTextInput(text)
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithTag("chapterSearchHits", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithTag("chapterSearchEmpty").fetchSemanticsNodes().isNotEmpty()
         }
     }
 
     @Test fun aNumberFindsThatChapter_numberedAndPlayable() {
         show()
-        rule.onNodeWithTag("chapterSearch").performTextInput("12")
+        search("12")
         rule.onNodeWithText("Ort L").assertExists()
         rule.onNodeWithText("Ort C").assertDoesNotExist()
         rule.onAllNodesWithTag("chapterNumber", useUnmergedTree = true).let { numbers ->
             assertEquals(1, numbers.fetchSemanticsNodes().size)
-            numbers[0].assertTextContains("12")
+            numbers[0].assertTextEquals("Chapter 12")
         }
         rule.onNodeWithText("Ort L").performClick()
         assertEquals(listOf(11), picked)
@@ -56,14 +77,14 @@ class ChapterListTest {
 
     @Test fun umlautsDoNotMatter() {
         show()
-        rule.onNodeWithTag("chapterSearch").performTextInput("madchen")
+        search("madchen")
         rule.onNodeWithText("Mädchen im Moor").assertExists()
         rule.onNodeWithText("Ort A").assertDoesNotExist()
     }
 
     @Test fun noHit_saysSo_andTheClearButtonBringsTheListBack() {
         show()
-        rule.onNodeWithTag("chapterSearch").performTextInput("xyz")
+        search("xyz")
         rule.onNodeWithTag("chapterSearchEmpty").assertExists()
         rule.onNodeWithText("No chapter for “xyz”").assertExists()
         rule.onNodeWithTag("chapterSearchClear").performClick()
@@ -76,10 +97,11 @@ class ChapterListTest {
 
     @Test fun theQuerySurvivesALookAtTheQueue() {
         show()
-        rule.onNodeWithTag("chapterSearch").performTextInput("ort b")
+        search("ort b")
         rule.onNodeWithTag("contentsTab:Queue").performClick()
         rule.onNodeWithText("queue content").assertExists()
         rule.onNodeWithTag("contentsTab:Chapters").performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag("chapterSearchHits", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("chapterSearch").assertTextContains("ort b")
         rule.onNodeWithText("Ort B").assertExists()
         rule.onNodeWithText("Ort C").assertDoesNotExist()
@@ -89,5 +111,42 @@ class ChapterListTest {
         show(long.take(CHAPTER_SEARCH_FROM - 1))
         rule.onNodeWithTag("chapterSearch").assertDoesNotExist()
         rule.onNodeWithText("Ort A").assertExists()
+    }
+
+    // Fix round 1, E6: TalkBack hears how many chapters match (or that none does), keeps the field's name, and a hit's
+    // number as „Chapter 12“.
+    @Test fun talkBack_hearsTheCount_theFieldsName_andTheChapterNumber() {
+        show()
+        search("12")
+        rule.onNodeWithTag("chapterSearchHits", useUnmergedTree = true)
+            .assertTextEquals("1 chapter")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        rule.onNodeWithTag("chapterSearch").assert(hasText("Search chapters", substring = true))
+        rule.onNode(hasText("Chapter 12", substring = true) and hasText("Ort L", substring = true)).assertExists()
+        rule.onNodeWithTag("chapterSearchClear").performClick()
+        search("xyz")
+        rule.onNodeWithTag("chapterSearchEmpty").assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        rule.onNodeWithTag("chapterSearchHits", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    // Fix round 1, E5: the queue moves on to another title while the sheet is open – its chapters start unfiltered.
+    @Test fun anotherTitle_startsTheChapterTabAfresh() {
+        show()
+        search("12")
+        rule.onNodeWithText("Ort C").assertDoesNotExist()
+        rule.runOnIdle { loaded.value = "b2" to long.map { it.copy(title = it.title.replace("Ort", "Platz")) } }
+        rule.onNodeWithTag("chapterSearchClear").assertDoesNotExist()
+        rule.onNodeWithTag("chapterNumber", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("currentChapter").assertExists()
+        rule.onNodeWithText("Platz C").assertDoesNotExist() // the list is at the playing chapter again, not at the top
+    }
+
+    // Fix round 1, E4: punctuation alone is no search – no numbers, no jump away from the playing chapter.
+    @Test fun punctuationAlone_isNoSearch() {
+        show()
+        rule.onNodeWithTag("chapterSearch").performTextInput("?")
+        rule.waitForIdle()
+        rule.onNodeWithTag("chapterNumber", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("currentChapter").assertExists()
     }
 }

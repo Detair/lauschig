@@ -3,6 +3,9 @@ package io.wolftown.lauschig.ui.detail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,12 +55,14 @@ private fun ChapterRowItem(chapter: ChapterRow, numbered: Boolean, onClick: () -
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (numbered) {
+            val spokenNumber = stringResource(R.string.chapter_number_spoken, chapter.index + 1)
             Text(
                 (chapter.index + 1).toString(),
                 style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.End,
-                modifier = Modifier.widthIn(min = 28.dp).testTag("chapterNumber"),
+                // Read as „Kapitel 12“, not a bare number, within the row.
+                modifier = Modifier.widthIn(min = 28.dp).testTag("chapterNumber").clearAndSetSemantics { text = AnnotatedString(spokenNumber) },
             )
         }
         Text(

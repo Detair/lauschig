@@ -403,6 +403,11 @@
     <string name="chapter_search_hint">Kapitel suchen</string>
     <string name="chapter_search_nothing">Kein Kapitel zu „%s“</string>
     <string name="chapter_search_nothing_hint">Such nach einem Wort aus dem Titel oder nach der Kapitelnummer.</string>
+    <plurals name="chapter_search_hits">
+        <item quantity="one">%d Kapitel</item>
+        <item quantity="other">%d Kapitel</item>
+    </plurals>
+    <string name="chapter_number_spoken">Kapitel %d</string>
     <string name="player_remaining_chapter_short">Kapitel</string>
     <string name="player_remaining_book_short">Buch</string>
     <string name="player_remaining_chapter_description">Kapitel: noch %1$s</string>

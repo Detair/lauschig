@@ -39,7 +39,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,7 +55,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +69,9 @@ import io.wolftown.lauschig.ui.detail.ChapterRow
 import io.wolftown.lauschig.ui.detail.ChapterSearch
 import io.wolftown.lauschig.ui.detail.chapterItems
 import io.wolftown.lauschig.ui.theme.Spacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The tabs of the player's contents sheet, in their order. */
 enum class ContentsTab(val label: Int) {
@@ -128,13 +136,15 @@ fun ContentsSheet(
     onChapter: (Int) -> Unit,
     contents: PlayerContents,
     onDismiss: () -> Unit,
+    /** The loaded title: another one (the queue moved on while the sheet is open) starts the chapter tab afresh. */
+    titleKey: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val done: () -> Unit = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } }
     var tab by rememberSaveable { mutableStateOf(initialTab) }
-    // Up here, so it survives a look at the queue and back; a new sheet starts without it.
-    var chapterQuery by rememberSaveable { mutableStateOf("") }
+    // Up here, so it survives a look at the queue and back; a new sheet or another title starts without it.
+    var chapterQuery by rememberSaveable(titleKey) { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, modifier = Modifier.testTag("contentsSheet")) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).navigationBarsPadding()) {
             // On the sheet's own colour, so the tabs read as part of the sheet, not as a bar on it.
@@ -150,7 +160,9 @@ fun ContentsSheet(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
-                    ContentsTab.Chapters -> ChaptersTab(chapters, chapterQuery, { chapterQuery = it }, onChapter = { onChapter(it); done() })
+                    ContentsTab.Chapters -> key(titleKey) {
+                        ChaptersTab(chapters, chapterQuery, { chapterQuery = it }, onChapter = { onChapter(it); done() })
+                    }
                     ContentsTab.Queue -> contents.queue(done)
                     ContentsTab.Bookmarks -> contents.bookmarks(done)
                     ContentsTab.History -> contents.history(done)
@@ -175,9 +187,16 @@ private fun ChaptersTab(chapters: List<ChapterRow>, query: String, onQuery: (Str
         return
     }
     val searchable = chapters.size >= CHAPTER_SEARCH_FROM
-    val q = if (searchable) query else ""
+    // The words of the chapters, once per title list (not per position tick), off the main thread; a keystroke only
+    // compares prefixes. Until they are ready (a moment after opening) nothing is filtered.
+    val titles = remember(chapters) { chapters.map { it.index to it.title } }
+    val index by produceState<ChapterSearch.Index?>(null, titles, searchable) {
+        value = if (searchable) withContext(Dispatchers.Default) { ChapterSearch.index(titles) } else null
+    }
+    val q = if (searchable && index != null) query else ""
     val filtering = ChapterSearch.isActive(q)
-    val shown = remember(chapters, q) { ChapterSearch.filter(chapters, q) }
+    val hits = remember(index, q) { index?.let { ChapterSearch.hits(it, q) } }
+    val shown = if (hits == null) chapters else chapters.filter { it.index in hits }
     // Opens with the current chapter in view (one row of the previous one above it); a search starts at its first hit.
     val currentTop = (chapters.indexOfFirst { it.isCurrent } - 1).coerceAtLeast(0)
     val list = rememberLazyListState(initialFirstVisibleItemIndex = if (filtering) 0 else currentTop)
@@ -201,13 +220,14 @@ private fun ChaptersTab(chapters: List<ChapterRow>, query: String, onQuery: (Str
     // padding: the sheet stays 85 % of the window and moves up a little). The padding keeps the hits visible should a
     // window not shrink.
     Column(Modifier.fillMaxSize().imePadding()) {
-        if (searchable) ChapterSearchField(query, onQuery, onDone = { focus.clearFocus() })
+        if (searchable) ChapterSearchField(query, onQuery, onDone = { focus.clearFocus() }, hitCount = shown.size.takeIf { filtering && it > 0 })
         if (shown.isEmpty()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 EmptyState(
                     Icons.Rounded.SearchOff,
                     stringResource(R.string.chapter_search_nothing, q.trim()),
-                    Modifier.testTag("chapterSearchEmpty"),
+                    // Said as it appears (TalkBack), like the count of hits.
+                    Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }.testTag("chapterSearchEmpty"),
                     supporting = stringResource(R.string.chapter_search_nothing_hint),
                     verticalPadding = Spacing.xl,
                 )
@@ -220,14 +240,24 @@ private fun ChaptersTab(chapters: List<ChapterRow>, query: String, onQuery: (Str
     }
 }
 
+/** [hitCount]: shown under the field while a search has hits, and said by TalkBack as it changes. */
 @Composable
-private fun ChapterSearchField(query: String, onQuery: (String) -> Unit, onDone: () -> Unit) {
+private fun ChapterSearchField(query: String, onQuery: (String) -> Unit, onDone: () -> Unit, hitCount: Int?) {
     OutlinedTextField(
         value = query,
         onValueChange = onQuery,
         singleLine = true,
-        placeholder = { Text(stringResource(R.string.chapter_search_hint)) },
+        // A label, not a placeholder: it stays (above the text) once something is typed, also for TalkBack.
+        label = { Text(stringResource(R.string.chapter_search_hint)) },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+        supportingText = hitCount?.let { n ->
+            {
+                Text(
+                    pluralStringResource(R.plurals.chapter_search_hits, n, n),
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("chapterSearchHits"),
+                )
+            }
+        },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQuery("") }, modifier = Modifier.testTag("chapterSearchClear")) {
