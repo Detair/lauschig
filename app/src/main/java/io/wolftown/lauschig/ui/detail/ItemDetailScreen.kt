@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -466,6 +467,11 @@ private fun PlayAndDownload(state: ItemDetailUiState, onPrimary: () -> Unit, onD
     var confirm by rememberSaveable { mutableStateOf(false) }
     // The round button on a waiting download: right beside Play, so a stray thumb must not cancel it unasked.
     var confirmCancel by rememberSaveable { mutableStateOf(false) }
+    // That question belongs to the waiting download: once it runs, finishes or is gone, the question is closed (and a
+    // confirm arriving late cancels nothing – never a finished download without its own question).
+    val queued = state.download == DownloadUi.Queued
+    val download by rememberUpdatedState(state.download)
+    LaunchedEffect(queued) { if (!queued) confirmCancel = false }
     val settledOffline = LocalOfflineDimming.current
     val playEnabled = state.playableOffline || !settledOffline
     // Starting, resuming and retrying need the server; removing never does.
@@ -493,12 +499,16 @@ private fun PlayAndDownload(state: ItemDetailUiState, onPrimary: () -> Unit, onD
             dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
         )
     }
-    if (confirmCancel) {
+    if (confirmCancel && queued) {
         AlertDialog(
             onDismissRequest = { confirmCancel = false },
             title = { Text(stringResource(R.string.detail_queued_cancel_title)) },
             text = { Text(stringResource(R.string.detail_queued_cancel_message)) },
-            confirmButton = { TextButton(onClick = { confirmCancel = false; onDelete() }) { Text(stringResource(R.string.detail_queued_cancel_confirm)) } },
+            confirmButton = {
+                TextButton(onClick = { confirmCancel = false; if (download == DownloadUi.Queued) onDelete() }) {
+                    Text(stringResource(R.string.detail_queued_cancel_confirm))
+                }
+            },
             dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text(stringResource(R.string.detail_queued_cancel_dismiss)) } },
         )
     }

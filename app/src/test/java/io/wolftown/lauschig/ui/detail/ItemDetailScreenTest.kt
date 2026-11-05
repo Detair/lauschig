@@ -309,6 +309,26 @@ class ItemDetailScreenTest {
         assertEquals(1, deleted)
     }
 
+    @Test fun queuedCancelDialog_closesWhenTheDownloadMovesOn_andNeverDeletesAFinishedOne() {
+        var state by mutableStateOf(base.copy(download = DownloadUi.Queued))
+        var deleted = 0
+        rule.setContent { LauschigTheme { ItemDetailScreen(state, {}, {}, {}, {}, { deleted++ }, {}) } }
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        rule.onNodeWithText("Cancel download?").assertIsDisplayed()
+        // It finished while the question was open: the question is gone, nothing is deleted.
+        state = base.copy(download = DownloadUi.Complete(812_000_000))
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        assertEquals(0, deleted)
+        // Waiting again later does not bring the old question back.
+        state = base.copy(download = DownloadUi.Queued)
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        // Running meanwhile: the same.
+        rule.onNodeWithTag("downloadCompanion").performClick()
+        state = base.copy(download = DownloadUi.Running(5, true))
+        rule.onNodeWithText("Cancel download?").assertDoesNotExist()
+        assertEquals(0, deleted)
+    }
+
     @Test @Config(sdk = [35], qualifiers = "de-w400dp-h2400dp")
     fun queuedDownload_cancelDialog_german() {
         show(base.copy(download = DownloadUi.Queued))
