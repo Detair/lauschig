@@ -323,6 +323,8 @@ class LocalExclusionTest {
         val store = object : LastPlayedStore {
             override suspend fun get(serverId: String) = LastPlayed(dev, local, 7).takeIf { it.serverId == serverId }
             override suspend fun deviceTitleOf(account: String): LastPlayed? = null
+            override suspend fun drop(serverId: String) {}
+            override suspend fun adoptDeviceEntry(account: String) {}
             override suspend fun set(last: LastPlayed, account: String?) {}
             override suspend fun forget(serverId: String) {}
         }

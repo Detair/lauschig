@@ -35,4 +35,15 @@ open class FakeLastPlayedStore : LastPlayedStore {
             if (shared == null || shared.pausedAt < own.pausedAt) titles[DeviceLibrary.SERVER_ID] = own
         }
     }
+    override suspend fun drop(serverId: String) {
+        onForget(serverId)
+        titles.remove(serverId)
+        deviceTitles.remove(serverId)
+    }
+    override suspend fun adoptDeviceEntry(account: String) {
+        val shared = titles[DeviceLibrary.SERVER_ID] ?: return
+        if (account in deviceTitles) return
+        deviceTitles[account] = shared
+        titles.remove(DeviceLibrary.SERVER_ID)
+    }
 }

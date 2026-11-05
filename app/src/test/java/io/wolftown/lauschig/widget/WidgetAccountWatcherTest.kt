@@ -96,14 +96,38 @@ class WidgetAccountWatcherTest {
         assertEquals(own, store.state.first())
     }
 
-    @Test fun aSignOutAndASignIn_keepADeviceTitle_asBefore() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+    @Test fun aSignOutAndTheSameAccountAgain_keepADeviceTitle_asBefore() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
         val device = title.copy(serverId = "device", key = "local:0123456789abcdef01234567")
         val accounts = io.wolftown.lauschig.net.FakeAccountStore().apply { acc.value = account(a) }
         val store = FakeStore(device)
         backgroundScope.launch { WidgetAccountWatcher(accounts, store) {}.run() }
         accounts.acc.value = null
         assertEquals(device, store.state.first())
+        accounts.acc.value = account(a)
+        assertEquals(device, store.state.first())
+    }
+
+    /** Review N3: B has its own last title; the widget must not keep showing A's, a sign-out in between or not. */
+    @Test fun aSignOutAndAnotherAccount_takesADeviceTitle() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val device = title.copy(serverId = "device", key = "local:0123456789abcdef01234567")
+        val accounts = io.wolftown.lauschig.net.FakeAccountStore().apply { acc.value = account(a) }
+        val store = FakeStore(device)
+        var updates = 0
+        backgroundScope.launch { WidgetAccountWatcher(accounts, store) { updates++ }.run() }
+        accounts.acc.value = null
+        assertEquals(device, store.state.first())
         accounts.acc.value = account(b)
+        assertEquals(null, store.state.first())
+        assertEquals(2, updates)
+    }
+
+    /** The first ever account on the device (nobody before it in this run): a device title stays, as before. */
+    @Test fun aFirstSignIn_keepsADeviceTitle() = runTest(kotlinx.coroutines.test.UnconfinedTestDispatcher()) {
+        val device = title.copy(serverId = "device", key = "local:0123456789abcdef01234567")
+        val accounts = io.wolftown.lauschig.net.FakeAccountStore()
+        val store = FakeStore(device)
+        backgroundScope.launch { WidgetAccountWatcher(accounts, store) {}.run() }
+        accounts.acc.value = account(a)
         assertEquals(device, store.state.first())
     }
 }

@@ -72,7 +72,6 @@ import io.wolftown.lauschig.db.dao.TitleAudioDao
 import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.net.ApiProvider
-import io.wolftown.lauschig.net.sameOrigin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -91,7 +90,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.Call
 import okhttp3.HttpUrl
 import javax.inject.Inject
 
@@ -153,28 +151,17 @@ class PlaybackService : MediaLibraryService() {
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
     private val subscribed = LinkedHashSet<String>()
 
-    /**
-     * The last server seen online, with the account it was seen for; kept while the state flips to offline (see
-     * [onCreate]). Streams go through that account's client. It follows the signed-in account: [accountGuard] empties the
-     * player of the account that was left first, so what is streamed through it is that account's.
-     */
-    @Volatile private var lastOnline: Pair<String, ConnectionState.Online>? = null
+    /** The last server seen online; kept while the state flips to offline (see [StreamCalls]). */
+    @Volatile private var lastOnline: ConnectionState.Online? = null
     private lateinit var accountGuard: AccountPlaybackGuard
     /** Who is signed in as far as the service knows; a stopping title's last write still goes to the account it played for. */
     @Volatile private var signedInAccount: String? = null
-    private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
 
     @OptIn(UnstableApi::class) // transfer listener, load control
     override fun onCreate() {
         super.onCreate()
         running = true
-        // Requests to the last online server keep its authenticated client (token refresh included) even after the state
-        // flipped to offline: a failed probe on a busy link must not turn the next stream request into a 401 that stops
-        // playback. Other origins get the plain client (no credentials).
-        val callFactory = Call.Factory { request ->
-            val seen = lastOnline?.takeIf { request.url.sameOrigin(it.second.baseUrl) }
-            (seen?.let { api.clientFor(it.first, it.second.baseUrl) } ?: fallbackClient).newCall(request)
-        }
+        val callFactory = StreamCalls({ lastOnline?.baseUrl }, api)
         accountGuard = AccountPlaybackGuard(
             title = { player?.let(::currentKey) },
             stop = { player?.let { it.stop(); it.clearMediaItems() } },
@@ -191,7 +178,7 @@ class PlaybackService : MediaLibraryService() {
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
-                    if (it is ConnectionState.Online && it.belongsTo(who.third)) lastOnline = who.first to it
+                    if (it is ConnectionState.Online && it.belongsTo(who.third)) lastOnline = it
                 }
             }
         }
@@ -572,7 +559,7 @@ class PlaybackService : MediaLibraryService() {
         val starter = ServiceTitleStarter(
             loadItem = { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) },
             factory = mediaItemFactory,
-            baseUrl = { lastOnline?.second?.baseUrl },
+            baseUrl = { lastOnline?.baseUrl },
             loadDetails = librarySync::loadDetailsForPlayable,
             io = Dispatchers.IO,
             setQueue = { items, index, offsetMs ->
@@ -588,7 +575,9 @@ class PlaybackService : MediaLibraryService() {
             check = { serverId, key -> queueEntryState(itemDao, episodeDao, downloadDao, api.connectionState.value is ConnectionState.Online, serverId, key) },
             sleepEndOfChapter = { sleepTimer.state.value?.mode == SleepMode.EndOfChapter },
             // The queue lives in the account's namespace with mixed keys; a device key starts the device title.
-            start = { owner, key -> starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) },
+            start = { owner, key ->
+                starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) { accountStore.account.first()?.serverId == owner }
+            },
             // Checked again right before a start: a sign-out may have come in between.
             stillOwner = { owner -> accountStore.account.first()?.serverId == owner },
             pick = { _, key -> TitleHandover.pick(key) },

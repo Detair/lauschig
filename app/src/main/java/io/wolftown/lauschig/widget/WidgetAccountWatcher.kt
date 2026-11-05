@@ -11,8 +11,9 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 /**
- * Sign-out or another server: the widget forgets the old account's title (a device title stays). A switch to another
- * profile also takes a device title: that was the left account's last title, the next one has its own. Runs for the app's
+ * Sign-out or another server: the widget forgets the old account's title (a device title stays). Another person signing
+ * in than the last one, a sign-out in between or not, also takes a device title: that was the last person's title, the
+ * next one has its own. The same account again, or the first one in this run, keeps it. Runs for the app's
  * lifetime from [io.wolftown.lauschig.LauschigApp]; the widget also hides a foreign title on its own (see
  * [WidgetMapping.forDisplay]), this clears the store so it does not come back. Another account also redraws the widget
  * when nothing was stored: what it shows without a stored title is that account's last title ([WidgetSource]).
@@ -27,14 +28,14 @@ class WidgetAccountWatcher(
 
     suspend fun run() {
         var started = false
-        var previous: String? = null
+        var lastSignedIn: String? = null
         accounts.account.map { it?.serverId }.distinctUntilChanged().collect { sid ->
             val changed = started
-            val switched = changed && previous != null && sid != null
+            val anotherPerson = sid != null && lastSignedIn != null && sid != lastSignedIn
             started = true
-            previous = sid
+            if (sid != null) lastSignedIn = sid
             try {
-                val cleared = if (switched) clearUnlessOf(store, sid) else clearIfForeign(store, sid)
+                val cleared = if (anotherPerson) clearUnlessOf(store, sid) else clearIfForeign(store, sid)
                 if (cleared || changed) update()
             } catch (e: CancellationException) {
                 throw e

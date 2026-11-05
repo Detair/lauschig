@@ -127,4 +127,20 @@ class ServiceTitleStarterTest {
         assertEquals(ServiceTitleStarter.Failure.OFFLINE, (st.resolve(s, "b") as ServiceTitleStarter.Resolved.Failed).reason)
         assertEquals(before, testScheduler.currentTime)
     }
+
+    /** Review N1: the resolve can wait a round trip for the details; a switch in that time starts nothing, not even a device title. */
+    @Test fun aSwitchWhileResolving_startsNothing() = runTest {
+        val it = item(listOf(file(0, 100.0, null)))
+        val started = starter({ it }, base = "https://abs.example/").start(s, "b") { false }
+        assertFalse(started)
+        assertTrue(queued.isEmpty())
+        assertTrue(streamed.isEmpty())
+    }
+
+    @Test fun theAccountIsAskedAfterTheResolve_notBefore() = runTest {
+        var loaded = false
+        val it = item(listOf(file(0, 100.0, null)))
+        val starter = starter({ loaded = true; it }, base = "https://abs.example/")
+        assertTrue(starter.start(s, "b") { assertTrue("after the resolve", loaded); true })
+    }
 }

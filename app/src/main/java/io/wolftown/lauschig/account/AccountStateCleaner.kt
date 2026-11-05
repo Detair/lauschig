@@ -47,6 +47,8 @@ class AccountStateCleaner(
     private val clearMemoryCovers: suspend () -> Unit = {},
     /** What this process holds about the account in memory (pending position jumps, connection checks). */
     private val clearMoments: () -> Unit = {},
+    /** The device's own last title becomes this account's if it has none ([io.wolftown.lauschig.playback.LastPlayedStore.adoptDeviceEntry]). */
+    private val adoptDeviceTitle: suspend (account: String) -> Unit = {},
 ) {
     @Inject constructor(
         rmab: RmabRepository,
@@ -56,6 +58,7 @@ class AccountStateCleaner(
         @ApplicationContext context: Context,
         jumps: io.wolftown.lauschig.sync.PositionJumpBus,
         log: io.wolftown.lauschig.connection.ConnectionLog,
+        lastPlayed: io.wolftown.lauschig.playback.LastPlayedStore,
     ) : this(
         rmab, oidc, recentSearches, prompts,
         clearImageCaches = {
@@ -71,10 +74,11 @@ class AccountStateCleaner(
         clearDiagnostics = { DiagnosticLog.clear(); DiagnosticReport.discardShared(context) },
         clearMemoryCovers = { SingletonImageLoader.get(context).memoryCache?.clear() },
         clearMoments = { jumps.clear(); log.clear() },
+        adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
     )
 
     suspend fun clear(serverId: String) {
-        part("old values") { migrate(serverId) }
+        part("old values") { migrateValues(serverId) }
         part("rmab") { rmab.forget(serverId) }
         part("searches") { recentSearches.clear(serverId) }
         part("images") { clearImageCaches() }
@@ -95,10 +99,17 @@ class AccountStateCleaner(
     }
 
     /**
-     * Before profiles the RMAB connection and the recent searches were one per device: they belong to the account signed
-     * in at the upgrade ([activeServerId]); signed out they have no owner and go. Idempotent, called at every start.
+     * Before profiles the RMAB connection, the recent searches and the last device title were one per device: they belong
+     * to the account signed in at the upgrade ([activeServerId]); signed out the first two have no owner and go, the device
+     * title stays the device's. Idempotent, called at every start.
      */
     suspend fun migrate(activeServerId: String?) {
+        migrateValues(activeServerId)
+        if (activeServerId != null) part("device title") { adoptDeviceTitle(activeServerId) }
+    }
+
+    /** Not the device title: a sign-out has just left that for whoever signs in next. */
+    private suspend fun migrateValues(activeServerId: String?) {
         part("rmab migration") { rmab.migrate(activeServerId) }
         part("searches migration") { recentSearches.migrate(activeServerId) }
     }

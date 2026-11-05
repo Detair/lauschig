@@ -522,8 +522,12 @@ class PlayerControllerImpl(
         starting = false
         pendingBase = null
         wasPlaying = false
-        facade.stop()
-        _state.value = freshState()
+        try {
+            facade.stop()
+        } finally {
+            // Also if the connection to the service hangs or fails: nothing of the title stays in the mini player.
+            _state.value = freshState()
+        }
     }
 
     private fun seekGlobal(c: Current, globalSec: Double) {

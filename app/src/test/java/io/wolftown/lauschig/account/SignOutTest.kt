@@ -169,7 +169,7 @@ class SignOutTest {
         assertEquals(emptySet<String>(), kept.pending.value)
         // Playback first, then the work (no sync rewrites rows after the purge), the data, and the credentials last
         // (nothing reacts to "signed out" before the data is final). The logout runs alongside, awaited before the end.
-        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "forgetNote:$a", "state:$a", "rowsAgain", "clear"), calls - "logout")
+        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "forgetNote:$a", "state:$a", "rowsAgain", "clear", "rowsAgain"), calls - "logout")
         assertTrue(calls.indexOf("logout") in calls.indexOf("work") until calls.indexOf("rowsAgain"))
     }
 
@@ -375,6 +375,22 @@ class SignOutTest {
         assertEquals(listOf("clear", "stopAgain"), calls.takeLast(2))
     }
 
+    /** Review N5: the tracker's last save of a title that only the last stop ended; the rows of a purged account stay gone. */
+    @Test fun aTitleStoppedOnlyAtTheLastStop_leavesNoRowsAfterAPurge() = runTest {
+        seed(a)
+        val late: suspend () -> Unit = { db.progressDao().saveLocal(a, "book1", 42.0, 100.0, false, 9) }
+        signOut(stopAgain = late).execute(keepDownloads = false)
+        assertNull(db.progressDao().get(a, "book1"))
+        assertFalse(data.hasRows(a))
+    }
+
+    @Test fun keeping_theRowsOfTheLastStopStay() = runTest {
+        seed(a)
+        val late: suspend () -> Unit = { db.progressDao().saveLocal(a, "book1", 42.0, 100.0, false, 9) }
+        signOut(stopAgain = late).execute(keepDownloads = true)
+        assertEquals(42.0, db.progressDao().get(a, "book1")!!.currentTimeSec, 0.0)
+    }
+
     // Review M6: a hanging stop does not hold every account operation.
 
     @Test fun aStopThatHangs_costsAtMostItsLimit_theSwitchGoesOn() = runTest {
@@ -466,6 +482,15 @@ class SignOutTest {
         assertEquals(account, accounts.acc.value)
         assertEquals(List(6) { true }, rows(a))
         assertNull(accounts.clearedKeeping)
+    }
+
+    /** Review N3: the signed-in account has played nothing: its play key does not start what the removed profile heard. */
+    @Test fun removeProfile_handsItsDeviceTitleToNobody() = runTest {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        lastPlayed.set(LastPlayed(dev, localKey, 3), account = b)
+        assertTrue(signOut().removeProfile(b))
+        assertNull(lastPlayed.get(dev))
+        assertNull(lastPlayed.deviceTitleOf(b))
     }
 
     @Test fun removeProfile_takesItsPerAccountState_notTheSignedInAccounts() = runTest {
@@ -689,7 +714,7 @@ class SignOutTest {
         assertNull(accounts.acc.value)
         assertNull(accounts.refresh)
         assertEquals(List(6) { false }, rows(a))
-        assertEquals("clear", calls.last())
+        assertEquals(listOf("clear", "rowsAgain"), calls.takeLast(2))
     }
 
     @Test fun aDeviceTitleLastPlayed_isKept() = runTest {

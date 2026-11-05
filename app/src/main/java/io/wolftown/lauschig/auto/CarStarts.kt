@@ -47,33 +47,33 @@ class CarStarts(
      * already is not reloaded ([Outcome.AlreadyLoaded]): reloading would rebuffer and jump back.
      */
     suspend fun forRequest(items: List<MediaItem>, startIndex: Int): Outcome {
-        if (accountServer() == null) return Outcome.Failed(Reason.SIGNED_OUT)
+        val account = accountServer() ?: return Outcome.Failed(Reason.SIGNED_OUT)
         val item = items.getOrNull(if (startIndex == C.INDEX_UNSET) 0 else startIndex) ?: items.firstOrNull()
             ?: return Outcome.Failed(Reason.NOT_FOUND)
         val query = item.requestMetadata.searchQuery
         val title = if (query != null) {
             searchTitle(query, hints(item.requestMetadata.extras)) ?: return Outcome.Failed(Reason.NOTHING_FOUND)
         } else {
-            (MediaIds.parse(item.mediaId) as? CarNode.Title)?.takeIf { allowed(it) } ?: return Outcome.Failed(Reason.NOT_FOUND)
+            (MediaIds.parse(item.mediaId) as? CarNode.Title)?.takeIf { allowed(it, account) } ?: return Outcome.Failed(Reason.NOT_FOUND)
         }
         if (title == current()) return Outcome.AlreadyLoaded(title)
-        return start(title)
+        return start(title, account)
     }
 
     suspend fun forResumption(): Outcome {
-        if (accountServer() == null) return Outcome.Failed(Reason.SIGNED_OUT)
-        return start(lastTitle() ?: return Outcome.Failed(Reason.NOTHING_TO_RESUME))
+        val account = accountServer() ?: return Outcome.Failed(Reason.SIGNED_OUT)
+        return start(lastTitle() ?: return Outcome.Failed(Reason.NOTHING_TO_RESUME), account)
     }
 
     /** A title of the signed-in account's server or of this device; ids of another (earlier) account never play. */
-    private suspend fun allowed(t: CarNode.Title): Boolean = DeviceLibrary.isLocal(t.serverId) || t.serverId == accountServer()
+    private fun allowed(t: CarNode.Title, account: String): Boolean = DeviceLibrary.isLocal(t.serverId) || t.serverId == account
 
-    private suspend fun start(title: CarNode.Title): Outcome {
-        val account = accountServer()
+    /** [account]: signed in when the request came. */
+    private suspend fun start(title: CarNode.Title, account: String): Outcome {
         pick(title.key)
         val r = resolveTitle(title.serverId, title.key, true)
-        // The resolve may wait seconds for a connection check. If the account changed meanwhile this start was for the one
-        // that left: nothing plays for the next, also no device title.
+        // The resolve may wait seconds for a connection check. If the account changed since the request came this start was
+        // for the one that left: nothing plays for the next, also no device title.
         val now = accountServer() ?: return Outcome.Failed(Reason.SIGNED_OUT)
         if (now != account) return Outcome.Failed(Reason.NOT_FOUND)
         return when (r) {

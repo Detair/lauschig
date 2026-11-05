@@ -113,6 +113,51 @@ class LastPlayedStoreTest {
         assertEquals("B keeps its own", LastPlayed(b, "b-book", 11), store.forAccount(b))
     }
 
+    // Review N3: the device's own entry does not hand one person's title to another.
+
+    @Test fun aRemovedProfile_handsNothingOver() = runBlocking {
+        store.set(LastPlayed(b, "b-book", 10))
+        store.set(LastPlayed(dev, "local:x", 20), account = b)
+        store.drop(b)
+        assertNull(store.get(b))
+        assertNull(store.deviceTitleOf(b))
+        assertNull(store.get(dev))
+        assertNull(store.forAccount(a))
+    }
+
+    @Test fun droppingAProfile_leavesEveryoneElsesEntries() = runBlocking {
+        store.set(LastPlayed(a, "a-book", 5))
+        store.set(LastPlayed(dev, "local:a", 6), account = a)
+        store.set(LastPlayed(dev, "local:b", 7), account = b)
+        store.set(LastPlayed(dev, "local:old", 1))
+        store.drop(b)
+        assertEquals(LastPlayed(a, "a-book", 5), store.get(a))
+        assertEquals(LastPlayed(dev, "local:a", 6), store.deviceTitleOf(a))
+        assertEquals(LastPlayed(dev, "local:old", 1), store.get(dev))
+    }
+
+    @Test fun theDevicesEntry_becomesTheActiveAccounts_ifItHasNone() = runBlocking {
+        store.set(LastPlayed(dev, "local:old", 5))
+        store.adoptDeviceEntry(a)
+        assertEquals(LastPlayed(dev, "local:old", 5), store.deviceTitleOf(a))
+        assertNull(store.get(dev))
+        assertEquals(LastPlayed(dev, "local:old", 5), store.forAccount(a))
+        assertNull("the next one does not get it", store.forAccount(b))
+    }
+
+    @Test fun theDevicesEntry_staysWhereItIs_ifTheAccountHasADeviceTitle() = runBlocking {
+        store.set(LastPlayed(dev, "local:own", 9), account = a)
+        store.set(LastPlayed(dev, "local:old", 5))
+        store.adoptDeviceEntry(a)
+        assertEquals(LastPlayed(dev, "local:own", 9), store.deviceTitleOf(a))
+        assertEquals(LastPlayed(dev, "local:old", 5), store.get(dev))
+    }
+
+    @Test fun nothingToAdopt_changesNothing() = runBlocking {
+        store.adoptDeviceEntry(a)
+        assertNull(store.deviceTitleOf(a))
+    }
+
     /** What 0.4.0 stored: one title under three keys. */
     private suspend fun oldVersionStored(server: String, item: String, at: Long) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

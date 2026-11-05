@@ -347,7 +347,7 @@ class SignOut(
         }
         if (step("purge") { data.purge(serverId); true } == true) step("purged") { kept.removePendingPurge(serverId) }
         step("forget kept") { kept.remove(serverId) }
-        step("last played") { lastPlayed.forget(serverId) }
+        step("last played") { lastPlayed.drop(serverId) }
         step("paused by a switch") { forgetDownloads(serverId) }
         step("account state") { forgetSavedState(serverId) }
         Log.i(TAG, "removed a saved profile (server logout: ${loggedOut.await()})")
@@ -421,6 +421,8 @@ class SignOut(
         finish()
         // The account stayed the active one until now, so a title could still start; before the next account arrives it goes.
         stopWithin("stop again", stopAgain)
+        // What that stop ended saved its position just now: the rows of a purged account stay gone.
+        if (mode == Leave.PURGE) step("rows after the last stop") { data.deleteRows(serverId) }
         SignOutResult.Done
     }
 

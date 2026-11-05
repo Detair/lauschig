@@ -45,6 +45,15 @@ interface LastPlayedStore {
      * a device title it stays on the device, as the device's own entry unless that is newer. Other accounts' entries stay.
      */
     suspend fun forget(serverId: String)
+
+    /** A removed profile: all of [serverId]'s entries go, and nothing passes on to whoever is signed in. */
+    suspend fun drop(serverId: String)
+
+    /**
+     * The device's own entry becomes [account]'s device title if it has none of its own: at the start of the app and when
+     * an account is set aside, so a title from before profiles stays with the account of that time and goes to nobody else.
+     */
+    suspend fun adoptDeviceEntry(account: String)
 }
 
 /** What [serverId] itself played last: its server title or a device title. */
@@ -126,6 +135,30 @@ class DataStoreLastPlayedStore(private val store: DataStore<Preferences>) : Last
             }
             it.remove(LastPlayedMigration.itemKey(own))
             it.remove(LastPlayedMigration.atKey(own))
+        }
+    }
+
+    override suspend fun drop(serverId: String) {
+        val own = ownedDevice(serverId)
+        store.edit {
+            it.remove(LastPlayedMigration.itemKey(serverId))
+            it.remove(LastPlayedMigration.atKey(serverId))
+            it.remove(LastPlayedMigration.itemKey(own))
+            it.remove(LastPlayedMigration.atKey(own))
+        }
+    }
+
+    override suspend fun adoptDeviceEntry(account: String) {
+        val own = ownedDevice(account)
+        val device = DeviceLibrary.SERVER_ID
+        store.edit {
+            val item = it[LastPlayedMigration.itemKey(device)] ?: return@edit
+            val at = it[LastPlayedMigration.atKey(device)] ?: return@edit
+            if (it[LastPlayedMigration.itemKey(own)] != null) return@edit
+            it[LastPlayedMigration.itemKey(own)] = item
+            it[LastPlayedMigration.atKey(own)] = at
+            it.remove(LastPlayedMigration.itemKey(device))
+            it.remove(LastPlayedMigration.atKey(device))
         }
     }
 

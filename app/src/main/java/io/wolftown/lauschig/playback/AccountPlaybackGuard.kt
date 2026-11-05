@@ -20,25 +20,27 @@ internal class AccountPlaybackGuard(
 ) {
     private var known = false
     private var account: String? = null
+    private var lastSignedIn: String? = null
 
     /**
      * The signed-in account is [next], at every answer of the store. A title goes if an account was left and the title is
      * not the new account's; that includes a device title, the next account starts quietly. The first answer at the start of
-     * the service leaves nothing (a title may play already), neither does a sign-in.
+     * the service leaves nothing (a title may play already), neither does a sign-in. The title kept for the widget goes when
+     * another person is signed in than the last one, also with a sign-out in between.
      */
     fun accountChanged(next: String?) {
         val left = known && account != null && account != next
-        val switched = left && next != null
+        val anotherPerson = next != null && lastSignedIn != null && next != lastSignedIn
         known = true
         account = next
-        if (!left) return
-        title()?.let {
+        if (next != null) lastSignedIn = next
+        if (left) title()?.let {
             if (it.first != next) {
                 Log.i(TAG, "a title of the account that was left is still in the player: stopped")
                 stop()
             }
         }
-        if (switched) forgetShownTitle()
+        if (anotherPerson) forgetShownTitle()
     }
 
     /**

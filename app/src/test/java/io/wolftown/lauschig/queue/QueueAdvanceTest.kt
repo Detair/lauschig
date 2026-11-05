@@ -95,6 +95,40 @@ class QueueAdvanceTest {
         assertEquals(listOf("b", "c"), r.queue) // kept data stays as it was (only the ended title left)
     }
 
+    // Review N1: the entry leaves only once the start succeeded; a switch during the start leaves it for the account's return.
+
+    @Test fun anEntryIsStillQueuedWhileItsStartRuns() = runTest {
+        val queue = mutableListOf("ended", "next")
+        var queuedDuringStart: List<String>? = null
+        val advancer = QueueAdvancer(
+            entries = { _ -> queue.toList() },
+            remove = { _, k -> queue.remove(k) },
+            check = { _, _ -> QueueEntryState.PLAYABLE },
+            sleepEndOfChapter = { false },
+            start = { _, _ -> queuedDuringStart = queue.toList(); true },
+        )
+        assertEquals("next", advancer.onEnded("s", "ended"))
+        assertEquals(listOf("next"), queuedDuringStart)
+        assertEquals(emptyList<String>(), queue.toList())
+    }
+
+    @Test fun aSwitchDuringTheStart_leavesTheEntry_andTriesNoOther() = runTest {
+        val queue = mutableListOf("ended", "next", "after")
+        var owner = true
+        val tried = mutableListOf<String>()
+        val advancer = QueueAdvancer(
+            entries = { _ -> queue.toList() },
+            remove = { _, k -> queue.remove(k) },
+            check = { _, _ -> QueueEntryState.PLAYABLE },
+            sleepEndOfChapter = { false },
+            start = { _, k -> tried += k; owner = false; false },
+            stillOwner = { owner },
+        )
+        assertEquals(null, advancer.onEnded("s", "ended"))
+        assertEquals(listOf("next"), tried)
+        assertEquals(listOf("next", "after"), queue.toList())
+    }
+
     @Test fun sleepTimerAtEndOfChapter_startsNothing() = runTest {
         val r = Run(mutableListOf("a", "b"), emptyMap(), sleep = true)
         assertNull(r.advancer.onEnded(s, "a"))

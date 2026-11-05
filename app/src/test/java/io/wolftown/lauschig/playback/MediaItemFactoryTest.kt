@@ -78,4 +78,17 @@ class MediaItemFactoryTest {
         assertEquals("The Podcast", m.mediaMetadata.artist)
         assertEquals(key, m.mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_ITEM_ID))
     }
+
+    /** Review N1: a streamed file names its title's owner in the fragment, which stays on the device. */
+    @Test fun aStreamedFile_namesItsOwner_aLocalFileDoesNot_andTwoBuildsAreEqual() {
+        val factory = MediaItemFactory({ true }) { _, _ -> null }
+        val row = item(f(0, "/d/0.mp3"), f(1, null))
+        val base = "https://abs.example/".toHttpUrl()
+        val items = factory.build(row, base)
+        assertEquals("file", items[0].localConfiguration!!.uri.scheme)
+        assertEquals(null, items[0].localConfiguration!!.uri.fragment)
+        assertEquals(row.item.serverId, items[1].localConfiguration!!.uri.fragment)
+        assertEquals("the sources are compared by URI: nothing reloads without a change", items.map { it.localConfiguration!!.uri }, factory.build(row, base).map { it.localConfiguration!!.uri })
+        assertEquals(row.item.serverId, factory.build(row, "https://other.example/".toHttpUrl())[1].localConfiguration!!.uri.fragment)
+    }
 }

@@ -62,8 +62,11 @@ class MediaItemFactory(
             ?: coverFile(item.item.serverId, item.item.id)?.takeIf { it.isFile && it.length() > 0 }?.let { Uri.fromFile(it) }
         val episode = PlayableKey.parse(item.item.id).episodeId != null
         return files.mapIndexed { i, f ->
+            // A stream names its title's owner in the fragment, for the client that sends it ([StreamCalls]). A fragment stays
+            // on the device: it is no part of the request.
             val uri: Uri = local[i]
-                ?: audioFileUrl(baseUrl ?: throw PlaybackUnavailableException(item.item.id), PlayableKey.parse(item.item.id).libraryItemId, f.ino).toString().toUri()
+                ?: audioFileUrl(baseUrl ?: throw PlaybackUnavailableException(item.item.id), PlayableKey.parse(item.item.id).libraryItemId, f.ino)
+                    .newBuilder().fragment(item.item.serverId).build().toString().toUri()
             val extras = Bundle().apply {
                 if (local[i] == null) putString(EXTRA_STREAM_BASE, baseUrl.toString())
                 putString(EXTRA_SERVER_ID, item.item.serverId)

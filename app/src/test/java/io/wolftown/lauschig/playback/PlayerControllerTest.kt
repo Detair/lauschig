@@ -49,6 +49,8 @@ internal class FakeFacade : PlayerFacade {
     /** ExoPlayer's intent to play; kept across errors and queue swaps, so a rebuilt queue plays on only if it was true. */
     var playWhenReady = false
     var playCalls = 0
+    /** What [stop] does before it empties the queue (a hanging or failing connection to the service). */
+    var stopBlock: suspend () -> Unit = {}
     /** What the service's tracker does on a pause: it saves the title's position, a moment later. */
     var onPause: (title: Pair<String, String>?) -> Unit = {}
     override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
@@ -71,7 +73,7 @@ internal class FakeFacade : PlayerFacade {
     override fun streamBase() = items.firstNotNullOfOrNull { it.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
     var stops = 0
-    override suspend fun stop() { stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
+    override suspend fun stop() { stopBlock(); stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
     fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
@@ -178,7 +180,8 @@ class PlayerControllerTest {
     private val public = "https://abs.example.org/"
     private fun streamedThree() = item(listOf(file(0, 600.0, null), file(1, 300.0, null), file(2, 900.0, null)))
     private val ioError = androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
-    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString() }
+    /** Without the fragment: it names the owner and stays on the device ([MediaItemFactoryTest]). */
+    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString().substringBefore('#') }
 
     @Test fun pausedStream_movesToTheNewAddress_rightAway_atItsPosition() = runTest {
         val f = FakeFacade()
@@ -302,7 +305,7 @@ class PlayerControllerTest {
         assertEquals(900.0, c.state.value.durationSec, 0.0)
         assertEquals(files.coverFile(s, "pod").path, c.state.value.coverPath)
         val m = f.items.single()
-        assertEquals("https://abs.example/api/items/pod/file/epino/download", m.localConfiguration!!.uri.toString())
+        assertEquals("https://abs.example/api/items/pod/file/epino/download#$s", m.localConfiguration!!.uri.toString())
         assertEquals("The Podcast", m.mediaMetadata.artist)
         assertEquals("Folge 1", m.mediaMetadata.title)
         assertEquals(files.coverFile(s, "pod").toURI().path, m.mediaMetadata.artworkUri!!.path)
@@ -878,6 +881,27 @@ class PlayerControllerTest {
         val f = FakeFacade()
         val c = controller(f, { null })
         c.showPaused(s, "gone")
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    /** Review N2: the mini player does not keep the old account's title because the connection to the service hangs. */
+    @Test fun aStopThatHangs_stillEmptiesTheMiniPlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        assertEquals("it", c.state.value.itemId)
+        f.stopBlock = { kotlinx.coroutines.awaitCancellation() }
+        kotlinx.coroutines.withTimeoutOrNull(1_000) { c.stop() }
+        assertEquals(null, c.state.value.itemId)
+        assertFalse(c.state.value.isPlaying)
+    }
+
+    @Test fun aStopThatFails_stillEmptiesTheMiniPlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        f.stopBlock = { throw IllegalStateException("no connection") }
+        runCatching { c.stop() }
         assertEquals(null, c.state.value.itemId)
     }
 

@@ -83,7 +83,7 @@ class AccountStateCleanerTest {
         nm.createNotificationChannel(android.app.NotificationChannel("t", "t", android.app.NotificationManager.IMPORTANCE_LOW))
         nm.notify(io.wolftown.lauschig.cleanup.CleanupReminderWorker.NOTIFICATION_ID, androidx.core.app.NotificationCompat.Builder(ctx, "t").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Der Anfang").build())
         assertEquals(1, nm.activeNotifications.size)
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
         assertEquals(0, nm.activeNotifications.size)
     }
 
@@ -103,7 +103,7 @@ class AccountStateCleanerTest {
     @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
         assertEquals(false, legacy.exists())
     }
 
@@ -158,6 +158,20 @@ class AccountStateCleanerTest {
         assertEquals(emptyList<String>(), searches.queries.first())
     }
 
+    /** Review N3: the device's own last title goes to the account active at the upgrade, like the other old values. */
+    @Test fun migrate_andSetAside_handTheDevicesLastTitleToTheAccount_aSignOutDoesNot() = runBlocking {
+        val adopted = mutableListOf<String>()
+        fun cleaner() = AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, {}, {}, {}, { adopted += it })
+        cleaner().migrate(a)
+        assertEquals(listOf(a), adopted)
+        cleaner().setAside(a)
+        assertEquals(listOf(a, a), adopted)
+        cleaner().migrate(null)
+        assertEquals(listOf(a, a), adopted)
+        cleaner().clear(a)
+        assertEquals("a sign-out just left it on the device for the next one", listOf(a, a), adopted)
+    }
+
     /** The account that is left owned the old values, also if nothing asked for them since the start of this version. */
     @Test fun leavingBeforeTheStartUpMigrationRan_theOldValuesStayWithTheLeftAccount() = runBlocking {
         rmabStore.edit { it[stringPreferencesKey("url")] = "https://rmab.example"; it[stringPreferencesKey("token")] = "enc:t" }
@@ -182,10 +196,10 @@ class AccountStateCleanerTest {
         disk.openEditor("cover-key")!!.apply { disk.fileSystem.write(data) { writeUtf8("x") }; commitAndOpenSnapshot()!!.close() }
         val key = coil3.memory.MemoryCache.Key("cover-key")
         images.memoryCache!![key] = coil3.memory.MemoryCache.Value(coil3.ColorImage(0, 1, 1))
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).setAside(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).setAside(a)
         assertNull(images.memoryCache!![key])
         assertTrue(disk.openSnapshot("cover-key")!!.use { true })
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
         assertNull(disk.openSnapshot("cover-key"))
     }
 

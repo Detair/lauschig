@@ -168,7 +168,7 @@ class ProfileSwitchFlowTest {
         AccountStateCleaner(
             rmab, OidcLogin(oidcStore, cipher, OkHttpClient()), searches, prompts,
             clearImageCaches = { diskCovers++ }, cancelNotifications = {}, clearDiagnostics = { logs++ },
-            clearMemoryCovers = { memoryCovers++ }, clearMoments = { jumps.clear() },
+            clearMemoryCovers = { memoryCovers++ }, clearMoments = { jumps.clear() }, adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
         )
     }
 
@@ -558,7 +558,8 @@ class ProfileSwitchFlowTest {
 
         assertEquals(emptyList<String>(), facade.items.map { it.mediaId })
         assertFalse(facade.snap.isPlaying)
-        assertFalse("no request of A's title with B's token", web.seen.any { it.auth == BEARER_B && it.path.contains("a-book") })
+        // FakeFacade sends no HTTP: this is about what the controller loads for the title. The stream itself: StreamCallsTest.
+        assertFalse("A's title's details are not asked for with B's token", web.seen.any { it.auth == BEARER_B && it.path.contains("a-book") })
         // B starts quietly, with its own title in the mini player, not A's.
         awaitShownPaused("b-book")
         assertEquals("b-book", starter.last()!!.itemId)
@@ -688,6 +689,43 @@ class ProfileSwitchFlowTest {
         assertEquals("fabi", rmab.config.first()!!.username)
         assertEquals(listOf("Die drei"), searches.queries.first())
         awaitShownPaused("a-book")
+    }
+
+    // Review N3: the device's own entry.
+
+    private val localTitle = "${DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+
+    private suspend fun deviceTitleRow() = db.itemDao().upsertDetails(ItemEntity(DeviceLibrary.SERVER_ID, localTitle, "dev-lib", "Vom Gerät", durationSec = 100.0))
+
+    @Test fun upgrade_anOldDeviceTitleIsTheActiveAccounts_notTheNextOnes(): Unit = runBlocking {
+        val old = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        PreferenceDataStoreFactory.create(scope = old) { prefsFile("last_played") }.edit {
+            it[stringPreferencesKey("server_id")] = DeviceLibrary.SERVER_ID
+            it[stringPreferencesKey("item_id")] = localTitle
+            it[longPreferencesKey("paused_at")] = 9_000
+        }
+        old.cancel()
+        old.coroutineContext[kotlinx.coroutines.Job]!!.join()
+        signedIn()
+        deviceTitleRow()
+
+        cleaner.migrate(store.account.first()?.serverId) // what the app does at every start
+        assertEquals(localTitle, starter.last()!!.itemId)
+
+        assertTrue(signOut.switchProfile(b))
+        assertNull("B has played nothing and gets nothing", starter.last())
+
+        assertTrue(signOut.switchProfile(a))
+        awaitShownPaused(localTitle)
+        assertEquals(localTitle, starter.last()!!.itemId)
+    }
+
+    @Test fun aProfileRemovedWhileAnotherIsActive_leavesItNoDeviceTitle(): Unit = runBlocking {
+        signedIn()
+        deviceTitleRow()
+        lastPlayed.set(LastPlayed(DeviceLibrary.SERVER_ID, localTitle, 2_000), account = b)
+        assertTrue(signOut.removeProfile(b))
+        assertNull(starter.last())
     }
 
     /** One account, as today: a sign-out takes what is its own, and only that. */

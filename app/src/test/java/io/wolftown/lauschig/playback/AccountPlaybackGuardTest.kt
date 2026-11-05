@@ -73,7 +73,16 @@ class AccountPlaybackGuardTest {
         assertEquals(1, forgotten)
         guard.accountChanged(null)
         assertEquals(1, forgotten)
+    }
+
+    /** Review N3: another person is compared with the last one signed in, also across a sign-out in between. */
+    @Test fun aSignOutAndAnotherAccount_forgetsTheTitle_theSameAccountAgainDoesNot() {
         guard.accountChanged(a)
+        guard.accountChanged(null)
+        guard.accountChanged(a)
+        assertEquals(0, forgotten)
+        guard.accountChanged(null)
+        guard.accountChanged(b)
         assertEquals(1, forgotten)
     }
 
