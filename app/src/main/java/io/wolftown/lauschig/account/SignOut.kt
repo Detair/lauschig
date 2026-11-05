@@ -87,6 +87,14 @@ interface ProfileSwitch {
      * account signing in again (or none active) just saves.
      */
     suspend fun addProfile(next: Account, accessToken: String, refreshToken: String)
+
+    /**
+     * Removes the saved (not active) account [serverId] like a sign-out without keeping: its session on the server ends
+     * (at most [SignOut.LOGOUT_TIMEOUT_MS]), its rows and downloads are purged, it is forgotten. The purge is owed
+     * before the account is forgotten (a pending purge the next start finishes), so its data never stays without an
+     * owner. False, touching nothing, if [serverId] is not saved; the active account is never removed here.
+     */
+    suspend fun removeProfile(serverId: String): Boolean
 }
 
 /**
@@ -195,6 +203,27 @@ class SignOut(
             if (current == null || current.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
             else leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
         }
+    }
+
+    override suspend fun removeProfile(serverId: String): Boolean = withContext(NonCancellable) {
+        val account = accounts.saved.first().firstOrNull { it.serverId == serverId } ?: return@withContext false
+        val refresh = try { accounts.savedCredentials(serverId)?.refreshToken } catch (e: Exception) { null }
+        // Owed first: should anything stop here, the next start finishes the purge (the janitor), the data is never ownerless.
+        if (step("pending purge") { kept.addPendingPurge(serverId); true } != true) return@withContext false
+        if (step("forget") { accounts.forget(serverId); true } != true) {
+            // Still saved: its data stays wanted.
+            step("keep") { kept.removePendingPurge(serverId) }
+            return@withContext false
+        }
+        step("cancel work") { work.cancel(serverId) }
+        val loggedOut = async {
+            if (refresh == null) false
+            else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true
+        }
+        if (step("purge") { data.purge(serverId); true } == true) step("purged") { kept.removePendingPurge(serverId) }
+        step("forget kept") { kept.remove(serverId) }
+        Log.i(TAG, "removed a saved profile (server logout: ${loggedOut.await()})")
+        true
     }
 
     /** What becomes of the account that is left. */

@@ -100,6 +100,10 @@ class AccountStoreTest {
         // No token in plain text anywhere in the file.
         val raw = prefs.data.first().asMap().values.joinToString()
         listOf("a1", "r1", "a2", "r2").forEach { t -> assertFalse(Regex("(?<!enc:)\\b$t\\b").containsMatchIn(raw)) }
+        // Fabian waits with his own tokens and his "sign in again".
+        assertTrue(store.activate(fabian.serverId))
+        assertEquals(Credentials(fabian.serverId, "a1", "r1"), store.credentials())
+        assertTrue(store.needsReauth.first())
     }
 
     @Test fun activate_swapsInOneStep_movingCiphertextOnly() = runTest {
@@ -190,5 +194,49 @@ class AccountStoreTest {
         val c = Credentials("aaaaaaaaaaaaaaaa", "secret-access", "secret-refresh")
         assertFalse(c.toString().contains("secret"))
         assertTrue(c.toString().contains("aaaaaaaaaaaaaaaa"))
+    }
+
+    // Fix round 1, E7: one unreadable saved entry (damaged, or from a later version) hides nothing else and is never lost.
+
+    private val savedKey = stringPreferencesKey("saved_accounts_json")
+
+    @Test fun anUnreadableSavedEntry_isSkipped_andKeptAsItIs() = runTest {
+        store.save(fabian, "a1", "r1")
+        store.add(matthias, "a2", "r2")
+        val unreadable = """{"account":{"serverId":"zzzzzzzzzzzzzzzz"},"fromALaterVersion":true}"""
+        prefs.edit { it[savedKey] = it[savedKey]!!.removeSuffix("]") + "," + unreadable + "]" }
+        assertEquals(listOf(fabian), store.saved.first())
+
+        store.add(third, "a3", "r3")
+        assertEquals(listOf(fabian, matthias), store.saved.first())
+        assertTrue(prefs.data.first()[savedKey]!!.contains(unreadable))
+        assertTrue(store.activate(fabian.serverId))
+        store.forget(matthias.serverId)
+        store.updateTokens(third.serverId, "a3b", "r3b")
+        assertEquals(listOf(third), store.saved.first())
+        assertTrue(prefs.data.first()[savedKey]!!.contains(unreadable))
+        // Only the unreadable one left: the key stays for it.
+        store.forget(third.serverId)
+        assertEquals(emptyList<Account>(), store.saved.first())
+        assertEquals("[$unreadable]", prefs.data.first()[savedKey])
+    }
+
+    @Test fun aSavedValueThatIsNoListAtAll_isNeverOverwritten() = runTest {
+        prefs.edit { it[savedKey] = "{oops" }
+        store.save(fabian, "a1", "r1")
+        store.markNeedsReauth(fabian.serverId)
+        assertEquals("{oops", prefs.data.first()[savedKey])
+        assertEquals(emptyList<Account>(), store.saved.first())
+        // A new saved account is stored beside it; the old value stays, as it was, in the list.
+        store.add(matthias, "a2", "r2")
+        assertEquals(listOf(fabian), store.saved.first())
+        assertTrue(prefs.data.first()[savedKey]!!.contains("\"{oops\""))
+    }
+
+    @Test fun savedCredentials_areTheSavedAccountsOwn() = runTest {
+        store.save(fabian, "a1", "r1")
+        store.add(matthias, "a2", "r2")
+        assertEquals(Credentials(fabian.serverId, "a1", "r1"), store.savedCredentials(fabian.serverId))
+        assertNull(store.savedCredentials(matthias.serverId)) // the active one is no saved one
     }
 }

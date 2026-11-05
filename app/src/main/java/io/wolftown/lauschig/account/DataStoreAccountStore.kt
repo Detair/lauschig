@@ -17,6 +17,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -93,6 +98,11 @@ class DataStoreAccountStore(
         store.edit { it.putSaved(it.savedList().filterNot { s -> s.account.serverId == serverId }) }
     }
 
+    override suspend fun savedCredentials(serverId: String): Credentials? {
+        val saved = store.data.first().savedList().firstOrNull { it.account.serverId == serverId } ?: return null
+        return Credentials(serverId, saved.access?.let(cipher::decrypt), saved.refresh?.let(cipher::decrypt))
+    }
+
     override suspend fun credentials(): Credentials? {
         val p = store.data.first()
         val serverId = p.activeDto()?.serverId ?: return null
@@ -142,13 +152,25 @@ class DataStoreAccountStore(
         this[NEEDS_REAUTH] = e.needsReauth
     }
 
-    /** Unreadable entries are left out (as an unreadable active account reads as none). */
-    private fun Preferences.savedList(): List<Saved> =
-        this[SAVED]?.let { runCatching { lenient.decodeFromString<List<Saved>>(it) }.getOrNull() }.orEmpty()
+    /** The readable saved entries. An unreadable one (damaged, or from a later version) is skipped and kept as it is. */
+    private fun Preferences.savedList(): List<Saved> = savedElements().mapNotNull { it.second }
 
-    /** No key without saved accounts: a single account keeps the stored form it always had. */
+    /** Every stored element with its entry (null: unreadable). A value that is no list at all is one unreadable element. */
+    private fun Preferences.savedElements(): List<Pair<JsonElement, Saved?>> {
+        val raw = this[SAVED] ?: return emptyList()
+        val array = runCatching { lenient.parseToJsonElement(raw) }.getOrNull() as? JsonArray ?: return listOf(JsonPrimitive(raw) to null)
+        return array.map { e -> e to runCatching { lenient.decodeFromJsonElement<Saved>(e) }.getOrNull() }
+    }
+
+    /**
+     * Stores [list] as the readable saved entries, writing unreadable ones back as they were; nothing is written while
+     * the readable entries do not change. No key without saved accounts: a single account keeps the form it always had.
+     */
     private fun MutablePreferences.putSaved(list: List<Saved>) {
-        if (list.isEmpty()) remove(SAVED) else this[SAVED] = lenient.encodeToString(list)
+        val elements = savedElements()
+        if (elements.mapNotNull { it.second } == list) return
+        val all = list.map { lenient.encodeToJsonElement(it) } + elements.filter { it.second == null }.map { it.first }
+        if (all.isEmpty()) remove(SAVED) else this[SAVED] = JsonArray(all).toString()
     }
 
     private fun MutablePreferences.updateSaved(serverId: String, change: (Saved) -> Saved) {

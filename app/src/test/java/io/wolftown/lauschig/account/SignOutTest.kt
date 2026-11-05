@@ -286,6 +286,50 @@ class SignOutTest {
         assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
     }
 
+    // Fix round 1, E7: removing a saved profile purges like a sign-out without keeping – never ownerless data.
+
+    @Test fun removeProfile_logsOut_purges_andForgets_onlyThatAccount() = runTest {
+        seed(a); seed(b)
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        var owedWhenForgotten = false
+        accounts.onForget = { owedWhenForgotten = b in kept.pending.value }
+
+        assertTrue(signOut().removeProfile(b))
+
+        assertTrue("the purge is owed before the account is forgotten", owedWhenForgotten)
+        assertEquals(List(6) { false }, rows(b))
+        assertFalse(File(root, b).exists())
+        assertEquals(listOf("refresh-2"), logouts)
+        assertEquals(listOf(b), cancelled)
+        assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        // The signed-in account and its data are untouched.
+        assertEquals(account, accounts.acc.value)
+        assertEquals(List(6) { true }, rows(a))
+        assertNull(accounts.clearedKeeping)
+    }
+
+    @Test fun removeProfile_aFailingPurge_isLeftToTheNextStart() = runTest {
+        seed(b)
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        val failing = object : AccountData by data {
+            override suspend fun purge(serverId: String) = throw java.io.IOException("disk full")
+        }
+        assertTrue(signOut(purgeData = failing).removeProfile(b))
+        assertEquals(setOf(b), kept.pending.value)
+        assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
+    }
+
+    @Test fun removeProfile_ofTheActiveOrAnUnknownAccount_touchesNothing() = runTest {
+        seed(a)
+        assertFalse(signOut().removeProfile(a))
+        assertFalse(signOut().removeProfile(b))
+        assertEquals(List(6) { true }, rows(a))
+        assertTrue(calls.isEmpty())
+        assertTrue(logouts.isEmpty())
+        assertEquals(emptySet<String>(), kept.pending.value)
+    }
+
     @Test fun moreChangesAfterStopping_thanShown_abortWithoutDeleting() = runTest {
         seed(a) // 2 unsynced: the dirty progress row and the pending bookmark
         val out = SignOut(
