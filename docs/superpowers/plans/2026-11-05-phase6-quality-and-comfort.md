@@ -474,3 +474,26 @@ Leitregel „im Zweifel behalten“. Keine Schemaänderung (v10 auf diesem Zweig
   App-Verzeichnis wird der Rest der Zeile weiter maskiert; Felder eines Zertifikat-DN (CN, O, OU, L, ST, C, E …) gehen.
 - **N10:** Liegt auf der fehlenden Karte nur ein begonnener Download (`.part`), wartet der Purge auch auf sie und
   löscht dann den ganzen Ordner des Kontos dort.
+
+### Nachtrag Task 5/6 – Fix-Runde 3 nach Re-Review 2 (2026-11-05)
+
+Keine Schemaänderung (DataStore).
+
+- **R1 – Einstellung je Konto:** „Gehörte Downloads automatisch löschen“ gilt je Konto (Standard „Nie“ für jedes,
+  auch später hinzukommende). Die Einstellungszeile, die Einschalt-Frage, der Beobachter, der Tages-Worker, die
+  Aufräum-Erinnerung und die Bedeutung von „Behalten“ richten sich nach dem angemeldeten Konto. Der alte geräteweite
+  Wert gehört dem Konto, das beim Update angemeldet ist; ohne Anmeldung entfällt er. Ein „Sofort“ der Eltern löscht
+  nichts vom Kind.
+- **R2 – kein Abfragen im Sekundentakt:** Durchgänge laufen nur bei Änderungen (gehörte/geladene Downloads, Einstellung,
+  Behalten-Liste, Player, Warteschlange, Fragen, Übergabe) plus einem Zeitgeber – der nächsten Fälligkeit oder dem Ende
+  eines Picks bzw. einer Gnadenfrist, die einen zählenden Titel hält. Ein abgelaufener Pick hält nicht mehr; Dateizeiten
+  von Grundlinien-Titeln werden nicht gelesen. Test auf virtueller Zeit: ein zählender Titel in der Warteschlange, ein
+  anderer spielt – 1 Durchgang in 10 Minuten.
+- **R3:** Starts aus dem Auto (Stöbern, Suche, Sprache) und das Fortsetzen markieren ihren Titel vor dem Auflösen.
+- **R4:** Offene Fragen werden vor dem Start des Aufräumens erledigt; lässt sich eine Frage nicht vermerken, kommt der
+  Titel auf die Behalten-Liste – geht auch das nicht, wird er nicht als gehört markiert.
+- **R5 (Log):** E-Mail-Adressen unter einer eigenen Domain werden ganz maskiert; per Komma angehängte Pfade; DN-Werte mit
+  maskierten Kommas, DNs ohne CN, Attribute in OID-Form.
+- **R7:** Ist der Speicher der „gesehen“-Zeiten oder der offenen Fragen beschädigt, beginnt er leer (einmal
+  protokolliert) und jedes Konto nimmt eine neue Grundlinie: nichts, was jetzt gehört ist, wird gelöscht; das Aufräumen
+  arbeitet weiter.
