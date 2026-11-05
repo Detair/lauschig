@@ -47,4 +47,14 @@ class CoverImageLoaderTest {
         second.clear()
         assertNull(loader().diskCache!!.openSnapshot("cover-key"))
     }
+
+    @Test fun legacyCoilCacheDirs_areDeleted_missingOnesAreFine_coverCacheIsUntouched() {
+        deleteLegacyCoverCaches(context) // nothing there: no failure
+        val legacy = listOf("coil3_disk_cache", "image_cache").map { context.cacheDir.resolve(it).apply { mkdirs(); resolve("c.1").writeText("x") } }
+        val covers = context.cacheDir.resolve("coil_covers").apply { mkdirs(); resolve("keep").writeText("x") }
+        deleteLegacyCoverCaches(context)
+        legacy.forEach { assertEquals(it.path, false, it.exists()) }
+        assertEquals(true, covers.resolve("keep").exists())
+        deleteLegacyCoverCaches(context) // idempotent
+    }
 }

@@ -72,6 +72,18 @@ fun newCoverDiskCache(context: Context): DiskCache = DiskCache.Builder()
     .maxSizeBytes(COVER_CACHE_MAX_BYTES)
     .build()
 
+/** Where Coil 3 kept its default disk cache before [newCoverDiskCache] (seen on a 0.3.0 install: `coil3_disk_cache`; `image_cache` is Coil 2's). */
+private val LEGACY_COVER_CACHE_DIRS = listOf("coil3_disk_cache", "image_cache")
+
+/**
+ * Deletes the previous default Coil cache directories: nothing writes there any more, so they would keep covers of
+ * earlier accounts (and up to a few hundred MB) forever. Idempotent; a missing directory is fine; never throws.
+ * Blocking file I/O: call it off the main thread.
+ */
+fun deleteLegacyCoverCaches(context: Context) {
+    for (name in LEGACY_COVER_CACHE_DIRS) runCatching { context.cacheDir.resolve(name).deleteRecursively() }
+}
+
 fun newCoverImageLoader(context: Context, api: ApiProvider): ImageLoader {
     val calls = GuardedCallFactory(api, CoroutineScope(SupervisorJob() + Dispatchers.Default), processStarted())
     return ImageLoader.Builder(context)

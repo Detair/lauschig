@@ -14,6 +14,7 @@ import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.AutoResumer
 import io.wolftown.lauschig.playback.NextVolumePrefetcher
 import io.wolftown.lauschig.sync.SyncScheduler
+import io.wolftown.lauschig.ui.common.deleteLegacyCoverCaches
 import io.wolftown.lauschig.ui.common.newCoverImageLoader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Off the main thread; nothing here awaits network I/O.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope.launch { syncScheduler.start(scope) }
+        // Coil's former default cache directory is orphaned since the covers have their own; remove it (IO, never fails the start).
+        scope.launch(Dispatchers.IO) { deleteLegacyCoverCaches(this@LauschigApp) }
         // Picks up files added to the device folders meanwhile (throttled; a WorkManager job, nothing waits for it).
         scope.launch { localFolders.scanIfDue() }
         // Sign-out or another server: the homescreen widget forgets the old account's title.

@@ -17,6 +17,7 @@ import io.wolftown.lauschig.ui.common.CoverPathCache
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.throttleUnchangedKey
 import io.wolftown.lauschig.ui.common.toSummary
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -66,7 +67,7 @@ data class LibraryUiState(
 /** Library data straight from Room; the connection state only decides dimming/cover source in the UI. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
-class LibraryViewModel @Inject constructor(
+class LibraryViewModel(
     accountStore: AccountStore,
     private val itemDao: ItemDao,
     private val libraryDao: LibraryDao,
@@ -74,8 +75,15 @@ class LibraryViewModel @Inject constructor(
     private val covers: CoverPathCache,
     private val prefs: FilterPreferences,
     private val downloadDao: DownloadDao,
-    private val catalog: Catalog = Catalog(),
+    private val catalog: Catalog,
+    /** Where the lists are computed and the progress throttle waits; tests pass a test dispatcher (virtual time). */
+    private val dispatcher: CoroutineDispatcher,
 ) : ViewModel() {
+    @Inject constructor(
+        accountStore: AccountStore, itemDao: ItemDao, libraryDao: LibraryDao, progressDao: ProgressDao, covers: CoverPathCache,
+        prefs: FilterPreferences, downloadDao: DownloadDao, catalog: Catalog,
+    ) : this(accountStore, itemDao, libraryDao, progressDao, covers, prefs, downloadDao, catalog, Dispatchers.Default)
+
     private val tab = MutableStateFlow(LibraryTab.InProgress)
     private val tag = MutableStateFlow<String?>(null)
 
@@ -143,7 +151,7 @@ class LibraryViewModel @Inject constructor(
                 } else {
                     LibraryUiState(t, f.available, f.selected, visible.map { it.summary() }, emptyList(), true, tags, selected, hidden)
                 }
-            }.flowOn(Dispatchers.Default).distinctUntilChanged()
+            }.flowOn(dispatcher).distinctUntilChanged()
         }
     }
 
@@ -153,7 +161,11 @@ class LibraryViewModel @Inject constructor(
         val downloaded: List<ItemEntity>,
         val active: List<String>,
     ) {
-        /** Everything the lists show except a title's position: while this stays equal, only the playing title's progress moved. */
+        /**
+         * Everything that changes what the lists contain or how they are ordered/marked (ids, finished, hidden, restarted,
+         * downloads). While this stays equal, mostly the playing title's position moved. Changes it does not cover (another
+         * title's position, edited metadata of an existing title) may wait up to [PROGRESS_THROTTLE_MS] but are never lost.
+         */
         val structure: List<Any?> by lazy {
             listOf(
                 items.map { it.id }, downloaded.map { it.id }, active,

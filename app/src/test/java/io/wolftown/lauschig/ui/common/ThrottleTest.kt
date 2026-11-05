@@ -52,4 +52,18 @@ class ThrottleTest {
         advanceTimeBy(2_000); runCurrent()
         assertEquals(listOf(Row("a", 0), Row("b", 2)), got)
     }
+
+    @Test fun heldTick_thenNewKeyAtTheWindowEnd_arrivesInOrder() = runTest {
+        val src = MutableSharedFlow<Row>()
+        val got = mutableListOf<Row>()
+        backgroundScope.launch { src.throttleUnchangedKey(1_500) { it.structure }.collect { got += it } }
+        runCurrent()
+        src.emit(Row("a", 0)); runCurrent()
+        src.emit(Row("a", 1)); runCurrent() // held, released at t=1500
+        advanceTimeBy(1_499); runCurrent()
+        src.emit(Row("b", 2)); runCurrent() // new key right before the release
+        advanceTimeBy(10); runCurrent()
+        assertEquals(listOf(Row("a", 0), Row("b", 2)), got) // the old tick never follows the newer value
+        assertEquals(got.sortedBy { it.pos }, got)
+    }
 }

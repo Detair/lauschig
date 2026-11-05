@@ -1,48 +1,51 @@
 package io.wolftown.lauschig.ui.common
 
-import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
- * Lets a value through at once when its [key] differs from the previous one (something the user can see or did
- * changed: a title finished, a list got another entry), but holds back values with an unchanged key and releases the
- * newest of them at most once per [windowMs]. Playback writes the position every few seconds; those writes keep the
- * key and so only cost one list recomputation per window, while a tap on "mark finished" is never delayed.
- * Nothing is lost: the last held value is always emitted when its window ends.
+ * Lets a value through at once when its [key] differs from the previous one (something the key covers changed), but
+ * holds back values with an unchanged key and releases the newest of them at most once per [windowMs]. Playback writes
+ * the position every few seconds; those writes keep the key and so only cost one recomputation per window, while a tap
+ * on "mark finished" is never delayed.
+ *
+ * What the key does not cover (e.g. another title's position, edited metadata) may wait up to [windowMs] but is never
+ * lost: the newest held value is always emitted when its window ends. Deciding and sending happen under one lock, so a
+ * released older value can never overtake a newer one.
  */
 fun <T> Flow<T>.throttleUnchangedKey(windowMs: Long, key: (T) -> Any?): Flow<T> = channelFlow {
-    val lock = Any()
+    val lock = Mutex()
     var lastKey: Any? = Unset
     var held: Any? = Unset
     var timerRunning = false
 
-    suspend fun ProducerScope<T>.release() {
-        delay(windowMs)
-        @Suppress("UNCHECKED_CAST")
-        val value = synchronized(lock) { held.also { held = Unset; timerRunning = false } } as Any?
-        if (value !== Unset) @Suppress("UNCHECKED_CAST") send(value as T)
-    }
-
     collect { value ->
         val k = key(value)
-        val immediate = synchronized(lock) {
+        lock.withLock {
             if (k != lastKey) {
                 lastKey = k
                 held = Unset // a held value of the old key is superseded
-                true
+                send(value)
             } else {
                 held = value
-                false
+                if (!timerRunning) {
+                    timerRunning = true
+                    launch {
+                        delay(windowMs)
+                        lock.withLock {
+                            val v = held
+                            held = Unset
+                            timerRunning = false
+                            @Suppress("UNCHECKED_CAST")
+                            if (v !== Unset) send(v as T)
+                        }
+                    }
+                }
             }
-        }
-        if (immediate) {
-            send(value)
-        } else {
-            val start = synchronized(lock) { (!timerRunning).also { if (it) timerRunning = true } }
-            if (start) launch { release() }
         }
     }
 }
