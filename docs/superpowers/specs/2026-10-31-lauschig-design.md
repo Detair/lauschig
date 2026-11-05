@@ -202,6 +202,15 @@ Android-Features nutzen:
 - **Ökosystem-Vorbereitung:** Schneller Profilwechsel für Familien-Tablets, Google Cast und Kapitelsuche.
 - Siehe Umsetzungsplan in [`docs/superpowers/plans/2026-11-05-phase6-quality-and-comfort.md`](../plans/2026-11-05-phase6-quality-and-comfort.md).
 
+### 2.7d Phase 7: Profilwechsel und Chromecast (Fabian, 2026-11-05)
+- **Profilwechsel:** Mehrere Konten bleiben auf einem Gerät angemeldet und lassen sich ohne Abmelden wechseln. Ein Wechsel löscht
+  weder Daten noch Downloads; Fortschritt, zuletzt Gespieltes, RMAB-Verbindung und letzte Suchen gehören dem jeweiligen Konto.
+- **Schutz als Einstellung:** Ein Profil lässt sich optional per Gerätesperre oder App-PIN vor dem Hineinwechseln schützen,
+  gedacht für Kinder auf Familien-Tablets. Standard ist aus.
+- **Chromecast:** Server-Titel lassen sich auf Cast-Geräte schicken. Dafür kommt das proprietäre Cast-Framework hinzu, mit
+  Lizenzvermerk. Ohne Play Services läuft die App wie bisher.
+- `:core:playback` bleibt vorerst draußen.
+
 ### 2.8 Später: TV-Modus (Android TV / Google TV)
 - Eigenes, an den Fernseher angepasstes Design (Compose for TV, Bedienung mit
   Fernbedienung/D-Pad, große Cover, 10-Fuß-Abstand). Bibliothek und Player wie auf dem
