@@ -54,15 +54,46 @@ class PlayerViewModelTest {
         chapterIndex = chapter, chapterTitle = "Two", chapterStartSec = chapter * 100.0, chapterEndSec = chapter * 100.0 + 100.0,
     )
 
+    @Test fun seekSteps_comeFromTheController() = runTest {
+        player.state.value = playing(125.0).copy(seekBackSec = 10, seekForwardSec = 60)
+        val s = vm().state.first { it.itemId == "b1" }
+        assertEquals(10, s.seekBackSec)
+        assertEquals(60, s.seekForwardSec)
+    }
+
     @Test fun chapterProgress_isRelativeToChapter() = runTest {
         player.state.value = playing(125.0)
         val s = vm().state.first { it.itemId == "b1" && it.chapters.isNotEmpty() }
         assertEquals(0.25f, s.chapterProgress, 0.001f)
         assertEquals(25.0, s.chapterPositionSec, 0.001)
         assertEquals("00:25", s.chapterElapsedText)
-        assertEquals("01:40", s.chapterTotalText)
-        assertEquals("02:05", s.bookElapsedText)
-        assertEquals("05:00", s.bookTotalText)
+        assertEquals(75.0, s.chapterRemainingSec, 0.001)
+        assertEquals(175.0, s.bookRemainingSec, 0.001)
+    }
+
+    @Test fun splitByChapters_onlyWhenTheChapterIsAPartOfTheBook() = runTest {
+        player.state.value = playing(125.0)
+        assertTrue(vm().state.first { it.itemId == "b1" }.splitByChapters)
+        // No chapter data: the whole book acts as the chapter.
+        player.state.value = PlayerUiState(itemId = "b2", title = "Hörspiel", positionSec = 10.0, durationSec = 3071.0)
+        assertEquals(false, vm().state.first { it.itemId == "b2" }.splitByChapters)
+        // One chapter over the whole book.
+        player.state.value = PlayerUiState(itemId = "b3", title = "Hörspiel", positionSec = 10.0, durationSec = 3071.0, chapterIndex = 0, chapterStartSec = 0.0, chapterEndSec = 3071.0)
+        assertEquals(false, vm().state.first { it.itemId == "b3" }.splitByChapters)
+    }
+
+    @Test fun remainingTime_followsTheSetting_andTheToggleStoresTheOther() = runTest {
+        val mode = MutableStateFlow(io.wolftown.lauschig.settings.RemainingTime.CHAPTER)
+        val stored = mutableListOf<io.wolftown.lauschig.settings.RemainingTime>()
+        val v = viewModels.own(
+            PlayerViewModel(player, chaptersOf = { flowOf(emptyList()) }, remainingTime = mode, setRemainingTime = { stored += it; mode.value = it }),
+        )
+        player.state.value = playing(125.0)
+        assertEquals(io.wolftown.lauschig.settings.RemainingTime.CHAPTER, v.state.first { it.itemId == "b1" }.remainingTime)
+        v.toggleRemainingTime()
+        assertEquals(io.wolftown.lauschig.settings.RemainingTime.BOOK, v.state.first { it.remainingTime == io.wolftown.lauschig.settings.RemainingTime.BOOK }.remainingTime)
+        v.toggleRemainingTime()
+        assertEquals(listOf(io.wolftown.lauschig.settings.RemainingTime.BOOK, io.wolftown.lauschig.settings.RemainingTime.CHAPTER), stored)
     }
 
     @Test fun authorAndSeries_followTheLoadedTitle() = runTest {

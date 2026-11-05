@@ -23,6 +23,9 @@ private val Context.uiDataStore by preferencesDataStore(name = "ui_settings")
 /** Light, dark, or whatever the system uses. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** What the player's right timestamp counts down: the current chapter or the whole book. */
+enum class RemainingTime { CHAPTER, BOOK }
+
 /**
  * The dark theme's palette. [NIGHT_BLUE] is the regular one: the wallpaper's colours when dynamic colour is on (Android
  * 12+), else Lauschig's night blue. [WARM_AMBER] ("Kaminfeuer & Bernstein") is warm mocha, cream and honey amber for
@@ -81,6 +84,15 @@ class UiSettings(private val store: DataStore<Preferences>) {
         }
     }
 
+    /** The player's right timestamp (tap toggles it); the current chapter by default. */
+    val playerRemainingTime: Flow<RemainingTime> = store.data.map { prefs ->
+        prefs[REMAINING_TIME]?.let { runCatching { RemainingTime.valueOf(it) }.getOrNull() } ?: RemainingTime.CHAPTER
+    }.distinctUntilChanged()
+
+    suspend fun setPlayerRemainingTime(mode: RemainingTime) {
+        store.edit { it[REMAINING_TIME] = mode.name }
+    }
+
     /** The versionCode whose "Was ist neu" was seen (or skipped on a first install); null before the first check. */
     val lastSeenVersion: Flow<Int?> = store.data.map { it[LAST_SEEN_VERSION] }.distinctUntilChanged()
 
@@ -120,5 +132,6 @@ class UiSettings(private val store: DataStore<Preferences>) {
         val TABS_HIDDEN = stringSetPreferencesKey("tabs_hidden")
         val START_TAB = stringPreferencesKey("start_tab")
         val LAST_SEEN_VERSION = intPreferencesKey("whats_new_seen_version")
+        val REMAINING_TIME = stringPreferencesKey("player_remaining_time")
     }
 }

@@ -50,7 +50,31 @@ fun sleepDescription(sleep: SleepTimerUi): String = stringResource(
 @Composable
 fun boostLabel(db: Int): String = if (db <= 0) stringResource(R.string.audio_boost_off) else stringResource(R.string.audio_boost_db, db)
 
-/** Sleep timer and audio buttons of the full player's action area, with their sheets. The timer button shows the countdown. */
+/** The Klang tile's value: the boost if one applies, else the night compressor, else skipping silence, else "off". */
+@Composable
+fun soundValue(state: ComfortUiState): String {
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    return when {
+        boost > 0 -> boostLabel(boost)
+        state.compressor -> stringResource(R.string.player_tile_night)
+        state.skipSilence -> stringResource(R.string.player_tile_no_silence)
+        else -> stringResource(R.string.player_tile_off)
+    }
+}
+
+/** Everything the Klang tile has on, for TalkBack ("Klang: +3 dB, Sprachfokus & Nacht-Kompression"). */
+@Composable
+fun soundDescription(state: ComfortUiState): String {
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    val parts = listOfNotNull(
+        boostLabel(boost).takeIf { boost > 0 },
+        stringResource(R.string.audio_compressor).takeIf { state.compressor },
+        stringResource(R.string.audio_skip_silence).takeIf { state.skipSilence },
+    )
+    return stringResource(R.string.player_sound_description, parts.joinToString(", ").ifEmpty { stringResource(R.string.player_tile_off) })
+}
+
+/** The Sleep and Klang tiles of the full player, with their sheets. The Sleep tile shows the time left, warmly lit. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RowScope.ComfortButtons(
@@ -59,33 +83,42 @@ fun RowScope.ComfortButtons(
     onCancelSleep: () -> Unit,
     onSkipSilence: (Boolean) -> Unit,
     onBoost: (Int?) -> Unit,
+    onSleepChime: (Boolean) -> Unit = {},
+    onCompressor: (Boolean) -> Unit = {},
 ) {
     var showSleep by rememberSaveable { mutableStateOf(false) }
     var showAudio by rememberSaveable { mutableStateOf(false) }
     val sleep = state.sleep
-    val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_timer)
-    PlayerAction(
+    val sleepLabel = if (sleep != null) sleepDescription(sleep) else stringResource(R.string.player_sleep_off_description)
+    PlayerTile(
         Icons.Rounded.Bedtime,
-        // The short name fits the narrow button; the description keeps the full one.
-        if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_sleep_short),
+        stringResource(R.string.player_tile_sleep),
+        if (sleep != null) formatCountdown(sleep.remainingMs) else stringResource(R.string.player_tile_off),
         onClick = { showSleep = true },
         active = sleep != null,
+        warm = true,
         modifier = Modifier.testTag("sleepButton").semantics { contentDescription = sleepLabel },
     )
-    PlayerAction(
+    val boost = state.titleBoostDb ?: state.defaultBoostDb
+    val soundLabel = soundDescription(state)
+    PlayerTile(
         Icons.Rounded.GraphicEq,
-        stringResource(R.string.player_audio),
+        stringResource(R.string.player_tile_sound),
+        soundValue(state),
         onClick = { showAudio = true },
-        active = state.skipSilence || (state.titleBoostDb ?: state.defaultBoostDb) > 0,
-        modifier = Modifier.testTag("audioButton"),
+        active = state.skipSilence || state.compressor || boost > 0,
+        modifier = Modifier.testTag("audioButton").semantics { contentDescription = soundLabel },
     )
     if (showSleep) {
         ModalBottomSheet(onDismissRequest = { showSleep = false }) {
-            SleepSheet(state.sleep, onStart = { onStartSleep(it); showSleep = false }, onCancel = { onCancelSleep(); showSleep = false })
+            SleepSheet(
+                state.sleep, state.sleepChime, onStart = { onStartSleep(it); showSleep = false }, onCancel = { onCancelSleep(); showSleep = false },
+                onChime = onSleepChime,
+            )
         }
     }
     if (showAudio) {
-        ModalBottomSheet(onDismissRequest = { showAudio = false }) { AudioSheet(state, onSkipSilence, onBoost) }
+        ModalBottomSheet(onDismissRequest = { showAudio = false }) { AudioSheet(state, onSkipSilence, onBoost, onCompressor) }
     }
 }
 
@@ -104,7 +137,7 @@ fun ShakeHint(state: ComfortUiState, modifier: Modifier = Modifier) {
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCancel: () -> Unit) {
+private fun SleepSheet(sleep: SleepTimerUi?, chime: Boolean, onStart: (SleepMode) -> Unit, onCancel: () -> Unit, onChime: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 16.dp).testTag("sleepSheet")) {
         Text(stringResource(R.string.player_sleep_timer), style = MaterialTheme.typography.titleMedium)
         if (sleep != null) {
@@ -132,6 +165,13 @@ private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCan
                 modifier = Modifier.testTag("sleep:chapter"),
             )
         }
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_sleep_chime)) },
+            supportingContent = { Text(stringResource(R.string.settings_sleep_chime_hint)) },
+            trailingContent = { Switch(checked = chime, onCheckedChange = null) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).selectable(selected = chime, role = Role.Switch) { onChime(!chime) }
+                .testTag("sleepChimeSwitch"),
+        )
         if (sleep != null) {
             TextButton(onClick = onCancel, modifier = Modifier.padding(top = 8.dp).testTag("sleepCancel")) { Text(stringResource(R.string.sleep_cancel)) }
         }
@@ -140,9 +180,16 @@ private fun SleepSheet(sleep: SleepTimerUi?, onStart: (SleepMode) -> Unit, onCan
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun AudioSheet(state: ComfortUiState, onSkipSilence: (Boolean) -> Unit, onBoost: (Int?) -> Unit) {
+private fun AudioSheet(state: ComfortUiState, onSkipSilence: (Boolean) -> Unit, onBoost: (Int?) -> Unit, onCompressor: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp).testTag("audioSheet")) {
-        Text(stringResource(R.string.player_audio), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        Text(stringResource(R.string.player_tile_sound), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.audio_compressor)) },
+            supportingContent = { Text(stringResource(R.string.audio_compressor_hint)) },
+            trailingContent = { Switch(checked = state.compressor, onCheckedChange = null) },
+            modifier = Modifier.fillMaxWidth().selectable(selected = state.compressor, role = Role.Switch) { onCompressor(!state.compressor) }
+                .testTag("compressor"),
+        )
         ListItem(
             headlineContent = { Text(stringResource(R.string.audio_skip_silence)) },
             supportingContent = { Text(stringResource(R.string.audio_skip_silence_hint)) },

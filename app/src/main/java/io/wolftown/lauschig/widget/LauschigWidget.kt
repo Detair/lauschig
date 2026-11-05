@@ -59,8 +59,8 @@ import kotlinx.coroutines.flow.first
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Homescreen widget: cover, play/pause and ±30 s. Two layouts ([SMALL]: cover with play/pause; [WIDE]: cover, title,
- * chapter or author, −30 s, play/pause, +30 s, progress). Buttons are media-button intents straight to
+ * Homescreen widget: cover, play/pause and the seek steps. Two layouts ([SMALL]: cover with play/pause; [WIDE]: cover,
+ * title, chapter or author, back, play/pause, forward, progress). Buttons are media-button intents straight to
  * [PlaybackService] (see [WidgetIntents]), so they work while the app process is dead.
  */
 class LauschigWidget : GlanceAppWidget() {
@@ -123,7 +123,10 @@ object WidgetIntents {
         else -> actionStartActivity(openApp(context, player = false))
     }
 
-    /** ±30 s ([CarSafePlayer][io.wolftown.lauschig.playback.CarSafePlayer] maps rewind/fast-forward to 30 s steps). */
+    /**
+     * Back / forward ([CarSafePlayer][io.wolftown.lauschig.playback.CarSafePlayer] maps rewind / fast-forward to the
+     * seek steps of the settings; the widget's icons show no number, so they never lie about the step).
+     */
     fun step(context: Context, forward: Boolean): Action = actionStartService(
         mediaButton(context, if (forward) KeyEvent.KEYCODE_MEDIA_FAST_FORWARD else KeyEvent.KEYCODE_MEDIA_REWIND),
         isForegroundService = false,
@@ -201,14 +204,14 @@ private fun WideWidget(view: WidgetView, modifier: GlanceModifier, open: Action)
             }
         }
         CircleIconButton(
-            ImageProvider(R.drawable.ic_widget_back_30), context.getString(R.string.widget_back_30),
+            ImageProvider(R.drawable.ic_widget_back), context.getString(R.string.widget_seek_back),
             onClick = WidgetIntents.step(context, forward = false),
             modifier = GlanceModifier.size(40.dp).semantics { testTag = WidgetIntents.TAG_BACK },
             backgroundColor = null, contentColor = GlanceTheme.colors.onSurface,
         )
         PlayPauseButton(view, GlanceModifier.size(44.dp), context)
         CircleIconButton(
-            ImageProvider(R.drawable.ic_widget_forward_30), context.getString(R.string.widget_forward_30),
+            ImageProvider(R.drawable.ic_widget_forward), context.getString(R.string.widget_seek_forward),
             onClick = WidgetIntents.step(context, forward = true),
             modifier = GlanceModifier.size(40.dp).semantics { testTag = WidgetIntents.TAG_FORWARD },
             backgroundColor = null, contentColor = GlanceTheme.colors.onSurface,

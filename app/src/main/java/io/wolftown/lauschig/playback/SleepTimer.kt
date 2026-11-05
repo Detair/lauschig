@@ -12,7 +12,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import io.wolftown.lauschig.settings.PlaybackSettings
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -55,8 +58,9 @@ class AccelerometerShakeSource @Inject constructor(@ApplicationContext context: 
 }
 
 /**
- * App-wide sleep timer (survives leaving the player). Ticks while active, fades the player volume over the last
- * seconds, pauses at the end and listens for a shake only during the last minute. Rules: [SleepTimerMachine].
+ * App-wide sleep timer (survives leaving the player). Ticks while active, plays a soft hint tone 30 s before the end
+ * (if the setting is on), fades the player volume over the last seconds, pauses at the end and listens for a shake
+ * only during the last minute. Rules: [SleepTimerMachine].
  */
 @Singleton
 class SleepTimer(
@@ -67,9 +71,21 @@ class SleepTimer(
     private val tickMs: Long = 250,
     /** Called after a shake extended the timer (haptic feedback). */
     private val onExtended: () -> Unit = {},
+    /** The hint tone 30 s before the end ([SleepEffect.playChime]). */
+    private val chime: SleepChime = SleepChime {},
+    /** The setting "hint tone before the end". */
+    chimeEnabled: Flow<Boolean> = flowOf(true),
 ) {
-    @Inject constructor(player: PlayerController, shakes: AccelerometerShakeSource, @ApplicationContext context: Context) :
-        this(player, shakes, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), onExtended = { vibrate(context) })
+    @Inject constructor(
+        player: PlayerController,
+        shakes: AccelerometerShakeSource,
+        @ApplicationContext context: Context,
+        chime: AudioTrackChime,
+        settings: PlaybackSettings,
+    ) : this(
+        player, shakes, CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), onExtended = { vibrate(context) },
+        chime = chime, chimeEnabled = settings.sleepChime,
+    )
 
     private val machine = SleepTimerMachine()
     private val _state = MutableStateFlow<SleepTimerUi?>(null)
@@ -79,6 +95,11 @@ class SleepTimer(
     private var listening = false
     /** The title the timer last ticked for; another one re-arms chapter mode. */
     private var itemId: String? = null
+    private var chimeOn = true
+
+    init {
+        scope.launch { chimeEnabled.collect { chimeOn = it } }
+    }
 
     fun start(mode: SleepMode) {
         itemId = player.state.value.itemId
@@ -114,6 +135,7 @@ class SleepTimer(
         // Near the end the poll of the controller is too coarse: read the player now.
         if ((machine.remainingMs(input()) ?: Long.MAX_VALUE) <= machine.fadeMs + 2 * tickMs) player.refreshNow()
         val effect = machine.tick(input(), deltaMs)
+        if (effect.playChime && chimeOn) chime.play()
         if (effect.pause) {
             player.pause()
             finish()

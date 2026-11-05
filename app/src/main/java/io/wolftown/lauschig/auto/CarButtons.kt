@@ -8,21 +8,29 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.SleepMode
+import io.wolftown.lauschig.settings.PlaybackSettings
 import java.text.NumberFormat
 import kotlin.math.abs
 
 /**
- * The media buttons of the session (Android Auto, notification, system media controls): ±30 s in the back/forward
- * slots instead of previous/next file, then speed, sleep timer and chapter jumps. Labels and icons follow the state.
+ * The media buttons of the session (Android Auto, notification, system media controls): the seek steps of the settings
+ * in the back/forward slots instead of previous/next file, then speed, sleep timer and chapter jumps. Labels and icons
+ * follow the state.
  */
 @OptIn(UnstableApi::class)
 class CarButtons(private val res: Resources) {
     /** What the buttons show; a new value means new buttons. */
-    data class State(val speed: Float, val sleep: SleepMode?, val hasChapters: Boolean)
+    data class State(
+        val speed: Float,
+        val sleep: SleepMode?,
+        val hasChapters: Boolean,
+        val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
+        val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
+    )
 
     fun buttons(state: State): List<CommandButton> = buildList {
-        add(button(CommandButton.ICON_SKIP_BACK_30, R.string.car_seek_back, SEEK_BACK, CommandButton.SLOT_BACK))
-        add(button(CommandButton.ICON_SKIP_FORWARD_30, R.string.car_seek_forward, SEEK_FORWARD, CommandButton.SLOT_FORWARD))
+        add(seekButton(state.seekBackSec, forward = false))
+        add(seekButton(state.seekForwardSec, forward = true))
         add(
             CommandButton.Builder(speedIcon(state.speed))
                 .setDisplayName(res.getString(R.string.car_speed, speedText(state.speed)))
@@ -43,6 +51,12 @@ class CarButtons(private val res: Resources) {
             add(button(CommandButton.ICON_NEXT, R.string.car_chapter_next, CHAPTER_NEXT, CommandButton.SLOT_OVERFLOW))
         }
     }
+
+    private fun seekButton(sec: Int, forward: Boolean) = CommandButton.Builder(seekIcon(sec, forward))
+        .setDisplayName(res.getQuantityString(if (forward) R.plurals.car_seek_forward else R.plurals.car_seek_back, sec, sec))
+        .setSessionCommand(command(if (forward) SEEK_FORWARD else SEEK_BACK))
+        .setSlots(if (forward) CommandButton.SLOT_FORWARD else CommandButton.SLOT_BACK)
+        .build()
 
     private fun button(icon: Int, label: Int, action: String, slot: Int) = CommandButton.Builder(icon)
         .setDisplayName(res.getString(label))
@@ -70,9 +84,20 @@ class CarButtons(private val res: Resources) {
         const val CHAPTER_NEXT = "io.wolftown.lauschig.CHAPTER_NEXT"
         val ACTIONS = listOf(SEEK_BACK, SEEK_FORWARD, SPEED, SLEEP, CHAPTER_BACK, CHAPTER_NEXT)
 
-        const val SEEK_MS = 30_000L
-
         fun command(action: String) = SessionCommand(action, Bundle.EMPTY)
+
+        /** The built-in icon with the number of seconds where there is one (5, 10, 15, 30), else the plain arrow. */
+        fun seekIcon(sec: Int, forward: Boolean): Int = (if (forward) FORWARD_ICONS else BACK_ICONS)[sec]
+            ?: if (forward) CommandButton.ICON_SKIP_FORWARD else CommandButton.ICON_SKIP_BACK
+
+        private val BACK_ICONS = mapOf(
+            5 to CommandButton.ICON_SKIP_BACK_5, 10 to CommandButton.ICON_SKIP_BACK_10,
+            15 to CommandButton.ICON_SKIP_BACK_15, 30 to CommandButton.ICON_SKIP_BACK_30,
+        )
+        private val FORWARD_ICONS = mapOf(
+            5 to CommandButton.ICON_SKIP_FORWARD_5, 10 to CommandButton.ICON_SKIP_FORWARD_10,
+            15 to CommandButton.ICON_SKIP_FORWARD_15, 30 to CommandButton.ICON_SKIP_FORWARD_30,
+        )
 
         /** The built-in speed icons where one matches the speed, else the generic one. */
         fun speedIcon(speed: Float): Int = SPEED_ICONS.entries.firstOrNull { abs(it.key - speed) < 0.01f }?.value ?: CommandButton.ICON_PLAYBACK_SPEED

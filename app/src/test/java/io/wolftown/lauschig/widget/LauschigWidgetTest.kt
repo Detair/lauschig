@@ -56,8 +56,8 @@ class LauschigWidgetTest {
             .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_REWIND), isForegroundService = false)
         onNode(hasTestTag(WidgetIntents.TAG_FORWARD))
             .assertHasStartServiceClickAction(WidgetIntents.mediaButton(context, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD), isForegroundService = false)
-        onNode(hasContentDescription("Back 30 seconds")).assertExists()
-        onNode(hasContentDescription("Forward 30 seconds")).assertExists()
+        onNode(hasContentDescription("Skip back")).assertExists()
+        onNode(hasContentDescription("Skip forward")).assertExists()
         onNode(hasContentDescription("Open Die drei ??? in Lauschig")).assertExists()
     }
 
