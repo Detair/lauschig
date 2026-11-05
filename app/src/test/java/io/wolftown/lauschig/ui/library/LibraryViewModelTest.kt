@@ -14,6 +14,13 @@ import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.ui.common.CoverPathCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import io.wolftown.lauschig.catalog.Catalog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -69,10 +76,11 @@ class LibraryViewModelTest {
     private fun vm(
         prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
         signedIn: Boolean = true,
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
     ): LibraryViewModel {
         val store = FakeAccountStore()
         if (signedIn) store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
-        return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao()))
+        return viewModels.own(LibraryViewModel(store, db.itemDao(), db.libraryDao(), db.progressDao(), CoverPathCache(DownloadFiles(dlRoot, db.audioFileDao())) { statChecks.incrementAndGet(); it.isFile && it.length() > 0 }, prefs, db.downloadDao(), Catalog(), dispatcher))
     }
 
     private fun item(id: String, lib: String = "lib1", title: String = id, series: String? = null, seq: String? = null, key: Double? = null, tags: List<String> = emptyList()) =
@@ -242,5 +250,49 @@ class LibraryViewModelTest {
         val s = vm.await { it.tab == LibraryTab.Series && it.selectedTag != null }
         assertEquals(listOf("Saga"), s.series.map { it.name })
         assertEquals(listOf("s1"), s.series.single().items.map { it.id })
+    }
+
+    @Test fun playbackTicks_doNotRecomputeTheListEveryWrite_butUserActionsAreImmediate() = runBlocking {
+        // Own scheduler, moved only by this test: runTest would skip virtual time ahead whenever the body waits for Room.
+        val scheduler = TestCoroutineScheduler()
+        libs()
+        db.itemDao().upsertFromList(listOf(item("a"), item("b")))
+        listen("a", t = 10.0, last = 1)
+        listen("b", t = 5.0, last = 1)
+        // The throttle window runs on this dispatcher: virtual time, nothing here waits on the wall clock.
+        val vm = vm(dispatcher = UnconfinedTestDispatcher(scheduler))
+        val emissions = java.util.concurrent.atomic.AtomicInteger()
+        val collector = CoroutineScope(UnconfinedTestDispatcher(scheduler)).launch { vm.state.collect { if (it.loaded) emissions.incrementAndGet() } }
+        // Tells the test when Room has delivered a progress write (so the write really reached the observers).
+        val written = Channel<Unit>(Channel.UNLIMITED)
+        val watcher = CoroutineScope(Dispatchers.Default).launch { db.progressDao().observeAll(sid).collect { written.trySend(Unit) } }
+        try {
+            vm.await { it.items.map { i -> i.id }.toSet() == setOf("a", "b") }
+            withContext(Dispatchers.Default) { withTimeout(10_000) { written.receive() } } // the initial value
+            scheduler.advanceTimeBy(2_000)
+            val before = emissions.get()
+            // 20 position writes of the playing title, 100 ms (virtual) apart.
+            val ticks = 20
+            repeat(ticks) { n ->
+                db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "a", 11.0 + n, 100.0, false, 100L + n, false)))
+                withContext(Dispatchers.Default) { withTimeout(10_000) { written.receive() } }
+                scheduler.advanceTimeBy(100)
+            }
+            // The newest position arrives once the window ends.
+            scheduler.advanceTimeBy(2_000)
+            vm.await { s -> s.items.first { it.id == "a" }.let { (it.progress ?: 0f) > 0.25f } }
+            val during = emissions.get() - before
+            println("MEASURE emissions for $ticks progress writes: $during (before the throttle: one per write)")
+            // 2 s of ticks + the closing window: at most a handful, far from one per write.
+            assertTrue("$during emissions for $ticks writes", during <= 4)
+
+            // A user action is not held back: "a" is marked finished and leaves the tab without any virtual time passing.
+            db.progressDao().mergeFromServer(listOf(ProgressEntity(sid, "a", 100.0, 100.0, true, 1_000L, false)))
+            val after = vm.await { s -> s.items.none { it.id == "a" } }
+            assertEquals(listOf("b"), after.items.map { it.id })
+        } finally {
+            watcher.cancel()
+            collector.cancel()
+        }
     }
 }

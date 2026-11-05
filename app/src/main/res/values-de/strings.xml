@@ -773,6 +773,7 @@
         <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
         <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
         <item>Statistik: Balken antippen oder darüberwischen zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
+        <item>Schnellere Suche, Cover bleiben nach dem Neustart gespeichert, Listen flackern beim Hören nicht mehr</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>

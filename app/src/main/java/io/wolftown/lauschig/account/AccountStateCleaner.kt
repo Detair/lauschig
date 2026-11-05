@@ -8,6 +8,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.download.DownloadPrompts
 import io.wolftown.lauschig.rmab.RmabRepository
+import io.wolftown.lauschig.ui.common.deleteLegacyCoverCaches
 import io.wolftown.lauschig.ui.search.RecentSearches
 import io.wolftown.lauschig.ui.setup.OidcSignIn
 import kotlinx.coroutines.CancellationException
@@ -43,7 +44,11 @@ class AccountStateCleaner(
         clearImageCaches = {
             val images = SingletonImageLoader.get(context)
             images.memoryCache?.clear()
-            withContext(Dispatchers.IO) { images.diskCache?.clear() }
+            withContext(Dispatchers.IO) {
+                images.diskCache?.clear()
+                // An old install's default cache must not outlive the sign-out either.
+                deleteLegacyCoverCaches(context)
+            }
         },
         cancelNotifications = { NotificationManagerCompat.from(context).cancel(CleanupReminderWorker.NOTIFICATION_ID) },
     )

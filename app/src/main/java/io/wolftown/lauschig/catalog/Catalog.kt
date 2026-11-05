@@ -128,7 +128,13 @@ class Catalog @Inject constructor() {
      * Word-prefix search, ignoring case and diacritics. Every query word must prefix a word of the title, subtitle,
      * author, narrator or series; hits in the title come first, then by title. Facets match on their own name.
      */
-    fun search(items: List<ItemEntity>, query: String): SearchResult {
+    fun search(items: List<ItemEntity>, query: String): SearchResult = search(items, facets(items), query)
+
+    /**
+     * Same as [search], but with [facets] computed by the caller (`facets(items)` for exactly these [items]). The facet
+     * extraction walks the whole catalog; callers that search on every keystroke compute it once per catalog change.
+     */
+    fun search(items: List<ItemEntity>, facets: Facets, query: String): SearchResult {
         val tokens = words(query)
         if (tokens.isEmpty()) return SearchResult(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
 
@@ -144,7 +150,6 @@ class Catalog @Inject constructor() {
             }
         }
         val order = compareBy<ItemEntity> { it.title.lowercase() }
-        val facets = facets(items)
         fun List<Facet>.hits() = filter { matches(tokens, words(it.name)) }
         return SearchResult(
             titles = titleHits.sortedWith(order) + otherHits.sortedWith(order),
