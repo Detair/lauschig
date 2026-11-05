@@ -812,6 +812,14 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_5_0">
+        <item>Mehrere Profile auf einem Gerät: In den Einstellungen wechselst du zwischen Konten, ohne dich abzumelden</item>
+        <item>Fortschritt, Downloads, RMAB-Verbindung und letzte Suchen bleiben bei ihrem Profil; ein Wechsel löscht nichts</item>
+        <item>Beim Wechsel pausiert die Wiedergabe, dein Fortschritt wird gesichert, und nichts startet von selbst</item>
+        <item>Profil hinzufügen: Die Serveradresse ist schon eingetragen, praktisch für die Familie auf einem Server</item>
+        <item>Nach dem Abmelden fragt die App „Wer hört zu?“, wenn weitere Profile da sind</item>
+        <item>Die Downloads-Seite zeigt, wie viel Platz die anderen Profile belegen</item>
+    </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Sprungzeiten einstellbar: zurück 5–30 s, vor 15–60 s – im Player, in der Benachrichtigung, im Auto und am Kopfhörer</item>
         <item>Player: Tempo, Sleep und Klang als drei gleiche Kacheln; Kapitel, Warteschlange, Lesezeichen und Verlauf in einem Blatt</item>

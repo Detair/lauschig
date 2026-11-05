@@ -812,6 +812,14 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_5_0">
+        <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
+        <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
+        <item>A switch pauses playback and saves your progress, and nothing starts by itself</item>
+        <item>Add a profile: the server address is already filled in, handy for a family on one server</item>
+        <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
+        <item>The downloads page shows how much space the other profiles take</item>
+    </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>
         <item>Player: speed, sleep and sound as three equal tiles; chapters, queue, bookmarks and history in one sheet</item>
