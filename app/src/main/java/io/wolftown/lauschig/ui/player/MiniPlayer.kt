@@ -18,7 +18,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,9 +48,20 @@ import io.wolftown.lauschig.ui.theme.coverTintTarget
 /** Height/width of the Play/Pause hit area, shared with the full player's secondary buttons' minimum. */
 val MiniToggleSize = 56.dp
 
+/** An upward swipe of at least this much opens the full player … */
+private val OPEN_SWIPE = 40.dp
+
+/** … or a quick flick up of at least this speed (per second). */
+private val OPEN_FLICK = 600.dp
+
+/** Whether a vertical drag of [dragPx] (negative: up) released at [velocityPx] per second opens the player. */
+internal fun opensPlayer(dragPx: Float, velocityPx: Float, swipePx: Float, flickPx: Float): Boolean =
+    dragPx < 0f && (-dragPx >= swipePx || -velocityPx >= flickPx)
+
 /**
  * Persistent bar above the bottom navigation, tinted with the cover's colour; a thin line along its top edge shows the
- * chapter's progress. Renders nothing while no item is loaded.
+ * chapter's progress. A tap on the title or an upward swipe anywhere on the bar opens the full player (which then slides
+ * up as for a tap); the play button still toggles on a tap. Renders nothing while no item is loaded.
  */
 @Composable
 fun MiniPlayer(
@@ -67,8 +85,22 @@ fun MiniPlayer(
     val scheme = MaterialTheme.colorScheme
     val target = coverTintTarget(model, coverVersion ?: 0, scheme.surfaceContainerHigh)
     val container by animateColorAsState(target, tween(TINT_FADE_MS), label = "miniTint")
+    // Swipe up to open: the drag is summed and judged on release, so a tap (no drag) stays a tap.
+    val density = LocalDensity.current
+    var dragged by remember { mutableFloatStateOf(0f) }
+    val drag = rememberDraggableState { dragged += it }
+    val swipe = Modifier.draggable(
+        drag,
+        Orientation.Vertical,
+        onDragStarted = { dragged = 0f },
+        onDragStopped = { velocity ->
+            val open = with(density) { opensPlayer(dragged, velocity, OPEN_SWIPE.toPx(), OPEN_FLICK.toPx()) }
+            dragged = 0f
+            if (open) onOpen()
+        },
+    )
     // The tinted bar sets its text colour itself (a blended colour is no theme role) and keeps the line at 3:1.
-    Surface(modifier.fillMaxWidth().testTag("miniPlayer"), color = container, contentColor = scheme.onSurface) {
+    Surface(modifier.fillMaxWidth().then(swipe).testTag("miniPlayer"), color = container, contentColor = scheme.onSurface) {
         Column {
             ProgressLine({ progress }, Modifier.testTag("miniProgress"), color = scheme.controlColorOn(target))
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
