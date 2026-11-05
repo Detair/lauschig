@@ -105,7 +105,7 @@ fun RowScope.PlayerTile(
 fun SeekIcon(seconds: Int, forward: Boolean, size: Dp, modifier: Modifier = Modifier) {
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.Replay, contentDescription = null, modifier = Modifier.size(size).scale(scaleX = if (forward) -1f else 1f, scaleY = 1f))
-        val digits = with(LocalDensity.current) { (size * if (seconds >= 10) 0.30f else 0.34f).toSp() }
+        val digits = with(LocalDensity.current) { (size * if (seconds >= 10) 0.26f else 0.30f).toSp() }
         Text(
             seconds.toString(),
             style = TextStyle(fontSize = digits, fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum", lineHeight = digits),

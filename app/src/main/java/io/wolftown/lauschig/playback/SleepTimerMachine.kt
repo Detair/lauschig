@@ -17,8 +17,11 @@ data class SleepInput(
     val durationSec: Double = 0.0,
 )
 
-/** [volume] for the player now; [pause]: the timer ran out (pause first, then restore the volume). */
-data class SleepEffect(val volume: Float, val pause: Boolean)
+/**
+ * [volume] for the player now; [pause]: the timer ran out (pause first, then restore the volume); [playChime]: the
+ * timer just reached its last [SleepTimerMachine.chimeMs] while playing – time for the soft hint tone.
+ */
+data class SleepEffect(val volume: Float, val pause: Boolean, val playChime: Boolean = false)
 
 /**
  * Pure sleep timer state. The glue ([SleepTimer]) feeds it the player state every few hundred ms.
@@ -28,10 +31,13 @@ data class SleepEffect(val volume: Float, val pause: Boolean)
  *   the end to the new chapter, playing across it ends the timer.
  * - The last [fadeMs] fade out with `(remaining / fade)²`; a shake within the last [shakeWindowMs] extends by the
  *   chosen minutes, or by one chapter.
+ * - Crossing [chimeMs] left while playing asks for one hint tone ([SleepEffect.playChime]); after an extension (shake,
+ *   a jump back) the next crossing asks again. A timer that starts with less left never chimes: its listener just set it.
  */
 class SleepTimerMachine(
     val fadeMs: Long = FADE_MS,
     val shakeWindowMs: Long = SHAKE_WINDOW_MS,
+    val chimeMs: Long = CHIME_MS,
     /** Chapter mode ends this close to the chapter end (ticks are not exact). */
     private val endSlackMs: Long = 300,
 ) {
@@ -41,6 +47,8 @@ class SleepTimerMachine(
     private var endIndex = -1
     private var lastPos = 0.0
     private var pausedMs = 0L
+    /** More than [chimeMs] were left since the last chime (or the start): the next crossing chimes. */
+    private var chimeArmed = false
 
     val isActive get() = mode != null
 
@@ -52,6 +60,7 @@ class SleepTimerMachine(
         }
         lastPos = input.positionSec
         pausedMs = 0
+        chimeArmed = (remainingMs(input) ?: 0) > chimeMs
     }
 
     /** Another title was loaded: chapter mode now ends after its current chapter; minutes mode just goes on. */
@@ -109,7 +118,13 @@ class SleepTimerMachine(
             mode = null
             return SleepEffect(1f, pause = true)
         }
-        return SleepEffect(volumeFor(left), pause = false)
+        var chime = false
+        if (left > chimeMs) chimeArmed = true
+        else if (chimeArmed) {
+            chimeArmed = false
+            chime = input.isPlaying // into a pause no sound: whoever paused is awake
+        }
+        return SleepEffect(volumeFor(left), pause = false, playChime = chime)
     }
 
     /** Extends the timer if it is in its last minute; true if it did. */
@@ -138,6 +153,8 @@ class SleepTimerMachine(
     companion object {
         const val FADE_MS = 10_000L
         const val SHAKE_WINDOW_MS = 60_000L
+        /** The hint tone this long before the end: time to shake before the fade begins. */
+        const val CHIME_MS = 30_000L
         /** Minutes mode turns itself off after this much continuous pause. */
         const val MAX_PAUSE_MS = 10 * 60_000L
         private const val CROSS_SLACK_SEC = 1.5

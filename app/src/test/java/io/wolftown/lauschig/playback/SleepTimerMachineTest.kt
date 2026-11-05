@@ -149,4 +149,46 @@ class SleepTimerMachineTest {
         assertEquals(40_000L, m.remainingMs(other))
         assertFalse(m.tick(other, 250).pause)
     }
+
+    @Test fun chime_onceWhenThirtySecondsAreLeft() {
+        m.start(SleepMode.Minutes(1), playing())
+        assertFalse(m.tick(playing(), 29_000).playChime) // 31 s left
+        assertTrue(m.tick(playing(), 2_000).playChime) // 29 s left: the hint
+        assertFalse(m.tick(playing(), 1_000).playChime) // only once
+        assertFalse(m.tick(playing(), 20_000).playChime) // into the fade
+    }
+
+    @Test fun chime_alsoWhenOneTickJumpsAcrossTheThreshold() {
+        m.start(SleepMode.Minutes(1), playing())
+        assertTrue(m.tick(playing(), 55_000).playChime)
+    }
+
+    @Test fun chime_againAfterAShakeExtendedTheTimer() {
+        m.start(SleepMode.Minutes(1), playing())
+        assertTrue(m.tick(playing(), 35_000).playChime) // 25 s left
+        assertTrue(m.shake(playing())) // 85 s left
+        assertFalse(m.tick(playing(), 50_000).playChime) // 35 s left
+        assertTrue(m.tick(playing(), 10_000).playChime) // 25 s left again
+    }
+
+    @Test fun chime_notForATimerStartedWithLessThanThirtySecondsLeft() {
+        val ends = listOf(100.0, 200.0)
+        m.start(SleepMode.EndOfChapter, playing(pos = 80.0, chapter = 0, ends = ends))
+        assertFalse(m.tick(playing(pos = 81.0, chapter = 0, ends = ends), 1_000).playChime)
+        assertFalse(m.tick(playing(pos = 90.0, chapter = 0, ends = ends), 9_000).playChime)
+    }
+
+    @Test fun chime_chapterMode_whenTheChapterEndComesNear() {
+        val ends = listOf(100.0, 200.0)
+        m.start(SleepMode.EndOfChapter, playing(pos = 50.0, chapter = 0, ends = ends))
+        assertFalse(m.tick(playing(pos = 69.0, chapter = 0, ends = ends), 19_000).playChime) // 31 s left
+        assertTrue(m.tick(playing(pos = 71.0, chapter = 0, ends = ends), 2_000).playChime) // 29 s left
+    }
+
+    @Test fun chime_notWhilePaused() {
+        val ends = listOf(100.0, 200.0)
+        m.start(SleepMode.EndOfChapter, playing(pos = 50.0, chapter = 0, ends = ends))
+        // Jumped close to the end while paused: no sound into the silence.
+        assertFalse(m.tick(playing(pos = 90.0, chapter = 0, ends = ends).copy(isPlaying = false), 250).playChime)
+    }
 }
