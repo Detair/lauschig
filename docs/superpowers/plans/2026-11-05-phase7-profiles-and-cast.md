@@ -298,3 +298,47 @@ Fünf kleine Befunde, alle übernommen, weil die Vorgabe wörtlich gilt: „kein
 **Emulator 5554 (Build 70858bc, root):** „Der Anfang“ nach Löschen des Downloads gestreamt: `PLAYING`, Server-Log „User root requested download“ ohne Fehler, keine `AccountChangedException`.
 
 **Noch offen:** die Medientaste im Hintergrund unter Android 15 (Fix-Runde 1, neuer Befund); sie braucht eine eigene Entscheidung.
+
+## Umsetzung Task 2 (2026-11-05)
+
+Branch `p7-profiles`, Version 0.5.0 / versionCode 5, keine Schemaänderung (Room bleibt v11). Nur eine neue Vorgabe am Store: `AccountStore.savedNeedingReauth`.
+
+- **Abbau der Seiten (2.2, Review Focus 1).** `AccountPages` (`ui/nav`): Je Konto ein eigener `NavController` unter `key(owner)`, und die ViewModels seiner Seiten in einem eigenen `ViewModelStore` (`AccountPagesScope`, lebt wie die Activity-ViewModels über das Drehen hinweg). Kommt ein anderes Konto, sind in einem Schritt weg: die Seite auf dem Schirm, ihr gemerkter Zustand, die weggespeicherten Tabs und jedes ViewModel. Nur nach dem Konto zu schlüsseln hätte nicht gereicht: Die Navigation hält die Stores ihrer Einträge in dem ihr gegebenen Store, A's ViewModels lebten bis zum Ende der Activity weiter (Mutation im Test: rot). Der alte Controller wird vom Lebenszyklus der Activity gelöst.
+  - `MainViewModel.pages` sagt, wessen Seiten es sind und wo sie beginnen (`AppPages`), vom ersten lokalen Lesen an; ein Wechsel, ein Abmelden und eine erste Anmeldung bedeuten neue Seiten. `MainActivity` sammelt das ohne Lebenszyklus, damit das erste Bild nach einer Pause schon dem aktiven Konto gehört. `showSignIn` ist damit weg.
+  - **`YearReviewViewModel.builds()` und die Vorbelegung in `SetupViewModel` lesen das Konto weiter nur einmal.** Beide sind Seiten-ViewModels und enden mit dem Konto; der erste Wert ist also immer der richtige (`AccountPagesTest`, `reauth_afterASwitch_…`). Ein Formular, das beim Kontowechsel verschwindet, startet seinen Sync trotzdem (`NonCancellable`, Test).
+  - **Claudes Wahl – kein Animieren:** Die neuen Seiten sind einfach da; eine Überblendung hieße, A's Seite noch 700 ms laufen zu lassen.
+- **„Wechsle zu …“ (2.2).** `ProfileOperations` (Singleton, eigener Scope, nicht der Main-Thread): Wechsel und Entfernen laufen für den ganzen Prozess, eins nach dem anderen; `running` und `outcome` sind für jeden Bildschirm da, wie oft er auch neu entsteht.
+  - `ProfileBusyDialog` liegt außerhalb der Seiten, nimmt weder Eingabe noch „Zurück“ an und bleibt über den Moment des Wechsels stehen. Nach 5 s sagt eine zweite Zeile, dass es länger dauert (Live-Region).
+  - Die Snackbar nennt das neue Profil. **Claudes Wahl:** Als erledigt gilt sie erst, wenn sie zu Ende gezeigt ist; beim Drehen in diesem Moment erscheint sie lieber zweimal, als dass sie verloren geht.
+  - Auf einen laufenden Wechsel setzt nichts auf: `switchTo`/`remove` lehnen ab, `AccountSectionViewModel.startSignOut` auch; `add` wartet, weil die Anmeldung schon geschehen ist.
+- **2.1 Blatt, Zeile, Avatar.** `ProfilesViewModel`, `ProfilesSheet`, gehostet in `AppRoot`, damit Einstellungen und Startseite dasselbe öffnen. Der Offen-Zustand überlebt das Drehen.
+  - **Claudes Wahl – die Kontozeile wird zur Profilzeile:** „Profil: Name · Server“, darunter „Admin · Wechseln oder hinzufügen“, und sie öffnet das Blatt. Eine neue Zeile neben der alten hätte dasselbe zweimal gesagt.
+  - **Claudes Wahl – feste Reihenfolge:** alphabetisch, nicht nach aktivem Profil; sonst springen die Zeilen bei jedem Wechsel. Tippen auf das aktive Profil schließt nur das Blatt.
+  - Avatar: `placeholderToneFor(serverId)`, Initialen für TalkBack ausgeblendet. Der Hinweis „Neu anmelden nötig“ gilt je Profil (`savedNeedingReauth`).
+  - **Stelle für Task 3:** `ProfilesViewModel.throughGate`. Wechsel, Picker und Entfernen gehen alle dort durch; sie tut noch nichts.
+- **2.3 Profil hinzufügen (Review Focus 4, 5).** `Setup` ist jetzt `data class Setup(mode: SetupMode)`, das `SetupViewModel` liest den Modus aus der Route (`setupMode`). Adressen des aktiven Kontos stehen im Formular, eine schon bestätigte `http://`-Adresse wird nicht erneut erfragt.
+  - **SSO:** Der Modus steht zusätzlich im gespeicherten Versuch (`OidcFlowContext.addProfile`) und entscheidet beim Rücksprung, egal wie das Formular zurückkam. Kommt die Antwort, und kein Formular ist da (Prozess-Tod ohne gespeicherte Seite), öffnet `SsoReturnViewModel` eines; ein fremder Link öffnet nichts.
+  - **Claudes Wahl:** `complete` geht über `ProfileOperations.add`: gleiche Anzeige wie ein Wechsel, und das Formular darf dabei verschwinden. Schlägt das Speichern fehl, zeigt das Formular `SAVE_FAILED`, das aktive Konto bleibt.
+  - **Claudes Wahl:** Aus dem Picker (kein aktives Konto) kommen die Adressen vom ersten gespeicherten Profil; die WLAN-Bindung kommt mit den Adressen mit.
+  - **Claudes Wahl – abgelaufenes Konto:** Der Hinweis im Blatt und das vorhandene Band „Erneut anmelden“ nach der Rückkehr, das Formular ist mit genau diesem Konto vorbelegt. Es öffnet sich nicht von selbst: Offline hörbare Titel bleiben nutzbar, wie überall in der App.
+- **2.4 Entfernen.** Dialog mit Größe der Downloads. **Claudes Wahl – zusätzlich:** Er nennt auch, was verloren geht und noch nicht auf dem Server ist, und die fehlende SD-Karte, wie der Abmelde-Dialog. Vor dem Lesen dieser Angaben lässt er sich nicht bestätigen.
+- **2.5 Picker.** `ProfilePickerScreen`, von `MainViewModel` als Start der Seiten ohne aktives Konto mit gespeicherten Profilen. **Claudes Wahl:** Entfernen geht auch dort; nach dem letzten kommt die Anmeldeseite.
+- **2.6 Downloads.** Eine Zeile „Andere Profile auf diesem Gerät: …“. **Claudes Wahl:** Die Zahl steckt nicht in „belegt“; sie kommt dazu. Ein nicht lesbares Verzeichnis zählt als nichts.
+- **2.7** `local_add_folder_hint` sagt „auf diesem Gerät“ (DE und EN). Die übrigen „Handy“-Texte meinen das Schütteln, das Auto oder stehen in alten Versionshinweisen und bleiben.
+- **2.8** 0.5.0, `Release(5, …)`. Task 3 ergänzt seine Zeile in `whatsnew_0_5_0`.
+- **2.9 Wizard.** `ui/welcome`, drei Seiten; die mittlere sagt klar, dass ein eigener Audiobookshelf-Server nötig ist. Die Seite steht im `SavedStateHandle` der Route, „gesehen“ in `UiSettings` erst am Ende oder beim Überspringen.
+  - `welcomeIsDue`: Nicht gesehen, und kein Zeichen einer älteren Version: weder meldet Android ein Update, noch ist die gespeicherte „Was ist neu“-Nummer älter als die laufende. Die Nummer der laufenden Version zählt nicht, sie steht schon nach dem ersten Start.
+  - **Claudes Wahl:** Nur beim Start des Prozesses gefragt, nur ohne Konto und ohne gespeichertes Profil. Kein Wischen: Knöpfe und die Zurück-Taste, das sind weniger Zustände und für TalkBack klarer. Ein Fehler beim Merken hält nicht von der Anmeldung ab.
+
+**Tests:** App 2035 (119 mehr als zuvor; `SignOutNavigationTest` mit seinen 3 ging in `AccountPagesTest` auf), abs-api 48, core:model 3, core:database 66, keine Fehler. Neu: `AccountPagesTest` (12), `ProfileOperationsTest` (13), `ProfilesViewModelTest` (17), `ProfilesScreensTest` (19), `SetupRouteModeTest` (3), `SetupScreenTest` (3), `SsoReturnViewModelTest` (3), `WelcomeViewModelTest` (6), `WelcomeScreenTest` (5); dazu in `SetupViewModelTest` (+16), `MainViewModelTest` (+13), `ProfileSwitchFlowTest` (+1: was die Bildschirme durch einen echten Wechsel sehen) und weiteren. Wo Test und Code im selben Schritt entstanden, zeigen Mutationen, dass die Tests greifen (Bericht).
+
+**Emulator 5554:** Update über die installierte 0.4.0, angemeldet als root: kein Wizard, „Was ist neu“ 0.5.0, Startseite unverändert, Profilzeile. Blatt und Formular Handy hoch, quer und breit (1600×1000), deutsch und englisch. Das Formular überlebt das Drehen und einen echten Prozess-Tod im Modus, „Zurück“ führt in die Einstellungen. Saubere Installation: Wizard deutsch und englisch, Handy hoch und quer, breit, Seite überlebt Drehen und Prozess-Tod, unbeendet erscheint er wieder, nach dem Überspringen und nach der letzten Seite nicht mehr.
+
+**Noch offen, im Gerätedurchlauf mit zwei Benutzern:** alles, was ein zweites angemeldetes Konto braucht. Liste im Bericht.
+
+### Was Task 3 wissen muss
+
+- Das Tor gehört in `ProfilesViewModel.throughGate`; es ist heute synchron und muss für eine Abfrage asynchron werden. Blatt und Picker benutzen dasselbe ViewModel.
+- `SetupMode` bekommt `UNLOCK`, `Setup` dazu eine `serverId`, und `OidcFlowContext` muss den Modus für den SSO-Rücksprung mitführen wie heute `addProfile`.
+- `ProfileOperations` startet nichts, solange etwas läuft: Die Abfrage kommt also vor `switchTo`/`remove`, nicht darin.
+- `whatsnew_0_5_0` braucht noch die Zeile zum Schutz.

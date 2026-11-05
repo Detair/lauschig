@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.nav
 
+import androidx.annotation.Keep
 import kotlinx.serialization.Serializable
 
 @Serializable data object Start
@@ -16,6 +17,7 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 @Serializable data class Collection(val id: String)
 @Serializable data object Player
 /** Why the sign-in form is open. */
+@Keep
 enum class SetupMode {
     /** The first sign-in, or a re-auth of the active account. */
     SIGN_IN,
