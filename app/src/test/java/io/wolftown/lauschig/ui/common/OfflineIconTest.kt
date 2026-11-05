@@ -6,10 +6,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.player.PlaySource
 import io.wolftown.lauschig.ui.player.sourceIcon
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -43,7 +45,10 @@ class OfflineIconTest {
         rule.setContent { LauschigTheme { DownloadIconButton(QuickDownload.Complete, onDownload = {}, onDelete = { deleted++ }) } }
         rule.onNodeWithContentDescription("Available on this device").assertIsDisplayed()
         rule.onNodeWithTag("downloadButton").performClick()
-        assertTrue(deleted == 0)
+        rule.onNodeWithText("Delete download?").assertIsDisplayed()
+        assertEquals(0, deleted)
+        rule.onNodeWithText("Delete").performClick()
+        assertEquals(1, deleted)
     }
 
     @Test @Config(sdk = [35], application = android.app.Application::class, qualifiers = "de")

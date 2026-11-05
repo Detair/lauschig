@@ -2,6 +2,7 @@ package io.wolftown.lauschig.ui.detail
 
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -37,7 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -48,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -457,13 +460,17 @@ private fun Chip(text: String, enabled: Boolean = true, onClick: () -> Unit) {
 @Composable
 private fun PlayAndDownload(state: ItemDetailUiState, onPrimary: () -> Unit, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit) {
     var confirm by rememberSaveable { mutableStateOf(false) }
+    // The round button on a waiting download: right beside Play, so a stray thumb must not cancel it unasked.
+    var confirmCancel by rememberSaveable { mutableStateOf(false) }
     val settledOffline = LocalOfflineDimming.current
     val playEnabled = state.playableOffline || !settledOffline
     // Starting, resuming and retrying need the server; removing never does.
     val canStart = !settledOffline
     Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         PrimaryButton(state, playEnabled, onPrimary, Modifier.weight(1f))
-        if (!state.isLocal) DownloadCompanion(state.download, canStart, onDownload, onPause, onDelete, onConfirmDelete = { confirm = true })
+        if (!state.isLocal) {
+            DownloadCompanion(state.download, canStart, onDownload, onPause, onConfirmCancel = { confirmCancel = true }, onConfirmDelete = { confirm = true })
+        }
     }
     if (!playEnabled) {
         Text(stringResource(R.string.error_not_downloaded_offline), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
@@ -480,6 +487,15 @@ private fun PlayAndDownload(state: ItemDetailUiState, onPrimary: () -> Unit, onD
             text = { Text(stringResource(R.string.detail_delete_message)) },
             confirmButton = { TextButton(onClick = { confirm = false; onDelete() }) { Text(stringResource(R.string.detail_delete_confirm)) } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.detail_delete_dismiss)) } },
+        )
+    }
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text(stringResource(R.string.detail_queued_cancel_title)) },
+            text = { Text(stringResource(R.string.detail_queued_cancel_message)) },
+            confirmButton = { TextButton(onClick = { confirmCancel = false; onDelete() }) { Text(stringResource(R.string.detail_queued_cancel_confirm)) } },
+            dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text(stringResource(R.string.detail_queued_cancel_dismiss)) } },
         )
     }
 }
@@ -503,33 +519,49 @@ private fun PrimaryButton(state: ItemDetailUiState, enabled: Boolean, onPrimary:
 }
 
 /**
- * The compact download button beside the primary one, a tonal circle that shows the state: start, the progress ring
- * (a tap pauses), resume, on this device (a tap asks to delete), failed (a tap retries).
+ * The compact download button beside the primary one, a tonal circle that shows the state and says what a tap does
+ * (TalkBack: "double-tap to …"): start, the progress ring (a tap pauses – harmless, it resumes), resume, waiting (a tap
+ * asks before cancelling), on this device (a tap asks before deleting), failed (a tap retries).
  */
 @Composable
 private fun DownloadCompanion(
-    d: DownloadUi, canStart: Boolean, onDownload: () -> Unit, onPause: () -> Unit, onDelete: () -> Unit, onConfirmDelete: () -> Unit,
+    d: DownloadUi, canStart: Boolean, onDownload: () -> Unit, onPause: () -> Unit, onConfirmCancel: () -> Unit, onConfirmDelete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val colors = IconButtonDefaults.filledTonalIconButtonColors()
     @Composable
-    fun Companion(description: String, onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) =
-        FilledTonalIconButton(
-            onClick = onClick, enabled = enabled,
-            modifier = Modifier.size(ACTION_SIZE).semantics { contentDescription = description }.testTag("downloadCompanion"),
-        ) { content() }
+    fun Companion(description: String, action: String, onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) =
+        Box(
+            Modifier
+                .size(ACTION_SIZE)
+                .clip(CircleShape)
+                .background(if (enabled) colors.containerColor else colors.disabledContainerColor)
+                .clickable(enabled = enabled, onClickLabel = action, role = Role.Button, onClick = onClick)
+                .semantics { contentDescription = description }
+                .testTag("downloadCompanion"),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides if (enabled) colors.contentColor else colors.disabledContentColor, content = content)
+        }
     when (d) {
-        DownloadUi.None -> Companion(stringResource(R.string.detail_download), onDownload, canStart) { Icon(Icons.Rounded.Download, null) }
-        DownloadUi.Queued -> Companion(stringResource(R.string.detail_download_queued), onDelete) {
+        DownloadUi.None -> Companion(stringResource(R.string.detail_download), stringResource(R.string.detail_download), onDownload, canStart) {
+            Icon(Icons.Rounded.Download, null)
+        }
+        DownloadUi.Queued -> Companion(stringResource(R.string.detail_download_queued), stringResource(R.string.detail_download_cancel), onConfirmCancel) {
             CircularProgressIndicator(Modifier.size(40.dp), strokeWidth = 3.dp)
             Icon(Icons.Rounded.Downloading, null, Modifier.size(20.dp))
         }
-        is DownloadUi.Running -> Companion(stringResource(R.string.detail_downloading, d.percent), onPause) {
+        is DownloadUi.Running -> Companion(stringResource(R.string.detail_downloading, d.percent), stringResource(R.string.detail_download_pause_action), onPause) {
             CircularProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
             Icon(Icons.Rounded.Downloading, null, Modifier.size(20.dp))
         }
-        is DownloadUi.Paused -> Companion(stringResource(R.string.detail_download_resume), onDownload, canStart) { Icon(Icons.Rounded.Download, null) }
-        is DownloadUi.Complete -> Companion(stringResource(R.string.cover_offline_available), onConfirmDelete) { Icon(OfflineIcon, null, tint = scheme.primary) }
-        is DownloadUi.Failed -> Companion(stringResource(R.string.detail_download_retry), onDownload, canStart) {
+        is DownloadUi.Paused -> Companion(stringResource(R.string.detail_download_paused), stringResource(R.string.detail_download_resume_action), onDownload, canStart) {
+            Icon(Icons.Rounded.Download, null)
+        }
+        is DownloadUi.Complete -> Companion(stringResource(R.string.cover_offline_available), stringResource(R.string.detail_download_delete), onConfirmDelete) {
+            Icon(OfflineIcon, null, tint = scheme.primary)
+        }
+        is DownloadUi.Failed -> Companion(stringResource(R.string.detail_download_retry), stringResource(R.string.detail_download_retry), onDownload, canStart) {
             Icon(Icons.Rounded.ErrorOutline, null, tint = if (canStart) scheme.error else LocalContentColor.current)
         }
     }
@@ -560,14 +592,15 @@ private fun DownloadStatus(d: DownloadUi, canStart: Boolean, onPause: () -> Unit
                 Text(stringResource(R.string.detail_download_paused), style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { if (d.hasPartialData) onConfirmDelete() else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
             }
-            is DownloadUi.Complete -> Row(verticalAlignment = Alignment.CenterVertically) {
-                // The size never breaks between number and unit (large text: the line wraps before it).
+            // Text and button side by side where they fit, else the button below: the line itself never breaks (the
+            // size keeps number, unit and bracket together; the string has a non-breaking space before the bracket).
+            is DownloadUi.Complete -> FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 val size = Formatter.formatShortFileSize(LocalContext.current, d.bytes).replace(' ', '\u00A0')
-                Text(
-                    stringResource(R.string.detail_downloaded, size),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
+                Text(stringResource(R.string.detail_downloaded, size), style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = onConfirmDelete) { Text(stringResource(R.string.detail_download_delete)) }
             }
             is DownloadUi.Failed -> {
