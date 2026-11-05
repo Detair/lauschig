@@ -46,7 +46,8 @@ suspend fun queueEntryState(items: ItemDao, episodes: EpisodeDao, downloads: Dow
     val p = PlayableKey.parse(key)
     val sid = DeviceLibrary.serverFor(serverId, key) ?: serverId
     val item = items.get(sid, p.libraryItemId)
-    val exists = item != null && (p.episodeId == null || episodes.get(sid, p.libraryItemId, p.episodeId) != null)
+    val episodeId = p.episodeId
+    val exists = item != null && (episodeId == null || episodes.get(sid, p.libraryItemId, episodeId) != null)
     val downloaded = DeviceLibrary.isLocal(sid) || downloads.get(sid, key)?.state == DownloadState.COMPLETE
     return AdvancePolicy.classify(exists, item?.orphaned == true, downloaded, online)
 }

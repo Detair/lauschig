@@ -90,7 +90,8 @@ class ProgressActions(
         val saved = progress.get(serverId, itemId)?.durationSec?.takeIf { it > 0 }
         if (saved != null) return saved
         val key = PlayableKey.parse(itemId)
-        return if (key.episodeId != null) episodes.get(serverId, key.libraryItemId, key.episodeId)?.durationSec ?: 0.0
+        val episodeId = key.episodeId
+        return if (episodeId != null) episodes.get(serverId, key.libraryItemId, episodeId)?.durationSec ?: 0.0
         else items.get(serverId, itemId)?.durationSec ?: 0.0
     }
 

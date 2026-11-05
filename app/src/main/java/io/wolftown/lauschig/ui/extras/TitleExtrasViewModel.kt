@@ -135,8 +135,8 @@ class TitleExtrasViewModel(
         val sid = DeviceLibrary.serverFor(queueOwner, key) ?: queueOwner
         val p = PlayableKey.parse(key)
         val parent = items.get(sid, p.libraryItemId)
-        if (p.episodeId == null) return QueueRow(key, parent?.title ?: key, parent?.author)
-        val ep = episodes.get(sid, p.libraryItemId, p.episodeId)
+        val episodeId = p.episodeId ?: return QueueRow(key, parent?.title ?: key, parent?.author)
+        val ep = episodes.get(sid, p.libraryItemId, episodeId)
         return QueueRow(key, ep?.title ?: key, parent?.title)
     }
 
