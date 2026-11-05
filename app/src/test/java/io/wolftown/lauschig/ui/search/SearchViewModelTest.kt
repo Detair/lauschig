@@ -69,6 +69,7 @@ class SearchViewModelTest {
     private fun store(name: String) = PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("$name${System.nanoTime()}.preferences_pb") }
 
     private val searchCalls = mutableListOf<String>()
+    private var facetCalls = 0
 
     private fun vm(recent: RecentSearches = RecentSearches(store("r")), signedIn: Boolean = true): SearchViewModel {
         val accounts = FakeAccountStore()
@@ -79,7 +80,8 @@ class SearchViewModelTest {
                 SearchViewModel(
                     accounts, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(),
                     covers, FilterPreferences(store("f")), recent, UnconfinedTestDispatcher(),
-                    { items, q -> searchCalls += q; catalog.search(items, q) },
+                    { items, facets, q -> searchCalls += q; catalog.search(items, facets, q) },
+                    { items -> facetCalls++; catalog.facets(items) },
                 )
             }
         }
@@ -130,6 +132,30 @@ class SearchViewModelTest {
         assertEquals(listOf("Anne Writer"), s.authors.map { it.name })
         assertEquals(listOf("Anna Sprecher"), s.narrators.map { it.name })
         assertEquals(listOf("Annas Reihe"), s.series.map { it.name })
+    }
+
+    @Test fun search_facetsComputedOncePerCatalog_notPerKeystroke() = runTest {
+        seed(
+            item("1", "Anna Karenina", author = "Leo Tolstoi"),
+            item("2", "Krieg und Frieden", author = "Anne Writer", series = "Annas Reihe"),
+        )
+        val v = vm()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { v.state.collect {} }
+        for (q in listOf("a", "an", "ann", "anna", "anne")) {
+            v.setQuery(q)
+            advanceTimeBy(250)
+            v.await { it.searched && it.resultsFor == q }
+        }
+        assertEquals(listOf("a", "an", "ann", "anna", "anne"), searchCalls.toList())
+        // Five keystrokes, one catalog: the facets were built once (all visible = the whole catalog, no kind filter).
+        assertEquals(1, facetCalls)
+        // A catalog change (new item) indexes again, once.
+        db.itemDao().upsertFromList(listOf(item("3", "Anne Frank", author = "Anne Frank")))
+        v.setQuery("frank")
+        advanceTimeBy(250)
+        val s = v.await { it.resultsFor == "frank" && it.titles.isNotEmpty() }
+        assertEquals(listOf("Anne Frank"), s.titles.map { it.title })
+        assertEquals(2, facetCalls)
     }
 
     @Test fun search_progressChange_doesNotRerunSearch() = runTest {

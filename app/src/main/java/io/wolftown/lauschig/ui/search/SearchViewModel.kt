@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.catalog.Catalog
 import io.wolftown.lauschig.catalog.Facet
+import io.wolftown.lauschig.catalog.Facets
 import io.wolftown.lauschig.catalog.SearchResult
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.DownloadDao
@@ -82,14 +83,16 @@ class SearchViewModel(
     /** Where the search and the tile mapping run; tests pass a test dispatcher. */
     private val dispatcher: CoroutineDispatcher,
     /** The actual search ([Catalog.search]); a seam so tests can count invocations. */
-    private val search: (List<ItemEntity>, String) -> SearchResult,
+    private val search: (List<ItemEntity>, Facets, String) -> SearchResult,
+    /** Facet extraction over a catalog ([Catalog.facets]); runs once per catalog change, not per keystroke. A seam so tests can count it. */
+    private val facets: (List<ItemEntity>) -> Facets,
 ) : ViewModel() {
 
     @Inject constructor(
         accountStore: AccountStore, catalogDao: CatalogDao, itemDao: ItemDao, libraryDao: LibraryDao, progressDao: ProgressDao,
         downloadDao: DownloadDao, covers: CoverPathCache, prefs: FilterPreferences, catalog: Catalog, recent: RecentSearches,
     ) : this(
-        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, recent, Dispatchers.Default, catalog::search,
+        accountStore, catalogDao, itemDao, libraryDao, progressDao, downloadDao, covers, prefs, recent, Dispatchers.Default, catalog::search, catalog::facets,
     )
 
 
@@ -133,19 +136,22 @@ class SearchViewModel(
         val debounced = query.map { it.trim() }.distinctUntilChanged().debounce { if (it.isEmpty()) 0L else DEBOUNCE_MS }
         val dev = DeviceLibrary.SERVER_ID
         // The device library has no kind: its titles are searched while the filter is "all".
-        val hits = combine(catalogDao.observeAll(sid), kindFilterState(libraryDao, prefs, sid, SCREEN), debounced, catalogDao.observeAll(dev)) { all, f, q, device ->
-            Input(f, q, all.filter { it.libraryId in f.libraryIds }, if (f.selected.isEmpty()) device else emptyList(), all)
-        }.mapLatest { (f, q, visible, device, all) ->
+        // The facets (a walk over the whole catalog) belong to the catalog, not to the query: [Indexed] computes them at
+        // most once per catalog/filter change, and every later keystroke only filters them.
+        val indexed = combine(catalogDao.observeAll(sid).distinctUntilChanged(), kindFilterState(libraryDao, prefs, sid, SCREEN), catalogDao.observeAll(dev).distinctUntilChanged()) { all, f, device ->
+            Indexed(f, all.filter { it.libraryId in f.libraryIds }, if (f.selected.isEmpty()) device else emptyList(), all, facets)
+        }
+        val hits = combine(indexed, debounced, ::Pair).mapLatest { (ix, q) ->
             // Runs on [dispatcher] via the flowOn below; a newer query/catalog cancels a search still in flight.
             // Device titles add titles only: their people and genres have no entity page (those list the server's catalog).
             val found = when {
                 q.isEmpty() -> EMPTY
-                device.isEmpty() -> search(visible, q)
-                else -> search(visible, q).let { r -> r.copy(titles = r.titles + search(device, q).titles) }
+                ix.device.isEmpty() -> search(ix.visible, ix.visibleFacets, q)
+                else -> search(ix.visible, ix.visibleFacets, q).let { r -> r.copy(titles = r.titles + search(ix.device, ix.deviceFacets, q).titles) }
             }
             // Blame the kind filter only when the unfiltered catalog would have found something.
-            val hidden = found.isEmpty && q.isNotEmpty() && visible.size < all.size && !search(all, q).isEmpty
-            Hits(f, q, found, hidden)
+            val hidden = found.isEmpty && q.isNotEmpty() && ix.visible.size < ix.all.size && !search(ix.all, ix.allFacets, q).isEmpty
+            Hits(ix.filter, q, found, hidden)
         }
         val itemState = combine(progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid), ::Triple)
         return combine(hits, itemState, progressDao.observeAll(dev)) { (f, q, found, hidden), (progress, downloaded, active), deviceProgress ->
@@ -162,7 +168,18 @@ class SearchViewModel(
         }.flowOn(dispatcher)
     }
 
-    private data class Input(val filter: KindFilterState, val query: String, val visible: List<ItemEntity>, val device: List<ItemEntity>, val all: List<ItemEntity>)
+    /** A catalog snapshot with its facets, each computed on first use (off the main thread, inside the search) and then kept. */
+    private class Indexed(
+        val filter: KindFilterState,
+        val visible: List<ItemEntity>,
+        val device: List<ItemEntity>,
+        val all: List<ItemEntity>,
+        facets: (List<ItemEntity>) -> Facets,
+    ) {
+        val visibleFacets: Facets by lazy { if (visible.size == all.size) allFacets else facets(visible) }
+        val deviceFacets: Facets by lazy { facets(device) }
+        val allFacets: Facets by lazy { facets(all) }
+    }
 
     private data class Hits(val filter: KindFilterState, val query: String, val found: SearchResult, val hiddenByFilter: Boolean)
 
