@@ -136,7 +136,10 @@ class FinishedDownloadCleaner(
     private val handover: Flow<TitleHandover.State> = TitleHandover.state,
     private val clock: () -> Long = System::currentTimeMillis,
     private val recheckMs: Long = 60_000,
+    /** How long a title stays held after it left the player's hold. */
     private val graceMs: Long = TitleHandover.GRACE_MS,
+    /** How long a pick holds its title ([TitleHandover.pick]). */
+    private val pickMs: Long = TitleHandover.GRACE_MS,
 ) {
     @Inject constructor(
         accounts: AccountStore,
@@ -158,23 +161,25 @@ class FinishedDownloadCleaner(
         audioFiles::observeLocalBytes, questions.holds, TitleHandover.state,
     )
 
-    /** What the player side holds right now for [sid]: the controller's title and everything else (see [PlayerHold]). */
-    private fun holdOf(sid: String, loaded: String?, queued: List<String>, questions: Set<FinishedQuestion>, h: TitleHandover.State): PlayerHold {
-        val now = clock()
-        val picked = h.picked.filterValues { now - it < graceMs }
-        return PlayerHold(
-            loaded,
-            queued.toSet() + questions.filter { it.serverId == sid }.map { it.key } + picked.keys + listOfNotNull(h.serviceTitle),
-            picked.values.minOfOrNull { it + graceMs },
-        )
-    }
+    /** What the player side holds for [sid]: the controller's title and everything else (see [PlayerHold]). */
+    private fun holdOf(sid: String, loaded: String?, queued: List<String>, questions: Set<FinishedQuestion>, h: TitleHandover.State) = PlayerHold(
+        loaded,
+        queued.toSet() + questions.filter { it.serverId == sid }.map { it.key } + listOfNotNull(h.serviceTitle),
+        h.picked,
+    )
+
+    /** Seam for tests: how many passes ran. */
+    @Volatile internal var passes = 0
+        private set
 
     /** One pass for the signed-in account (the daily worker); returns the keys whose downloads were deleted. */
     suspend fun runOnce(): List<String> {
         val sid = accounts.account.first()?.serverId ?: return emptyList()
+        // What holds is read before the keep list: a question settled in between is then still held or already kept.
+        val hold = holdOf(sid, loadedKey.first(), queue(sid).first(), questionHolds.first(), handover.first())
         return pass(
-            sid, downloads.observeFinishedComplete(sid).first(), finishedKeys(sid).first().toSet(), settings.autoDeleteFinished.first(),
-            app.cleanupIgnored.first(), holdOf(sid, loadedKey.first(), queue(sid).first(), questionHolds.first(), handover.first()), Departures(graceMs),
+            sid, downloads.observeFinishedComplete(sid).first(), finishedKeys(sid).first().toSet(), settings.autoDeleteFinished(sid).first(),
+            app.cleanupIgnored.first(), hold, Departures(graceMs),
         ).deleted
     }
 
@@ -189,37 +194,42 @@ class FinishedDownloadCleaner(
         return AutoDeletePreview(keys.size, bytes)
     }
 
-    /** Watches as long as [scope] lives; an error in one pass is logged and the next pass runs as usual. */
+    /**
+     * Watches as long as [scope] lives. Passes run on changes only – the finished downloads, the setting, the kept list,
+     * the player's title, the queue, the questions, the hand-over – plus one timer: the next due time or the end of a
+     * pick or grace that holds a title which would count. An error is logged once per streak and the pass is tried again.
+     */
     fun start(scope: CoroutineScope) {
         scope.launch {
             val departures = Departures(graceMs)
+            val failing = java.util.concurrent.atomic.AtomicBoolean(false)
             accounts.account.map { it?.serverId }.distinctUntilChanged().flatMapLatest { sid ->
                 if (sid == null) emptyFlow()
                 else combine(
                     downloads.observeFinishedComplete(sid).distinctUntilChanged(),
                     finishedKeys(sid).map { it.toSet() }.distinctUntilChanged(),
-                    settings.autoDeleteFinished,
+                    settings.autoDeleteFinished(sid),
                     app.cleanupIgnored,
                     combine(loadedKey.distinctUntilChanged(), queue(sid).distinctUntilChanged(), questionHolds, handover) { l, q, qs, h -> holdOf(sid, l, q, qs, h) },
                 ) { rows, finished, mode, kept, hold -> Watch(sid, rows, finished, mode, kept, hold) }
                     .retryWhen { e, _ ->
                         // A store that cannot be read (a full disk) pauses the clean-up; it reads again a little later.
                         if (e is CancellationException) return@retryWhen false
-                        Log.w(TAG, "automatic clean-up could not read its state; tried again", e)
+                        if (failing.compareAndSet(false, true)) Log.w(TAG, "automatic clean-up could not read its state; tried again", e)
                         delay(recheckMs)
                         true
                     }
             }
                 // Every change of what the player holds is noted, also one the pass below never sees (it is restarted).
-                .onEach { w -> departures.note(w.hold.all(), clock()) }
+                .onEach { w -> clock().let { now -> departures.note(w.hold.keys(now, pickMs), now) } }
                 .collectLatest { w ->
                     while (true) {
                         val next = try {
-                            pass(w.serverId, w.rows, w.finished, w.mode, w.kept, w.hold, departures).nextCheck
+                            pass(w.serverId, w.rows, w.finished, w.mode, w.kept, w.hold, departures).nextCheck.also { failing.set(false) }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.w(TAG, "an automatic clean-up pass failed; tried again", e)
+                            if (failing.compareAndSet(false, true)) Log.w(TAG, "an automatic clean-up pass failed; tried again", e)
                             clock() + recheckMs
                         } ?: break
                         delay((next - clock()).coerceAtLeast(1_000))
@@ -256,13 +266,14 @@ class FinishedDownloadCleaner(
     )
 
     /**
-     * What the player holds: [loaded] (the controller's title, any state; null when it knows none) and [others] (the
-     * queue, unsettled questions, picked titles, the service's title). Without a loaded title the service's last played
-     * one stands in for it ([LastPlayedStore]): a process the daily worker started. [pickedUntil]: when the earliest
-     * picked title stops being held by its pick.
+     * What the player holds: [loaded] (the controller's title, any state; null when it knows none), [steady] (the queue,
+     * unsettled questions, the service's title – each ends with a change the watcher sees) and [picked] (key → when it
+     * was picked; it holds for the grace, judged at the time of each pass). Without a loaded title the service's last
+     * played one stands in for it ([LastPlayedStore]): a process the daily worker started.
      */
-    private data class PlayerHold(val loaded: String?, val others: Set<String>, val pickedUntil: Long? = null) {
-        fun all(): Set<String> = others + listOfNotNull(loaded)
+    private data class PlayerHold(val loaded: String?, val steady: Set<String>, val picked: Map<String, Long>) {
+        fun picksAt(now: Long, graceMs: Long): Map<String, Long> = picked.filterValues { now - it < graceMs }
+        fun keys(now: Long, graceMs: Long): Set<String> = steady + listOfNotNull(loaded) + picksAt(now, graceMs).keys
     }
 
     private class PassResult(val deleted: List<String>, val nextCheck: Long?)
@@ -271,30 +282,31 @@ class FinishedDownloadCleaner(
         sid: String, rows: List<FinishedDownload>, finished: Set<String>, mode: AutoDeleteMode, kept: Set<String>, hold: PlayerHold,
         departures: Departures,
     ): PassResult {
+        passes++
         val seenAt = seen.reconcile(sid, finished, clock())
         if (mode == AutoDeleteMode.NEVER || rows.isEmpty()) return PassResult(emptyList(), null)
+        val now = clock()
         val title = hold.loaded ?: lastPlayed()?.takeIf { it.serverId == sid }?.itemId
-        val recent = departures.recent(clock())
-        val protected = hold.others + listOfNotNull(title) + recent.keys
+        val steady = hold.steady + listOfNotNull(title)
+        val picks = hold.picksAt(now, pickMs).mapValues { it.value + pickMs } // key → until
+        val recent = departures.recent(now) // key → until
+        val protected = steady + picks.keys + recent.keys
         val keepIgnoringPlayer = AutoDeleteRules.keeper(sid, kept, emptySet())
         val keep = AutoDeleteRules.keeper(sid, kept, protected)
         val candidates = candidates(sid, rows, seenAt, keepIgnoringPlayer)
-        val now = clock()
         val deleted = delete(sid, AutoDeleteRules.due(candidates, mode, now, keep))
-        // A title the player holds waits; it is looked at again (the last played one changes without a signal here).
-        val waiting = candidates.any { it.key in protected && AutoDeleteRules.counts(it, keepIgnoringPlayer) }
-        // Also when a pick or a departure stops holding a title that would count.
-        val lapses = listOfNotNull(hold.pickedUntil) + recent.values
-        val next = listOfNotNull(
-            AutoDeleteRules.nextDue(candidates, mode, now, keep), if (waiting) now + recheckMs else null, lapses.minOrNull()?.takeIf { waiting },
-        ).minOrNull()
-        return PassResult(deleted, next)
+        // The one timer: a title that would count and is held only by a pick or a grace is looked at when that ends.
+        // What the queue, the player or a question holds ends with a change the watcher sees anyway.
+        val lapse = candidates.filter { it.key !in steady && AutoDeleteRules.counts(it, keepIgnoringPlayer) }
+            .mapNotNull { c -> listOfNotNull(picks[c.key], recent[c.key]).maxOrNull() }.filter { it > now }.minOrNull()
+        return PassResult(deleted, listOfNotNull(AutoDeleteRules.nextDue(candidates, mode, now, keep), lapse).minOrNull())
     }
 
     /** The device-clock facts of each row; the file times are only read for rows that can count at all. */
     private suspend fun candidates(sid: String, rows: List<FinishedDownload>, seenAt: Map<String, Long>, keep: (String) -> Boolean) =
         rows.map { r ->
-            val maybe = seenAt[r.itemKey] != null && !keep(r.itemKey) && AutoDeleteRules.reallyFinished(r.positionSec, r.durationSec)
+            // A baseline row (finished before this device looked) never counts: its files are not even looked at.
+            val maybe = (seenAt[r.itemKey] ?: -1) >= 0 && !keep(r.itemKey) && AutoDeleteRules.reallyFinished(r.positionSec, r.durationSec)
             AutoDeleteCandidate(r.itemKey, r.positionSec, r.durationSec, if (maybe) completedAt(sid, r.itemKey) else null, seenAt[r.itemKey])
         }
 

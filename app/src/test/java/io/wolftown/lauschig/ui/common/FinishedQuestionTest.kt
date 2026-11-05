@@ -112,7 +112,7 @@ class FinishedQuestionTest {
     /** A new instance on the same file: what a new process sees (the old one's store is closed first, as in a new process). */
     private fun questions() = FinishedQuestions(
         PreferenceDataStoreFactory.create(scope = scope().also { storeScope = it }, produceFile = { storeFile }),
-        autoDeleteOn = { settings.autoDeleteFinished.first() != AutoDeleteMode.NEVER },
+        autoDeleteOn = { settings.autoDeleteFinished(s).first() != AutoDeleteMode.NEVER },
         keepEntry = { if (keepFails) throw java.io.IOException("disk full") else app.setCleanupIgnored(it, true) },
         deleteDownload = { sid, key -> manager.cancel(sid, key, deleteFiles = true) },
     )
@@ -141,7 +141,7 @@ class FinishedQuestionTest {
     @After fun tearDown(): Unit = runBlocking {
         scopes.forEach { it.cancel() }
         viewModels.clear()
-        settings.setAutoDeleteFinished(AutoDeleteMode.NEVER)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.NEVER)
         app.cleanupIgnored.first().forEach { app.setCleanupIgnored(it, false) }
         db.close()
         root.parentFile!!.deleteRecursively()
@@ -150,7 +150,7 @@ class FinishedQuestionTest {
     }
 
     private fun sofort() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         FinishedDownloadCleaner(
             accounts, db.downloadDao(), db.progressDao()::observeFinishedKeys, settings, app, manager, DownloadFiles(root, db.audioFileDao())::completedAt,
             FinishedDownloadCleanerTest.InMemorySeen(), MutableStateFlow(null), { null }, { MutableStateFlow(emptyList()) },
@@ -209,7 +209,7 @@ class FinishedQuestionTest {
     }
 
     @Test fun aKeepThatCannotBeStored_failsClosed_theTitleStaysHeld() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         keepFails = true
         questions.ask(q)
         questions.answerKeep(q)
@@ -218,7 +218,7 @@ class FinishedQuestionTest {
     }
 
     @Test fun aQuestionAKilledProcessLeftOpen_isHeldAtTheStart_andCountsAsKeep() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         questions.ask(q) // then the process dies without an answer
         storeScope!!.coroutineContext[kotlinx.coroutines.Job]!!.let { it.cancel(); it.join() }
         val next = questions() // the next process
@@ -237,7 +237,7 @@ class FinishedQuestionTest {
     }
 
     @Test fun theDialog_survivesARecreation_andDismissingIsKeep() {
-        runBlocking { settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY); questions.ask(q) }
+        runBlocking { settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY); questions.ask(q) }
         val restore = StateRestorationTester(rule)
         restore.setContent {
             LauschigTheme {
@@ -288,5 +288,31 @@ class FinishedQuestionTest {
     @Test fun withoutAKnownTitle_theQuestionStillAsks() {
         rule.setContent { LauschigTheme { FinishedQuestionDialog(false, null, onDelete = {}, onKeep = {}) } }
         rule.onNodeWithTag("finishedQuestionTitle").assertTextEquals("Delete download?")
+    }
+
+    /** A store that reads but cannot write (a full disk). */
+    private fun unwritable() = object : androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences> {
+        private val real = PreferenceDataStoreFactory.create(scope = scope(), produceFile = { File(root.parentFile, "ro-${System.nanoTime()}.preferences_pb") })
+        override val data = real.data
+        override suspend fun updateData(transform: suspend (t: androidx.datastore.preferences.core.Preferences) -> androidx.datastore.preferences.core.Preferences) =
+            throw java.io.IOException("disk full")
+    }
+
+    @Test fun aQuestionThatCannotBeNoted_keepsTheTitleInstead() = runBlocking {
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
+        val q2 = FinishedQuestions(unwritable(), { true }, { app.setCleanupIgnored(it, true) }, { _, _ -> })
+        q2.ask(q, "Book")
+        assertTrue("kept: nothing can count it after a restart", "$s:b1" in app.cleanupIgnored.first())
+        assertTrue(q in q2.open.value)
+    }
+
+    @Test fun neitherNoteNorKeep_theTitleIsNotMarkedFinished() = runBlocking {
+        val q2 = FinishedQuestions(unwritable(), { true }, { throw java.io.IOException("disk full") }, { _, _ -> })
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
+        val vm2 = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), q2))
+        vm2.markFinished("b1")
+        delay(700)
+        assertFalse("not finished without a stored question", finished())
+        assertTrue(q2.holds.first().isEmpty())
     }
 }

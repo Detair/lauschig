@@ -43,12 +43,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.download.MeteredDownload
 import io.wolftown.lauschig.external.AudibleRegions
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,9 +80,9 @@ data class SettingsUiState(
     val appearance: Appearance = Appearance(),
 )
 
-/** [count] downloads of [bytes] would go if [mode] were switched on. */
+/** [count] downloads of [bytes] of the account [serverId] would go if [mode] were switched on there. */
 @Immutable
-data class AutoDeleteConfirm(val mode: AutoDeleteMode, val count: Int, val bytes: Long)
+data class AutoDeleteConfirm(val mode: AutoDeleteMode, val count: Int, val bytes: Long, val serverId: String = "")
 
 @Immutable
 data class PlaybackPrefs(
@@ -106,7 +111,11 @@ class SettingsViewModel @Inject constructor(
     private val playbackSettings: PlaybackSettings,
     private val ui: UiSettings,
     private val cleaner: FinishedDownloadCleaner,
+    accounts: AccountStore,
 ) : ViewModel() {
+    /** The signed-in account: the automatic clean-up is its own setting. */
+    private val serverId = accounts.account.map { it?.serverId }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val autoDeleteConfirm = MutableStateFlow<AutoDeleteConfirm?>(null)
 
     private val playback = combine(
@@ -126,7 +135,7 @@ class SettingsViewModel @Inject constructor(
         playback,
     ) { base, auto, onPlay, metered, pb -> base.copy(autoDownload = auto, downloadOnPlay = onPlay, meteredOnPlay = metered, playback = pb) }
         .combine(ui.appearance) { s, look -> s.copy(appearance = look) }
-        .combine(download.autoDeleteFinished) { s, mode -> s.copy(autoDelete = mode) }
+        .combine(serverId.flatMapLatest { download.autoDeleteFinished(it) }) { s, mode -> s.copy(autoDelete = mode) }
         .combine(autoDeleteConfirm) { s, c -> s.copy(autoDeleteConfirm = c) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -138,24 +147,28 @@ class SettingsViewModel @Inject constructor(
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }
     fun setMeteredOnPlay(mode: MeteredDownload) { viewModelScope.launch { download.setMeteredOnPlay(mode) } }
-    /** Turning it on while finished downloads exist asks first ([confirmAutoDelete] / [cancelAutoDelete]). */
+    /**
+     * The signed-in account's automatic clean-up. Turning it on while its finished downloads exist asks first
+     * ([confirmAutoDelete] / [cancelAutoDelete]); other accounts are never touched.
+     */
     fun setAutoDelete(mode: AutoDeleteMode) {
         viewModelScope.launch {
-            if (mode != AutoDeleteMode.NEVER && download.autoDeleteFinished.first() == AutoDeleteMode.NEVER) {
+            val sid = serverId.filterNotNull().first()
+            if (mode != AutoDeleteMode.NEVER && download.autoDeleteFinished(sid).first() == AutoDeleteMode.NEVER) {
                 val preview = cleaner.preview(mode)
                 if (preview.count > 0) {
-                    autoDeleteConfirm.value = AutoDeleteConfirm(mode, preview.count, preview.bytes)
+                    autoDeleteConfirm.value = AutoDeleteConfirm(mode, preview.count, preview.bytes, sid)
                     return@launch
                 }
             }
-            download.setAutoDeleteFinished(mode)
+            download.setAutoDeleteFinished(sid, mode)
         }
     }
 
     fun confirmAutoDelete() {
         val c = autoDeleteConfirm.value ?: return
         autoDeleteConfirm.value = null
-        viewModelScope.launch { download.setAutoDeleteFinished(c.mode) }
+        viewModelScope.launch { download.setAutoDeleteFinished(c.serverId, c.mode) }
     }
 
     fun cancelAutoDelete() { autoDeleteConfirm.value = null }

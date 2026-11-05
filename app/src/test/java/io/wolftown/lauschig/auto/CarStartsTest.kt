@@ -31,7 +31,9 @@ class CarStartsTest {
         lastTitle = { last },
         accountServer = { account },
         current = { loaded },
+        pick = { picked += it },
     )
+    private val picked = mutableListOf<String>()
 
     private fun byId(id: String) = MediaItem.Builder().setMediaId(id).build()
     private fun bySearch(query: String, extras: Bundle? = null) = MediaItem.Builder()
@@ -108,5 +110,20 @@ class CarStartsTest {
         assertTrue(resolved.isEmpty())
         // Another title loads as usual.
         assertTrue(starts.forRequest(listOf(byId("title/$s/other")), 0) is CarStarts.Outcome.Ready)
+    }
+
+    /** A browsed, searched or resumed title is held for the automatic clean-up before it is resolved. */
+    @Test fun everyCarStart_picksItsTitle_beforeItIsResolved() = runTest {
+        var pickedWhenResolved: List<String>? = null
+        val starts = CarStarts(
+            resolveTitle = { _, _, _ -> pickedWhenResolved = picked.toList(); result },
+            searchTitle = { _, _ -> found },
+            lastTitle = { last },
+            accountServer = { account },
+            pick = { picked += it },
+        )
+        val browsed = CarNode.Title(account!!, "b9")
+        starts.forRequest(listOf(androidx.media3.common.MediaItem.Builder().setMediaId(MediaIds.of(browsed)).build()), 0)
+        assertEquals(listOf("b9"), pickedWhenResolved)
     }
 }

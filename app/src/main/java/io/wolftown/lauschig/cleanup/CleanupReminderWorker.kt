@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Once a week: if finished titles are still downloaded (and not ignored), posts one notification that opens "Clean up".
- * Silent while the automatic clean-up is on ([DownloadSettings.autoDeleteFinished]): it deletes them anyway.
+ * Silent while the automatic clean-up is on of this account ([DownloadSettings.autoDeleteFinished]): it deletes them anyway.
  */
 @HiltWorker
 class CleanupReminderWorker @AssistedInject constructor(
@@ -45,8 +45,8 @@ class CleanupReminderWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         if (!settings.cleanupReminder.first()) return Result.success()
-        if (downloadSettings.autoDeleteFinished.first() != AutoDeleteMode.NEVER) return Result.success()
         val serverId = accounts.account.first()?.serverId ?: return Result.success()
+        if (downloadSettings.autoDeleteFinished(serverId).first() != AutoDeleteMode.NEVER) return Result.success()
         val ignored = settings.cleanupIgnored.first()
         val candidates = items.observeFinishedDownloaded(serverId).first().filter { "$serverId:${it.id}" !in ignored }
         if (candidates.isEmpty()) return Result.success()

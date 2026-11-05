@@ -70,12 +70,12 @@ class AutoDeleteConfirmViewModelTest {
         db.audioFileDao().setLocal(s, "b1", 1, f.absolutePath, 5)
         db.downloadDao().upsert(DownloadEntity(s, "b1", DownloadState.COMPLETE, 1))
         db.progressDao().replaceFromServer(ProgressEntity(s, "b1", 1.0, 1.0, true, 1))
-        vm = viewModels.own(SettingsViewModel(app, download, PlaybackSettings(ctx), UiSettings(ctx), cleaner))
+        vm = viewModels.own(SettingsViewModel(app, download, PlaybackSettings(ctx), UiSettings(ctx), cleaner, accounts))
     }
 
     @After fun tearDown(): Unit = runBlocking {
         viewModels.clear()
-        download.setAutoDeleteFinished(AutoDeleteMode.NEVER)
+        download.setAutoDeleteFinished(s, AutoDeleteMode.NEVER)
         db.close()
         root.parentFile!!.deleteRecursively()
         Dispatchers.resetMain()
@@ -85,10 +85,10 @@ class AutoDeleteConfirmViewModelTest {
 
     @Test fun cancel_leavesTheSettingUnchanged(): Unit = runBlocking {
         vm.setAutoDelete(AutoDeleteMode.IMMEDIATELY)
-        assertEquals(AutoDeleteConfirm(AutoDeleteMode.IMMEDIATELY, 1, 5), await { it.autoDeleteConfirm != null }.autoDeleteConfirm)
+        assertEquals(AutoDeleteConfirm(AutoDeleteMode.IMMEDIATELY, 1, 5, s), await { it.autoDeleteConfirm != null }.autoDeleteConfirm)
         vm.cancelAutoDelete()
         assertNull(await { it.autoDeleteConfirm == null }.autoDeleteConfirm)
-        assertEquals(AutoDeleteMode.NEVER, download.autoDeleteFinished.first())
+        assertEquals(AutoDeleteMode.NEVER, download.autoDeleteFinished(s).first())
     }
 
     @Test fun confirm_switchesItOn_andTurningItOffNeverAsks(): Unit = runBlocking {

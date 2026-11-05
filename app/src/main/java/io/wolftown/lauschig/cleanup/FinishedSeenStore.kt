@@ -1,7 +1,11 @@
 package io.wolftown.lauschig.cleanup
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.Binds
@@ -9,11 +13,12 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.wolftown.lauschig.diagnostics.Log
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.finishedSeenDataStore by preferencesDataStore(name = "finished_seen")
+private val Context.finishedSeenDataStore by preferencesDataStore(name = "finished_seen", corruptionHandler = FinishedSeenStore.corruptionHandler())
 
 /**
  * When this device first saw each title marked finished – on the device's own clock, so the automatic clean-up never
@@ -35,14 +40,31 @@ interface FinishedSeenStore {
     companion object {
         /** Finished before this device took the server's baseline: never counts. */
         const val BEFORE_BASELINE = -1L
+
+        @Volatile private var newBaselines = false
+
+        /**
+         * Every server takes a new baseline at its next reconcile: what is finished then never counts. Asked for when a
+         * store the clean-up relies on was corrupt and had to start empty (the seen times or the open questions).
+         */
+        fun requestNewBaselines() { newBaselines = true }
+
+        internal fun takeNewBaselinesRequest(): Boolean = newBaselines.also { newBaselines = false }
+
+        /** A corrupt file starts empty – every server then takes a new baseline (safe: nothing finished goes). */
+        fun corruptionHandler() = ReplaceFileCorruptionHandler { e ->
+            Log.w("FinishedSeen", "seen times were corrupt; every account takes a new baseline", e)
+            emptyPreferences()
+        }
     }
 }
 
 @Singleton
-class DataStoreFinishedSeen @Inject constructor(@ApplicationContext context: Context) : FinishedSeenStore {
-    private val store = context.finishedSeenDataStore
+class DataStoreFinishedSeen(private val store: DataStore<Preferences>) : FinishedSeenStore {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.finishedSeenDataStore)
 
     override suspend fun reconcile(serverId: String, finished: Set<String>, now: Long): Map<String, Long> {
+        if (FinishedSeenStore.takeNewBaselinesRequest()) store.edit { it.remove(SEEN); it.remove(BASELINES) }
         val data = store.data.first()
         val all = data[SEEN].orEmpty()
         val mine = all.filter { it.startsWith("$serverId|") }.toSet()

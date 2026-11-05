@@ -85,7 +85,7 @@ class ServiceTitleStarter(
 
     /** Resolves [key] and plays it on the service's player (queue advance); false if it cannot play. */
     suspend fun start(serverId: String, key: String): Boolean {
-        TitleHandover.pick(key) // the car, the widget, resumption: held for the automatic clean-up while it loads
+        TitleHandover.pick(key) // a queue start: held for the automatic clean-up while it loads (car starts: CarStarts)
         val r = resolve(serverId, key) as? Resolved.Ready ?: return false
         setQueue(r.items, r.index, r.offsetMs)
         if (r.streaming) onStreamStarted(serverId, key)

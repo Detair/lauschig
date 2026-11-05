@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import io.wolftown.lauschig.widget.WidgetAccountWatcher
 import java.io.File
@@ -42,6 +43,8 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
     @Inject lateinit var finishedQuestions: FinishedQuestions
+    @Inject lateinit var downloadSettings: io.wolftown.lauschig.download.DownloadSettings
+    @Inject lateinit var accountStore: io.wolftown.lauschig.account.AccountStore
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
 
     override val workManagerConfiguration: Configuration
@@ -83,10 +86,21 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Registers its audio-device callback only while the setting is on.
         autoResumer.start(CoroutineScope(SupervisorJob() + Dispatchers.Main))
         CleanupReminderWorker.schedule(this)
-        // A "Download löschen?" question a killed process left open counts as "Behalten".
-        scope.launch { finishedQuestions.settleLeftovers() }
-        // Finished downloads go by themselves if the user wants it; never a title the player holds.
-        finishedDownloads.start(scope)
+        scope.launch {
+            // The automatic clean-up became a setting per account: the old device-wide value is the signed-in account's.
+            try {
+                downloadSettings.migrateAutoDelete(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "auto-delete setting not moved to the account", e)
+            }
+            // A "Download löschen?" question a killed process left open counts as "Behalten" – settled before the
+            // clean-up looks at anything.
+            finishedQuestions.settleLeftovers()
+            // Finished downloads go by themselves if the user wants it; never a title the player holds.
+            finishedDownloads.start(scope)
+        }
         FinishedDownloadsWorker.schedule(this)
     }
 

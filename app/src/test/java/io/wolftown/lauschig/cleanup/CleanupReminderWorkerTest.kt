@@ -51,7 +51,7 @@ class CleanupReminderWorkerTest {
     }
 
     @After fun tearDown(): Unit = runBlocking {
-        downloadSettings.setAutoDeleteFinished(AutoDeleteMode.NEVER)
+        downloadSettings.setAutoDeleteFinished(s, AutoDeleteMode.NEVER)
         db.close()
     }
 
@@ -71,7 +71,7 @@ class CleanupReminderWorkerTest {
     }
 
     @Test fun staysSilent_whileHeardDownloadsAreDeletedAutomatically() = runBlocking {
-        downloadSettings.setAutoDeleteFinished(AutoDeleteMode.AFTER_7_DAYS)
+        downloadSettings.setAutoDeleteFinished(s, AutoDeleteMode.AFTER_7_DAYS)
         run()
         assertEquals(0, posted())
     }

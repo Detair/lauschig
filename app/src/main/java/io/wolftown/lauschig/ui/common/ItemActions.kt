@@ -160,7 +160,16 @@ class ItemActionsViewModel @Inject constructor(
     fun markFinished(itemId: String) = withServer(itemId) { sid ->
         withContext(NonCancellable) {
             val complete = !DeviceLibrary.isLocal(sid, itemId) && downloads.observe(sid, itemId).first()?.state == DownloadState.COMPLETE
-            if (complete) questions.ask(FinishedQuestion(sid, itemId), titleOf(sid, itemId))
+            if (complete) {
+                try {
+                    questions.ask(FinishedQuestion(sid, itemId), titleOf(sid, itemId))
+                } catch (e: java.io.IOException) {
+                    // Neither the question nor a keep entry could be stored (a full disk): the title stays unfinished
+                    // rather than counting for the automatic clean-up without anybody having answered.
+                    io.wolftown.lauschig.diagnostics.Log.w("ItemActions", "not marked finished: the question could not be stored", e)
+                    return@withContext
+                }
+            }
             progressActions.markFinished(sid, itemId)
         }
     }

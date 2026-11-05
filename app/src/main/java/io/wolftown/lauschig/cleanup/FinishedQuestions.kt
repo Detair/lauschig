@@ -2,7 +2,9 @@ package io.wolftown.lauschig.cleanup
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -15,14 +17,20 @@ import io.wolftown.lauschig.download.AutoDeleteMode
 import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.settings.AppSettings
+import io.wolftown.lauschig.account.AccountStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -30,7 +38,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.finishedQuestionsDataStore by preferencesDataStore(name = "finished_questions")
+private val Context.finishedQuestionsDataStore by preferencesDataStore(name = "finished_questions", corruptionHandler = FinishedQuestions.corruptionHandler())
 
 /** The "Download löschen?" question after "Als gehört markieren" for [key] of [serverId]. */
 data class FinishedQuestion(val serverId: String, val key: String)
@@ -45,15 +53,15 @@ data class FinishedQuestion(val serverId: String, val key: String)
 @Singleton
 class FinishedQuestions(
     private val store: DataStore<Preferences>,
-    /** True while the automatic clean-up is on: only then "Behalten" needs a keep entry. */
-    private val autoDeleteOn: suspend () -> Boolean,
+    /** True while [serverId]'s automatic clean-up is on: only then "Behalten" needs a keep entry. */
+    private val autoDeleteOn: suspend (serverId: String) -> Boolean,
     /** Puts "serverId:key" on the keep list ([AppSettings.setCleanupIgnored]). */
     private val keepEntry: suspend (String) -> Unit,
     private val deleteDownload: suspend (serverId: String, key: String) -> Unit,
 ) {
     @Inject constructor(@ApplicationContext context: Context, app: AppSettings, settings: DownloadSettings, manager: DownloadManager) : this(
         context.finishedQuestionsDataStore,
-        autoDeleteOn = { settings.autoDeleteFinished.first() != AutoDeleteMode.NEVER },
+        autoDeleteOn = { sid -> settings.autoDeleteFinished(sid).first() != AutoDeleteMode.NEVER },
         keepEntry = { app.setCleanupIgnored(it, true) },
         deleteDownload = { sid, key -> manager.cancel(sid, key, deleteFiles = true) },
     )
@@ -79,17 +87,33 @@ class FinishedQuestions(
      */
     val holds: Flow<Set<FinishedQuestion>> = combine(noted, memory) { a, b -> a + b }
 
-    /** Notes and shows the question naming [title]; call before the title is marked finished. */
+    /**
+     * Notes and shows the question naming [title]; call before the title is marked finished. The hold must survive the
+     * process: if the note cannot be written, the title goes on the keep list instead; if that fails too, this throws
+     * and the title must not be marked finished (nothing may count it before somebody answered).
+     */
     suspend fun ask(q: FinishedQuestion, title: String? = null) {
-        if (!title.isNullOrBlank()) titles[q] = title
         memory.update { it + q }
-        try {
+        val noted = try {
             store.edit { it[PENDING] = it[PENDING].orEmpty() + encode(q) }
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "question not noted on disk; held in memory", e)
+            Log.w(TAG, "question not noted on disk; the title is kept instead", e)
+            false
         }
+        if (!noted) {
+            try {
+                keepEntry("${q.serverId}:${q.key}")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                memory.update { it - q }
+                throw java.io.IOException("the question could not be noted", e)
+            }
+        }
+        if (!title.isNullOrBlank()) titles[q] = title
         _open.update { if (q in it) it else it + q }
     }
 
@@ -117,7 +141,7 @@ class FinishedQuestions(
     }
 
     private suspend fun keep(q: FinishedQuestion) {
-        if (autoDeleteOn()) keepEntry("${q.serverId}:${q.key}")
+        if (autoDeleteOn(q.serverId)) keepEntry("${q.serverId}:${q.key}")
     }
 
     private suspend fun settle(q: FinishedQuestion, action: suspend () -> Unit) {
@@ -135,23 +159,38 @@ class FinishedQuestions(
     private fun encode(q: FinishedQuestion) = "${q.serverId}|${q.key}"
     private fun decode(e: String): FinishedQuestion? = e.split('|').takeIf { it.size == 2 }?.let { FinishedQuestion(it[0], it[1]) }
 
-    private companion object {
-        const val TAG = "FinishedQuestions"
-        val PENDING = stringSetPreferencesKey("pending")
+    companion object {
+        private const val TAG = "FinishedQuestions"
+        private val PENDING = stringSetPreferencesKey("pending")
+
+        /**
+         * A corrupt file starts empty. The open questions it held are lost, so every account takes a new baseline
+         * ([FinishedSeenStore.requestNewBaselines]): what is finished now – those titles included – never goes.
+         */
+        fun corruptionHandler() = ReplaceFileCorruptionHandler { e ->
+            Log.w(TAG, "open questions were corrupt; every account takes a new baseline", e)
+            FinishedSeenStore.requestNewBaselines()
+            emptyPreferences()
+        }
     }
 }
 
 /** The question at the top of the app (AppRoot). */
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
-class FinishedQuestionViewModel @Inject constructor(private val questions: FinishedQuestions, settings: DownloadSettings) : ViewModel() {
+class FinishedQuestionViewModel @Inject constructor(
+    private val questions: FinishedQuestions,
+    settings: DownloadSettings,
+    accounts: AccountStore,
+) : ViewModel() {
     val question: StateFlow<List<FinishedQuestion>> = questions.open
 
     fun titleOf(q: FinishedQuestion): String? = questions.titleOf(q)
 
-    /** What "Behalten" means depends on the clean-up being on. */
-    val autoDeleting: StateFlow<Boolean> = MutableStateFlow(false).also { flow ->
-        viewModelScope.launch { settings.autoDeleteFinished.collect { flow.value = it != AutoDeleteMode.NEVER } }
-    }
+    /** What "Behalten" means depends on the signed-in account's clean-up being on. */
+    val autoDeleting: StateFlow<Boolean> = accounts.account.map { it?.serverId }.distinctUntilChanged()
+        .flatMapLatest { sid -> settings.autoDeleteFinished(sid) }.map { it != AutoDeleteMode.NEVER }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     fun delete(q: FinishedQuestion) { viewModelScope.launch { questions.answerDelete(q) } }
     fun keep(q: FinishedQuestion) { viewModelScope.launch { questions.answerKeep(q) } }

@@ -96,7 +96,7 @@ class FinishedDownloadCleanerTest {
     @After fun tearDown(): Unit = runBlocking {
         scope?.cancel()
         TitleHandover.reset()
-        settings.setAutoDeleteFinished(AutoDeleteMode.NEVER)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.NEVER)
         app.cleanupIgnored.first().forEach { app.setCleanupIgnored(it, false) }
         db.close()
         root.parentFile!!.deleteRecursively()
@@ -176,7 +176,7 @@ class FinishedDownloadCleanerTest {
     // --- one pass (the daily worker uses it too)
 
     @Test fun runOnce_deletesOnlyTheFiles_progressSessionsAndHistoryStay() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.AFTER_3_DAYS)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.AFTER_3_DAYS)
         val due = downloaded("due", completedAt = now - 10 * day, seenAt = now - 4 * day)
         val notYet = downloaded("notYet", completedAt = now - 10 * day, seenAt = now - day)
         val unheard = downloaded("unheard", completedAt = now - 10 * day, seenAt = null)
@@ -203,7 +203,7 @@ class FinishedDownloadCleanerTest {
     @Test fun runOnce_never_signedOut_orKept_deletesNothing() = runBlocking {
         downloaded("b1", completedAt = now - 30 * day, seenAt = now - 20 * day)
         assertEquals(emptyList<String>(), cleaner().runOnce()) // NEVER is the default
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         app.setCleanupIgnored("$s:b1", true)
         assertEquals(emptyList<String>(), cleaner().runOnce())
         app.setCleanupIgnored("$s:b1", false)
@@ -215,7 +215,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun runOnce_neverTheLoadedTheQueuedOrAHeldTitle() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         for (k in listOf("loaded", "queued", "held", "free")) downloaded(k, completedAt = now - 2 * day, seenAt = now - day)
         loaded.value = "loaded" // paused, stopped by the sleep timer or playing: loaded is loaded
         queue.value = listOf("queued")
@@ -230,7 +230,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun withoutATitleInTheController_theLastPlayedOneStandsIn() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         downloaded("lastPlayed", completedAt = now - 2 * day, seenAt = now - day)
         // The car started it with the app's controller not connected, or the daily worker started the process.
         loaded.value = null
@@ -242,7 +242,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun aLoadedTitle_replacesTheLastPlayedOne_theOldOneGoes() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         downloaded("ended", completedAt = now - 2 * day, seenAt = now - day)
         last = LastPlayed(s, "ended", now) // the service notes the next title only at its first pause
         loaded.value = "next"
@@ -250,7 +250,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun aPauseAt99point6Percent_isNoEnd_theFilesStay_untilItReallyEnds() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         // A one-hour title paused 14 s before its end: the tracker already saved it finished.
         val f = downloaded("b1", completedAt = now - day, seenAt = now - 1_000, position = 3_600 * 0.996, duration = 3_600.0)
         assertEquals(emptyList<String>(), cleaner().runOnce())
@@ -260,7 +260,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun aPausedDownloadResumedAfterTheTitleWasFinished_staysDespiteItsOldRequestTime() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         // Queued at T0 (download on play), file 1 done then; the title was finished by streaming at T1; the user resumed the
         // download at T3 and file 2 completed then. The row keeps requestedAt T0.
         val t0 = now - 10 * day
@@ -272,7 +272,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun theServersClock_doesNotMatter_onlyTheDevicesTimesAreCompared() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         // Progress synced from a server whose clock runs a year ahead, and one a year behind.
         downloaded("ahead", completedAt = now - 2 * day, seenAt = now - day, lastUpdate = now + 365 * day)
         downloaded("behind", completedAt = now - 2 * day, seenAt = now - day, lastUpdate = now - 365 * day)
@@ -290,7 +290,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun runOnce_coversEpisodes_andAKeptEpisodeStays() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val ep = downloaded("pod~ep1", completedAt = now - day, seenAt = now - 1_000)
         val kept = downloaded("pod~ep2", completedAt = now - day, seenAt = now - 1_000)
         app.setCleanupIgnored("$s:pod~ep2", true)
@@ -300,7 +300,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun oneFailingDeletion_doesNotStopTheOthers() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         downloaded("bad", completedAt = now - day, seenAt = now - 1_000)
         val good = downloaded("good", completedAt = now - day, seenAt = now - 1_000)
         val failing = object : DownloadManager by real {
@@ -324,7 +324,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun theDailyWorker_hasTheSameGuards() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         downloaded("loaded", completedAt = now - 2 * day, seenAt = now - day)
         downloaded("queued", completedAt = now - 2 * day, seenAt = now - day)
         val free = downloaded("free", completedAt = now - 2 * day, seenAt = now - day)
@@ -350,7 +350,7 @@ class FinishedDownloadCleanerTest {
      * replace the next title) – only once the controller moved on.
      */
     @Test fun queueAdvance_theFinishedTitleGoes_onlyAfterThePlayerMovedOn() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val heldWhenDeleted = mutableListOf<Pair<String, String?>>()
         val recording = object : DownloadManager by real {
             override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {
@@ -385,7 +385,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun watcher_keepsWorkingAfterAFailedDeletion() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         var fail = true
         val flaky = object : DownloadManager by real {
             override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {
@@ -411,7 +411,7 @@ class FinishedDownloadCleanerTest {
             while (System.currentTimeMillis() < end && !until()) { scheduler.runCurrent(); Thread.sleep(10) }
         }
         val base = now
-        settings.setAutoDeleteFinished(AutoDeleteMode.AFTER_3_DAYS)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.AFTER_3_DAYS)
         downloaded("soon", completedAt = base - 10 * day, seenAt = base - 3 * day + 10 * 60_000) // due 10 minutes after base
         cleaner(clock = { base + scheduler.currentTime }).start(virtual)
         try {
@@ -434,12 +434,13 @@ class FinishedDownloadCleanerTest {
      * the queue, and the player holds it once the (slow) start is done. It plays from its files.
      */
     @Test fun aFinishedTitleQueuedNext_survivesItsOwnStart_withTheRealQueueAdvance() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val c = downloaded("C", completedAt = now - 2 * day, seenAt = now - day)
         loaded.value = "A"
         db.queueDao().add(s, "C", now)
         val queueRows = { sid: String -> db.queueDao().observe(sid).map { rows -> rows.map { it.itemKey } } }
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { cleaner(queueOf = queueRows, recheckMs = 50).start(it) }
+        // No grace after leaving the queue: the pick alone must close the gap.
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { cleaner(queueOf = queueRows, recheckMs = 50, graceMs = 0).start(it) }
         delay(300)
         assertTrue("queued: held", c.single().isFile)
         val advancer = io.wolftown.lauschig.queue.QueueAdvancer(
@@ -465,7 +466,7 @@ class FinishedDownloadCleanerTest {
 
     /** The same start without the hand-over (no pick, no grace) loses the title: the test above is not vacuous. */
     @Test fun withoutTheHandover_theQueuedTitleWouldBeLostDuringItsStart() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val c = downloaded("C", completedAt = now - 2 * day, seenAt = now - day)
         loaded.value = "A"
         db.queueDao().add(s, "C", now)
@@ -483,18 +484,128 @@ class FinishedDownloadCleanerTest {
         assertFalse(c.single().exists())
     }
 
-    @Test fun aTitlePickedByAnyStartPath_isHeldForTheGrace_thenGoesIfNothingHoldsIt() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
-        val c = downloaded("C", completedAt = now - 2 * day, seenAt = now - day)
-        TitleHandover.pick("C") // the car, the widget or the app's player started loading it
-        assertEquals(emptyList<String>(), cleaner().runOnce())
-        assertTrue(c.single().isFile)
-        // A minute later the start failed and nothing holds it: it may go.
-        assertEquals(listOf("C"), cleaner(clock = { System.currentTimeMillis() + TitleHandover.GRACE_MS + 1 }).runOnce())
+    /** Runs [block] with a watcher on virtual time: its waits are virtual, the database answers on real threads. */
+    private fun onVirtualTime(block: (scheduler: kotlinx.coroutines.test.TestCoroutineScheduler, virtual: CoroutineScope, pump: (Long, () -> Boolean) -> Unit) -> Unit) {
+        val scheduler = kotlinx.coroutines.test.TestCoroutineScheduler()
+        val virtual = CoroutineScope(SupervisorJob() + kotlinx.coroutines.test.StandardTestDispatcher(scheduler))
+        val pump = { ms: Long, until: () -> Boolean ->
+            val end = System.currentTimeMillis() + ms
+            while (System.currentTimeMillis() < end && !until()) { scheduler.runCurrent(); Thread.sleep(10) }
+        }
+        try { block(scheduler, virtual, pump) } finally { virtual.cancel(); TitleHandover.clock = System::currentTimeMillis }
+    }
+
+    @Test fun aPickedTitleThatNothingElseHolds_goesWhenItsPickEnds_inTheWatcher_withFewPasses() = onVirtualTime { scheduler, virtual, pump ->
+        val base = now
+        val clock = { base + scheduler.currentTime }
+        TitleHandover.clock = clock
+        runBlocking { settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY) }
+        val f = runBlocking { downloaded("P", completedAt = base - 2 * day, seenAt = base - day) }
+        TitleHandover.pick("P") // a start that then failed: nothing else holds it
+        val c = cleaner(clock = clock)
+        c.start(virtual)
+        pump(1_500) { false }
+        scheduler.advanceTimeBy(TitleHandover.GRACE_MS - 1_000)
+        pump(500) { false }
+        assertTrue("still within its pick", f.single().isFile)
+        scheduler.advanceTimeBy(2_000)
+        pump(10_000) { !f.single().exists() }
+        assertFalse(f.single().exists())
+        println("passes until the pick ended: ${c.passes}")
+        assertTrue("passes: ${c.passes}", c.passes <= 6)
+    }
+
+    /**
+     * A counting title in the queue while another one plays (picked, then loaded): nothing runs every second – over ten
+     * virtual minutes the watcher passes only on the changes and once when the pick ends.
+     */
+    @Test fun aQueuedCountingTitle_whileAnotherPlays_costsAHandfulOfPasses_notOnePerSecond() = onVirtualTime { scheduler, virtual, pump ->
+        val base = now
+        val clock = { base + scheduler.currentTime }
+        TitleHandover.clock = clock
+        runBlocking { settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY) }
+        val queued = runBlocking { downloaded("C", completedAt = base - 2 * day, seenAt = base - day) }
+        queue.value = listOf("C")
+        TitleHandover.pick("A") // started from the list ...
+        loaded.value = "A" // ... and loaded
+        val c = cleaner(clock = clock)
+        c.start(virtual)
+        pump(1_500) { false }
+        repeat(10) { scheduler.advanceTimeBy(60_000); pump(200) { false } }
+        assertTrue("queued: kept", queued.single().isFile)
+        println("passes over 10 virtual minutes: ${c.passes}")
+        assertTrue("passes over 10 minutes: ${c.passes}", c.passes <= 6)
+    }
+
+    /** Family device: the clean-up is each account's own setting – a parent's "Sofort" never touches the child's downloads. */
+    @Test fun theModeIsPerAccount_aParentsSofort_neverDeletesTheChildsDownloads() = runBlocking {
+        val b = "bbbbbbbbbbbbbbbb"
+        val store = DataStoreFinishedSeen(ctx).apply { forget(s); forget(b) }
+        try {
+            // The child's account B: seen since long ago, a title finished since (it would count for B).
+            store.reconcile(b, emptySet(), now - 10 * day)
+            val kid = downloaded("kid", completedAt = now - 9 * day, seenAt = null, s = b)
+            db.progressDao().replaceFromServer(ProgressEntity(b, "kid", 100.0, 100.0, true, now - 8 * day))
+            store.reconcile(b, setOf("kid"), now - 8 * day)
+            // The parent (A, signed in) turns on "Sofort" – for A only.
+            settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
+            assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(b).first())
+            // Switch to the child.
+            accounts.acc.value = Account(b, "u2", "kid", false, ServerAddresses(null, null), emptySet())
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { cleaner(store = store).start(it) }
+            delay(800)
+            assertTrue("nothing of the child goes", kid.single().isFile)
+            assertEquals(emptyList<String>(), cleaner(store = store).runOnce())
+            // The child turns it on (after its own question): now only the child's goes.
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.IMMEDIATELY)
+            withTimeout(10_000) { while (kid.single().exists()) delay(20) }
+        } finally {
+            store.forget(s); store.forget(b)
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.NEVER)
+        }
+    }
+
+    @Test fun theOldDeviceWideSetting_belongsToTheAccountSignedInAtTheUpdate() = runBlocking {
+        val active = "c${System.nanoTime().toString(16).takeLast(15).padStart(15, '0')}" // never stored before
+        val other = "d${System.nanoTime().toString(16).takeLast(15).padStart(15, '0')}"
+        settings.putLegacyAutoDelete(AutoDeleteMode.AFTER_7_DAYS)
+        settings.migrateAutoDelete(active)
+        assertEquals(AutoDeleteMode.AFTER_7_DAYS, settings.autoDeleteFinished(active).first())
+        assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(other).first())
+        assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(null).first())
+        settings.migrateAutoDelete(other) // idempotent: the old value is gone
+        assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(other).first())
+        settings.setAutoDeleteFinished(active, AutoDeleteMode.NEVER)
+    }
+
+    @Test fun aCorruptSeenStore_startsEmpty_withANewBaseline() = runBlocking {
+        val file = File(root.parentFile, "seen-corrupt.preferences_pb").apply { writeBytes(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)) }
+        val store = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(
+            corruptionHandler = FinishedSeenStore.corruptionHandler(), scope = CoroutineScope(SupervisorJob() + Dispatchers.IO), produceFile = { file },
+        )
+        assertEquals(mapOf("x" to FinishedSeenStore.BEFORE_BASELINE), DataStoreFinishedSeen(store).reconcile(s, setOf("x"), 100))
+    }
+
+    @Test fun aCorruptQuestionStore_startsEmpty_andEveryAccountTakesANewBaseline() = runBlocking {
+        val seenStore = DataStoreFinishedSeen(ctx).apply { forget(s) }
+        try {
+            seenStore.reconcile(s, emptySet(), 1) // baseline
+            assertEquals(mapOf("q" to 10L), seenStore.reconcile(s, setOf("q"), 10)) // would count
+            val file = File(root.parentFile, "questions-corrupt.preferences_pb").apply { writeBytes(byteArrayOf(9, 9, 9, 9, 9, 9)) }
+            val questionStore = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(
+                corruptionHandler = FinishedQuestions.corruptionHandler(), scope = CoroutineScope(SupervisorJob() + Dispatchers.IO), produceFile = { file },
+            )
+            val questions = FinishedQuestions(questionStore, { true }, {}, { _, _ -> })
+            assertEquals("it starts empty instead of failing", emptySet<FinishedQuestion>(), questions.holds.first())
+            // The lost questions' titles may be among the finished ones: nothing finished now counts any more.
+            assertEquals(mapOf("q" to FinishedSeenStore.BEFORE_BASELINE), seenStore.reconcile(s, setOf("q"), 20))
+        } finally {
+            seenStore.forget(s)
+        }
     }
 
     @Test fun theServicesTitle_isHeld_evenBeforeTheAppAdoptsIt() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         downloaded("car", completedAt = now - 2 * day, seenAt = now - day)
         loaded.value = "other" // the app's controller still shows another title
         TitleHandover.serviceHolds("car")
@@ -505,11 +616,13 @@ class FinishedDownloadCleanerTest {
      * Family device: switching to another account with the clean-up on deletes nothing it already had finished (a silent
      * baseline is taken) – only what is finished afterwards. The first account's times are kept for its return.
      */
+    /** Both accounts have the clean-up on: a baseline still protects what an account had finished before it was seen. */
     @Test fun anAccountSwitch_deletesNothingOfTheOtherAccount_onlyWhatIsFinishedAfterwards() = runBlocking {
         val b = "bbbbbbbbbbbbbbbb"
         val store = DataStoreFinishedSeen(ctx).apply { forget(s); forget(b) }
         try {
-            settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+            settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.IMMEDIATELY)
             // A: a title re-downloaded after it was finished (kept by the re-download rule) – seen before the switch.
             store.reconcile(s, emptySet(), now - 3 * day) // A's baseline
             val again = downloaded("again", completedAt = now - 1_000, seenAt = null)
@@ -533,6 +646,7 @@ class FinishedDownloadCleanerTest {
             assertTrue("A's re-download stays", again.single().isFile)
         } finally {
             store.forget(s); store.forget(b)
+            settings.setAutoDeleteFinished(b, AutoDeleteMode.NEVER)
         }
     }
 
@@ -559,7 +673,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun aFailingPass_doesNotStopTheWatcher() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val f = downloaded("b1", completedAt = now - 2 * day, seenAt = now - day)
         var calls = 0
         val flaky = object : FinishedSeenStore {
@@ -575,7 +689,7 @@ class FinishedDownloadCleanerTest {
     }
 
     @Test fun theDailyWorker_retriesWhenItsStoresFail() = runBlocking {
-        settings.setAutoDeleteFinished(AutoDeleteMode.IMMEDIATELY)
+        settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val broken = object : FinishedSeenStore {
             override suspend fun reconcile(serverId: String, finished: Set<String>, now: Long): Map<String, Long> = throw java.io.IOException("disk full")
             override suspend fun forget(serverId: String) {}

@@ -112,10 +112,14 @@ class TitleExtrasViewModelTest {
         io.wolftown.lauschig.cleanup.TitleHandover.reset()
         db.queueDao().add(s, "c", 1)
         var pickedWhenGone: Boolean? = null
+        val subscribed = kotlinx.coroutines.CompletableDeferred<Unit>()
         val watch = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-            db.queueDao().observe(s).first { rows -> rows.none { it.itemKey == "c" } }
+            // Subscribed while "c" is still queued: the removal is seen as it happens, not before the observer started.
+            db.queueDao().observe(s).first { rows -> if (rows.any { it.itemKey == "c" }) subscribed.complete(Unit); rows.none { it.itemKey == "c" } }
             pickedWhenGone = io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c")
         }
+        kotlinx.coroutines.withTimeout(5_000) { subscribed.await() }
+        assertEquals("not picked before the start", false, io.wolftown.lauschig.cleanup.TitleHandover.state.value.picked.containsKey("c"))
         vm().playFromQueue("c")
         kotlinx.coroutines.withTimeout(5_000) { while (pickedWhenGone == null) kotlinx.coroutines.delay(10) }
         watch.cancel()
