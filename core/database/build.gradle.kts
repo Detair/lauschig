@@ -23,6 +23,8 @@ android {
     }
 
     testOptions {
+        // As :app's targetSdk: Robolectric tests without an explicit @Config(sdk) run on the same SDK as before.
+        targetSdk = 37
         unitTests.isIncludeAndroidResources = true
         // Same as :app: Robolectric (SDK 36+) reflects into JDK internals; a hanging test must fail fast.
         unitTests.all { it.timeout.set(Duration.ofMinutes(10)); it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
