@@ -5,7 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import javax.inject.Inject
 import kotlin.math.PI
 import kotlin.math.abs

@@ -7,7 +7,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.db.dao.EpisodeDao

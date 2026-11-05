@@ -124,6 +124,14 @@ fun DownloadsScreen(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsStorage"),
         )
+        if (state.cardMissing) {
+            Text(
+                stringResource(R.string.settings_storage_missing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("downloadsCardMissing"),
+            )
+        }
         keptSection()
         if (state.total > 0) {
             OutlinedTextField(

@@ -96,6 +96,16 @@ class DownloadsViewModelTest {
         assertEquals(before + 1, reads.get())
     }
 
+    @Test fun aMissingCard_isReadWithTheFreeSpace_andShown() = runTest {
+        val accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
+        val vm = viewModels.get(
+            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { 1L }, flowOf(emptyList()), Dispatchers.Default, cardMissing = { true }) } },
+            DownloadsViewModel::class,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        assertEquals(true, vm.await { it.loaded && it.freeBytes != null }.cardMissing)
+    }
+
     private val signedIn = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
     private val earlier = KeptAccount("cccccccccccccccc", "lukas", "nas")
     private val other = KeptAccount("dddddddddddddddd", "fabian", "abs")

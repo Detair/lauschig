@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
-import android.util.Log
+import io.wolftown.lauschig.cleanup.TitleHandover
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState
@@ -193,6 +194,7 @@ class PlayerControllerImpl(
     }
 
     override fun play(serverId: String, itemId: String, startSec: Double?) {
+        TitleHandover.pick(itemId) // held for the automatic clean-up while it loads
         playJob?.cancel()
         playJob = scope.launch {
             val cur = current

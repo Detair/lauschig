@@ -22,6 +22,11 @@ class CarStarts(
     private val accountServer: suspend () -> String?,
     /** The title loaded in the player right now (ready or buffering), null if none. */
     private val current: suspend () -> CarNode.Title? = { null },
+    /**
+     * Marks a title the car (browse, search, voice) or playback resumption starts, before it is resolved: from then on
+     * the automatic clean-up holds it ([io.wolftown.lauschig.cleanup.TitleHandover]).
+     */
+    private val pick: (key: String) -> Unit = { io.wolftown.lauschig.cleanup.TitleHandover.pick(it) },
 ) {
     sealed interface Outcome {
         data class Ready(val title: CarNode.Title, val items: List<MediaItem>, val index: Int, val offsetMs: Long, val streaming: Boolean) : Outcome
@@ -63,7 +68,7 @@ class CarStarts(
     /** A title of the signed-in account's server or of this device; ids of another (earlier) account never play. */
     private suspend fun allowed(t: CarNode.Title): Boolean = DeviceLibrary.isLocal(t.serverId) || t.serverId == accountServer()
 
-    private suspend fun start(title: CarNode.Title): Outcome = when (val r = resolveTitle(title.serverId, title.key, true)) {
+    private suspend fun start(title: CarNode.Title): Outcome = when (val r = pick(title.key).let { resolveTitle(title.serverId, title.key, true) }) {
         is ServiceTitleStarter.Resolved.Ready -> Outcome.Ready(title, r.items, r.index, r.offsetMs, r.streaming)
         is ServiceTitleStarter.Resolved.Failed -> Outcome.Failed(
             when (r.reason) {

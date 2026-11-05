@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the shared diagnostic log (cache/diagnostics/); nothing else of the app's storage is reachable. -->
+<paths>
+    <cache-path name="diagnostics" path="diagnostics/" />
+</paths>

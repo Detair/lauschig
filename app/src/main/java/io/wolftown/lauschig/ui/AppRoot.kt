@@ -84,6 +84,7 @@ fun AppRoot(
     links: LinkViewModel = hiltViewModel(),
     whatsNew: WhatsNewViewModel = hiltViewModel(),
     previousAccount: PreviousAccountViewModel = hiltViewModel(),
+    finishedQuestions: io.wolftown.lauschig.cleanup.FinishedQuestionViewModel = hiltViewModel(),
     /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
     signedIn: Boolean? = null,
 ) {
@@ -211,6 +212,14 @@ fun AppRoot(
             val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
             val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
             previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
+            // "Download löschen?" after "Als gehört markieren": here it outlives the menu that asked and a rotation.
+            val finishedQuestion by finishedQuestions.question.collectAsStateWithLifecycle()
+            val autoDeleting by finishedQuestions.autoDeleting.collectAsStateWithLifecycle()
+            finishedQuestion.firstOrNull()?.let { q ->
+                io.wolftown.lauschig.ui.common.FinishedQuestionDialog(
+                    autoDeleting, finishedQuestions.titleOf(q), onDelete = { finishedQuestions.delete(q) }, onKeep = { finishedQuestions.keep(q) },
+                )
+            }
         }
     }
 }

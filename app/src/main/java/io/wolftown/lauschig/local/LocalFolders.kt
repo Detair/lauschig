@@ -3,7 +3,7 @@ package io.wolftown.lauschig.local
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.core.net.toUri
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker

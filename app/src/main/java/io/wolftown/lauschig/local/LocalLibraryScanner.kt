@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.local
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.db.dao.LocalLibraryDao
 import io.wolftown.lauschig.db.dao.LocalTitleRows
 import io.wolftown.lauschig.db.entities.AudioFileEntity

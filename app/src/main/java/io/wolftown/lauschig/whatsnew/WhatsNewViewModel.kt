@@ -50,7 +50,7 @@ class WhatsNewViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("WhatsNew", "check failed", e) // never in the way of the app
+                io.wolftown.lauschig.diagnostics.Log.w("WhatsNew", "check failed", e) // never in the way of the app
             }
             _checked.value = true
         }

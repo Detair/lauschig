@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.playback
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
