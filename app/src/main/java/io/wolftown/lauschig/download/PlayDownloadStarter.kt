@@ -3,7 +3,7 @@ package io.wolftown.lauschig.download
 import io.wolftown.lauschig.local.DeviceLibrary
 import android.content.Context
 import android.net.ConnectivityManager
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.work.NetworkType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.db.dao.DownloadDao

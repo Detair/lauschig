@@ -171,6 +171,7 @@ fun SettingsRoute(
         adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
         accountSection = { AccountSection() },
         onOpenStats = onOpenStats,
+        diagnosticsSection = { io.wolftown.lauschig.diagnostics.DiagnosticsSection() },
     )
 }
 
@@ -207,6 +208,8 @@ fun SettingsScreen(
     /** Slot for "Konto" with "Abmelden" (needs Hilt); the first section. */
     accountSection: @Composable () -> Unit = {},
     onOpenStats: () -> Unit = {},
+    /** Slot for "Diagnose-Log teilen" in "Über" (needs Hilt). */
+    diagnosticsSection: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settingsScreen")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -277,7 +280,7 @@ fun SettingsScreen(
         linksSection()
         adminSection()
 
-        AboutSection()
+        AboutSection(diagnostics = diagnosticsSection)
     }
 }
 

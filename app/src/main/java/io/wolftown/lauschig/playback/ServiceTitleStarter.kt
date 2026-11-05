@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.playback
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.media3.common.MediaItem
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.local.DeviceLibrary

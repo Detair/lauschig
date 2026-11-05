@@ -624,6 +624,14 @@
     <string name="settings_version">Version</string>
     <string name="settings_whats_new">What\'s new</string>
     <string name="settings_whats_new_hint">The changes of every version</string>
+    <string name="diagnostics_title">Share diagnostic log</string>
+    <string name="diagnostics_hint">Helps to track down a problem. Without passwords, tokens, server addresses or e-mail.</string>
+    <string name="diagnostics_explain">The log holds the app\'s latest events (up to 500), the app and Android version and the device model. Passwords, tokens, cookies, server addresses, IP and e-mail addresses and your user names are masked. You choose where it goes.</string>
+    <string name="diagnostics_share">Share</string>
+    <string name="diagnostics_cancel">Cancel</string>
+    <string name="diagnostics_chooser">Send the diagnostic log to</string>
+    <string name="diagnostics_subject">Lauschig diagnostic log %1$s</string>
+    <string name="diagnostics_failed">The diagnostic log could not be created.</string>
     <string-array name="whatsnew_0_2_0">
         <item>Sleep timer with a gentle fade-out – shake to extend it</item>
         <item>Every book remembers its speed and volume boost; silence can be skipped</item>

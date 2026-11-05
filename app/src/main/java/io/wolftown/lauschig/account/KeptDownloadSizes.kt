@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.account
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

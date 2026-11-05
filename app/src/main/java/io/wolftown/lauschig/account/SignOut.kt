@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.account
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

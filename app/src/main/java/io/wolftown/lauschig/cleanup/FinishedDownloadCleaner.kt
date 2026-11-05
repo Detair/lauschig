@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.cleanup
 
 import android.content.Context
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy

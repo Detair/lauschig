@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.playback
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.ConnectionState

@@ -624,6 +624,14 @@
     <string name="settings_version">Version</string>
     <string name="settings_whats_new">Was ist neu</string>
     <string name="settings_whats_new_hint">Die Änderungen jeder Version</string>
+    <string name="diagnostics_title">Diagnose-Log teilen</string>
+    <string name="diagnostics_hint">Hilft bei der Fehlersuche. Ohne Passwörter, Zugangsdaten, Serveradressen und E-Mail.</string>
+    <string name="diagnostics_explain">Das Log enthält die letzten Ereignisse der App (bis zu 500), App- und Android-Version und das Gerätemodell. Passwörter, Zugangsdaten, Cookies, Serveradressen, IP- und E-Mail-Adressen und deine Benutzernamen sind unkenntlich gemacht. Wohin es geht, wählst du.</string>
+    <string name="diagnostics_share">Teilen</string>
+    <string name="diagnostics_cancel">Abbrechen</string>
+    <string name="diagnostics_chooser">Diagnose-Log senden an</string>
+    <string name="diagnostics_subject">Lauschig Diagnose-Log %1$s</string>
+    <string name="diagnostics_failed">Das Diagnose-Log konnte nicht erstellt werden.</string>
     <string-array name="whatsnew_0_2_0">
         <item>Schlaf-Timer mit sanftem Ausblenden – Schütteln verlängert ihn</item>
         <item>Jedes Buch merkt sich sein Tempo und seinen Lautstärke-Boost; Stille lässt sich überspringen</item>

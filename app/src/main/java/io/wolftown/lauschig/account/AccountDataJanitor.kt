@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.account
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.download.DownloadTidy
 import kotlinx.coroutines.CancellationException

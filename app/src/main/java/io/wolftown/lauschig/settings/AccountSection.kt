@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.settings
 
 import android.text.format.Formatter
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

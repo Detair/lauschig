@@ -1,6 +1,6 @@
 package io.wolftown.lauschig.ui.achievements
 
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

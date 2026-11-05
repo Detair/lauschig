@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.auto
 
 import android.os.Bundle
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.awaitConnectionAnswer

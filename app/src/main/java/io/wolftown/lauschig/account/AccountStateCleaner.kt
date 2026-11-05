@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.account
 
 import android.content.Context
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.core.app.NotificationManagerCompat
 import coil3.SingletonImageLoader
 import dagger.hilt.android.qualifiers.ApplicationContext

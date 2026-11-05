@@ -12,6 +12,8 @@ import io.wolftown.lauschig.cleanup.CleanupReminderWorker
 import io.wolftown.lauschig.cleanup.FinishedDownloadCleaner
 import io.wolftown.lauschig.cleanup.FinishedDownloadsWorker
 import io.wolftown.lauschig.cleanup.playingKey
+import io.wolftown.lauschig.diagnostics.DiagnosticLog
+import io.wolftown.lauschig.diagnostics.DiagnosticSecrets
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.local.LocalFolders
 import io.wolftown.lauschig.net.ApiProvider
@@ -25,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import io.wolftown.lauschig.widget.WidgetAccountWatcher
+import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -39,6 +42,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
     @Inject lateinit var player: PlayerController
+    @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -47,9 +51,14 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     override fun newImageLoader(context: PlatformContext): ImageLoader = newCoverImageLoader(this, apiProvider)
 
     override fun onCreate() {
+        // Before anything else: a crash during start is in the diagnostic log too.
+        DiagnosticLog.installCrashHandler()
         super.onCreate()
         // Off the main thread; nothing here awaits network I/O.
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // The user's own hosts and names are masked in the diagnostic log; its entries survive the process.
+        diagnosticSecrets.start(scope)
+        scope.launch(Dispatchers.IO) { DiagnosticLog.attach(File(noBackupFilesDir, DIAGNOSTIC_LOG)) }
         scope.launch { syncScheduler.start(scope) }
         // Picks up files added to the device folders meanwhile (throttled; a WorkManager job, nothing waits for it).
         scope.launch { localFolders.scanIfDue() }
@@ -62,7 +71,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("LauschigApp", "account data cleanup failed", e)
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "account data cleanup failed", e)
             }
         }
         // The player state is main-thread bound; the prefetcher only reads it.
@@ -73,5 +82,10 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         // Finished downloads go by themselves if the user wants it; never the title that is playing.
         finishedDownloads.start(scope, player.playingKey())
         FinishedDownloadsWorker.schedule(this)
+    }
+
+    private companion object {
+        /** App-private, never backed up; its entries are masked when recorded. */
+        const val DIAGNOSTIC_LOG = "diagnostic-log.txt"
     }
 }

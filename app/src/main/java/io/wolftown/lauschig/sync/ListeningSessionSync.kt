@@ -1,7 +1,7 @@
 package io.wolftown.lauschig.sync
 
 import android.content.Context
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.BuildConfig
 import io.wolftown.lauschig.absapi.me.MeApi

@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import io.wolftown.lauschig.R
 import androidx.media3.common.AudioAttributes
-import android.util.Log
+import io.wolftown.lauschig.diagnostics.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
