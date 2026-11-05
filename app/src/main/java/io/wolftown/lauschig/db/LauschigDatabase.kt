@@ -51,9 +51,9 @@ import io.wolftown.lauschig.db.entities.AchievementSeenEntity
         BookmarkEntity::class, QueueEntity::class, HistorySessionEntity::class, CollectionEntity::class, CollectionEntryEntity::class,
         LocalFolderEntity::class, LocalTitleEntity::class, ListeningSessionEntity::class, AchievementSeenEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9), AutoMigration(from = 9, to = 10)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9), AutoMigration(from = 9, to = 10), AutoMigration(from = 10, to = 11)],
 )
 @TypeConverters(Converters::class)
 abstract class LauschigDatabase : RoomDatabase() {

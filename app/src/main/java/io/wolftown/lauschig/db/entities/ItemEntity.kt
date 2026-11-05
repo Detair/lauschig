@@ -4,7 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
-@Entity(tableName = "items", primaryKeys = ["serverId", "id"], indices = [Index("serverId", "libraryId")])
+@Entity(tableName = "items", primaryKeys = ["serverId", "id"], indices = [Index("serverId", "libraryId"), Index("serverId", "seriesName", "seriesSortKey")])
 data class ItemEntity(
     val serverId: String,
     val id: String,
