@@ -35,6 +35,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -346,7 +348,8 @@ private val people = Catalog()
 
 /**
  * The quick facts under the title: length, narrator(s) and year, each with its symbol; what is unknown is left out
- * (nothing at all: no bar). The narrator opens the narrator's page, as its chip did (it is not repeated in the chips).
+ * (nothing at all: no bar). The narrators are one fact; a tap opens the narrator's page as their chips did (several: a
+ * small menu picks one); they are not repeated in the chips.
  * The server does not tell this app whether a title is abridged, so that badge of the plan is not there.
  */
 @Composable
@@ -364,10 +367,23 @@ private fun QuickBar(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String
             val text = listenedText(sec)
             QuickFact(Icons.Rounded.Schedule, text, stringResource(R.string.detail_quick_length, text))
         }
-        narrators.forEach { name ->
+        if (narrators.isNotEmpty()) {
+            val names = narrators.joinToString(", ")
+            var pick by remember { mutableStateOf(false) }
             // A device title's people lead nowhere (entity pages list the server's catalog).
-            val open = if (state.isLocal) null else { { onOpenBrowse(BrowseKind.NARRATOR, name) } }
-            QuickFact(Icons.Rounded.Mic, name, stringResource(R.string.detail_quick_narrator, name), open)
+            val open = when {
+                state.isLocal -> null
+                narrators.size == 1 -> { { onOpenBrowse(BrowseKind.NARRATOR, narrators.single()) } }
+                else -> { { pick = true } }
+            }
+            Box {
+                QuickFact(Icons.Rounded.Mic, names, stringResource(R.string.detail_quick_narrator, names), open)
+                DropdownMenu(pick, onDismissRequest = { pick = false }) {
+                    narrators.forEach { name ->
+                        DropdownMenuItem(text = { Text(name) }, onClick = { pick = false; onOpenBrowse(BrowseKind.NARRATOR, name) })
+                    }
+                }
+            }
         }
         year?.let { QuickFact(Icons.Rounded.CalendarToday, it, stringResource(R.string.detail_quick_year, it)) }
     }
@@ -377,7 +393,8 @@ private fun QuickBar(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String
 @Composable
 private fun QuickFact(icon: ImageVector, text: String, description: String, onClick: (() -> Unit)? = null) {
     val link = if (onClick != null) {
-        Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp)
+        // Lined up with the other facts (no inset); the touch target is 48 dp high.
+        Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick)
     } else {
         Modifier
     }
@@ -544,8 +561,10 @@ private fun DownloadStatus(d: DownloadUi, canStart: Boolean, onPause: () -> Unit
                 TextButton(onClick = { if (d.hasPartialData) onConfirmDelete() else onDelete() }) { Text(stringResource(R.string.detail_download_cancel)) }
             }
             is DownloadUi.Complete -> Row(verticalAlignment = Alignment.CenterVertically) {
+                // The size never breaks between number and unit (large text: the line wraps before it).
+                val size = Formatter.formatShortFileSize(LocalContext.current, d.bytes).replace(' ', '\u00A0')
                 Text(
-                    stringResource(R.string.detail_downloaded, Formatter.formatShortFileSize(LocalContext.current, d.bytes)),
+                    stringResource(R.string.detail_downloaded, size),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
                 )

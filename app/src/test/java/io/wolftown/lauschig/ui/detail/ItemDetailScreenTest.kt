@@ -193,6 +193,16 @@ class ItemDetailScreenTest {
         assertTrue(bar.top >= title.bottom && bar.bottom <= chip.top && bar.bottom <= primary.top)
     }
 
+    @Test fun quickBar_severalNarrators_oneFact_aMenuPicksWhose() {
+        val opened = mutableListOf<Pair<BrowseKind, String>>()
+        rule.setContent {
+            LauschigTheme { ItemDetailScreen(base.copy(narrator = "Oliver Rohrbeck, Jens Wawrczeck"), {}, {}, {}, {}, {}, {}, onOpenBrowse = { k, n -> opened += k to n }) }
+        }
+        rule.onNodeWithText("Oliver Rohrbeck, Jens Wawrczeck").assertContentDescriptionEquals("Read by Oliver Rohrbeck, Jens Wawrczeck").performClick()
+        rule.onNodeWithText("Jens Wawrczeck").performClick()
+        assertEquals(listOf(BrowseKind.NARRATOR to "Jens Wawrczeck"), opened)
+    }
+
     @Test fun quickBar_leavesOutWhatIsUnknown() {
         show(base.copy(narrator = null, durationSec = 0.0, publishedYear = null))
         rule.onNodeWithTag("quickBar").assertDoesNotExist()
@@ -220,6 +230,7 @@ class ItemDetailScreenTest {
         rule.onNodeWithTag("downloadCompanion").assertContentDescriptionEquals("Downloading 42 %").performClick()
         rule.onNodeWithText("Downloading 42 %").assertIsDisplayed()
         state = base.copy(download = DownloadUi.Complete(812_000_000))
+        rule.onNodeWithText("Downloaded (812\u00A0MB)").assertIsDisplayed() // number and unit stay together
         rule.onNodeWithTag("downloadCompanion").assertContentDescriptionEquals("Available on this device").performClick()
         rule.onNodeWithText("Delete download?").assertIsDisplayed()
         rule.onNodeWithText("Delete").performClick()
