@@ -179,6 +179,35 @@ class MainViewModelTest {
         assertEquals(AppPages(null, Setup()), viewModels.own(MainViewModel(store)).pages.value)
     }
 
+    private val welcome = io.wolftown.lauschig.ui.nav.Welcome
+
+    @Test fun theVeryFirstStart_theWelcome() {
+        assertEquals(AppPages(null, welcome), viewModels.own(MainViewModel(FakeAccountStore(), welcomeDue = { true })).pages.value)
+    }
+
+    @Test fun theWelcome_notWithAnAccount() {
+        assertEquals(AppPages("s1", Start), viewModels.own(MainViewModel(signedIn(), welcomeDue = { true })).pages.value)
+    }
+
+    @Test fun theWelcome_notWithSavedProfiles() {
+        assertEquals(io.wolftown.lauschig.ui.nav.ProfilePicker, viewModels.own(MainViewModel(withSaved(), welcomeDue = { true })).pages.value!!.start)
+    }
+
+    @Test fun theWelcome_notWhenNotDue_theSignIn() {
+        assertEquals(Setup(), viewModels.own(MainViewModel(FakeAccountStore(), welcomeDue = { false })).pages.value!!.start)
+    }
+
+    @Test fun theWelcome_onlyAtTheStart_notAfterASignOut() {
+        val store = signedIn()
+        val vm = viewModels.own(MainViewModel(store, welcomeDue = { true }))
+        kotlinx.coroutines.runBlocking { store.clear(keepDownloads = false) }
+        assertEquals(Setup(), vm.pages.value!!.start)
+    }
+
+    @Test fun theWelcome_unreadable_neverInTheWayOfTheStart() {
+        assertEquals(Setup(), viewModels.own(MainViewModel(FakeAccountStore(), welcomeDue = { throw IOException("corrupt") })).pages.value!!.start)
+    }
+
     @Test fun signedIn_unreadableStore_isFalse() {
         val store = object : io.wolftown.lauschig.account.AccountStore by FakeAccountStore() {
             override val account: Flow<Account?> = flow { throw IOException("corrupt") }

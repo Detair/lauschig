@@ -1061,4 +1061,15 @@
     <string name="setup_add_intro">Melde dich mit einem weiteren Konto an. Das bisherige bleibt angemeldet. Liegt das neue auf demselben Server, lass die Adressen einfach stehen.</string>
     <string name="profiles_picker_title">Wer hört zu?</string>
     <string name="downloads_other_profiles">Andere Profile auf diesem Gerät: %1$s</string>
+    <!-- Willkommen -->
+    <string name="welcome_1_title">Willkommen bei Lauschig</string>
+    <string name="welcome_1_text">Deine Hörbücher und Podcasts, schnell und ohne Umwege. Auch ohne Netz.</string>
+    <string name="welcome_2_title">Du brauchst einen eigenen Server</string>
+    <string name="welcome_2_text">Lauschig ist eine App für Audiobookshelf, einen Server, den du selbst betreibst. Deine Titel kommen von dort; die App bringt keine mit und verkauft keine. Ohne eigenen Server oder ein Konto auf einem kannst du dich nicht anmelden.</string>
+    <string name="welcome_3_title">Überall weiterhören</string>
+    <string name="welcome_3_text">Lade Titel aufs Gerät und höre ohne Netz weiter. Dein Fortschritt gleicht sich ab, sobald der Server wieder da ist. Als Nächstes meldest du dich an.</string>
+    <string name="welcome_next">Weiter</string>
+    <string name="welcome_skip">Überspringen</string>
+    <string name="welcome_sign_in">Anmelden</string>
+    <string name="welcome_place">Seite %1$d von %2$d</string>
 </resources>

@@ -1061,4 +1061,15 @@
     <string name="setup_add_intro">Sign in with another account. The current one stays signed in. If the new one is on the same server, just leave the addresses as they are.</string>
     <string name="profiles_picker_title">Who\'s listening?</string>
     <string name="downloads_other_profiles">Other profiles on this device: %1$s</string>
+    <!-- Welcome -->
+    <string name="welcome_1_title">Welcome to Lauschig</string>
+    <string name="welcome_1_text">Your audiobooks and podcasts, quick and simple. Without a connection too.</string>
+    <string name="welcome_2_title">You need your own server</string>
+    <string name="welcome_2_text">Lauschig is an app for Audiobookshelf, a server you run yourself. Your titles come from there; the app brings none of its own and sells none. Without your own server, or an account on one, you can\'t sign in.</string>
+    <string name="welcome_3_title">Keep listening anywhere</string>
+    <string name="welcome_3_text">Download titles to your device and keep listening without a connection. Your progress syncs as soon as the server is back. Next, you sign in.</string>
+    <string name="welcome_next">Next</string>
+    <string name="welcome_skip">Skip</string>
+    <string name="welcome_sign_in">Sign in</string>
+    <string name="welcome_place">Page %1$d of %2$d</string>
 </resources>

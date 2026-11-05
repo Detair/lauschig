@@ -100,6 +100,13 @@ class UiSettings(private val store: DataStore<Preferences>) {
         store.edit { it[LAST_SEEN_VERSION] = code }
     }
 
+    /** The welcome of the very first start was seen to its end or skipped. */
+    val welcomeSeen: Flow<Boolean> = store.data.map { it[WELCOME_SEEN] ?: false }.distinctUntilChanged()
+
+    suspend fun setWelcomeSeen() {
+        store.edit { it[WELCOME_SEEN] = true }
+    }
+
     suspend fun setTheme(mode: ThemeMode) {
         store.edit { it[THEME] = mode.name }
     }
@@ -133,5 +140,6 @@ class UiSettings(private val store: DataStore<Preferences>) {
         val START_TAB = stringPreferencesKey("start_tab")
         val LAST_SEEN_VERSION = intPreferencesKey("whats_new_seen_version")
         val REMAINING_TIME = stringPreferencesKey("player_remaining_time")
+        val WELCOME_SEEN = booleanPreferencesKey("welcome_seen")
     }
 }
