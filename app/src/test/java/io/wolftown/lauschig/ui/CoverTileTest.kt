@@ -1,7 +1,9 @@
 package io.wolftown.lauschig.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import io.wolftown.lauschig.ui.common.CoverTile
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
@@ -77,4 +80,24 @@ class CoverTileTest {
         rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription)).assertDoesNotExist()
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun noPlayOverlay_tapOpens_playOnlyAsAnAccessibilityAction() {
+        val calls = mutableListOf<String>()
+        rule.setContent { LauschigTheme { CoverTile(item(downloaded = true), onClick = { calls += "open" }, onPlay = { calls += "play" }) } }
+        // No round button on the thumbnail: nothing hides the cover, nothing plays by accident while scrolling a row.
+        rule.onNodeWithTag("coverPlay", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithContentDescription("Play Das Buch", useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithText("Das Buch").performClick()
+        assertEquals(listOf("open"), calls)
+        // TalkBack keeps the quick way to play (Actions menu), as a deliberate choice.
+        rule.onNodeWithText("Das Buch").performCustomAccessibilityActionWithLabel("Play Das Buch")
+        assertEquals(listOf("open", "play"), calls)
+    }
+
+    @Test fun offline_unavailableTile_offersNoPlayAction() {
+        rule.setContent {
+            LauschigTheme { CompositionLocalProvider(LocalOfflineDimming provides true) { CoverTile(item(downloaded = false), onPlay = {}) } }
+        }
+        rule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)).assertDoesNotExist()
+    }
 }

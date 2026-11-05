@@ -708,6 +708,7 @@
     <string-array name="whatsnew_0_4_0">
         <item>Dunkler Farbton „Kaminfeuer“: warmes Mokka, Creme und Bernstein fürs Hören im Bett – auch mit reinem Schwarz</item>
         <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
+        <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>

@@ -149,8 +149,9 @@ fun StartRoute(
 }
 
 /**
- * Tap opens the details, the play button plays, long-press opens the actions menu. The first "continue" title is a
- * large card with its own play/pause button ([onPlayPause]; pause while it is [playingId]); the others stay in the row.
+ * A tile's tap opens the details, long-press the actions menu (the tiles have no play button). The first "continue"
+ * title is a large card with its own play/pause button ([onPlayPause]; pause while it is [playingId]); the others stay
+ * in the row.
  * Below them a small [stats] card (this week, the streak) opens the statistics; it is null while nothing was heard lately.
  * In December and January a card invites to the [review] of the year (hidden per year with its X).
  */

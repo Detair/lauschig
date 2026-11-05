@@ -708,6 +708,7 @@
     <string-array name="whatsnew_0_4_0">
         <item>Dark tone “Fireside”: warm mocha, cream and amber for listening in bed – also with pure black</item>
         <item>Downloaded titles carry a new symbol, an arrow in a circle – no longer mistaken for “heard”</item>
+        <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
