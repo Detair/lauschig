@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -172,7 +173,8 @@ fun StatsScreen(
                 PeriodHead(state, summary, onPrevious, onNext, Modifier.padding(horizontal = Spacing.xs).padding(top = Spacing.m))
             }
             item(key = "chart", contentType = "chart") {
-                PeriodChart(summary, Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.l).testTag("statsChart"))
+                // The chart keeps a band for its tooltip above the bars: that is its space to the lines above.
+                PeriodChart(summary, Modifier.padding(horizontal = Spacing.gutter).testTag("statsChart"))
             }
             item(key = "tiles", contentType = "tiles") {
                 Tiles(state, Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.xl))
@@ -367,7 +369,21 @@ private fun PeriodChart(summary: PeriodSummary, modifier: Modifier = Modifier) {
             entries.joinToString(", "),
         )
     }
-    BarChart(bars.map { it.seconds }, bars.indexOfFirst { it.current }.takeIf { it >= 0 }, description, modifier, labels = labels)
+    // A bar's tooltip (and what TalkBack says on it): its whole date – weekday and day, month and year, the year – and the time.
+    val tipDay = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), locale)
+    val tipMonth = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "MMMMy"), locale)
+    val tips = bars.map { b ->
+        val name = when (summary.unit) {
+            BarUnit.DAY -> b.start.format(tipDay)
+            BarUnit.MONTH -> b.start.format(tipMonth)
+            BarUnit.YEAR -> b.start.year.toString()
+        }
+        BarTip(if (b.current) stringResource(R.string.stats_bar_current, name, currentName) else name, statsDuration(b.seconds))
+    }
+    // A new period starts without a tooltip.
+    key(summary.range) {
+        BarChart(bars.map { it.seconds }, bars.indexOfFirst { it.current }.takeIf { it >= 0 }, description, modifier, labels = labels, tips = tips)
+    }
 }
 
 /**

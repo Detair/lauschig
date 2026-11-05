@@ -713,6 +713,7 @@
         <item>Downloaded titles carry a new symbol, an arrow in a circle – no longer mistaken for “heard”</item>
         <item>Covers in rows have no play button any more – tapping one opens its details, the menu still plays</item>
         <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
+        <item>Statistics: tap a bar to see its date and listening time; with TalkBack every bar says its value</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
@@ -734,6 +735,8 @@
     <string name="stats_tile_active_days">Days listened</string>
     <string name="stats_history_loading">Loading your listening history …</string>
     <string name="stats_history_wifi">Your full listening history loads on Wi-Fi.</string>
+    <string name="stats_bar_tip">%1$s: %2$s</string>
+    <string name="stats_bar_current">%1$s (%2$s)</string>
     <string name="stats_chart_none">No listening time</string>
     <string name="stats_chart_today">today</string>
     <string name="stats_chart_this_month">this month</string>

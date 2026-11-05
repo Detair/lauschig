@@ -13,7 +13,10 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -103,12 +106,14 @@ class StatsScreenTest {
         rule.onNodeWithTag("period:WEEK").assertIsSelected()
         rule.onNodeWithTag("statsTotal").assertTextEquals("40 min")
         rule.onNodeWithTag("statsActiveDays").assertTextEquals("on 1 day")
-        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals(
+        chartSummary().assertContentDescriptionEquals(
             "Listening time per day: Monday 40 min, Tuesday 0 min, Wednesday (today) 30 s, Thursday 0 min, Friday 0 min, Saturday 0 min, Sunday 0 min",
         )
+        rule.onNodeWithTag("statsList").performScrollToNode(hasTestTag("tileFinished")) // below the chart (and its tooltip band)
         rule.onNodeWithTag("tileStreak").assertTextEquals("Streak", "1 day")
         rule.onNodeWithTag("tileLongest").assertTextEquals("Best streak", "5 days")
         rule.onNodeWithTag("tileFinished").assertTextEquals("Finished", "1 book")
+        rule.onNodeWithTag("statsList").performScrollToNode(hasTestTag("statsNext"))
         rule.onNodeWithTag("statsNext").assertIsNotEnabled()
         rule.onNodeWithTag("statsPrevious").assertIsEnabled().performClick()
         rule.onNodeWithTag("period:YEAR").performClick()
@@ -171,8 +176,9 @@ class StatsScreenTest {
         rule.setContent { LauschigTheme { StatsScreen(empty, onBack = {}) } }
         rule.onNodeWithTag("statsTotal").assertTextEquals("0 min")
         rule.onNodeWithTag("statsActiveDays").assertTextEquals("Nothing listened in this period")
-        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("No listening time")
+        chartSummary().assertContentDescriptionEquals("No listening time")
         // A past period: its own longest run and days, not today's streak.
+        rule.onNodeWithTag("statsList").performScrollToNode(hasTestTag("tileFinished")) // below the chart (and its tooltip band)
         rule.onNodeWithTag("tileStreak").assertTextEquals("Longest streak", "0 days")
         rule.onNodeWithTag("tileLongest").assertTextEquals("Days listened", "0 days")
         rule.onNodeWithTag("statsNext").assertIsEnabled()
@@ -192,7 +198,8 @@ class StatsScreenTest {
         rule.onNodeWithTag("statsPrevious").assertDoesNotExist()
         rule.onNodeWithTag("statsNext").assertDoesNotExist()
         rule.onNodeWithTag("statsPeriodLabel").assertTextEquals("Since Mar 1, 2025")
-        rule.onNodeWithTag("statsChart").assertContentDescriptionEquals("Listening time per year: 2025 1 h 0 min, 2026 (this year) 1 h 0 min")
+        chartSummary().assertContentDescriptionEquals("Listening time per year: 2025 1 h 0 min, 2026 (this year) 1 h 0 min")
+        rule.onNodeWithTag("statsList").performScrollToNode(hasTestTag("tileFinished")) // below the chart (and its tooltip band)
         rule.onNodeWithTag("tileFinished").assertTextEquals("Finished", "1 book", "2 series")
         rule.onNodeWithTag("statsList").performScrollToNode(hasText("Book B"))
         rule.onNodeWithText("Nov 2, 2026").assertIsDisplayed() // all time: always with the year
@@ -244,6 +251,68 @@ class StatsScreenTest {
             }
         }
         StatsPeriod.entries.forEach { rule.onNodeWithTag("period:$it").assertIsDisplayed() }
+    }
+
+    /** The chart's spoken summary (all its values in one sentence), read before the single bars. */
+    private fun chartSummary() = rule.onNode(hasTestTag("chartSummary") and hasAnyAncestor(hasTestTag("statsChart")))
+
+    @Test fun aBar_tapShowsItsTooltip_withDateAndTime_aboveIt_tapAgainHidesIt() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+        rule.onNodeWithTag("chartBar:0").performClick().assertIsSelected()
+        rule.onNodeWithTag("barTooltip").assertIsDisplayed().assertTextEquals("40 min", "Monday, November 2")
+        // Another bar: the tooltip moves over it.
+        rule.onNodeWithTag("chartBar:2").performClick()
+        rule.onNodeWithTag("chartBar:0").assertIsNotSelected()
+        val tip = rule.onNodeWithTag("barTooltip").assertTextEquals("30 s", "Wednesday, November 4 (today)").getUnclippedBoundsInRoot()
+        val bar = rule.onNodeWithTag("chartBar:2").getUnclippedBoundsInRoot()
+        val center = (bar.left + bar.right) / 2
+        assertTrue("tooltip $tip not over bar $bar", tip.left <= center && tip.right >= center && tip.bottom <= bar.bottom)
+        rule.onNodeWithTag("chartBar:2").performClick().assertIsNotSelected()
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+    }
+
+    @Test fun everyBar_saysItsDateAndTime_theTooltipIsNotSpokenAgain() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("chartBar:0").assertContentDescriptionEquals("Monday, November 2: 40 min")
+        rule.onNodeWithTag("chartBar:1").assertContentDescriptionEquals("Tuesday, November 3: 0 min")
+        rule.onNodeWithTag("chartBar:2").assertContentDescriptionEquals("Wednesday, November 4 (today): 30 s")
+        rule.onNodeWithTag("chartBar:2").performClick()
+        rule.onNodeWithTag("barTooltip").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.HideFromAccessibility))
+    }
+
+    @Test fun aYearsBars_areMonths_allTimesBars_areYears() {
+        val range = PeriodRange(StatsPeriod.ALL, LocalDate.of(2025, 3, 1), LocalDate.of(2026, 11, 5))
+        val all = listened.copy(
+            period = StatsPeriod.ALL,
+            summary = PeriodSummary(range, 7200.0, 3, BarUnit.YEAR, listOf(Bar(LocalDate.of(2025, 1, 1), 3600.0, false), Bar(LocalDate.of(2026, 1, 1), 3720.0, true)), emptyList(), emptyList(), emptyList()),
+        )
+        var state by mutableStateOf(all)
+        rule.setContent { LauschigTheme { StatsScreen(state, onBack = {}) } }
+        rule.onNodeWithTag("chartBar:1").assertContentDescriptionEquals("2026 (this year): 1 h 2 min").performClick()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("1 h 2 min", "2026 (this year)")
+        // Another period: the old tooltip does not stay behind.
+        val yearRange = PeriodRange(StatsPeriod.YEAR, LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 1))
+        state = listened.copy(
+            period = StatsPeriod.YEAR,
+            summary = PeriodSummary(yearRange, 600.0, 1, BarUnit.MONTH, List(12) { Bar(LocalDate.of(2026, it + 1, 1), if (it == 10) 600.0 else 0.0, it == 10) }, emptyList(), emptyList(), emptyList()),
+        )
+        rule.onNodeWithTag("barTooltip").assertDoesNotExist()
+        rule.onNodeWithTag("chartBar:10").assertContentDescriptionEquals("November 2026 (this month): 10 min")
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "de")
+    fun aBarsTooltip_german() {
+        rule.setContent { LauschigTheme { StatsScreen(listened, onBack = {}) } }
+        rule.onNodeWithTag("chartBar:0").assertContentDescriptionEquals("Montag, 2. November: 40 Min.").performClick()
+        rule.onNodeWithTag("barTooltip").assertTextEquals("40 Min.", "Montag, 2. November")
+    }
+
+    @Test fun aChartWithoutTips_staysOneQuietNode() {
+        rule.setContent { LauschigTheme { BarChart(listOf(60.0, 0.0, 120.0), current = 2, description = "Three days") } }
+        rule.onNodeWithContentDescription("Three days").assertExists()
+        rule.onNodeWithTag("chartBar:0").assertDoesNotExist()
+        rule.onNodeWithTag("chartSummary").assertDoesNotExist()
     }
 
     /** A node that shows text (a Text, not a container). */

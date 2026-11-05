@@ -713,6 +713,7 @@
         <item>Heruntergeladene Titel tragen ein neues Symbol, einen Pfeil im Kreis – nicht mehr mit „gehört“ zu verwechseln</item>
         <item>Cover in Reihen haben keine Play-Taste mehr – Antippen öffnet die Details, das Menü spielt weiterhin ab</item>
         <item>Titeldetails: Länge, Sprecher und Jahr auf einen Blick, große Wiedergabetaste mit dem Download daneben</item>
+        <item>Statistik: Antippen eines Balkens zeigt Datum und Hörzeit; mit TalkBack sagt jeder Balken seinen Wert</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistik: Hörzeit pro Woche, Monat und Jahr, Tage am Stück und beendete Bücher – auch offline</item>
@@ -734,6 +735,8 @@
     <string name="stats_tile_active_days">Hörtage</string>
     <string name="stats_history_loading">Hörhistorie wird geladen …</string>
     <string name="stats_history_wifi">Die vollständige Hörhistorie wird im WLAN geladen.</string>
+    <string name="stats_bar_tip">%1$s: %2$s</string>
+    <string name="stats_bar_current">%1$s (%2$s)</string>
     <string name="stats_chart_none">Keine Hörzeit</string>
     <string name="stats_chart_today">heute</string>
     <string name="stats_chart_this_month">dieser Monat</string>
