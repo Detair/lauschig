@@ -805,6 +805,57 @@ class PlayerControllerTest {
         assertEquals(PlayerUiState(), c.state.value)
     }
 
+    // Task 1.2: back on a profile its last title waits, paused, in the mini player.
+
+    @Test fun showPaused_showsTheTitleAtItsPosition_withoutTouchingThePlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.showPaused(s, "it")
+        assertEquals("it", c.state.value.itemId)
+        assertEquals(700.0, c.state.value.positionSec, 0.0)
+        assertEquals(1800.0, c.state.value.durationSec, 0.0)
+        assertFalse(c.state.value.isPlaying)
+        assertFalse(c.state.value.isLoading)
+        assertEquals("nothing is loaded into the player", 0, f.setCalls)
+        assertEquals(0, f.playCalls)
+    }
+
+    @Test fun showPaused_thenPlay_startsItAtItsPosition() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.showPaused(s, "it")
+        c.togglePlayPause()
+        assertEquals(3, f.items.size)
+        assertEquals(1 to 100_000L, f.started)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun showPaused_neverReplacesWhatIsLoaded() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        c.showPaused(s, "other")
+        assertEquals("it", c.state.value.itemId)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun showPaused_aTitleThatIsGone_showsNothing() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { null })
+        c.showPaused(s, "gone")
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    @Test fun stop_endsAShownTitle() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.showPaused(s, "it")
+        c.stop()
+        assertEquals(null, c.state.value.itemId)
+        c.togglePlayPause()
+        assertTrue("nothing left to start", f.items.isEmpty())
+    }
+
     @Test fun togglePlayPause_withNothingEverPlayed_doesNothing() = runTest {
         val f = FakeFacade()
         val c = controller(f, item(threeFiles))

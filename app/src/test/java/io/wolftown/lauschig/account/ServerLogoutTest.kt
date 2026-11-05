@@ -88,4 +88,60 @@ class ServerLogoutTest {
         assertFalse(ServerLogout({ ConnectionState.Online(base, ConnectionState.Via.LOCAL) }, OkHttpClient(), timeoutMs = 300).logout(account(base), "refresh-1"))
         assertTrue((System.nanoTime() - started) / 1_000_000 < 5_000)
     }
+
+    // Task 1.6: a saved profile on another server is reached over its own addresses.
+
+    private val ok get() = MockResponse().setHeader("Content-Type", "application/json").setBody("""{"redirect_url":null}""")
+
+    private fun profileLogout(state: ConnectionState, timeoutMs: Long = 5_000, resolve: suspend (ServerAddresses) -> ConnectionState) =
+        ServerLogout({ state }, OkHttpClient(), timeoutMs, resolve)
+
+    @Test fun aProfileOnAnotherServer_isLoggedOutThere_overItsOwnAddresses() = runBlocking {
+        val current = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(ok)
+            val own = server.url("/")
+            val out = profileLogout(ConnectionState.Online(current.url("/"), ConnectionState.Via.LOCAL)) { addresses ->
+                assertEquals(own, addresses.local)
+                ConnectionState.Online(own, ConnectionState.Via.LOCAL)
+            }
+            assertTrue(out.logoutProfile(account(own), "refresh-2"))
+            assertEquals("refresh-2", server.takeRequest().getHeader("x-refresh-token"))
+            assertEquals("not to the signed-in account's server", 0, current.requestCount)
+        } finally {
+            current.shutdown()
+        }
+    }
+
+    @Test fun aProfileOnTheServerOfTheConnection_needsNoProbe() = runBlocking {
+        server.enqueue(ok)
+        val base = server.url("/")
+        val out = profileLogout(ConnectionState.Online(base, ConnectionState.Via.LOCAL)) { error("no probe needed") }
+        assertTrue(out.logoutProfile(account(base), "refresh-2"))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun aProfileWhoseServerDoesNotAnswer_isSimplyNotLoggedOut() = runBlocking {
+        val out = profileLogout(ConnectionState.Offline) { ConnectionState.Offline }
+        assertFalse(out.logoutProfile(account(server.url("/")), "refresh-2"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun aHangingProbe_ofAProfile_isBounded() = runBlocking {
+        val out = profileLogout(ConnectionState.Offline, timeoutMs = 200) { kotlinx.coroutines.awaitCancellation() }
+        val start = System.nanoTime()
+        assertFalse(out.logoutProfile(account(server.url("/")), "refresh-2"))
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 3_000)
+    }
+
+    @Test fun aFailingProbe_ofAProfile_isNotAnError() = runBlocking {
+        val out = profileLogout(ConnectionState.Offline) { throw java.io.IOException("no route") }
+        assertFalse(out.logoutProfile(account(server.url("/")), "refresh-2"))
+    }
+
+    @Test fun signingOutTheActiveAccount_offline_probesNothing_asBefore() = runBlocking {
+        val out = profileLogout(ConnectionState.Offline) { error("a sign-out does not probe") }
+        assertFalse(out.logout(account(server.url("/")), "refresh-1"))
+        assertEquals(0, server.requestCount)
+    }
 }

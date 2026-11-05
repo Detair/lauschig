@@ -43,6 +43,17 @@ class CleartextGuardTest {
         assertEquals(0, server.requestCount)
     }
 
+    /** The logout of a saved profile on another http:// server: the user confirmed that server, for that profile. */
+    @Test
+    fun cleartextToAHostConfirmedForASavedProfile_passes() {
+        store.acc.value = account(emptySet())
+        val saved = account(setOf(server.url("/").cleartextKey())).copy(serverId = "bbbbbbbbbbbbbbbb")
+        store.aside.value = listOf(FakeAccountStore.Aside(saved, "a", "r", false))
+        client().newCall(Request.Builder().url(server.url("/logout")).build()).execute().use {
+            assertEquals(200, it.code)
+        }
+    }
+
     @Test
     fun cleartextToConfirmedHost_passes() {
         store.acc.value = account(setOf(server.url("/").cleartextKey()))

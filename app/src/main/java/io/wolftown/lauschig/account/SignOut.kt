@@ -7,13 +7,15 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.awaitConnectionAnswer
+import io.wolftown.lauschig.download.SwitchedDownloads
 import io.wolftown.lauschig.net.ApiProvider
 import io.wolftown.lauschig.playback.LastPlayedStore
+import io.wolftown.lauschig.playback.LastTitleStarter
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.SleepTimer
-import io.wolftown.lauschig.playback.forgetServerTitle
 import io.wolftown.lauschig.sync.BookmarkSync
 import io.wolftown.lauschig.sync.ProgressSync
+import io.wolftown.lauschig.sync.SyncTrigger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,19 +87,25 @@ interface AccountSignOut {
 }
 
 /**
- * Profile switch on a shared device (Phase 6 seam for Phase 7, no screen uses it yet): the active account is left like a
- * sign-out with „Behalten“ – playback stops, its work stops, waiting downloads pause, the last-played title and the
- * per-account state outside Room go – but it stays signed in: no server logout, its tokens are set aside in the store
- * ([AccountStore.saved]) and nobody is asked to delete its data. The next account becomes active as the last step, so
- * the app never sees "no account" in between.
+ * Profile switch on a shared device (no screen uses it yet). First the active account's playback pauses – its position is
+ * final – and its changes go up, at most [SignOut.SWITCH_PUSH_TIMEOUT_MS]; offline or out of time the switch goes on and
+ * they stay in Room until the account is active again. Then it is left like a sign-out with „Behalten“ – playback stops,
+ * its work stops, waiting downloads pause (and are noted) – but it stays signed in: no server logout, its tokens are set
+ * aside in the store ([AccountStore.saved]), nobody is asked to delete its data, and its last title, RMAB connection and
+ * recent searches wait for its return. The next account becomes active as the last step, so the app never sees "no
+ * account" in between. Then it arrives: the downloads the switch paused go on (the Wi-Fi rule applies), its last title
+ * waits paused in the mini player, a sync starts. Nothing ever starts playing by itself.
  */
 interface ProfileSwitch {
-    /** Switches to the saved account [serverId]. False, touching nothing, if it is not saved. */
+    /**
+     * Switches to the saved account [serverId]. False, touching nothing, if it is not saved. False too if it could not
+     * become active: the active account stays, and goes on as after a switch back.
+     */
     suspend fun switchProfile(serverId: String): Boolean
 
     /**
      * Sets the active account aside and makes the newly signed-in [next] the active one ([AccountStore.add]); the same
-     * account signing in again (or none active) just saves.
+     * account signing in again just saves. If [next] cannot be stored this throws: the active account stays and goes on.
      */
     suspend fun addProfile(next: Account, accessToken: String, refreshToken: String)
 
@@ -109,8 +117,8 @@ interface ProfileSwitch {
      * owner. False, touching nothing, if [serverId] is not saved; the active account is never removed here – also not
      * when it became the active one just before (the account operations run one after the other).
      *
-     * The server logout needs the current connection to be on that profile's server (the same server as the signed-in
-     * account – the family case); a profile on another server is not logged out there, its session runs out on its own.
+     * The server logout goes to that profile's own addresses ([ServerLogout.logoutProfile], also on another server than
+     * the signed-in account's); if none answers in time its session runs out on its own, and the removal goes through.
      */
     suspend fun removeProfile(serverId: String): Boolean
 }
@@ -123,7 +131,7 @@ interface ProfileSwitch {
  * recent searches, an open download question and the cover caches go → the account and its tokens go **last**
  * ([AccountStore.clear]), so the app turns to the sign-in only when the data is in its final state. Device titles are
  * never touched. Runs to the end even if the caller is cancelled; a failing step is logged and the rest still runs.
- * The same steps leave an account for a [ProfileSwitch], without the logout and without forgetting anything.
+ * The same steps leave an account for a [ProfileSwitch], without the logout and without forgetting what is its own.
  *
  * One instance for the app: its account operations (sign-out, sign-in, switches, removing a profile) run one after the
  * other ([operations]), so none of them works on an account another one is just changing.
@@ -144,8 +152,24 @@ class SignOut(
     /** True once the connection check answered "online" (false: offline, or no answer in time). */
     private val awaitOnline: suspend () -> Boolean,
     private val logout: suspend (Account, refreshToken: String) -> Boolean,
-    /** Per-account state outside Room and the downloads (secrets, caches, open questions). */
+    /** Per-account state outside Room and the downloads (secrets, caches, open questions): gone at a sign-out. */
     private val clearAccountState: suspend (serverId: String) -> Unit,
+    /** The same when an account is set aside for another profile: what is its own waits for its return. */
+    private val setAsideState: suspend (serverId: String) -> Unit = {},
+    /** The same for a saved profile that is removed, while another account is signed in. */
+    private val forgetSavedState: suspend (serverId: String) -> Unit = {},
+    /** Notes the account's waiting and running downloads, right before a switch pauses them ([SwitchedDownloads]). */
+    private val noteDownloads: suspend (serverId: String) -> Unit = {},
+    /** Those of the account that is active now go on. */
+    private val resumeDownloads: suspend (serverId: String) -> Unit = {},
+    /** The account is signed out or removed: nothing waits for its return. */
+    private val forgetDownloads: suspend (serverId: String) -> Unit = {},
+    /** A sync for the account that just became active. */
+    private val syncNow: () -> Unit = {},
+    /** Shows the title it last played, paused, in the mini player; never starts it. */
+    private val showLastTitle: suspend (serverId: String) -> Unit = {},
+    /** The server logout of a saved profile, over its own addresses. */
+    private val logoutProfile: suspend (Account, refreshToken: String) -> Boolean = logout,
 ) : AccountSignOut, ProfileSwitch {
     @Inject constructor(
         accounts: AccountStore,
@@ -160,6 +184,9 @@ class SignOut(
         api: ApiProvider,
         serverLogout: ServerLogout,
         cleaner: AccountStateCleaner,
+        switched: SwitchedDownloads,
+        sync: SyncTrigger,
+        lastTitle: LastTitleStarter,
     ) : this(
         accounts, data, kept, work, lastPlayed,
         pausePlayback = {
@@ -179,6 +206,19 @@ class SignOut(
         awaitOnline = { awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS) },
         logout = serverLogout::logout,
         clearAccountState = cleaner::clear,
+        setAsideState = cleaner::setAside,
+        forgetSavedState = cleaner::forget,
+        noteDownloads = switched::rememberActive,
+        resumeDownloads = switched::resume,
+        forgetDownloads = switched::forget,
+        syncNow = sync::syncNow,
+        // Its own title only: a device title that was played last stays with the play keys, the next person's screen starts clean.
+        showLastTitle = { serverId ->
+            lastTitle.last()?.takeIf { it.serverId == serverId }?.let {
+                withContext(Dispatchers.Main.immediate) { player.showPaused(it.serverId, it.itemId) }
+            }
+        },
+        logoutProfile = serverLogout::logoutProfile,
     )
 
     override suspend fun check(): SignOutCheck? {
@@ -217,29 +257,70 @@ class SignOut(
     override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) = exclusive { replaceWith(next, accessToken, refreshToken) }
 
     override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
-        val previous = accounts.account.first()
-        if (previous != null && previous.serverId != next.serverId) replaceWith(next, accessToken, refreshToken)
-        else accounts.save(next, accessToken, refreshToken)
+        if (accounts.account.first()?.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
+        else replaceWith(next, accessToken, refreshToken)
     }
 
-    /** [switchTo] itself (callers hold [operations]). */
+    /** [switchTo] itself (callers hold [operations]). [next] may be a profile that was set aside: what waits for it goes on. */
     private suspend fun replaceWith(next: Account, accessToken: String, refreshToken: String) {
         if (accounts.account.first() == null) accounts.save(next, accessToken, refreshToken)
         else leave(Leave.KEEP, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
+        step("resume downloads") { resumeDownloads(next.serverId) }
     }
 
     override suspend fun switchProfile(serverId: String): Boolean = exclusive {
         if (accounts.saved.first().none { it.serverId == serverId }) return@exclusive false
-        if (accounts.account.first() == null) return@exclusive accounts.activate(serverId)
+        val current = accounts.account.first()
+        if (current == null) {
+            val activated = accounts.activate(serverId)
+            if (activated) arrive(serverId)
+            return@exclusive activated
+        }
+        saveBeforeLeaving(current.serverId)
         var switched = false
-        leave(Leave.SET_ASIDE, shownUnsynced = null) { switched = accounts.activate(serverId) }
+        leave(Leave.SET_ASIDE, shownUnsynced = null) { switched = step("activate") { accounts.activate(serverId) } == true }
+        arrive(if (switched) serverId else current.serverId)
         switched
     }
 
     override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
         val current = accounts.account.first()
-        if (current == null || current.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
-        else leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
+        when {
+            current?.serverId == next.serverId -> accounts.save(next, accessToken, refreshToken)
+            current == null -> {
+                accounts.save(next, accessToken, refreshToken)
+                arrive(next.serverId)
+            }
+            else -> {
+                saveBeforeLeaving(current.serverId)
+                try {
+                    leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
+                } catch (e: Exception) {
+                    if (e !is CancellationException) arrive(current.serverId) // it stays the active one
+                    throw e
+                }
+                arrive(next.serverId)
+            }
+        }
+    }
+
+    /**
+     * Before an account is set aside: its playback pauses (the position is final) and its changes go up, at most
+     * [SWITCH_PUSH_TIMEOUT_MS]. Offline, out of time or failing, the switch goes on: they stay in Room and go up when the
+     * account is active again.
+     */
+    private suspend fun saveBeforeLeaving(serverId: String) {
+        step("pause") { pausePlayback() }
+        withTimeoutOrNull(SWITCH_PUSH_TIMEOUT_MS) {
+            if (step("unsynced") { data.unsynced(serverId) } != 0 && awaitOnline()) pushes.forEach { push -> step("push") { push(serverId) } }
+        }
+    }
+
+    /** [serverId] is the active account after a switch: what waits for it goes on and it syncs. Nothing starts playing. */
+    private suspend fun arrive(serverId: String) {
+        step("resume downloads") { resumeDownloads(serverId) }
+        step("last title") { showLastTitle(serverId) }
+        step("sync") { syncNow() }
     }
 
     override suspend fun removeProfile(serverId: String): Boolean = exclusive {
@@ -262,10 +343,13 @@ class SignOut(
         step("cancel work") { work.cancelOwn(serverId) }
         val loggedOut = async {
             if (refresh == null) false
-            else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true
+            else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logoutProfile(account, refresh) } } == true
         }
         if (step("purge") { data.purge(serverId); true } == true) step("purged") { kept.removePendingPurge(serverId) }
         step("forget kept") { kept.remove(serverId) }
+        step("last played") { lastPlayed.forget(serverId) }
+        step("paused by a switch") { forgetDownloads(serverId) }
+        step("account state") { forgetSavedState(serverId) }
         Log.i(TAG, "removed a saved profile (server logout: ${loggedOut.await()})")
         true
     }
@@ -303,6 +387,8 @@ class SignOut(
             else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true
         }
         if (mode != Leave.PURGE) {
+            // What a switch pauses goes on when the account is back; after a sign-out the user decides.
+            if (mode == Leave.SET_ASIDE) step("note downloads") { noteDownloads(serverId) }
             step("pause downloads") { data.pauseDownloads(serverId) }
             step("remember") {
                 // Kept: the next account is asked about it. Set aside: still signed in, nobody is asked to delete it.
@@ -316,8 +402,13 @@ class SignOut(
             if (step("purge") { data.purge(serverId); true } != true) step("pending purge") { kept.addPendingPurge(serverId) }
             step("forget") { kept.remove(serverId) }
         }
-        step("last played") { lastPlayed.forgetServerTitle() }
-        step("account state") { clearAccountState(serverId) }
+        if (mode == Leave.SET_ASIDE) {
+            step("account state") { setAsideState(serverId) }
+        } else {
+            step("last played") { lastPlayed.forget(serverId) }
+            step("paused by a switch") { forgetDownloads(serverId) }
+            step("account state") { clearAccountState(serverId) }
+        }
         val serverConfirmed = loggedOut.await()
         // Late writes of the stopping service (its last progress save) or a worker: the rows once more, now that up to
         // the logout's few seconds have passed. Idempotent.
@@ -333,6 +424,8 @@ class SignOut(
         /** The push of pending changes before the dialog. */
         const val PUSH_TIMEOUT_MS = 15_000L
         const val LOGOUT_TIMEOUT_MS = 5_000L
+        /** The push of pending changes before a profile switch: the person is waiting for the other profile. */
+        const val SWITCH_PUSH_TIMEOUT_MS = 5_000L
         /** After pausing a playing title, before its position is pushed. */
         private const val SAVE_SETTLE_MS = 300L
 

@@ -13,7 +13,7 @@ import io.wolftown.lauschig.download.DownloadFiles
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.playback.LastPlayed
-import io.wolftown.lauschig.playback.LastPlayedStore
+import io.wolftown.lauschig.playback.FakeLastPlayedStore
 import io.wolftown.lauschig.sync.InMemorySyncStamps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,12 +56,7 @@ class SignOutTest {
     private val calls = mutableListOf<String>()
     private val cancelled = mutableListOf<String>()
     private val logouts = mutableListOf<String>()
-    private val lastPlayed = object : LastPlayedStore {
-        var value: LastPlayed? = null
-        override suspend fun get() = value
-        override suspend fun set(last: LastPlayed) { value = last }
-        override suspend fun clear() { value = null; calls += "lastPlayed" }
-    }
+    private val lastPlayed = FakeLastPlayedStore().apply { onForget = { calls += "lastPlayed" } }
 
     @Before fun setUp() {
         // Synchronous: the timeouts run on virtual time, a real query thread would let them fire early.
@@ -86,6 +81,7 @@ class SignOutTest {
         pushes: List<suspend (String) -> Unit> = emptyList(),
         purgeData: AccountData = data,
         stopPlayback: suspend () -> Unit = { calls += "stop" },
+        logoutProfile: suspend (Account, String) -> Boolean = logout,
     ) = SignOut(
         accounts = accounts,
         data = Recording(purgeData),
@@ -98,6 +94,14 @@ class SignOutTest {
         awaitOnline = online,
         logout = logout,
         clearAccountState = { sid -> calls += "state:$sid" },
+        setAsideState = { sid -> calls += "aside:$sid" },
+        forgetSavedState = { sid -> calls += "forgetState:$sid" },
+        noteDownloads = { sid -> calls += "note:$sid" },
+        resumeDownloads = { sid -> calls += "resume:$sid" },
+        forgetDownloads = { sid -> calls += "forgetNote:$sid" },
+        syncNow = { calls += "syncNow" },
+        showLastTitle = { sid -> calls += "lastTitle:$sid" },
+        logoutProfile = logoutProfile,
     )
 
     /** [cancelOwn] calls of the account work (a removed profile's own work). */
@@ -163,7 +167,7 @@ class SignOutTest {
         assertEquals(emptySet<String>(), kept.pending.value)
         // Playback first, then the work (no sync rewrites rows after the purge), the data, and the credentials last
         // (nothing reacts to "signed out" before the data is final). The logout runs alongside, awaited before the end.
-        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "state:$a", "rowsAgain", "clear"), calls - "logout")
+        assertEquals(listOf("stop", "work", "purge", "forget", "lastPlayed", "forgetNote:$a", "state:$a", "rowsAgain", "clear"), calls - "logout")
         assertTrue(calls.indexOf("logout") in calls.indexOf("work") until calls.indexOf("rowsAgain"))
     }
 
@@ -183,7 +187,7 @@ class SignOutTest {
         assertNull(accounts.acc.value)
         assertNull(accounts.refresh)
         assertEquals(true, accounts.clearedKeeping)
-        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "state:$a", "clear"), calls - "logout")
+        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "forgetNote:$a", "state:$a", "clear"), calls - "logout")
         // Kept means kept: the sync stamps and the car's covers of the account stay too.
         assertEquals(7L, stamps.get("progress_sync:$a"))
         assertEquals(emptyList<String>(), forgottenCovers)
@@ -212,7 +216,7 @@ class SignOutTest {
         assertEquals(listOf("refresh-1"), logouts)
         assertNull(lastPlayed.value)
         // ... but the last step stores the next account instead of clearing: never "no account" in between.
-        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "state:$a"), calls - "logout")
+        assertEquals(listOf("stop", "work", "pauseDownloads", "remember", "lastPlayed", "forgetNote:$a", "state:$a", "resume:$b"), calls - "logout")
         assertNull(accounts.clearedKeeping)
         assertEquals(next, accounts.acc.value)
         assertEquals("access-2", accounts.access)
@@ -226,7 +230,7 @@ class SignOutTest {
         val next = Account(b, "u2", "lukas", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         signOut().switchTo(next, "access-2", "refresh-2")
         assertEquals(next, accounts.acc.value)
-        assertTrue(calls.isEmpty())
+        assertEquals(listOf("resume:$b"), calls)
         assertTrue(cancelled.isEmpty())
     }
 
@@ -248,17 +252,20 @@ class SignOutTest {
 
         assertTrue(signOut().switchProfile(b))
 
-        // Like „Behalten“: rows, files and a paused download stay, the work stops, the last title is forgotten ...
+        // Like „Behalten“: rows, files and a paused download stay, the work stops, its last title waits for it ...
         assertEquals(List(6) { true }, rows(a))
         assertTrue(File(root, "$a/book1/0.mp3").isFile)
         assertEquals(DownloadState.PAUSED, db.downloadDao().get(a, "book2")!!.state)
         assertEquals(listOf(a), cancelled)
-        assertNull(lastPlayed.value)
+        assertEquals(LastPlayed(a, "book1", 1), lastPlayed.get(a))
         // ... but it stays signed in: no logout, nobody is asked to delete it, its tokens wait in the store.
         assertEquals(emptyList<String>(), logouts)
         assertEquals(emptyList<KeptAccount>(), kept.list.value)
         assertEquals(emptySet<String>(), kept.pending.value)
-        assertEquals(listOf("stop", "work", "pauseDownloads", "forget", "lastPlayed", "state:$a", "switch"), calls)
+        assertEquals(
+            listOf("pause", "stop", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
+            calls,
+        )
         assertNull(accounts.clearedKeeping)
         assertEquals(lukas, accounts.acc.value)
         assertEquals("access-2", accounts.access)
@@ -281,7 +288,110 @@ class SignOutTest {
         accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
         assertTrue(signOut().switchProfile(b))
         assertEquals(lukas, accounts.acc.value)
-        assertTrue(calls.isEmpty())
+        assertEquals("nothing to leave; it arrives like every switch", listOf("resume:$b", "lastTitle:$b", "syncNow"), calls)
+    }
+
+    // Task 1.3: before the switch the position is final and the changes go up, at most 5 s.
+
+    private suspend fun aSavedProfile() {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        accounts.onSwitch = { calls += "switch" }
+    }
+
+    private val pushLog: List<suspend (String) -> Unit> = listOf({ sid -> calls += "push:$sid" }, { sid -> calls += "push2:$sid" })
+
+    @Test fun switchProfile_pausesFirst_pushesTheChanges_andOnlyThenLeaves() = runTest {
+        seed(a) // a dirty progress row
+        aSavedProfile()
+        assertTrue(signOut(pushes = pushLog).switchProfile(b))
+        assertEquals(listOf("pause", "push:$a", "push2:$a", "stop"), calls.take(4))
+        assertTrue(calls.indexOf("push2:$a") < calls.indexOf("switch"))
+    }
+
+    @Test fun addProfile_pausesFirst_pushesTheChanges_andOnlyThenLeaves() = runTest {
+        seed(a)
+        accounts.onSwitch = { calls += "switch" }
+        signOut(pushes = pushLog).addProfile(lukas, "access-2", "refresh-2")
+        assertEquals(listOf("pause", "push:$a", "push2:$a", "stop"), calls.take(4))
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals(listOf("switch", "resume:$b", "lastTitle:$b", "syncNow"), calls.takeLast(4))
+    }
+
+    @Test fun switchProfile_offline_stillSwitches_theChangesStayInRoom() = runTest {
+        seed(a)
+        aSavedProfile()
+        assertTrue(signOut(online = { false }, pushes = pushLog).switchProfile(b))
+        assertFalse(calls.any { it.startsWith("push") })
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals("the change waits for its account", 1, db.progressDao().dirty(a).size)
+    }
+
+    @Test fun switchProfile_aHangingPush_orConnectionCheck_costsAtMostFiveSeconds() = runTest {
+        seed(a)
+        aSavedProfile()
+        assertTrue(signOut(pushes = listOf({ _ -> kotlinx.coroutines.awaitCancellation() })).switchProfile(b))
+        assertEquals(SignOut.SWITCH_PUSH_TIMEOUT_MS, testScheduler.currentTime)
+        assertEquals(5_000L, SignOut.SWITCH_PUSH_TIMEOUT_MS)
+        assertEquals(lukas, accounts.acc.value)
+
+        calls.clear()
+        val start = testScheduler.currentTime
+        accounts.acc.value = account
+        aSavedProfile()
+        assertTrue(signOut(online = { kotlinx.coroutines.awaitCancellation() }, pushes = pushLog).switchProfile(b))
+        assertEquals(5_000L, testScheduler.currentTime - start)
+        assertEquals(lukas, accounts.acc.value)
+    }
+
+    @Test fun switchProfile_aFailingPush_stillSwitches_theOtherPushStillRuns() = runTest {
+        seed(a)
+        aSavedProfile()
+        val pushes: List<suspend (String) -> Unit> = listOf({ _ -> throw java.io.IOException("server gone") }, { sid -> calls += "push2:$sid" })
+        assertTrue(signOut(pushes = pushes).switchProfile(b))
+        assertTrue("push2:$a" in calls)
+        assertEquals(lukas, accounts.acc.value)
+    }
+
+    @Test fun switchProfile_nothingToPush_doesNotWaitForTheConnection() = runTest {
+        aSavedProfile()
+        var asked = 0
+        assertTrue(signOut(online = { asked++; true }, pushes = pushLog).switchProfile(b))
+        assertEquals(0, asked)
+        assertFalse(calls.any { it.startsWith("push") })
+    }
+
+    // Task 1.4 and failures: what arrives, what stays.
+
+    @Test fun switchProfile_aFailedActivation_keepsTheOldAccount_andItGoesOn() = runTest {
+        seed(a)
+        aSavedProfile()
+        accounts.onSwitch = { throw java.io.IOException("disk full") }
+        assertFalse(signOut().switchProfile(b))
+        assertEquals(account, accounts.acc.value)
+        assertEquals(listOf("resume:$a", "lastTitle:$a", "syncNow"), calls.takeLast(3))
+    }
+
+    @Test fun addProfile_aFailedSave_keepsTheOldAccount_itGoesOn_andTheCallerHearsOfIt() = runTest {
+        seed(a)
+        accounts.onSwitch = { throw java.io.IOException("disk full") }
+        val failed = runCatching { signOut().addProfile(lukas, "access-2", "refresh-2") }.exceptionOrNull()
+        assertTrue(failed is java.io.IOException)
+        assertEquals(account, accounts.acc.value)
+        assertEquals(listOf("resume:$a", "lastTitle:$a", "syncNow"), calls.takeLast(3))
+    }
+
+    @Test fun signIn_ofAProfileThatWasSetAside_itsDownloadsGoOn() = runTest {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", true))
+        signOut().signIn(lukas, "access-3", "refresh-3") // e.g. its token ran out; the switched account signs in again
+        assertTrue("resume:$b" in calls)
+        assertEquals(lukas, accounts.acc.value)
+    }
+
+    @Test fun aSignOut_forgetsWhatASwitchNoted_andNotesNothing() = runTest {
+        seed(a)
+        signOut().execute(keepDownloads = true)
+        assertTrue("forgetNote:$a" in calls)
+        assertFalse(calls.any { it.startsWith("note:") || it.startsWith("resume:") || it.startsWith("aside:") })
     }
 
     @Test fun addProfile_setsTheActiveAccountAside_andSignsInTheNext() = runTest {
@@ -291,7 +401,11 @@ class SignOutTest {
         signOut().addProfile(lukas, "access-2", "refresh-2")
         assertEquals(List(6) { true }, rows(a))
         assertEquals(emptyList<String>(), logouts)
-        assertEquals(listOf("stop", "work", "pauseDownloads", "forget", "lastPlayed", "state:$a", "switch"), calls)
+        assertEquals(LastPlayed(a, "book1", 1), lastPlayed.get(a))
+        assertEquals(
+            listOf("pause", "stop", "work", "note:$a", "pauseDownloads", "forget", "aside:$a", "switch", "resume:$b", "lastTitle:$b", "syncNow"),
+            calls,
+        )
         assertEquals(lukas, accounts.acc.value)
         assertEquals(listOf(a), accounts.aside.value.map { it.account.serverId })
     }
@@ -326,6 +440,43 @@ class SignOutTest {
         assertEquals(account, accounts.acc.value)
         assertEquals(List(6) { true }, rows(a))
         assertNull(accounts.clearedKeeping)
+    }
+
+    @Test fun removeProfile_takesItsPerAccountState_notTheSignedInAccounts() = runTest {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        lastPlayed.set(LastPlayed(a, "book1", 1))
+        lastPlayed.set(LastPlayed(b, "book2", 2))
+        lastPlayed.set(LastPlayed(dev, localKey, 3))
+        assertTrue(signOut().removeProfile(b))
+        assertTrue("forgetState:$b" in calls)
+        assertTrue("forgetNote:$b" in calls)
+        assertNull(lastPlayed.get(b))
+        assertEquals(LastPlayed(a, "book1", 1), lastPlayed.get(a))
+        assertEquals(LastPlayed(dev, localKey, 3), lastPlayed.get(dev))
+        assertFalse(calls.any { it.startsWith("state:") || it.startsWith("aside:") || it == "syncNow" })
+    }
+
+    // Task 1.6: its own addresses, never decisive.
+
+    @Test fun removeProfile_logsOutThroughThePathForAProfile_notTheSignedInAccountsConnection() = runTest {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        val asked = mutableListOf<String>()
+        val out = signOut(
+            logout = { _, _ -> error("the path of the signed-in account") },
+            logoutProfile = { who, token -> asked += "${who.serverId}:$token"; true },
+        )
+        assertTrue(out.removeProfile(b))
+        assertEquals(listOf("$b:refresh-2"), asked)
+    }
+
+    @Test fun removeProfile_aServerThatDoesNotAnswer_doesNotStopTheRemoval() = runTest {
+        seed(b)
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        val out = signOut(logoutProfile = { _, _ -> kotlinx.coroutines.awaitCancellation() })
+        assertTrue(out.removeProfile(b))
+        assertEquals(SignOut.LOGOUT_TIMEOUT_MS, testScheduler.currentTime)
+        assertEquals(List(6) { false }, rows(b))
+        assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
     }
 
     @Test fun removeProfile_aFailingPurge_isLeftToTheNextStart() = runTest {

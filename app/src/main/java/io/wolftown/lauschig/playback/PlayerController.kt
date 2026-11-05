@@ -69,6 +69,13 @@ interface PlayerController {
     fun adoptFromService() {}
 
     /**
+     * Shows [itemId] of [serverId] as the loaded title, paused at its saved position, without touching the player: the
+     * mini player has it, and the play button starts it like any title. Back on a profile, its last title waits like this.
+     * Nothing ever starts by itself. Something loaded in the player stays and this does nothing.
+     */
+    fun showPaused(serverId: String, itemId: String) {}
+
+    /**
      * Sign-out: stops playback entirely (a device title too) and empties the queue; the loaded and the last title are
      * forgotten, so play/pause cannot start them again. Returns once the player is empty.
      */

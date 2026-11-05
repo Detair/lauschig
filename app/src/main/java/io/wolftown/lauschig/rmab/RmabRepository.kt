@@ -3,6 +3,7 @@ package io.wolftown.lauschig.rmab
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -11,12 +12,14 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.absapi.AbsJson
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.TokenCipher
 import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.external.AudibleVolume
 import io.wolftown.lauschig.sync.DeviceInfoProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonNull
@@ -86,30 +89,59 @@ internal fun rmabStatusOf(raw: String?): RmabStatus? = when (raw) {
 /**
  * ReadMeABook connection: a permanent API token (never the password) and the user's own requests.
  * Never throws to callers except [CancellationException]; every failure is a result value.
+ *
+ * One connection per account (keys end with `:<serverId>`): it is the signed-in account's ([activeServer]), the one of a
+ * profile set aside waits for its return. Signed out there is none. What runs when the account changes finishes for the
+ * account that started it.
  */
 @Singleton
 class RmabRepository(
     private val store: DataStore<Preferences>,
     private val cipher: TokenCipher,
     private val deviceName: () -> String,
+    /** The signed-in account. */
+    private val activeServer: Flow<String?>,
     private val baseClient: OkHttpClient = OkHttpClient(),
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
-    @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher, device: DeviceInfoProvider) :
-        this(context.rmabDataStore, cipher, { device.get().deviceName?.takeIf(String::isNotBlank) ?: "Android" })
+    @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher, device: DeviceInfoProvider, accounts: AccountStore) :
+        this(context.rmabDataStore, cipher, { device.get().deviceName?.takeIf(String::isNotBlank) ?: "Android" }, accounts.account.map { it?.serverId })
 
-    val config: Flow<RmabConfig?> = store.data.map { p ->
-        val url = p[URL] ?: return@map null
-        RmabConfig(url, p[USERNAME].orEmpty(), p[NEEDS_RECONNECT] ?: false)
+    /** The signed-in account's connection; follows a switch. */
+    val config: Flow<RmabConfig?> = combine(activeServer, store.data) { sid, p ->
+        if (sid == null) return@combine null
+        val url = p[url(sid)] ?: return@combine null
+        RmabConfig(url, p[username(sid)].orEmpty(), p[needsReconnect(sid)] ?: false)
     }
 
-    private class Session(val url: HttpUrl, val token: String, val allowCleartext: Boolean)
+    private class Session(val serverId: String, val url: HttpUrl, val token: String, val allowCleartext: Boolean)
 
-    private var cache: Pair<Long, Map<String, RmabStatus>>? = null
+    private class Cached(val serverId: String, val at: Long, val statuses: Map<String, RmabStatus>)
+
+    @Volatile private var cache: Cached? = null
+
+    /**
+     * Before profiles there was one connection on the device: it belongs to the account signed in at the upgrade
+     * ([activeServerId]); signed out it has no owner and goes. Idempotent; never over a connection the account has.
+     */
+    suspend fun migrate(activeServerId: String?) {
+        store.edit { p ->
+            val old = p[URL]
+            if (old != null && activeServerId != null && p[url(activeServerId)] == null) {
+                p[url(activeServerId)] = old
+                p[USERNAME]?.let { p[username(activeServerId)] = it }
+                p[TOKEN]?.let { p[token(activeServerId)] = it }
+                p[CLEARTEXT_KEY]?.let { p[cleartext(activeServerId)] = it }
+                p[NEEDS_RECONNECT]?.let { p[needsReconnect(activeServerId)] = it }
+            }
+            listOf(URL, USERNAME, TOKEN, CLEARTEXT_KEY, NEEDS_RECONNECT).forEach { p.remove(it) }
+        }
+    }
 
     /** Login, then trade the short-lived JWT for a permanent API token; only that token is stored. */
     suspend fun connect(url: String, username: String, password: String, allowCleartext: Boolean = false): RmabConnectResult =
         guarded(RmabConnectResult.Unreachable) {
+            val sid = activeServer.first() ?: return@guarded RmabConnectResult.Unreachable
             val base = parseUrl(url) ?: return@guarded RmabConnectResult.InvalidUrl
             if (!base.isHttps && !allowCleartext) return@guarded RmabConnectResult.NeedsCleartextConfirmation(base.host)
             val login = api(base, null, !base.isHttps).localLogin(RmabLoginBody(username.trim(), password))
@@ -128,13 +160,14 @@ class RmabRepository(
             val created = api(base, jwt, !base.isHttps).createApiToken(tokenBody)
             val full = created.body()?.fullToken?.takeIf { created.isSuccessful && it.isNotBlank() }
                 ?: return@guarded RmabConnectResult.TokenCreationFailed
-            save(base, username.trim(), full, !base.isHttps)
+            save(sid, base, username.trim(), full, !base.isHttps)
             RmabConnectResult.Ok
         }
 
     /** For RMAB accounts that only have OIDC: the user pastes a token created in RMAB; checked via `/api/auth/me`. */
     suspend fun connectWithToken(url: String, token: String, allowCleartext: Boolean = false): RmabConnectResult =
         guarded(RmabConnectResult.Unreachable) {
+            val sid = activeServer.first() ?: return@guarded RmabConnectResult.Unreachable
             val base = parseUrl(url) ?: return@guarded RmabConnectResult.InvalidUrl
             if (!base.isHttps && !allowCleartext) return@guarded RmabConnectResult.NeedsCleartextConfirmation(base.host)
             val t = token.trim()
@@ -143,19 +176,25 @@ class RmabRepository(
                 me.code() == 401 || me.code() == 403 -> return@guarded RmabConnectResult.WrongLogin
                 !me.isSuccessful -> return@guarded RmabConnectResult.Unreachable
             }
-            save(base, me.body()?.name().orEmpty(), t, !base.isHttps)
+            save(sid, base, me.body()?.name().orEmpty(), t, !base.isHttps)
             RmabConnectResult.Ok
         }
 
+    /** „Trennen“ in the settings: the signed-in account's connection. */
     suspend fun disconnect() {
-        cache = null
-        try { store.edit { it.clear() } } catch (e: CancellationException) { throw e } catch (_: Exception) { /* nothing to undo */ }
+        (try { activeServer.first() } catch (e: CancellationException) { throw e } catch (_: Exception) { null })?.let { forget(it) }
+    }
+
+    /** The connection of [serverId] goes (its token too), whoever is signed in. */
+    suspend fun forget(serverId: String) {
+        if (cache?.serverId == serverId) cache = null
+        try { store.edit { it.removeAccount(serverId) } } catch (e: CancellationException) { throw e } catch (_: Exception) { /* nothing to undo */ }
     }
 
     suspend fun request(volume: AudibleVolume): RmabRequestResult {
         val author = volume.authors.firstOrNull { it.isNotBlank() } ?: return RmabRequestResult.NoAuthor
         return guarded(RmabRequestResult.Unreachable) {
-            val s = session() ?: return@guarded RmabRequestResult.NotConnected
+            val s = activeServer.first()?.let { session(it) } ?: return@guarded RmabRequestResult.NotConnected
             val book = RmabAudiobook(
                 asin = volume.asin, title = volume.title, author = author,
                 narrator = volume.narrators.joinToString().takeIf { it.isNotBlank() }, coverArtUrl = volume.coverUrl,
@@ -163,7 +202,7 @@ class RmabRepository(
             val r = api(s.url, s.token, s.allowCleartext).createRequest(RmabCreateRequestBody(book))
             when {
                 r.isSuccessful -> { cache = null; RmabRequestResult.Created }
-                r.code() == 401 -> { markReconnect(); RmabRequestResult.NotConnected }
+                r.code() == 401 -> { markReconnect(s.serverId); RmabRequestResult.NotConnected }
                 else -> {
                     val err = r.errorBody()?.string()?.let { runCatching { AbsJson.decodeFromString<RmabErrorBody>(it) }.getOrNull() }
                     when (err?.error) {
@@ -179,16 +218,17 @@ class RmabRepository(
 
     /** The user's own requests by ASIN, all pages. Cached for 60 s; empty when not connected or on any failure. */
     suspend fun statusByAsin(): Map<String, RmabStatus> {
-        cache?.takeIf { nowMs() - it.first < CACHE_MS }?.let { return it.second }
         return guarded(emptyMap()) {
-            val s = session() ?: return@guarded emptyMap()
+            val sid = activeServer.first() ?: return@guarded emptyMap()
+            cache?.takeIf { it.serverId == sid && nowMs() - it.at < CACHE_MS }?.let { return@guarded it.statuses }
+            val s = session(sid) ?: return@guarded emptyMap()
             val api = api(s.url, s.token, s.allowCleartext)
             val result = HashMap<String, RmabStatus>()
             var cursor: String? = null
             var pages = 0
             do {
                 val r = api.listRequests(cursor = cursor)
-                if (r.code() == 401) { markReconnect(); return@guarded emptyMap() }
+                if (r.code() == 401) { markReconnect(s.serverId); return@guarded emptyMap() }
                 val page = r.body()?.takeIf { r.isSuccessful } ?: return@guarded emptyMap()
                 for (req in page.requests) {
                     val asin = req.audiobook?.audibleAsin ?: continue
@@ -197,7 +237,7 @@ class RmabRepository(
                 }
                 cursor = page.nextCursor?.takeIf { it.isNotEmpty() }
             } while (cursor != null && ++pages < MAX_PAGES)
-            cache = nowMs() to result
+            cache = Cached(s.serverId, nowMs(), result)
             result
         }
     }
@@ -214,28 +254,36 @@ class RmabRepository(
     }
 
     /** Null when not connected, the token cannot be decrypted, or the token was already rejected. */
-    private suspend fun session(): Session? {
+    private suspend fun session(serverId: String): Session? {
         val p = store.data.first()
-        val url = p[URL]?.toHttpUrlOrNull() ?: return null
-        if (p[NEEDS_RECONNECT] == true) return null
-        val token = p[TOKEN]?.let(cipher::decrypt) ?: return null
-        return Session(url, token, p[CLEARTEXT_KEY] == url.cleartextKey())
+        val url = p[url(serverId)]?.toHttpUrlOrNull() ?: return null
+        if (p[needsReconnect(serverId)] == true) return null
+        val token = p[token(serverId)]?.let(cipher::decrypt) ?: return null
+        return Session(serverId, url, token, p[cleartext(serverId)] == url.cleartextKey())
     }
 
-    private suspend fun markReconnect() {
-        cache = null
-        store.edit { it[NEEDS_RECONNECT] = true }
+    private suspend fun markReconnect(serverId: String) {
+        if (cache?.serverId == serverId) cache = null
+        store.edit { it[needsReconnect(serverId)] = true }
     }
 
-    private suspend fun save(base: HttpUrl, username: String, token: String, cleartext: Boolean) {
-        cache = null
+    private suspend fun save(serverId: String, base: HttpUrl, username: String, token: String, cleartext: Boolean) {
+        if (cache?.serverId == serverId) cache = null
         store.edit {
-            it.clear()
-            it[URL] = base.toString()
-            it[USERNAME] = username
-            it[TOKEN] = cipher.encrypt(token)
-            if (cleartext) it[CLEARTEXT_KEY] = base.cleartextKey()
+            it.removeAccount(serverId)
+            it[url(serverId)] = base.toString()
+            it[username(serverId)] = username
+            it[token(serverId)] = cipher.encrypt(token)
+            if (cleartext) it[cleartext(serverId)] = base.cleartextKey()
         }
+    }
+
+    private fun MutablePreferences.removeAccount(serverId: String) {
+        remove(url(serverId))
+        remove(username(serverId))
+        remove(token(serverId))
+        remove(cleartext(serverId))
+        remove(needsReconnect(serverId))
     }
 
     private fun parseUrl(raw: String): HttpUrl? {
@@ -274,6 +322,14 @@ class RmabRepository(
     private companion object {
         const val CACHE_MS = 60_000L
         const val MAX_PAGES = 50
+
+        fun url(serverId: String) = stringPreferencesKey("url:$serverId")
+        fun username(serverId: String) = stringPreferencesKey("username:$serverId")
+        fun token(serverId: String) = stringPreferencesKey("token:$serverId")
+        fun cleartext(serverId: String) = stringPreferencesKey("allow_cleartext:$serverId")
+        fun needsReconnect(serverId: String) = booleanPreferencesKey("needs_reconnect:$serverId")
+
+        // The one connection of the device before profiles ([migrate]).
         val URL = stringPreferencesKey("url")
         val USERNAME = stringPreferencesKey("username")
         val TOKEN = stringPreferencesKey("token")

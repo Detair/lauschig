@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -37,16 +38,18 @@ class AccountStateCleanerTest {
     }
     private val rmabStore = store("rmab")
     private val oidcStore = store("oidc")
-    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" })
-    private val oidc = OidcLogin(oidcStore, cipher, OkHttpClient())
-    private val searches = RecentSearches(store("searches"))
-    private val prompts = DownloadPrompts()
     private val a = "aaaaaaaaaaaaaaaa"
+    private val b = "bbbbbbbbbbbbbbbb"
+    private val active = kotlinx.coroutines.flow.MutableStateFlow<String?>(a)
+    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" }, active)
+    private val oidc = OidcLogin(oidcStore, cipher, OkHttpClient())
+    private val searches = RecentSearches(store("searches"), active)
+    private val prompts = DownloadPrompts()
 
     @After fun tearDown() = scope.cancel()
 
     private fun seed() = runBlocking {
-        rmabStore.edit { it[stringPreferencesKey("url")] = "https://rmab.example"; it[stringPreferencesKey("token")] = "enc:t" }
+        rmabStore.edit { it[stringPreferencesKey("url:$a")] = "https://rmab.example"; it[stringPreferencesKey("token:$a")] = "enc:t" }
         oidcStore.edit { it[stringPreferencesKey("verifier")] = "v"; it[stringPreferencesKey("state")] = "s" }
         searches.record("Die drei")
         prompts.show(DownloadPrompt.Metered(a, "book1", "Titel", 1))
@@ -80,7 +83,7 @@ class AccountStateCleanerTest {
         nm.createNotificationChannel(android.app.NotificationChannel("t", "t", android.app.NotificationManager.IMPORTANCE_LOW))
         nm.notify(io.wolftown.lauschig.cleanup.CleanupReminderWorker.NOTIFICATION_ID, androidx.core.app.NotificationCompat.Builder(ctx, "t").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Der Anfang").build())
         assertEquals(1, nm.activeNotifications.size)
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
         assertEquals(0, nm.activeNotifications.size)
     }
 
@@ -100,7 +103,95 @@ class AccountStateCleanerTest {
     @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
         assertEquals(false, legacy.exists())
+    }
+
+    // Phase 7, Task 1.1: a switch keeps what is the account's and clears what must not stay on screen or in the log.
+
+    private fun cleaner(images: () -> Unit = {}, memory: () -> Unit = {}, notifications: () -> Unit = {}, diagnostics: () -> Unit = {}, moments: () -> Unit = {}) =
+        AccountStateCleaner(rmab, oidc, searches, prompts, { images() }, notifications, diagnostics, { memory() }, moments)
+
+    @Test fun setAside_keepsTheConnectionAndTheSearches_clearsTheRest() = runBlocking {
+        seed()
+        var disk = 0; var memory = 0; var notifications = 0; var diagnostics = 0; var moments = 0
+        cleaner({ disk++ }, { memory++ }, { notifications++ }, { diagnostics++ }, { moments++ }).setAside(a)
+        assertEquals("https://rmab.example", rmab.config.first()!!.url)
+        assertEquals(listOf("Die drei"), searches.queries.first())
+        assertTrue("a pending SSO attempt goes", oidcStore.data.first().asMap().isEmpty())
+        assertNull("an open download question goes", prompts.prompt.value)
+        assertEquals("the covers on disk stay, the next account only asks for its own", 0, disk)
+        assertEquals(1, memory)
+        assertEquals(1, notifications)
+        assertEquals(1, diagnostics)
+        assertEquals(1, moments)
+    }
+
+    @Test fun clear_goesOnlyForThatAccount() = runBlocking {
+        seed()
+        active.value = b
+        rmabStore.edit { it[stringPreferencesKey("url:$b")] = "https://other.example"; it[stringPreferencesKey("token:$b")] = "enc:o" }
+        searches.record("Bibi")
+        active.value = a
+        cleaner().clear(a)
+        assertNull(rmab.config.first())
+        assertEquals(emptyList<String>(), searches.queries.first())
+        active.value = b
+        assertEquals("https://other.example", rmab.config.first()!!.url)
+        assertEquals(listOf("Bibi"), searches.queries.first())
+    }
+
+    @Test fun forgettingASavedProfile_takesOnlyWhatIsItsOwn() = runBlocking {
+        seed()
+        active.value = b // A is a saved profile now
+        searches.record("Bibi")
+        var images = 0; var diagnostics = 0
+        val otherPrompt = DownloadPrompt.Metered(b, "x", "T", 1)
+        prompts.show(otherPrompt)
+        cleaner({ images++ }, { images++ }, {}, { diagnostics++ }).forget(a)
+        assertEquals("the active account's search stays", listOf("Bibi"), searches.queries.first())
+        assertEquals(otherPrompt, prompts.prompt.value)
+        assertEquals(0, images)
+        assertEquals(0, diagnostics)
+        active.value = a
+        assertNull(rmab.config.first())
+        assertEquals(emptyList<String>(), searches.queries.first())
+    }
+
+    /** The account that is left owned the old values, also if nothing asked for them since the start of this version. */
+    @Test fun leavingBeforeTheStartUpMigrationRan_theOldValuesStayWithTheLeftAccount() = runBlocking {
+        rmabStore.edit { it[stringPreferencesKey("url")] = "https://rmab.example"; it[stringPreferencesKey("token")] = "enc:t" }
+        cleaner().setAside(a)
+        active.value = b
+        assertNull(rmab.config.first())
+        active.value = a
+        assertEquals("https://rmab.example", rmab.config.first()!!.url)
+    }
+
+    @Test fun migrate_handsTheOldValuesToTheAccountActiveAtTheUpgrade() = runBlocking {
+        rmabStore.edit { it[stringPreferencesKey("url")] = "https://rmab.example"; it[stringPreferencesKey("token")] = "enc:t" }
+        cleaner().migrate(a)
+        assertEquals("https://rmab.example", rmab.config.first()!!.url)
+    }
+
+    /** Coil's real caches: the disk stays over a switch (keys hold no tokens, see [coverKeys_holdNoTokens]), memory goes. */
+    @Test fun setAside_realImageCaches_diskStays_memoryGoes() = runBlocking {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val images = coil3.SingletonImageLoader.get(ctx)
+        val disk = images.diskCache!!
+        disk.openEditor("cover-key")!!.apply { disk.fileSystem.write(data) { writeUtf8("x") }; commitAndOpenSnapshot()!!.close() }
+        val key = coil3.memory.MemoryCache.Key("cover-key")
+        images.memoryCache!![key] = coil3.memory.MemoryCache.Value(coil3.ColorImage(0, 1, 1))
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).setAside(a)
+        assertNull(images.memoryCache!![key])
+        assertTrue(disk.openSnapshot("cover-key")!!.use { true })
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog()).clear(a)
+        assertNull(disk.openSnapshot("cover-key"))
+    }
+
+    /** The model a tile hands to Coil is its cache key (no custom key anywhere): the token travels in a header, never in it. */
+    @Test fun coverKeys_holdNoTokens() {
+        val model = io.wolftown.lauschig.ui.common.coverModel("https://abs.example/".toHttpUrlOrNull(), "item1", null, 5)
+        assertEquals("https://abs.example/api/items/item1/cover?ts=5", model)
     }
 }

@@ -71,7 +71,7 @@ class SearchViewModelTest {
     private val searchCalls = mutableListOf<String>()
     private var facetCalls = 0
 
-    private fun vm(recent: RecentSearches = RecentSearches(store("r")), signedIn: Boolean = true): SearchViewModel {
+    private fun vm(recent: RecentSearches = RecentSearches(store("r"), kotlinx.coroutines.flow.flowOf(sid)), signedIn: Boolean = true): SearchViewModel {
         val accounts = FakeAccountStore()
         if (signedIn) accounts.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }

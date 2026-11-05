@@ -69,7 +69,7 @@ class AccountBoundSyncTest {
     @Before fun setUp() = runBlocking {
         db = Room.inMemoryDatabaseBuilder(ctx, LauschigDatabase::class.java).allowMainThreadQueries().build()
         store = web.store()
-        api = web.api(store, scope)
+        api = web.api(store)
         web.keepOnline(api, scope)
         // A has a library (the collection sync goes by the libraries it knows) and something waiting for the server.
         db.libraryDao().upsertFromServer(listOf(LibraryEntity(a, "a-lib", "a", "book", 0)))

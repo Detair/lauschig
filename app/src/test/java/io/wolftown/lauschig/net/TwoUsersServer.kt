@@ -50,8 +50,11 @@ class TwoUsersServer {
         aside.value = listOf(FakeAccountStore.Aside(b, TOKEN_B, "b-refresh", false))
     }
 
-    /** The provider as the app builds it: every server starts with a reset, then its own probe answers. */
-    fun api(store: FakeAccountStore, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)) = ApiProvider(
+    /**
+     * The provider as the app builds it: every server starts with a reset, then its own probe answers. Unconfined: a switch
+     * in the store has reached the connection state when it returns, so a test never catches the moment in between.
+     */
+    fun api(store: FakeAccountStore, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)) = ApiProvider(
         accountConnection(store.account) { addresses ->
             flow {
                 emit(ConnectionState.Online(addresses.local!!, ConnectionState.Via.LOCAL))
@@ -63,7 +66,7 @@ class TwoUsersServer {
 
     /** What collecting the state keeps alive in the app (a screen, the service): the state stays current. */
     suspend fun keepOnline(api: ApiProvider, scope: CoroutineScope) {
-        scope.launch { api.connection.collect {} }
+        scope.launch(Dispatchers.Unconfined) { api.connection.collect {} }
         withTimeout(5_000) { api.connection.filterIsInstance<ConnectionState.Online>().first() }
     }
 

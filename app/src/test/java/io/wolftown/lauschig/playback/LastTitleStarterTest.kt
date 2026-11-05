@@ -38,12 +38,7 @@ class LastTitleStarterTest {
         override fun setSpeed(speed: Float) {}
     }
 
-    private val store = object : LastPlayedStore {
-        var value: LastPlayed? = null
-        override suspend fun get() = value
-        override suspend fun set(last: LastPlayed) { value = last }
-        override suspend fun clear() { value = null }
-    }
+    private val store = FakeLastPlayedStore()
 
     private fun starter() = LastTitleStarter(accounts, store, db.progressDao(), db.itemDao(), db.episodeDao(), player)
 
@@ -114,13 +109,17 @@ class LastTitleStarterTest {
         assertNull(starter().last())
     }
 
-    @Test fun forgetServerTitle_forgetsAServerTitle_keepsADeviceTitle() = runTest {
-        store.set(LastPlayed(s, "it", 1))
-        store.forgetServerTitle()
-        assertEquals(null, store.get())
-        val device = LastPlayed(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:0123456789abcdef01234567", 1)
-        store.set(device)
-        store.forgetServerTitle()
-        assertEquals(device, store.get())
+    @Test fun afterASwitch_eachAccountHasItsOwnLastTitle_andNothingStartsByItself() = runTest {
+        val b = "bbbbbbbbbbbbbbbb"
+        book("mine")
+        db.itemDao().upsertDetails(io.wolftown.lauschig.db.entities.ItemEntity(b, "theirs", "l", "T", durationSec = 100.0))
+        store.set(LastPlayed(s, "mine", 5_000))
+        store.set(LastPlayed(b, "theirs", 6_000))
+        assertEquals("mine", starter().last()!!.itemId)
+        accounts.acc.value = Account(b, "u2", "m", false, ServerAddresses(null, null), emptySet())
+        assertEquals("theirs", starter().last()!!.itemId)
+        accounts.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
+        assertEquals("mine", starter().last()!!.itemId)
+        assertEquals(emptyList<String>(), plays)
     }
 }

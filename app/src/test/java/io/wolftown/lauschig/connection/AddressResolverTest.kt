@@ -34,6 +34,24 @@ class AddressResolverTest {
 
     private fun resolver(p: FakeProbe, n: FakeNet) = AddressResolver(p, n)
 
+    // Task 1.6: the server of a saved profile; the Verbindungsstatus window stays the signed-in account's.
+    @Test
+    fun resolveElsewhere_decidesLikeResolve_butLeavesTheWindowAlone() = runTest {
+        val log = ConnectionLog()
+        val probe = FakeProbe(mutableSetOf(public))
+        val r = AddressResolver(probe, FakeNet(), log = log)
+        assertEquals(ConnectionState.Online(public, ConnectionState.Via.PUBLIC), r.resolveElsewhere(ServerAddresses(local, public)))
+        assertEquals(listOf(local, public), probe.probed)
+        assertEquals(ConnectionLogState(), log.state.value)
+    }
+
+    @Test
+    fun resolveElsewhere_noNetwork_isOffline_withoutProbing() = runTest {
+        val probe = FakeProbe(mutableSetOf(local))
+        assertEquals(ConnectionState.Offline, resolver(probe, FakeNet(connected = false)).resolveElsewhere(ServerAddresses(local, null)))
+        assertTrue(probe.probed.isEmpty())
+    }
+
     @Test
     fun noNetwork_isOffline_withoutProbing() = runTest {
         val probe = FakeProbe(mutableSetOf(local, public))

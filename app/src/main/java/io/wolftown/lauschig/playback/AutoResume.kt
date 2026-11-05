@@ -43,7 +43,7 @@ class LastTitleStarter @Inject constructor(
         // Signed out nothing resumes (play keys, the car, headphones): only Setup is on the phone. Signed in, a device
         // title is this device's whatever the account; anything else must belong to the signed-in server.
         val account = accounts.account.first()?.serverId ?: return null
-        val stored = store.get()?.takeIf { DeviceLibrary.isLocal(it.serverId) || it.serverId == account } ?: return null
+        val stored = store.forAccount(account) ?: return null
         val serverId = stored.serverId
         val key = PlayableKey.parse(stored.itemId)
         val item = items.get(serverId, key.libraryItemId)

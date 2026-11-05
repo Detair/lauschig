@@ -481,6 +481,24 @@ class PlayerControllerImpl(
         }
     }
 
+    override fun showPaused(serverId: String, itemId: String) {
+        if (current != null || starting || facade.currentKey() != null) return
+        playJob?.cancel()
+        playJob = scope.launch {
+            val item = loadItem(serverId, itemId) ?: return@launch
+            val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
+            if (current != null || starting) return@launch
+            // As after a stopped service: nothing is loaded, the play button starts [last] at its saved position.
+            last = serverId to itemId
+            val progress = item.progress
+            _state.value = freshState(itemId, item.item.title).copy(
+                coverPath = coverPath,
+                positionSec = progress?.currentTimeSec ?: 0.0,
+                durationSec = progress?.durationSec?.takeIf { it > 0 } ?: item.item.durationSec,
+            )
+        }
+    }
+
     override suspend fun stop() = withContext(mainContext) {
         playJob?.cancel(); playJob = null
         adoptJob?.cancel(); adoptJob = null; adopting = null

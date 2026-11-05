@@ -107,7 +107,7 @@ class FinishedDownloadCleanerTest {
         queueOf: (String) -> kotlinx.coroutines.flow.Flow<List<String>> = { queue }, clock: () -> Long = System::currentTimeMillis,
     ) = FinishedDownloadCleaner(
         accounts, db.downloadDao(), db.progressDao()::observeFinishedKeys, settings, app, manager, files::completedAt, store,
-        loaded, { last }, queueOf, db.audioFileDao()::observeLocalBytes, questions, TitleHandover.state,
+        loaded, { sid -> last?.takeIf { it.serverId == sid } }, queueOf, db.audioFileDao()::observeLocalBytes, questions, TitleHandover.state,
         clock = clock, recheckMs = recheckMs, graceMs = graceMs,
     )
 

@@ -321,9 +321,9 @@ class LocalExclusionTest {
         db.progressDao().saveLocal(dev, local, 10.0, 100.0, false, 5)
         val accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
         val store = object : LastPlayedStore {
-            override suspend fun get() = LastPlayed(dev, local, 7)
+            override suspend fun get(serverId: String) = LastPlayed(dev, local, 7).takeIf { it.serverId == serverId }
             override suspend fun set(last: LastPlayed) {}
-            override suspend fun clear() {}
+            override suspend fun forget(serverId: String) {}
         }
         val player = object : PlayerController {
             override val state = MutableStateFlow(PlayerUiState())

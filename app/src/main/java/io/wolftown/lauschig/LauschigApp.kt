@@ -47,6 +47,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var downloadSettings: io.wolftown.lauschig.download.DownloadSettings
     @Inject lateinit var accountStore: io.wolftown.lauschig.account.AccountStore
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
+    @Inject lateinit var accountState: io.wolftown.lauschig.account.AccountStateCleaner
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -97,6 +98,14 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
                 throw e
             } catch (e: Exception) {
                 io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "auto-delete setting not moved to the account", e)
+            }
+            // The same for the RMAB connection and the recent searches, one per device before profiles.
+            try {
+                accountState.migrate(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "account state not moved to the account", e)
             }
             // A "Download löschen?" question a killed process left open counts as "Behalten" – settled before the
             // clean-up looks at anything.
