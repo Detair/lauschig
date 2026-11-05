@@ -58,6 +58,14 @@ object AutoDeleteRules {
 
     private fun counts(row: FinishedDownload, keep: (String) -> Boolean) = row.finishedAt >= row.requestedAt && !keep(row.itemKey)
 
+    /**
+     * True if marking [key] finished makes its download go right away ("Sofort", not kept): the "delete the download?"
+     * question after "mark as finished" would ask about something that is gone a moment later. The playing title is
+     * deleted once it stops, so it counts too.
+     */
+    fun deletesRightAway(mode: AutoDeleteMode, kept: Set<String>, serverId: String?, key: String): Boolean =
+        serverId != null && mode == AutoDeleteMode.IMMEDIATELY && !keeper(serverId, kept, playing = null)(key)
+
     /** "serverId:itemKey" entries the user keeps, the playing title, and every device title. */
     fun keeper(serverId: String, kept: Set<String>, playing: String?): (String) -> Boolean = { key ->
         "$serverId:$key" in kept || key == playing || DeviceLibrary.isLocal(serverId, key)

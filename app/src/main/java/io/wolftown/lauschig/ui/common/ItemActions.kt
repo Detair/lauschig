@@ -61,7 +61,11 @@ import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.db.entities.ProgressEntity
+import io.wolftown.lauschig.cleanup.AutoDeleteRules
+import io.wolftown.lauschig.download.AutoDeleteMode
+import io.wolftown.lauschig.download.DownloadSettings
 import io.wolftown.lauschig.playback.PlayerController
+import io.wolftown.lauschig.settings.AppSettings
 import io.wolftown.lauschig.playback.ProgressActions
 import io.wolftown.lauschig.playback.nextVolume
 import kotlinx.coroutines.flow.flow
@@ -70,6 +74,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -110,9 +115,21 @@ class ItemActionsViewModel @Inject constructor(
     private val progressActions: ProgressActions,
     private val items: ItemDao,
     private val queue: QueueDao,
+    downloadSettings: DownloadSettings,
+    appSettings: AppSettings,
 ) : ViewModel() {
     private val serverId: StateFlow<String?> = accountStore.account.map { it?.serverId }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** The automatic clean-up and the titles kept from it ("serverId:key"); see [io.wolftown.lauschig.cleanup.FinishedDownloadCleaner]. */
+    private val autoDelete = combine(downloadSettings.autoDeleteFinished, appSettings.cleanupIgnored) { mode, kept -> mode to kept }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AutoDeleteMode.NEVER to emptySet())
+
+    /** True if marking [itemId] finished deletes its download right away; then there is nothing to ask. */
+    fun deletesWhenFinished(itemId: String): Boolean {
+        val (mode, kept) = autoDelete.value
+        return AutoDeleteRules.deletesRightAway(mode, kept, serverId.value, itemId)
+    }
 
     /** The server [itemId] lives on: the device library for a local title (no account needed), else the account's. */
     private fun serverOf(itemId: String): Flow<String?> = if (DeviceLibrary.isLocalKey(itemId)) flowOf(DeviceLibrary.SERVER_ID) else serverId
@@ -272,7 +289,10 @@ class ProgressActionHost internal constructor(
 
     fun run(entry: ProgressEntry) {
         when (entry) {
-            ProgressEntry.MarkFinished -> { viewModel.markFinished(itemId); if (download() == QuickDownload.Complete) askDelete = true }
+            ProgressEntry.MarkFinished -> {
+                viewModel.markFinished(itemId)
+                if (download() == QuickDownload.Complete && !viewModel.deletesWhenFinished(itemId)) askDelete = true
+            }
             ProgressEntry.MarkNotFinishedKeep -> viewModel.markNotFinishedKeepPosition(itemId)
             ProgressEntry.StartOver -> viewModel.startOver(itemId)
             ProgressEntry.HideFromContinue -> viewModel.hideFromContinue(itemId)

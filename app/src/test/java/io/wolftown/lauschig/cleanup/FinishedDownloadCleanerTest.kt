@@ -124,6 +124,14 @@ class FinishedDownloadCleanerTest {
         assertNull(AutoDeleteRules.nextDue(rows, AutoDeleteMode.NEVER, now, { false }))
     }
 
+    @Test fun theQuestionAfterMarkFinished_isLeftOut_onlyWhenTheDownloadGoesRightAway() {
+        assertTrue(AutoDeleteRules.deletesRightAway(AutoDeleteMode.IMMEDIATELY, emptySet(), s, "b1"))
+        assertFalse(AutoDeleteRules.deletesRightAway(AutoDeleteMode.IMMEDIATELY, setOf("$s:b1"), s, "b1"))
+        assertFalse("after 3 days: deleting now still frees space now", AutoDeleteRules.deletesRightAway(AutoDeleteMode.AFTER_3_DAYS, emptySet(), s, "b1"))
+        assertFalse(AutoDeleteRules.deletesRightAway(AutoDeleteMode.NEVER, emptySet(), s, "b1"))
+        assertFalse(AutoDeleteRules.deletesRightAway(AutoDeleteMode.IMMEDIATELY, emptySet(), null, "b1"))
+    }
+
     // --- the runner
 
     @Test fun runOnce_deletesOnlyTheFiles_progressSessionsAndHistoryStay() = runBlocking {
