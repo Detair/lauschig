@@ -21,6 +21,7 @@ class FakeAccountStore : AccountStore {
     override val account: Flow<Account?> = acc
     override val needsReauth: Flow<Boolean> = reauth
     override val saved: Flow<List<Account>> = aside.map { list -> list.map { it.account } }
+    override val savedNeedingReauth: Flow<Set<String>> = aside.map { list -> list.filter { it.reauth }.mapTo(HashSet()) { it.account.serverId } }
 
     override suspend fun save(a: Account, accessToken: String, refreshToken: String) {
         acc.value = a; access = accessToken; refresh = refreshToken; reauth.value = false

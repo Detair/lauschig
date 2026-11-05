@@ -212,6 +212,7 @@ fun SettingsRoute(
     onOpenAdmin: () -> Unit = {},
     onOpenNavigation: () -> Unit = {},
     onOpenStats: () -> Unit = {},
+    onOpenProfiles: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -231,7 +232,7 @@ fun SettingsRoute(
         onOpenConnection = onOpenConnection,
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
         adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
-        accountSection = { AccountSection() },
+        accountSection = { AccountSection(onOpenProfiles) },
         onOpenStats = onOpenStats,
         diagnosticsSection = { io.wolftown.lauschig.diagnostics.DiagnosticsSection() },
     )

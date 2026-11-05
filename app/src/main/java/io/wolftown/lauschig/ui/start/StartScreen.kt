@@ -110,6 +110,8 @@ fun StartRoute(
     onOpenAchievements: (() -> Unit)? = null,
     /** The year-in-review card (December and January). */
     onOpenReview: (year: Int) -> Unit = {},
+    /** Beside the gear (the profiles, if there are several). */
+    headerAction: @Composable () -> Unit = {},
     viewModel: StartViewModel = hiltViewModel(),
     notices: AchievementNoticeViewModel = hiltViewModel(),
     reviewCard: YearReviewCardViewModel = hiltViewModel(),
@@ -134,6 +136,7 @@ fun StartRoute(
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = Spacing.gutter).weight(1f))
+            headerAction()
             IconButton(onClick = onOpenSettings, modifier = Modifier.testTag("openSettings")) {
                 Icon(Icons.Rounded.Settings, stringResource(R.string.settings_title))
             }

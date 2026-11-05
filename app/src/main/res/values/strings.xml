@@ -1036,4 +1036,26 @@
         <item quantity="other">and %d more</item>
     </plurals>
     <string name="review_paused">Paused</string>
+    <!-- Profiles -->
+    <string name="profile_row">Profile: %1$s · %2$s</string>
+    <string name="profile_row_hint">Switch or add</string>
+    <string name="profile_row_hint_admin">Admin · Switch or add</string>
+    <string name="profiles_title">Profiles</string>
+    <string name="profiles_active">Active</string>
+    <string name="profiles_needs_reauth">Sign in again</string>
+    <string name="profiles_more">More options for %1$s</string>
+    <string name="profiles_remove">Remove</string>
+    <string name="profiles_add">Add profile</string>
+    <string name="profiles_header">Profiles, active: %1$s</string>
+    <string name="profiles_switching">Switching to %1$s …</string>
+    <string name="profiles_removing">Removing %1$s …</string>
+    <string name="profiles_slow">This is taking a little longer. Nearly there.</string>
+    <string name="profiles_switched">Profile %1$s is active</string>
+    <string name="profiles_switch_failed">Could not switch to %1$s. The previous profile stays active.</string>
+    <string name="profiles_removed">Profile %1$s is removed</string>
+    <string name="profiles_remove_failed">Could not remove %1$s</string>
+    <string name="profiles_remove_title">Remove profile?</string>
+    <string name="profiles_remove_message">%1$s is signed out on this device.</string>
+    <string name="profiles_remove_downloads">This profile\'s downloads are deleted (%1$s).</string>
+    <string name="profiles_remove_checking">Checking what belongs to it …</string>
 </resources>

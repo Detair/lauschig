@@ -32,23 +32,23 @@ class AccountSectionTest {
     private fun show(step: SignOutStep?, info: AccountInfo? = account) = rule.setContent {
         LauschigTheme {
             Column {
-                AccountSectionContent(info, step, { calls += "signOut" }, { calls += "keep:$it" }, { calls += "confirm" }, { calls += "cancel" })
+                AccountSectionContent(info, step, { calls += "signOut" }, { calls += "keep:$it" }, { calls += "confirm" }, { calls += "cancel" }, onOpenProfiles = { calls += "profiles" })
             }
         }
     }
 
-    @Test fun accountRow_userHostAdmin_andSignOut() {
+    @Test fun theProfileRow_nameServerAdmin_opensTheSheet_andSignOut() {
         show(null)
         rule.onNodeWithText("Account").assertExists()
-        rule.onNodeWithText("fabian").assertExists()
-        rule.onNodeWithText("abs.example.org · Admin").assertExists()
+        rule.onNodeWithText("Profile: fabian · abs.example.org").performClick()
+        rule.onNodeWithText("Admin · Switch or add").assertExists()
         rule.onNodeWithTag("signOut").performClick()
-        assertEquals(listOf<Any>("signOut"), calls)
+        assertEquals(listOf<Any>("profiles", "signOut"), calls)
     }
 
-    @Test fun noAdmin_justTheHost() {
+    @Test fun noAdmin_justTheHint() {
         show(null, account.copy(isAdmin = false))
-        rule.onNodeWithText("abs.example.org").assertExists()
+        rule.onNodeWithText("Switch or add").assertExists()
     }
 
     @Test fun checking_showsTheUpload_andCanOnlyBeCancelled() {

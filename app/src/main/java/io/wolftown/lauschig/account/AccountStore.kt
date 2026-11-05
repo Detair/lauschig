@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.account
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * The signed-in accounts of this device: one active account (everything in the app works with it) and, for a profile
@@ -39,6 +40,9 @@ interface AccountStore {
 
     /** Accounts set aside that stay signed in, without tokens, in the order they were set aside. Never the active one. */
     val saved: Flow<List<Account>>
+
+    /** The saved accounts flagged by [markNeedsReauth]: they ask to sign in again when they are back. */
+    val savedNeedingReauth: Flow<Set<String>> get() = flowOf(emptySet())
 
     /**
      * Stores [a] as the active account like [save], but the active account (another server id) is set aside into [saved]

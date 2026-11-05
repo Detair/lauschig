@@ -40,6 +40,18 @@ class DataStoreAccountStoreTest {
         assertEquals(false, store.needsReauth.first())
     }
 
+    @Test fun theSignInHint_isThereForASavedAccount_andGoesWithItsTokens() = runTest {
+        val other = account.copy(serverId = "bbbbbbbbbbbbbbbb", userId = "u2", username = "kind")
+        store.save(other, "a2", "r2")
+        store.add(account, "a1", "r1") // the other one is set aside
+        assertEquals(emptySet<String>(), store.savedNeedingReauth.first())
+        store.markNeedsReauth(other.serverId)
+        assertEquals(setOf(other.serverId), store.savedNeedingReauth.first())
+        assertEquals("the active one stays clear", false, store.needsReauth.first())
+        store.updateTokens(other.serverId, "a3", "r3")
+        assertEquals(emptySet<String>(), store.savedNeedingReauth.first())
+    }
+
     @Test fun whileSignedIn_refreshAndReauthWork() = runTest {
         store.save(account, "a1", "r1")
         store.updateTokens(account.serverId, "a2", "r2")

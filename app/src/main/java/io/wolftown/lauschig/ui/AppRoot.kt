@@ -5,8 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -34,6 +37,7 @@ import io.wolftown.lauschig.ui.nav.ItemDetail
 import io.wolftown.lauschig.ui.nav.Player
 import io.wolftown.lauschig.ui.nav.PlayerOverlay
 import io.wolftown.lauschig.ui.nav.Setup
+import io.wolftown.lauschig.ui.nav.SetupMode
 import io.wolftown.lauschig.ui.nav.closePlayer
 import io.wolftown.lauschig.ui.nav.currentTab
 import io.wolftown.lauschig.ui.nav.isOnSetup
@@ -46,6 +50,12 @@ import io.wolftown.lauschig.ui.nav.underPlayer
 import io.wolftown.lauschig.ui.player.MiniPlayer
 import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.player.PlayerViewModel
+import io.wolftown.lauschig.ui.profiles.ProfileBusyDialog
+import io.wolftown.lauschig.ui.profiles.ProfileHeaderButton
+import io.wolftown.lauschig.ui.profiles.ProfileRemoveDialog
+import io.wolftown.lauschig.ui.profiles.ProfilesSheet
+import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
+import io.wolftown.lauschig.ui.profiles.profileOutcomeText
 import io.wolftown.lauschig.whatsnew.WhatsNewSheet
 import io.wolftown.lauschig.whatsnew.WhatsNewViewModel
 import kotlinx.coroutines.flow.first
@@ -89,6 +99,7 @@ fun AppRoot(
     previousAccount: PreviousAccountViewModel = hiltViewModel(),
     finishedQuestions: io.wolftown.lauschig.cleanup.FinishedQuestionViewModel = hiltViewModel(),
     pagesScope: AccountPagesScope = hiltViewModel(),
+    profiles: ProfilesViewModel = hiltViewModel(),
     /** An account is signed in (null: not read yet); false while running = signed out, only the sign-in is left. */
     signedIn: Boolean? = null,
 ) {
@@ -103,6 +114,7 @@ fun AppRoot(
     // The same (activity-wide) view model as the player layer's: its state knows the loaded title's cover version.
     val playerScreen by playerViewModel.state.collectAsStateWithLifecycle()
     val downloadPrompt by viewModel.downloadPrompt.collectAsStateWithLifecycle()
+    val profileRows by profiles.profiles.collectAsStateWithLifecycle()
 
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection, checking)
@@ -158,6 +170,7 @@ fun AppRoot(
                 val showReauth = needsReauth && !onSetup
                 val onReauth = { navController.navigate(Setup()) { launchSingleTop = true } }
                 val onOpenConnection = { navController.navigate(ConnectionStatus) { launchSingleTop = true } }
+                var profilesOpen by rememberSaveable { mutableStateOf(false) }
                 AppScaffold(
                     connection = connection,
                     // Under the player only: unseen, not for TalkBack, and no keyboard focus moves into it.
@@ -189,7 +202,11 @@ fun AppRoot(
                     connectionBanner = connectionBanner,
                 ) {
                     CompositionLocalProvider(LocalViewModelStoreOwner provides pageModels) {
-                        AppNavHost(navController, pages.start, homeRoute = startTab.route(), snackbarHost = snackbarHost)
+                        AppNavHost(
+                            navController, pages.start, homeRoute = startTab.route(), snackbarHost = snackbarHost,
+                            onOpenProfiles = { profilesOpen = true },
+                            startHeader = { ProfileHeaderButton(profileRows, onClick = { profilesOpen = true }) },
+                        )
                     }
                 }
                 PlayerOverlay(
@@ -211,6 +228,44 @@ fun AppRoot(
                 val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
                 val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
                 previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
+                if (profilesOpen) {
+                    ProfilesSheet(
+                        profileRows.orEmpty(),
+                        onSwitch = {
+                            profilesOpen = false
+                            profiles.switchTo(it)
+                        },
+                        onRemove = profiles::askRemove,
+                        onAdd = {
+                            profilesOpen = false
+                            navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true }
+                        },
+                        onDismiss = { profilesOpen = false },
+                    )
+                }
+                val removal by profiles.removal.collectAsStateWithLifecycle()
+                removal?.let {
+                    ProfileRemoveDialog(
+                        it,
+                        onConfirm = {
+                            profilesOpen = false // the result comes as a snackbar
+                            profiles.confirmRemove()
+                        },
+                        onCancel = profiles::cancelRemove,
+                    )
+                }
+            }
+            // Outside the pages: it stays up while they change underneath, and a recreated activity finds it again.
+            val profileWork by profiles.busy.collectAsStateWithLifecycle()
+            profileWork?.let { ProfileBusyDialog(it) }
+            val profileOutcome by profiles.outcome.collectAsStateWithLifecycle()
+            profileOutcome?.let { outcome ->
+                val text = profileOutcomeText(outcome)
+                LaunchedEffect(outcome) {
+                    // Done only once it was on screen: a rotation in between shows it again rather than losing it.
+                    snackbarHost.showSnackbar(text)
+                    profiles.shown(outcome)
+                }
             }
             PositionJumpSnackbar(viewModel.jumpBus, viewModel.player, serverId, snackbarHost)
             downloadPrompt?.let {

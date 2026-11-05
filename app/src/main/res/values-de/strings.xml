@@ -1036,4 +1036,26 @@
         <item quantity="other">und %d weitere</item>
     </plurals>
     <string name="review_paused">Pausiert</string>
+    <!-- Profile -->
+    <string name="profile_row">Profil: %1$s · %2$s</string>
+    <string name="profile_row_hint">Wechseln oder hinzufügen</string>
+    <string name="profile_row_hint_admin">Admin · Wechseln oder hinzufügen</string>
+    <string name="profiles_title">Profile</string>
+    <string name="profiles_active">Aktiv</string>
+    <string name="profiles_needs_reauth">Neu anmelden nötig</string>
+    <string name="profiles_more">Weitere Optionen für %1$s</string>
+    <string name="profiles_remove">Entfernen</string>
+    <string name="profiles_add">Profil hinzufügen</string>
+    <string name="profiles_header">Profile, aktiv: %1$s</string>
+    <string name="profiles_switching">Wechsle zu %1$s …</string>
+    <string name="profiles_removing">Entferne %1$s …</string>
+    <string name="profiles_slow">Das dauert gerade etwas länger. Es geht gleich weiter.</string>
+    <string name="profiles_switched">Profil %1$s ist aktiv</string>
+    <string name="profiles_switch_failed">Wechsel zu %1$s hat nicht geklappt. Das bisherige Profil bleibt aktiv.</string>
+    <string name="profiles_removed">Profil %1$s ist entfernt</string>
+    <string name="profiles_remove_failed">%1$s ließ sich nicht entfernen</string>
+    <string name="profiles_remove_title">Profil entfernen?</string>
+    <string name="profiles_remove_message">%1$s wird auf diesem Gerät abgemeldet.</string>
+    <string name="profiles_remove_downloads">Die Downloads dieses Profils werden gelöscht (%1$s).</string>
+    <string name="profiles_remove_checking">Prüfe, was dazugehört …</string>
 </resources>

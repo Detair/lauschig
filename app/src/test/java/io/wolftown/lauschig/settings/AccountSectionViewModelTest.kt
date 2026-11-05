@@ -66,6 +66,17 @@ class AccountSectionViewModelTest {
         assertEquals(AccountInfo("fabian", "10.0.2.2:13378", isAdmin = true), vm.account.first { it != null })
     }
 
+    @Test fun nothingStartsOnTopOfARunningSwitch() {
+        val running = kotlinx.coroutines.flow.MutableStateFlow<io.wolftown.lauschig.ui.profiles.ProfileWork?>(io.wolftown.lauschig.ui.profiles.ProfileWork.Switching("kind"))
+        val vm = viewModels.own(AccountSectionViewModel(accounts, signOut, running))
+        vm.startSignOut()
+        assertNull(vm.step.value)
+        assertEquals(0, signOut.checks)
+        running.value = null
+        vm.startSignOut()
+        assertEquals(1, signOut.checks)
+    }
+
     @Test fun signOut_checksFirst_thenAsks_withKeepCheckedByDefault() {
         signOut.answer = CompletableDeferred()
         val vm = vm()

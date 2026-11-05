@@ -43,6 +43,8 @@ import io.wolftown.lauschig.account.AccountSignOut
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.SignOutResult
 import io.wolftown.lauschig.account.displayHost
+import io.wolftown.lauschig.ui.profiles.ProfileOperations
+import io.wolftown.lauschig.ui.profiles.ProfileWork
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,7 +87,14 @@ sealed interface SignOutStep {
 }
 
 @HiltViewModel
-class AccountSectionViewModel @Inject constructor(accounts: AccountStore, private val signOut: AccountSignOut) : ViewModel() {
+class AccountSectionViewModel(
+    accounts: AccountStore,
+    private val signOut: AccountSignOut,
+    /** A profile operation is running: no sign-out on top of it. */
+    private val profileWork: StateFlow<ProfileWork?> = MutableStateFlow(null),
+) : ViewModel() {
+    @Inject constructor(accounts: AccountStore, signOut: AccountSignOut, operations: ProfileOperations) : this(accounts, signOut, operations.running)
+
     val account: StateFlow<AccountInfo?> = accounts.account
         .map { a -> a?.let { AccountInfo(it.username, it.displayHost, it.isAdmin) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -96,7 +105,7 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
 
     /** "Abmelden": pauses playback and pushes what is pending, then asks. */
     fun startSignOut() {
-        if (_step.value != null) return
+        if (_step.value != null || profileWork.value != null) return
         _step.value = SignOutStep.Checking
         checkJob = viewModelScope.launch {
             var failed = false
@@ -158,12 +167,12 @@ class AccountSectionViewModel @Inject constructor(accounts: AccountStore, privat
     }
 }
 
-/** Settings → "Konto" (first section): who is signed in where, and "Abmelden". */
+/** Settings → "Konto" (first section): who is signed in where, the way to the other profiles, and "Abmelden". */
 @Composable
-fun AccountSection(viewModel: AccountSectionViewModel = hiltViewModel()) {
+fun AccountSection(onOpenProfiles: () -> Unit = {}, viewModel: AccountSectionViewModel = hiltViewModel()) {
     val account by viewModel.account.collectAsStateWithLifecycle()
     val step by viewModel.step.collectAsStateWithLifecycle()
-    AccountSectionContent(account, step, viewModel::startSignOut, viewModel::setKeepDownloads, viewModel::confirm, viewModel::cancel)
+    AccountSectionContent(account, step, viewModel::startSignOut, viewModel::setKeepDownloads, viewModel::confirm, viewModel::cancel, onOpenProfiles)
 }
 
 @Composable
@@ -174,14 +183,15 @@ fun AccountSectionContent(
     onKeepDownloads: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
+    onOpenProfiles: () -> Unit = {},
 ) {
     val a = account ?: return
     Section(R.string.settings_section_account)
     ListItem(
-        headlineContent = { Text(a.username) },
-        supportingContent = { Text(if (a.isAdmin) "${a.host} · ${stringResource(R.string.account_admin)}" else a.host) },
+        headlineContent = { Text(stringResource(R.string.profile_row, a.username, a.host)) },
+        supportingContent = { Text(stringResource(if (a.isAdmin) R.string.profile_row_hint_admin else R.string.profile_row_hint)) },
         leadingContent = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
-        modifier = Modifier.testTag("accountRow"),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenProfiles).testTag("profileRow"),
     )
     ListItem(
         headlineContent = { Text(stringResource(R.string.sign_out)) },

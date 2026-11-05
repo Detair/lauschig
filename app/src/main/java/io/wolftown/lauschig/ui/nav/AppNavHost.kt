@@ -58,6 +58,10 @@ fun AppNavHost(
     homeRoute: Any = Start,
     /** The app's snackbars (Start tells of a new achievement there). */
     snackbarHost: SnackbarHostState? = null,
+    /** Opens the profile sheet (Settings). */
+    onOpenProfiles: () -> Unit = {},
+    /** In the start page's header, beside the gear: the way to the profiles, if there are several. */
+    startHeader: @Composable () -> Unit = {},
 ) {
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
@@ -70,7 +74,7 @@ fun AppNavHost(
         popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
         popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
     ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }) }
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }, headerAction = startHeader) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -81,6 +85,7 @@ fun AppNavHost(
                     onOpenAdmin = { navController.navigate(ServerAdmin) },
                     onOpenNavigation = { navController.navigate(NavigationSettings) },
                     onOpenStats = { navController.navigate(Stats) },
+                    onOpenProfiles = onOpenProfiles,
                 )
             }
         }
