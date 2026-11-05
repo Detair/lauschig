@@ -241,4 +241,22 @@ class LogMaskerTest {
         assertEquals("<redacted>@<server>", masked("lukas:hunter2@192.168.178.20:13378", "lukas", "hunter2", "192.168"))
         masked("{\"accessToken\":\"x\\\"y z\"}", "y z")
     }
+
+    // --- round 3
+
+    @Test fun emailsUnderAnOwnDomain_areOneAddress() {
+        LogMasker.setLiterals(listOf("example.io", "audiobookshelf.example.io"))
+        assertEquals("OIDC: user <email>; admin <email>", masked("OIDC: user lukas@example.io; admin mia.mueller@example.io", "lukas", "mia", "example"))
+    }
+
+    @Test fun aPathJoinedByACommaToTheAppsOwnPath_isMaskedToo() {
+        val own = "/storage/emulated/0/Android/data/io.wolftown.lauschig/files/a.mp3"
+        assertEquals("$own,/storage/emulated/0/<…>.mp3", masked("$own,/storage/emulated/0/Hörbücher/Lukas/Bibi.mp3", "Lukas", "Bibi"))
+    }
+
+    @Test fun certificateNames_escapedCommas_withoutCn_andOidForm() {
+        masked("DN: CN=nas,O=Hofmann\\, Fabian,L=Berlin", "Fabian", "Hofmann", "Berlin")
+        masked("DN: O=Fabian Hofmann, L=Berlin", "Fabian", "Hofmann", "Berlin")
+        masked("DN: CN=nas, 1.2.840.113549.1.9.1=#16106c756b6173406578616d706c652e696f", "#16106c75")
+    }
 }

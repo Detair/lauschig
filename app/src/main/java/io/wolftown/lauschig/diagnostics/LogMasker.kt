@@ -36,7 +36,7 @@ object LogMasker {
         var s = text
         s = HEADER.replace(s) { m -> "${m.groupValues[1]}: $REDACTED" }
         // A certificate's subject (OkHttp's "not verified" message): names, organisation and town of its owner.
-        if (s.contains("CN=", ignoreCase = true)) s = DN_FIELD.replace(s) { m -> "${m.groupValues[1]}=$REDACTED" }
+        if (DN_GATE.containsMatchIn(s)) s = DN_FIELD.replace(s) { m -> "${m.groupValues[1]}=$REDACTED" }
         s = URL.replace(s) { m ->
             // A sentence's full stop or comma after a URL is not part of it.
             val trail = m.value.takeLastWhile { it in ".,;:!?" }
@@ -49,8 +49,9 @@ object LogMasker {
         s = QUOTED_SECRET.replace(s) { m -> "${m.groupValues[1]}${m.groupValues[2]}${m.groupValues[1]}${m.groupValues[3]}${m.groupValues[4]}$REDACTED${m.groupValues[4]}" }
         s = KEY_VALUE.replace(s) { m -> "${m.groupValues[1]}${m.groupValues[2]}$REDACTED" }
         s = USER_INFO.replace(s, "$REDACTED@$HOST")
-        s = maskLiterals(s)
+        // Before the own values: "lukas@example.io" is one address, not "lukas@" plus a private domain.
         s = EMAIL.replace(s, "<email>")
+        s = maskLiterals(s)
         s = QUOTED_HOST.replace(s) { m -> "${m.groupValues[1]} \"$HOST\"" }
         s = UNVERIFIED_HOST.replace(s) { m -> "${m.groupValues[1]} $HOST" }
         s = IPV6.replace(s) { m -> if (looksLikeIpv6(m.groupValues[1])) IP else m.value }
@@ -69,7 +70,7 @@ object LogMasker {
     private fun maskUserPath(root: String, rest: String): String {
         if (rest.startsWith(OWN_DIR)) {
             // Only the app's own path stays; what follows on the line (another path) is looked at again.
-            val own = rest.indexOfFirst { it.isWhitespace() }.let { if (it < 0) rest.length else it }
+            val own = rest.indexOfFirst { it.isWhitespace() || it == ',' }.let { if (it < 0) rest.length else it }
             val tail = rest.substring(own)
             return root + rest.substring(0, own) + USER_PATH.replace(tail) { m -> maskUserPath(m.groupValues[1], m.groupValues[2]) }
         }
@@ -133,7 +134,9 @@ object LogMasker {
     /** `key=value` / `key: value`: the value goes up to the next delimiter, several words included. */
     private val KEY_VALUE = Regex("""(?i)(?<![\w.-])($SECRET_KEY)(["']?\s*[=:]\s*)(?!["']?<)("[^"]*"|'[^']*'|[^\s"',;&)}\]][^"',;&)}\]\r\n]*)""")
     /** The fields of a certificate's distinguished name; the value goes up to the next comma or the end of the line. */
-    private val DN_FIELD = Regex("""(?i)(?<![\w.-])(CN|O|OU|L|ST|C|STREET|E|EMAILADDRESS|UID|DC|SERIALNUMBER)=(?!<)[^,\n]*""")
+    private val DN_FIELD = Regex("""(?i)(?<![\w.-])(CN|O|OU|L|ST|C|STREET|E|EMAILADDRESS|UID|DC|SERIALNUMBER|\d+(?:\.\d+)+)=(?!<)(?:\\.|[^,\\\n])*""")
+    /** A distinguished name is near: a CN, O or OU attribute (a DN without CN too). */
+    private val DN_GATE = Regex("""(?i)(?<![\w.-])(?:CN|O|OU)=""")
     private val DOMAIN_LIKE = Regex("""[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+""")
 
     /** `user:pass@host` without a scheme. */
