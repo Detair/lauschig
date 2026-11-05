@@ -98,6 +98,8 @@ import javax.inject.Inject
 /**
  * Thin glue: ExoPlayer + MediaLibrarySession (notification, lock screen, media buttons come from Media3 defaults).
  * All decisions live in [MediaItemFactory], [TimelineMapper], [ProgressTracker] and [PlayerControllerImpl].
+ * Everything plays through a [PlaybackOutput]: the session, progress, queue, chapters, widget and car buttons use its
+ * player, only the device's own parts (effects, skip silence, stream monitor) its ExoPlayer – the seam for Cast.
  */
 @AndroidEntryPoint
 class PlaybackService : MediaLibraryService() {
@@ -133,7 +135,9 @@ class PlaybackService : MediaLibraryService() {
     /** Library requests of cars and browsers; never the main thread (see [LibraryCallback]). */
     private val carScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: MediaLibrarySession? = null
-    private var player: ExoPlayer? = null
+    private var output: PlaybackOutput? = null
+    /** What plays ([PlaybackOutput.player]); the session and everything that follows the playback use it. */
+    private val player: Player? get() = output?.player
     private var bridge: PlaybackProgressBridge? = null
     private var connectionJob: Job? = null
     private var monitorJob: Job? = null
@@ -210,21 +214,24 @@ class PlaybackService : MediaLibraryService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) streamMonitor.onSeekOrPrepare()
             }
         })
-        player = exo
+        // Today on this device only; a Cast output (Phase 7) would put its player on top of [exo] here, and what is
+        // built on `p` below follows it. The device's own parts (stream monitor above, volume and effects) stay on [exo].
+        val out: PlaybackOutput = DeviceOutput(exo).also { output = it }
+        val p = out.player
         // The only writer of the player's volume: the sleep fade (through the session player) times the compressor's switch.
-        val volume = PlayerVolume { exo.volume = it }
-        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
+        val volume = PlayerVolume { out.device.volume = it }
+        comfort = PlaybackComfort(out.device, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
             val at = System.currentTimeMillis()
             appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
         }).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
-        bridge = PlaybackProgressBridge(exo, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
-            .also { exo.addListener(it) }
+        bridge = PlaybackProgressBridge(p, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
+            .also { p.addListener(it) }
         // After the bridge, so the ended title is saved as finished before the next one replaces the queue.
-        exo.addListener(queueAdvanceListener(exo))
+        p.addListener(queueAdvanceListener(p))
         // The position reaches the server soon after a pause or the end of a title, not only with the periodic sync.
-        exo.addListener(ProgressSyncOnPause({ currentKey(exo) }, syncTrigger::syncProgress))
+        p.addListener(ProgressSyncOnPause({ currentKey(p) }, syncTrigger::syncProgress))
 
         // Tapping the notification (or SystemUI's media controls) opens the player, like the widget, on top of whatever
         // start screen the user chose. Its own request code: the cleanup notification's MainActivity intent differs only
@@ -235,10 +242,10 @@ class PlaybackService : MediaLibraryService() {
         )
         // The session player: "previous"/"next" from a steering wheel or headset move by the seek steps of the settings,
         // never to the book start.
-        val safe = CarSafePlayer(exo, PlaybackSettings.DEFAULT_SEEK_BACK * 1000L, PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L, volume)
+        val safe = CarSafePlayer(p, PlaybackSettings.DEFAULT_SEEK_BACK * 1000L, PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L, volume)
             .also { carPlayer = it }
         val buttons = CarButtons(resources).also { carButtons = it }
-        val chapterTracker = ChapterTracker(exo, { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) }, scope, onTitle = { updateButtons() })
+        val chapterTracker = ChapterTracker(p, { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) }, scope, onTitle = { updateButtons() })
         chapters = chapterTracker
         val built = MediaLibrarySession.Builder(this, safe, libraryCallback(buttons))
             .setSessionActivity(activity)
@@ -246,7 +253,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
         session = built
         chapterTracker.start()
-        exo.addListener(object : Player.Listener {
+        p.addListener(object : Player.Listener {
             override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) = updateButtons()
 
             // A title the service started by itself (car, voice, resumption, queue) shows up in the app too; the app's
@@ -255,7 +262,7 @@ class PlaybackService : MediaLibraryService() {
 
             // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.
             override fun onEvents(player: Player, events: Player.Events) {
-                if (isEngaged(exo)) startGuard?.onEngaged()
+                if (isEngaged(p)) startGuard?.onEngaged()
             }
         })
         scope.launch { sleepTimer.state.map { it?.mode }.distinctUntilChanged().collect { updateButtons() } }
@@ -266,10 +273,10 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         watchLibrary(built)
-        startGuard = ForegroundStartGuard(scope, StartHost(exo))
+        startGuard = ForegroundStartGuard(scope, StartHost(p))
         // The homescreen widget follows the player (also right now: a fresh process starts with an empty player).
-        widgets = WidgetPublisher({ WidgetPublisher.snapshot(exo) }, { exo.mediaItemCount > 0 }, scope, appScope, widgetStore, widgetSource::refresh)
-            .also { exo.addListener(it); it.start() }
+        widgets = WidgetPublisher({ WidgetPublisher.snapshot(p) }, { p.mediaItemCount > 0 }, scope, appScope, widgetStore, widgetSource::refresh)
+            .also { p.addListener(it); it.start() }
         grantCoverReaders()
         coverStore.onFetched = { serverId, itemId, delivered -> scope.launch { coverArrived(serverId, itemId, delivered) } }
         // Android 12+ refuses a foreground start from the background (e.g. auto-resume while the app is not visible).
@@ -308,17 +315,17 @@ class PlaybackService : MediaLibraryService() {
     private fun coverArrived(serverId: String, itemId: String, delivered: Boolean) {
         if (!delivered) coverArrivals.value++
         appScope.launch { widgetSource.coverArrived(serverId, itemId) }
-        val exo = player ?: return
-        val (sid, key) = currentKey(exo) ?: return
+        val p = player ?: return
+        val (sid, key) = currentKey(p) ?: return
         if (sid != serverId || PlayableKey.parse(key).libraryItemId != itemId) return
         val stamp = System.currentTimeMillis().toString()
-        val items = (0 until exo.mediaItemCount).map { i ->
-            val item = exo.getMediaItemAt(i)
+        val items = (0 until p.mediaItemCount).map { i ->
+            val item = p.getMediaItemAt(i)
             val art = item.mediaMetadata.artworkUri ?: return@map item
             val fresh = art.buildUpon().clearQuery().appendQueryParameter("ready", stamp).build()
             item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(fresh).build()).build()
         }
-        if (items.isNotEmpty()) exo.replaceMediaItems(0, items.size, items)
+        if (items.isNotEmpty()) p.replaceMediaItems(0, items.size, items)
     }
 
     private fun currentButtonState() = CarButtons.State(
@@ -342,12 +349,12 @@ class PlaybackService : MediaLibraryService() {
 
     /** The car buttons; false if there was nothing to do (no title, no chapters). */
     private fun onCarCommand(action: String): Boolean {
-        val exo = player ?: return false
-        if (exo.mediaItemCount == 0) return false
+        val p = player ?: return false
+        if (p.mediaItemCount == 0) return false
         return when (action) {
             CarButtons.SEEK_BACK -> { carPlayer?.step(forward = false); true }
             CarButtons.SEEK_FORWARD -> { carPlayer?.step(forward = true); true }
-            CarButtons.SPEED -> { exo.setPlaybackSpeed(CarControls.nextSpeed(exo.playbackParameters.speed)); true }
+            CarButtons.SPEED -> { p.setPlaybackSpeed(CarControls.nextSpeed(p.playbackParameters.speed)); true }
             CarButtons.SLEEP -> {
                 val next = CarControls.nextSleep(sleepTimer.state.value?.mode)
                 if (next == null) sleepTimer.cancel() else sleepTimer.start(next)
@@ -373,10 +380,10 @@ class PlaybackService : MediaLibraryService() {
 
     /** The title in the player if it can just play on (not ended, not failed). Main thread. */
     private fun loadedTitle(): CarNode.Title? {
-        val exo = player ?: return null
-        val state = exo.playbackState
+        val p = player ?: return null
+        val state = p.playbackState
         if (state != Player.STATE_READY && state != Player.STATE_BUFFERING) return null
-        return currentKey(exo)?.let { (serverId, key) -> CarNode.Title(serverId, key) }
+        return currentKey(p)?.let { (serverId, key) -> CarNode.Title(serverId, key) }
     }
 
     private suspend fun lastTitle(): CarNode.Title? = lastTitleStarter.last()?.let { CarNode.Title(it.serverId, it.itemId) }
@@ -429,22 +436,22 @@ class PlaybackService : MediaLibraryService() {
 
     /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val exo = player
-        if (intent != null && exo != null && ForegroundStartGuard.shouldArm(intent, engaged = isEngaged(exo))) startGuard?.arm()
+        val p = player
+        if (intent != null && p != null && ForegroundStartGuard.shouldArm(intent, engaged = isEngaged(p))) startGuard?.arm()
         return super.onStartCommand(intent, flags, startId)
     }
 
     /** Something plays or buffers to play: Media3 shows the notification and goes foreground itself. */
-    private fun isEngaged(exo: ExoPlayer): Boolean =
-        exo.mediaItemCount > 0 && exo.playWhenReady && (exo.playbackState == Player.STATE_READY || exo.playbackState == Player.STATE_BUFFERING)
+    private fun isEngaged(p: Player): Boolean =
+        p.mediaItemCount > 0 && p.playWhenReady && (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
 
     private fun foregroundType() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
 
     /** What the play-key guard ([ForegroundStartGuard]) does to this service. Main thread. */
-    private inner class StartHost(private val exo: ExoPlayer) : ForegroundStartGuard.Host {
-        override fun engaged() = isEngaged(exo)
+    private inner class StartHost(private val p: Player) : ForegroundStartGuard.Host {
+        override fun engaged() = isEngaged(p)
 
-        override fun hasItems() = exo.mediaItemCount > 0
+        override fun hasItems() = p.mediaItemCount > 0
 
         /**
          * Same id, same notification: Android neither swaps nor cancels anything. Media3's next notification update for a
@@ -496,7 +503,7 @@ class PlaybackService : MediaLibraryService() {
                 Log.w(TAG, "could not leave the foreground start", e)
             }
             Log.i(TAG, "play key started nothing: left the foreground start")
-            if (exo.mediaItemCount == 0) stopSelf()
+            if (p.mediaItemCount == 0) stopSelf()
         }
     }
 
@@ -537,7 +544,7 @@ class PlaybackService : MediaLibraryService() {
      * `DEFAULT_FOREGROUND_SERVICE_TIMEOUT_MS` (10 min) after the player stops being "engaged" (ENDED is not), so the
      * few database reads in between do not drop the foreground (see the phase-3B report).
      */
-    private fun queueAdvanceListener(exo: ExoPlayer): Player.Listener {
+    private fun queueAdvanceListener(p: Player): Player.Listener {
         val starter = ServiceTitleStarter(
             loadItem = { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) },
             factory = mediaItemFactory,
@@ -545,9 +552,9 @@ class PlaybackService : MediaLibraryService() {
             loadDetails = librarySync::loadDetailsForPlayable,
             io = Dispatchers.IO,
             setQueue = { items, index, offsetMs ->
-                exo.setMediaItems(items, index, offsetMs)
-                exo.prepare()
-                exo.play()
+                p.setMediaItems(items, index, offsetMs)
+                p.prepare()
+                p.play()
             },
             onStreamStarted = playDownloadStarter::start,
         )
@@ -564,7 +571,7 @@ class PlaybackService : MediaLibraryService() {
         return object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState != Player.STATE_ENDED) return
-                val extras = exo.currentMediaItem?.mediaMetadata?.extras ?: return
+                val extras = p.currentMediaItem?.mediaMetadata?.extras ?: return
                 val serverId = extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return
                 val key = extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return
                 scope.launch {
@@ -582,8 +589,8 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun currentKey(exo: ExoPlayer): Pair<String, String>? {
-        val extras = exo.currentMediaItem?.mediaMetadata?.extras ?: return null
+    private fun currentKey(p: Player): Pair<String, String>? {
+        val extras = p.currentMediaItem?.mediaMetadata?.extras ?: return null
         return (extras.getString(MediaItemFactory.EXTRA_SERVER_ID) ?: return null) to (extras.getString(MediaItemFactory.EXTRA_ITEM_ID) ?: return null)
     }
 
@@ -646,9 +653,9 @@ class PlaybackService : MediaLibraryService() {
         startGuard = null
         bridge?.shutdown(final, appScope)
         session?.release()
-        player?.release()
+        output?.release()
         session = null
-        player = null
+        output = null
         scope.cancel()
         carScope.cancel()
         running = false
