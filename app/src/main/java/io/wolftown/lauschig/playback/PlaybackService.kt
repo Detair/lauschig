@@ -471,7 +471,7 @@ class PlaybackService : MediaLibraryService() {
             } ?: return false
             return try {
                 ServiceCompat.startForeground(this@PlaybackService, ForegroundStartGuard.MEDIA_NOTIFICATION_ID, posted, foregroundType())
-                Log.i(TAG, "play key played nothing: in the foreground with the media notification")
+                Log.i(TAG, "play key: in the foreground with the media notification")
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "could not go foreground with the media notification", e)

@@ -25,6 +25,9 @@ import kotlinx.coroutines.launch
  * - otherwise go foreground with a placeholder ([Host.showPlaceholder]); if a resumption is still running, keep it and
  *   wait for the answer, at most [capMs]; else (failed, answered without playing, or no resumption involved) leave the
  *   foreground again and stop an empty service ([Host.leavePlaceholder]).
+ *
+ * From API 35 the same step comes first, at [arm], before Media3 handles the key ([foregroundFirstFor]); what is left for
+ * the deadline is leaving a placeholder if nothing plays.
  * Main thread.
  */
 class ForegroundStartGuard(
@@ -32,6 +35,7 @@ class ForegroundStartGuard(
     private val host: Host,
     private val timeoutMs: Long = timeoutFor(Build.VERSION.SDK_INT),
     private val capMs: Long = CAP_MS,
+    private val foregroundFirst: Boolean = foregroundFirstFor(Build.VERSION.SDK_INT),
 ) {
     /** What the guard asks of the playback service. */
     interface Host {
@@ -63,6 +67,7 @@ class ForegroundStartGuard(
         answer = null
         placeholderUp = false
         expectResumption = !host.hasItems()
+        if (foregroundFirst && goForeground()) return disarm()
         job = scope.launch {
             delay(timeoutMs)
             job = null
@@ -85,12 +90,7 @@ class ForegroundStartGuard(
     private fun settle() {
         if (!isArmed) return
         if (host.engaged()) return disarm()
-        // A loaded title keeps its Media3 notification: meet the deadline with it instead of swapping it out.
-        if (!placeholderUp && host.hasItems() && host.adoptMediaNotification()) return disarm()
-        if (!placeholderUp) {
-            host.showPlaceholder()
-            placeholderUp = true
-        }
+        if (goForeground()) return disarm()
         if (expectResumption && answer == null) {
             // A slow resumption (server, details fetch): stay in the foreground meanwhile, but not forever.
             job?.cancel()
@@ -107,6 +107,17 @@ class ForegroundStartGuard(
         disarm()
     }
 
+    /** `startForeground` now; true if that was with Media3's notification, which ends the arming. */
+    private fun goForeground(): Boolean {
+        // A loaded title keeps its Media3 notification: go foreground with it instead of swapping it out.
+        if (!placeholderUp && host.hasItems() && host.adoptMediaNotification()) return true
+        if (!placeholderUp) {
+            host.showPlaceholder()
+            placeholderUp = true
+        }
+        return false
+    }
+
     private fun disarm() {
         job?.cancel()
         job = null
@@ -120,6 +131,16 @@ class ForegroundStartGuard(
          * (30 s seen on the API 35 emulator); keep a margin.
          */
         fun timeoutFor(sdk: Int): Long = if (sdk >= 34) 20_000L else 7_000L
+
+        /**
+         * Android 15+ refuses audio focus to an app targeting it unless it holds the foreground audio capability, and a
+         * service only gets that from the actual `startForeground` (AOSP `OomAdjuster`; `startForegroundService` alone
+         * gives the process state, not the capability). Media3 goes foreground only after `play()`, which asks for focus
+         * at once, so a refused request would leave the title paused (`playWhenReady=false reason=2`). A key through the
+         * platform session, or a Bluetooth controller connecting to a new session, happens to lift this for some seconds
+         * (temporary while-in-use exemption); the first key after a reboot gets neither.
+         */
+        fun foregroundFirstFor(sdk: Int): Boolean = sdk >= 35
 
         /** How long a placeholder waits for a slow resumption before it gives up. */
         const val CAP_MS = 60_000L
