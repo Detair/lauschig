@@ -252,3 +252,62 @@
    - `./gradlew testDebugUnitTest :abs-api:test lintDebug assembleDebug -q`
    - Überprüfung auf Emulator/Gerät.
    - PR erstellen und mergen.
+
+---
+
+## Umsetzung Task 7 (2026-11-05)
+
+Paket „Darstellung“ (Branch `p6-look`).
+
+- `DarkThemeTone` (`NIGHT_BLUE` Standard, `WARM_AMBER`) in `UiSettings`/`Appearance`, DataStore-Key `dark_tone`
+  (unbekannte Werte → Nachtblau). `LauschigWarmDarkColors` mit den Planfarben und **allen** M3-Rollen (Sand als
+  Sekundär-, Salbei als Tertiärfarbe, Container stufen sich in eine Richtung). `colorSchemeFor(…, tone, …)`.
+- **Claudes Wahl – Zusammenspiel:**
+  - *Dynamische Farben:* Kaminfeuer ist eine bewusste Wahl für die Nacht und gewinnt im dunklen Design auch gegen die
+    Hintergrundbild-Farben (die sind oft kühl und würden den Zweck aufheben). Mit `NIGHT_BLUE` bleibt alles wie bisher
+    (dynamisch, sonst Nachtblau). Darum heißt das erste Segment „Dynamisch“, solange dynamische Farben aktiv sind,
+    sonst „Nachtblau“; der Hinweis sagt „auch statt der Farben des Hintergrundbilds“.
+  - *Reines Schwarz:* wirkt auch auf Kaminfeuer (`withPureBlack()`): schwarzer Grund, die Container behalten ihren
+    warmen Stich, nur dunkler; Text- und Akzentfarben bleiben.
+  - *Helles Design:* unberührt; die Zeile „Dunkler Farbton“ ist dort wie „Reines Schwarz“ deaktiviert („Nur im
+    dunklen Design“). Bei „Wie das System“ bleibt sie aktiv (nachts wird es dunkel).
+- UI: Zeile „Dunkler Farbton“ mit zwei Segmenten direkt unter „Design“; die Vorschau-Karte zeigt die Wirkung sofort.
+- Kontrasttest (`ColorSchemeTest`): Textrollen ≥ 4,5:1 auf Fläche und allen Containern (auch Kaminfeuer + reines
+  Schwarz), On-Farben ≥ 4,5:1, Steuerelemente (`outline`, `primary`) ≥ 3:1 – für alle drei eigenen Paletten;
+  `BarColorTest` prüft die Statistikbalken auch in Kaminfeuer.
+- Version 0.4.0 / versionCode 4 mit `whatsnew_0_4_0` angelegt (dieses Paket fand versionCode 3 vor).
+
+## Umsetzung Task 11.2–11.5 (2026-11-05)
+
+Paket „Darstellung“ (Branch `p6-look`); 11.1 und 11.6 gehören zu anderen Paketen.
+
+- **11.2 – Claudes Wahl: `ArrowCircleDown`.** `OfflinePin` ist ein Haken im Kreis und sähe dem „gehört“-Haken
+  (`CheckCircle`) direkt daneben in Episoden- und Sammlungslisten zum Verwechseln ähnlich – genau das Problem, das der
+  Plan lösen will. Ein gemeinsames `OfflineIcon` (ui/common) wird überall genutzt: Cover-Badge, `DownloadIconButton`
+  (Detail-Aktionen, Player, Podcast-Episoden), Sammlungs-Episodenzeilen, `SourceIndicator` (nur die Icon-Zuordnung,
+  als `sourceIcon()`), Download-Begleitknopf der Detailseite. `cover_offline_available` heißt jetzt „Auf diesem Gerät
+  verfügbar“ / „Available on this device“. Ein Wächtertest hält `DownloadDone` aus den Quellen.
+- **11.3** Schnellleiste unter Titel/Untertitel: Länge (⏱), Sprecher (🎙), Erscheinungsjahr (📅), jeweils mit
+  gesprochenem Label („Länge: …“, „Gelesen von …“, „Erschienen: …“); Unbekanntes fällt weg, ohne Daten keine Leiste.
+  **Claudes Wahl:** „Ungekürzt“ entfällt – die App speichert dieses Feld nicht, und eine neue Spalte hieße eine
+  Migration parallel zu Task 9 (v10→v11). Der Sprecher wandert aus den Chips in die Leiste (keine Doppelung) und öffnet
+  weiter seine Seite; mehrere Sprecher sind *ein* Eintrag, ein kleines Menü wählt, wessen Seite. Knöpfe: großer
+  Hauptknopf (56 dp, ▶ + Text, Primärfarbe) und daneben ein tonaler 56-dp-Download-Kreis, der den Zustand zeigt
+  (Start; Fortschrittsring – Tippen pausiert; Fortsetzen; „Auf diesem Gerät“ – Tippen fragt nach Löschen; Fehler –
+  Tippen wiederholt). Darunter steht nur, wenn es etwas zu sagen gibt, der Download-Zustand in Worten mit den feineren
+  Aktionen (Pausieren, Abbrechen, Download löschen, Entfernen). Gerätetitel: kein Download-Knopf.
+- **11.4** Das Play-Overlay auf `CoverTile` ist weg; Tippen öffnet überall die Detailseite (wie der Brief sagt, auch
+  in „Weiterhören“ – der Plan erwähnte alternativ den Player), langes Drücken das Menü (mit „Abspielen“). Die große
+  Weiterhören-Karte der Startseite behält ihren Play/Pause-Knopf. **Claudes Wahl:** `onPlay` bleibt als
+  Screenreader-Aktion „<Titel> abspielen“ an der Kachel (TalkBack-Menü „Aktionen“), wo der Titel abspielbar ist –
+  ohne sichtbaren Knopf, ohne Fehlstarts beim Scrollen.
+- **11.5** `BarChart(tips = …)`: Tippen auf einen Balken (ganzer Spaltenbereich – dünne Monatsbalken bleiben
+  treffbar) hebt seine Spalte hervor und zeigt einen Tooltip (Zeit fett, darunter das volle Datum: Wochentag + Tag,
+  Monat + Jahr, Jahr; „(heute)“ beim aktuellen). Er blendet ein (Alpha + leichte Skalierung), gleitet zum nächsten
+  Balken, verschwindet beim zweiten Tippen oder Periodenwechsel. **Claudes Wahl:** Der Tooltip sitzt in einem
+  freigehaltenen Band über den Balken (wächst mit der Schriftgröße), damit er nie einen Balken verdeckt; die Lücke
+  über dem Diagramm ersetzt dafür den bisherigen oberen Abstand. Exakte Zeit im App-üblichen Format („5 Std. 12 Min.“).
+  Barrierefreiheit: zuerst die Zusammenfassung (wie bisher), dann ist jeder Balken ein auswählbarer Knoten
+  „Datum: Zeit“ – Erkunden per Berührung liest den Balken unter dem Finger; der Tooltip selbst ist für Screenreader
+  verborgen (keine Doppelung). Die Zusammenfassung hängt am Beschriftungsstreifen, weil Compose überdeckte Knoten (die
+  Zeichnung unter den Balken-Knoten) vor Screenreadern verbirgt. Start-Karte und Jahresrückblick bleiben ein Knoten.
