@@ -7,6 +7,7 @@ import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.entities.ItemEntity
 import io.wolftown.lauschig.settings.AppSettings
 import kotlinx.coroutines.async
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -19,7 +20,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -31,6 +34,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ExternalSeriesRepositoryTest {
+    @get:Rule val tmp = TemporaryFolder()
+
     private lateinit var server: MockWebServer
     private lateinit var db: LauschigDatabase
     private lateinit var settings: AppSettings
@@ -81,8 +86,11 @@ class ExternalSeriesRepositoryTest {
         repo = repository()
     }
 
-    private fun repository(endpoints: AudibleEndpoints = AudibleEndpoints { server.url("/") }) =
-        ExternalSeriesRepository(AudibleApis(endpoints, AudibleClient.okHttp()), db.externalSeriesDao(), settings, clock)
+    private fun repository(
+        endpoints: AudibleEndpoints = AudibleEndpoints { server.url("/") },
+        settingsToUse: AppSettings = settings,
+    ) =
+        ExternalSeriesRepository(AudibleApis(endpoints, AudibleClient.okHttp()), db.externalSeriesDao(), settingsToUse, clock)
 
     @After fun tearDown() {
         db.close()
@@ -142,6 +150,28 @@ class ExternalSeriesRepositoryTest {
         failing = true
         val r = repo.missingFor("srv", "lib", "Die Serie", owned)
         assertEquals(listOf("C2"), r!!.map { it.volume.asin })
+    }
+
+    /** A store nobody has written to: an install, or a 0.4.0 that never touched the switch. */
+    private fun kotlinx.coroutines.test.TestScope.freshSettings(name: String) =
+        AppSettings(PreferenceDataStoreFactory.create(scope = backgroundScope) { tmp.newFile("$name.preferences_pb") })
+
+    @Test fun neverAnswered_noRequest_andStillUndecided() = runTest {
+        val fresh = freshSettings("fresh")
+        assertEquals(true, fresh.missingVolumesUndecided.first())
+        assertEquals(false, fresh.missingVolumesEnabled.first())
+        assertNull(repository(settingsToUse = fresh).missingFor("srv", "lib", "Die Serie", owned))
+        assertEquals(0, paths.size)
+    }
+
+    @Test fun anAnswer_isNoLongerUndecided_andKeepsItsValue() = runTest {
+        val fresh = freshSettings("fresh2")
+        fresh.setMissingVolumesEnabled(false)
+        assertEquals(false, fresh.missingVolumesUndecided.first())
+        assertEquals(false, fresh.missingVolumesEnabled.first())
+        fresh.setMissingVolumesEnabled(true)
+        assertEquals(false, fresh.missingVolumesUndecided.first())
+        assertEquals(true, fresh.missingVolumesEnabled.first())
     }
 
     @Test fun disabled_noRequest() = runTest {

@@ -63,6 +63,8 @@ data class BrowseUiState(
     val series: List<Facet> = emptyList(),
     /** Author pages: image/bio, once loaded online. */
     val author: AuthorDto? = null,
+    /** Series pages: ask once whether Audible may be asked for the missing volumes. */
+    val askMissingVolumes: Boolean = false,
     /** False until the first Room emission, so the empty hint does not flash. */
     val loaded: Boolean = false,
 )
@@ -117,6 +119,11 @@ class BrowseViewModel(
         .flatMapLatest { sid -> if (sid == null) flowOf(BrowseUiState(kind, name, loaded = true)) else stateFor(sid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrowseUiState(kind, name))
 
+    /** The user's answer on a series page; the catalog is asked from now on only after a yes. */
+    fun answerMissingVolumes(allow: Boolean) {
+        viewModelScope.launch { missingVolumes.answer(allow) }
+    }
+
     fun setKinds(kinds: Set<LibraryKind>) {
         viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
     }
@@ -137,6 +144,13 @@ class BrowseViewModel(
                 .flatMapLatest { missingVolumes.forSeries(sid, it) }
                 .onStart { emit(null) }
 
+        // Only where a lookup would really send something: a title of this series with an ASIN.
+        val ask: Flow<Boolean> =
+            if (kind != BrowseKind.SERIES) flowOf(false)
+            else combine(catalogRows, filter, missingVolumes.undecided) { all, f, undecided ->
+                undecided && ownedByLibrary(all.filter { it.libraryId in f.libraryIds }).values.flatten().any { !it.asin.isNullOrBlank() }
+            }.distinctUntilChanged()
+
         return combine(
             combine(catalogRows, missing, ::Pair), filter, progressDao.observeAll(sid), itemDao.observeDownloaded(sid), downloadDao.observeActiveIds(sid),
         ) { (all, audible), f, progress, downloaded, active ->
@@ -156,7 +170,8 @@ class BrowseViewModel(
                 kind, name, f.available, f.selected, entries,
                 count = entries.count { it is BrowseEntry.Tile }, series = series, loaded = true,
             )
-        }.flowOn(Dispatchers.Default).combine(author) { s, a -> s.copy(author = a) }.distinctUntilChanged()
+        }.flowOn(Dispatchers.Default).combine(author) { s, a -> s.copy(author = a) }
+            .combine(ask) { s, a -> s.copy(askMissingVolumes = a) }.distinctUntilChanged()
     }
 
     /** This page's titles per library; Audible series are looked up per (library, series name). */

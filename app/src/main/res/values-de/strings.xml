@@ -228,8 +228,12 @@
     <string name="missing_released">Erschienen am %s</string>
     <string name="missing_duration_min">%d Min.</string>
     <string name="missing_duration_h_min">%1$d Std. %2$d Min.</string>
+    <string name="browse_ask_missing_title">Fehlende Bände anzeigen?</string>
+    <string name="browse_ask_missing_text">Lauschig kann im öffentlichen Audible-Katalog nachsehen, welche Bände einer Serie dir fehlen. Dabei gehen die ASINs deiner Bücher und deine IP-Adresse an Audible, aber keine Kontodaten, keine Serveradresse und kein Hörfortschritt. Das gilt für alle Serien; du kannst es in den Einstellungen ändern.</string>
+    <string name="browse_ask_missing_yes">Erlauben</string>
+    <string name="browse_ask_missing_no">Nein danke</string>
     <string name="settings_missing_volumes">Fehlende Bände von Audible ergänzen</string>
-    <string name="settings_missing_volumes_hint">Schlägt Bände im öffentlichen Audible-Katalog nach. Es werden nur ASINs der Bücher gesendet, nichts über dich.</string>
+    <string name="settings_missing_volumes_hint">Schlägt Bände im öffentlichen Audible-Katalog nach. Dabei gehen die ASINs deiner Bücher und deine IP-Adresse an Audible, keine Kontodaten. Aus, bis du zustimmst.</string>
     <string name="settings_audible_region">Audible-Region</string>
     <string name="settings_audible_region_hint">Katalog für die Suche.</string>
     <string name="settings_section_rmab">ReadMeABook</string>

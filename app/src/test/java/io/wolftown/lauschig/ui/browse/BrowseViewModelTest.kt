@@ -44,6 +44,7 @@ import io.wolftown.lauschig.external.MissingVolume
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -217,6 +218,17 @@ class BrowseViewModelTest {
         )
     }
 
+    private suspend fun ownSagaWithAsin() {
+        libs()
+        db.itemDao().upsertFromList(
+            listOf(
+                item("v1", title = "A", author = "Ann", series = "Saga", key = 1.0).copy(asin = "A1"),
+                item("v2", title = "B", author = "Ann", series = "Saga", key = 2.0),
+                item("v4", title = "D", author = "Ann", series = "Saga", key = 4.0),
+            ),
+        )
+    }
+
     @Test fun series_online_mergesAudibleVolumesInOrder() = runTest {
         ownSaga()
         val calls = mutableListOf<Triple<String, String, List<String>>>()
@@ -254,6 +266,53 @@ class BrowseViewModelTest {
         assertEquals(listOf("A", "B", "missing:3=Audible 3", "D"), merged.entries.map { it.label() })
         // Exactly the one lookup after opening: nothing was asked while the gate was closed.
         assertEquals(listOf("lib1"), calls.toList())
+    }
+
+    private fun consent(undecided: MutableStateFlow<Boolean>, enabled: MutableStateFlow<Boolean>, calls: MutableList<String>) =
+        MissingVolumesSource(MutableStateFlow(true), enabled, undecided, { allow -> enabled.value = allow; undecided.value = false }) { _, lib, _, _ ->
+            calls += lib
+            listOf(mv("3"))
+        }
+
+    @Test fun series_undecided_asksOnce_andLooksNothingUp() = runTest {
+        ownSagaWithAsin()
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), calls))
+        assertTrue(vm.await { it.loaded && it.askMissingVolumes }.askMissingVolumes)
+        assertEquals(emptyList<String>(), calls.toList())
+    }
+
+    @Test fun series_allow_hidesTheQuestion_andLooksUp() = runTest {
+        ownSagaWithAsin()
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), calls))
+        vm.await { it.askMissingVolumes }
+        vm.answerMissingVolumes(true)
+        val merged = vm.await { s -> !s.askMissingVolumes && s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf("A", "B", "missing:3=Audible 3", "D"), merged.entries.map { it.label() })
+        assertEquals(listOf("lib1"), calls.toList())
+    }
+
+    @Test fun series_decline_hidesTheQuestion_andLooksNothingUp() = runTest {
+        ownSagaWithAsin()
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), calls))
+        vm.await { it.askMissingVolumes }
+        vm.answerMissingVolumes(false)
+        vm.await { it.loaded && !it.askMissingVolumes }
+        assertEquals(emptyList<String>(), calls.toList())
+    }
+
+    @Test fun series_withoutAnyAsin_doesNotAsk() = runTest {
+        ownSaga()
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), mutableListOf()))
+        assertFalse(vm.await { it.loaded }.askMissingVolumes)
+    }
+
+    @Test fun otherPages_doNotAsk() = runTest {
+        ownSagaWithAsin()
+        val vm = vm(BrowseKind.AUTHOR, "Ann", missing = consent(MutableStateFlow(true), MutableStateFlow(false), mutableListOf()))
+        assertFalse(vm.await { it.loaded }.askMissingVolumes)
     }
 
     @Test fun series_offline_keepsPlainGaps() = runTest {
