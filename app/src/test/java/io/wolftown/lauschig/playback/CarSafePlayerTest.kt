@@ -23,6 +23,7 @@ class CarSafePlayerTest {
             .addAll(Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_MEDIA_ITEM)
             .build()
         val seeks = mutableListOf<Pair<Int, Long>>()
+        val directVolumes = mutableListOf<Float>()
         val listeners = mutableListOf<Player.Listener>()
 
         fun item(i: Int) = MediaItem.Builder().setMediaId("b#$i").setMediaMetadata(
@@ -39,6 +40,7 @@ class CarSafePlayerTest {
                 "getAvailableCommands" -> commands
                 "isCommandAvailable" -> commands.contains(args!![0] as Int)
                 "seekTo" -> { if (args?.size == 2) seeks += (args[0] as Int) to (args[1] as Long); null }
+                "setVolume" -> { directVolumes += args!![0] as Float; null }
                 "addListener" -> { listeners += args!![0] as Player.Listener; null }
                 "removeListener" -> { listeners -= args!![0] as Player.Listener; null }
                 else -> when (m.returnType) {
@@ -133,6 +135,18 @@ class CarSafePlayerTest {
         // The same steps again change nothing and tell no one.
         p.setSteps(10_000, 45_000)
         assertEquals(2, heard.size)
+    }
+
+    @Test fun aControllersVolume_goesThroughThePlayerVolume() {
+        val f = Fake()
+        val applied = mutableListOf<Float>()
+        val volume = PlayerVolume { applied += it }
+        val p = CarSafePlayer(f.player, 15_000, 30_000, volume)
+        volume.setSwitchGain(0.5f)
+        p.volume = 0.6f // the sleep timer's fade, via the session
+        assertEquals(0.6f, volume.requested, 0f)
+        assertEquals(0.3f, applied.last(), 0.0001f)
+        assertTrue("written around the owner: ${f.directVolumes}", f.directVolumes.isEmpty())
     }
 
     @Test fun theWrapperForwardsEveryListenerCallback() {

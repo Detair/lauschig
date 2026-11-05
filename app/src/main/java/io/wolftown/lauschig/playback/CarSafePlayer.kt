@@ -31,10 +31,22 @@ import io.wolftown.lauschig.auto.CarControls
  * session reads the commands from `onAvailableCommandsChanged`).
  */
 @OptIn(UnstableApi::class)
-class CarSafePlayer(private val player: Player, backMs: Long, forwardMs: Long) : ForwardingPlayer(player) {
+class CarSafePlayer(
+    private val player: Player,
+    backMs: Long,
+    forwardMs: Long,
+    /** The owner of the player's volume (sleep fade × effect switch); null writes straight to [player]. */
+    private val volume: PlayerVolume? = null,
+) : ForwardingPlayer(player) {
     private val wrappers = HashMap<Player.Listener, Player.Listener>()
     private var backMs = backMs
     private var forwardMs = forwardMs
+
+    /** A controller's volume (the sleep timer's fade) goes through [volume], so an effect switch never overwrites it. */
+    override fun setVolume(volume: Float) {
+        val owner = this.volume ?: return super.setVolume(volume)
+        owner.request(volume)
+    }
 
     override fun getSeekBackIncrement(): Long = backMs
     override fun getSeekForwardIncrement(): Long = forwardMs

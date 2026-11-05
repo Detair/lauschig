@@ -211,7 +211,9 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         player = exo
-        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope, appScope, onTitleActivity = { serverId, itemId ->
+        // The only writer of the player's volume: the sleep fade (through the session player) times the compressor's switch.
+        val volume = PlayerVolume { exo.volume = it }
+        comfort = PlaybackComfort(exo, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
             val at = System.currentTimeMillis()
             appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
         }).also { it.start() }
@@ -233,7 +235,7 @@ class PlaybackService : MediaLibraryService() {
         )
         // The session player: "previous"/"next" from a steering wheel or headset move by the seek steps of the settings,
         // never to the book start.
-        val safe = CarSafePlayer(exo, PlaybackSettings.DEFAULT_SEEK_BACK * 1000L, PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L)
+        val safe = CarSafePlayer(exo, PlaybackSettings.DEFAULT_SEEK_BACK * 1000L, PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L, volume)
             .also { carPlayer = it }
         val buttons = CarButtons(resources).also { carButtons = it }
         val chapterTracker = ChapterTracker(exo, { serverId, key -> loadPlayable(itemDao, episodeDao, serverId, key) }, scope, onTitle = { updateButtons() })

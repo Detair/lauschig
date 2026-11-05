@@ -2,6 +2,7 @@ package io.wolftown.lauschig.playback
 
 import android.media.audiofx.DynamicsProcessing
 import android.util.Log
+import androidx.media3.common.Player
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
@@ -107,43 +108,73 @@ class AudioCompressor(private val create: (session: Int) -> SessionEffect = Nigh
 }
 
 /**
- * Changes the effect chain of a playing session without a click: the player's volume fades out in [steps] over
- * `steps × stepMs`, the change happens in silence, [settleMs] let the effect's buffers fill with silence, then the volume
- * fades back to where it was. Paused (or already silent) the change just happens. Used for the night compressor, whose
- * insertion would otherwise cut into the running audio. Main thread only; callers run one switch at a time.
+ * The one writer of the player's volume: what the controllers ask for ([request]: the sleep timer's fade, through the
+ * session) times the gain of an effect switch ([setSwitchGain], see [QuietSwitch]). Neither side ever writes an absolute
+ * volume over the other, so a switch during a sleep fade (or a fade during a switch) always ends at the timer's volume.
+ * Main thread only.
+ */
+class PlayerVolume(private val apply: (Float) -> Unit) {
+    /** The volume the controllers asked for last. */
+    var requested = 1f
+        private set
+    private var switchGain = 1f
+
+    fun request(volume: Float) {
+        requested = volume.coerceIn(0f, 1f)
+        push()
+    }
+
+    fun setSwitchGain(gain: Float) {
+        switchGain = gain.coerceIn(0f, 1f)
+        push()
+    }
+
+    private fun push() = apply(requested * switchGain)
+}
+
+/**
+ * Changes the effect chain of a playing session without a click: its own [gain] (a factor on the player's volume, see
+ * [PlayerVolume]) fades out in [steps] over `steps × stepMs`, the change happens in silence, [settleMs] let the effect's
+ * buffers fill with silence, then the gain fades back in. Whatever volume the sleep timer sets meanwhile stays its own.
+ * Not [playing] (paused, ended) the change just happens. Used for the night compressor, whose insertion would otherwise
+ * cut into the running audio. Main thread only; callers run one switch at a time.
  */
 class QuietSwitch(
-    private val volume: () -> Float,
-    private val setVolume: (Float) -> Unit,
+    private val gain: (Float) -> Unit,
     private val playing: () -> Boolean,
     private val steps: Int = 5,
     private val stepMs: Long = 12,
     private val settleMs: Long = 40,
 ) {
     suspend fun run(change: () -> Unit) {
-        val before = volume()
-        if (!playing() || before <= 0f) {
+        if (!playing()) {
             change()
             return
         }
         var changed = false
         try {
             for (i in steps - 1 downTo 0) {
-                setVolume(before * i / steps)
+                gain(i.toFloat() / steps)
                 delay(stepMs)
             }
             change()
             changed = true
             delay(settleMs)
             for (i in 1..steps) {
-                setVolume(before * i / steps)
+                gain(i.toFloat() / steps)
                 if (i < steps) delay(stepMs)
             }
         } catch (e: CancellationException) {
             // Never leave the player quiet (or the change undone).
             if (!changed) change()
-            setVolume(before)
+            gain(1f)
             throw e
         }
+    }
+
+    companion object {
+        /** Audio flows or is about to (buffering counts): the switch fades. */
+        fun fades(playWhenReady: Boolean, playbackState: Int): Boolean =
+            playWhenReady && (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
     }
 }

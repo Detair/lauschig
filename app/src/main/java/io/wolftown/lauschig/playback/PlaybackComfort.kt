@@ -32,6 +32,8 @@ class PlaybackComfort(
     private val scope: CoroutineScope,
     /** Outlives the service: speed saves and the last-played record still land after release. */
     private val saveScope: CoroutineScope,
+    /** The owner of the player's volume, shared with the session player (see [PlayerVolume]). */
+    private val volume: PlayerVolume = PlayerVolume { exo.volume = it },
     /** The title paused, stopped or started on this device (see [LastPlayedStore]). */
     private val onTitleActivity: (serverId: String, itemId: String) -> Unit = { _, _ -> },
     private val clock: () -> Long = SystemClock::elapsedRealtime,
@@ -56,8 +58,9 @@ class PlaybackComfort(
         exo.addListener(this)
         boost.attach(exo.audioSessionId)
         compressor.attach(exo.audioSessionId)
-        // One switch at a time (collect is sequential); while playing it fades around the change (no click).
-        val quiet = QuietSwitch(volume = { exo.volume }, setVolume = { exo.volume = it }, playing = { exo.isPlaying })
+        // One switch at a time (collect is sequential); while playing it fades its own gain around the change (no click),
+        // on top of whatever volume the sleep timer asks for.
+        val quiet = QuietSwitch(gain = volume::setSwitchGain, playing = { QuietSwitch.fades(exo.playWhenReady, exo.playbackState) })
         scope.launch { settings.speechCompressor.collect { on -> quiet.run { compressor.setEnabled(on) } } }
         scope.launch { settings.rewindOnResumeSec.collect { rewindSec = it } }
         scope.launch { settings.skipSilence.collect { exo.skipSilenceEnabled = it } }
