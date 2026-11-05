@@ -1,13 +1,13 @@
 # Data safety form — answers
 
-Basis: the app talks only to the user-entered Audiobookshelf server; the developer operates no backend and receives no data.
+Basis: the app talks to the Audiobookshelf server the user enters, and to two services only by the user's choice: a ReadMeABook server the user adds, and the public Audible catalog after the user agreed. The developer operates no backend and receives no data. Google's help does not address self-hosted servers; treating the user's own server as neither collection nor sharing is our reading of it.
 
 | Question | Answer |
 |---|---|
-| Does your app collect or share any of the required user data types? | **No data collected or shared with the developer or third parties.** Data stays on the device or goes to the user's own server, which the user configures; this is not collection by the developer. |
-| Data shared with third parties | None |
-| Is all of the user data encrypted in transit? | **Yes** when the user enters an https address. Plain http only after an explicit confirmation by the user for that address; because this is user-controlled, answer "Yes" and note that http is opt-in by the user. |
-| Do you provide a way for users to request that their data is deleted? | Yes: uninstalling the app or clearing its app data in Android settings removes all local data. The developer holds no user data; data on the user's server is controlled by the user. |
+| Does your app collect or share any of the required user data types? | **Yes, one optional case:** after the user agreed, the ASINs of their books go to the public Audible catalog (App activity → Other actions; optional; purpose: App functionality). Everything else stays on the device or goes to the user's own server. |
+| Data shared with third parties | Only that Audible lookup, based on prominent in-app disclosure and consent (Google's exemption for sharing); nothing without it. |
+| Is all of the user data encrypted in transit? | **Yes** for the declared Audible lookup (https only). For the user's own server: https, or plain http only after an explicit confirmation by the user for that address. |
+| Do you provide a way for users to request that their data is deleted? | **No** for what Audible received (the developer has no influence on it). Locally: uninstalling the app or clearing its app data in Android settings removes all local data; data on the server is managed there. |
 | Analytics / ads / advertising ID | None |
 | Account creation | No account with the developer (login is to the user's own server) |
 
@@ -16,6 +16,7 @@ Basis: the app talks only to the user-entered Audiobookshelf server; the develop
 - Access and refresh tokens (encrypted with Tink / Android Keystore-backed key where available)
 - Library metadata, covers, listening progress, downloaded audio files, settings
 - Home Wi-Fi names (SSIDs) for the optional local-address binding — stored on device only
+- A masked diagnostic log; it leaves the device only if the user shares it (user-initiated action)
 
 ## Permissions and their purpose
 
