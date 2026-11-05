@@ -777,6 +777,8 @@
         <item>Title details: length, narrator and year at a glance, a large play button with the download beside it</item>
         <item>Statistics: tap or swipe across the bars to see date and listening time; with TalkBack every bar says its value</item>
         <item>Faster search, covers stay cached after a restart, lists no longer churn while you listen</item>
+        <item>Search chapters: in long audiobooks, type a word of the title or the chapter number in the player\'s chapter sheet</item>
+        <item>Tap the open tab again to return to its first page</item>
     </string-array>
     <string-array name="whatsnew_0_3_0">
         <item>Statistics: listening time per week, month and year, days in a row and finished books – also offline</item>
