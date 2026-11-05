@@ -126,8 +126,9 @@ class ProgressSync(
             hideFromContinueListening = local.hideFromContinue,
         )
         val key = PlayableKey.parse(local.itemId)
+        val episodeId = key.episodeId
         try {
-            if (key.episodeId != null) api.updateEpisodeProgress(key.libraryItemId, key.episodeId, update)
+            if (episodeId != null) api.updateEpisodeProgress(key.libraryItemId, episodeId, update)
             else api.updateProgress(key.libraryItemId, update)
         } catch (e: HttpException) {
             if (e.code() == 404) return false // item is gone on the server; keep the row dirty, do not block the rest

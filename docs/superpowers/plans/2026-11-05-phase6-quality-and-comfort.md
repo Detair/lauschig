@@ -643,3 +643,86 @@ Paket „Kapitelsuche & Ökosystem-Vorbereitung“ (Branch `p6-eco`), dazu ein N
   Sammler `retrofit` mit der Server-ID des angemeldeten Kontos kombinieren (`combine(shared, account-id)`), oder Clients
   nach einem Wechsel ausdrücklich neu holen.
 
+
+---
+
+## Umsetzung Task 10 (2026-11-05)
+
+Paket „Modularisierung“ (Branch `p6-modules`). Neue Module `:core:model` und `:core:database`; `:core:playback` wartet
+(Begründung unten). Alle Dateien sind per `git mv` umgezogen, in denselben Kotlin-Paketen (Importe bleiben), ohne
+inhaltliche Änderung – so trägt Gits Umbenennungserkennung Änderungen anderer Zweige mit (Probe mit `git merge-tree`
+gegen `p6-downloads`: dessen neue Abfragen in `OtherDaos.kt` landen in `core/database/…`, es entstehen keine Konflikte
+außer denen, die `main` ↔ `p6-downloads` ohnehin hat).
+
+- **10.1 `:core:model`** – reines Kotlin/JVM-Modul wie `:abs-api` (kein Android, kein Compose), mit dem Lint-Plugin
+  `com.android.lint`, damit `lint` es mitprüft. Inhalt: `PlayableKey` (`playback`) und `DeviceLibrary` (`local`) samt
+  `PlayableKeyTest` – die Schlüssel, die Datenbank, Wiedergabe, Sync und UI gemeinsam sprechen.
+  - Kotlin smart-castet keine Property aus einem anderen Modul: die acht Stellen in `:app`, die `Parsed.episodeId` auf
+    null prüften und dann benutzten, lesen sie jetzt zuerst in ein lokales `val` (gleiches Verhalten).
+  - **Claudes Wahl:** `ItemSummary` bleibt in `:app`. Es ist das Kachel-Modell der UI, trägt Composes `@Immutable` und
+    liegt mit zwei `CompositionLocal`s in einer Datei; aus einem Modul ohne Compose-Compiler gälte es als instabil
+    (anderes Recompose-Verhalten). `TimelineMapper` rechnet über `AudioFileEntity`/`ChapterEntity` und gehört zur
+    Wiedergabe (10.3). Die Enums der Entities (`DownloadState`, `LibraryKind`, `BookmarkPending`, `CollectionKind`) sind
+    Spaltentypen und bleiben in ihren Entity-Dateien (`:core:database`); die übrigen Enums sind UI oder Einstellungen.
+  - **Claudes Wahl:** `:abs-api` hängt nicht von `:core:model` ab – es braucht nichts daraus.
+- **10.2 `:core:database`** – Android-Library mit Room-Plugin und KSP (nur der Room-Compiler). Umgezogen: Entities, DAOs,
+  `LauschigDatabase`, `Converters`, `SeriesParsing`, dazu `QueueOrder` (`queue`) und `BookmarkRules` (`bookmarks`), die
+  reinen Regeln, die `QueueDao` und `BookmarkDao` aufrufen. `schemas/` liegt jetzt in `core/database/schemas`
+  (`git log --follow` zeigt die Historie bis zum ersten Schema); die Auto-Migrationen lesen es dort, `MigrationTest`
+  liest es relativ zum Modul. Die Tests des Pakets `db` (u. a. `DaoTest`, `MigrationTest`, `QueryPlanTest`) und
+  `BookmarkRulesTest` laufen in `:core:database` (66 Tests). `:app` hat kein Room-Plugin und kein Room-KSP mehr; sein
+  KSP erzeugt nur noch Hilt.
+  - **Claudes Wahl:** `DatabaseModule` (Hilt, stellt Datenbank und DAOs bereit) bleibt in `:app`, im selben Paket
+    `io.wolftown.lauschig.db`. So braucht `:core:database` weder Hilt noch dessen KSP, und der Hilt-Graph ist
+    unverändert.
+  - **Claudes Wahl:** `:core:database` hängt per `api` von `:core:model` und `:abs-api` ab (`BookmarkDao.mergeFromServer`
+    nimmt die `BookmarkDto`-Liste des Servers); Room und Coroutines per `api`, weil `:app` `withTransaction`, `Flow` und
+    `Room.databaseBuilder` direkt nutzt.
+  - **Claudes Wahl:** keine Android-Ressourcen im Modul (`androidResources.enable = false`, spart R-Klasse und
+    Ressourcen-Tasks); `testOptions.targetSdk = 37` wie `:app`, damit Robolectric-Tests ohne `@Config(sdk)` auf demselben
+    SDK laufen wie vorher. Keine eigene `robolectric.properties` nötig (die Library hat keine Application-Klasse).
+  - Release (R8): baut; `LauschigDatabase` und `LauschigDatabase_Impl` behalten ihre Namen (die Keep-Regel in
+    `app/proguard-rules.pro` gilt für Library-Klassen genauso). Der Baseline-Profile der App nennt Klassen beim Namen
+    und wird auf den gesamten Dex angewandt – Namen und Pakete sind gleich geblieben.
+- **10.3 `:core:playback` wartet.** **Claudes Wahl**, Begründung: Die genannten Klassen sind kein abgrenzbarer Kern.
+  `PlaybackService` importiert vierzehn Klassen aus `auto` (Android Auto: `CarLibrary`, `CarButtons`, `LibraryCallback` …),
+  dazu `widget`, `sync`, `connection`, `queue`, `download`, `net`, `account`, `settings`, `R` und `MainActivity`;
+  `PlayerControllerImpl` braucht `sync`, `download`, `net`, `connection`; `SleepTimer` und `PlayerController` hängen an
+  `settings.PlaybackSettings`, `CarSafePlayer` an `auto.CarControls`. `auto` wiederum importiert `playback` (sieben
+  Dateien) – ein Paketzyklus. Ein Umzug hieße entweder die halbe App mitzunehmen oder Schnittstellen für Auto, Widget,
+  Sync, Verbindung und Download-Start einzuziehen und in `:app` neu zu binden – ein Umbau mit Verhaltensrisiko, kein
+  Umzug. Dazu stellt `p6-downloads` alles Logging auf `io.wolftown.lauschig.diagnostics.Log` in `:app` um, auch in
+  `PlaybackService`, `PlayerControllerImpl` und `ServiceTitleStarter`; ein Playback-Modul bräuchte den Logger zuerst
+  in einem eigenen Modul. Voraussetzungen für später: (1) `diagnostics.Log` in ein kleines `:core:diagnostics`, (2)
+  `PlaybackSettings` (und die DataStore-Einstellungen) in ein Modul, (3) Schnittstellen für die Partner des Services
+  (Auto-Bibliothek, Widget, Sync-Auslöser, Verbindungsstatus, Download-Start) in `:core:playback`, gebunden in `:app`,
+  (4) Benachrichtigungs-Strings/-Symbole ins Modul, `MainActivity` über einen injizierten `PendingIntent`.
+- **Generierter Code:** Room erzeugt in `:core:database` Byte für Byte dieselben Dateien wie vorher in `:app`
+  (`diff -r` der KSP-Ausgaben), die Schemas sind unverändert. Tests: vorher 1671 in `:app`, jetzt 1602 in `:app` + 66
+  in `:core:database` + 3 in `:core:model` = 1671 (dazu 48 in `:abs-api`), alle grün. Die Datenbanktests laufen allein
+  in rund 7 s (`./gradlew :core:database:testDebugUnitTest`).
+- **10.4 Messung** (16 Kerne, warmer Daemon, je 3 Läufe, Median; `--offline --no-build-cache`, Configuration Cache an
+  wie im Repo; vorher = `main` 020e299 in einem temporären Worktree, nachher = `p6-modules`, direkt hintereinander):
+
+  | Szenario | vorher | nachher |
+  |---|---|---|
+  | `clean` + `assembleDebug` | 22,0 s (21,9 / 22,0 / 22,5) | 18,2 s (26,7 / 18,2 / 15,7) |
+  | `clean` + `assembleDebug`, Runde 2 abwechselnd, Last bis 8 | 26,1 s (26,1 / 26,0 / 26,4) | 26,7 s (26,7 / 29,1 / 24,8) |
+  | `clean` + `testDebugUnitTest` (kompilieren + alle Tests) | 56,1 s | 55,7 s |
+  | eine Zeile in einer UI-Datei (`PlayerScreen.kt`) + `assembleDebug` | 2,7 s | 1,8 s |
+  | eine Zeile in einer DAO-Abfrage (`ItemDao.kt`) + `assembleDebug` | 5,0 s | 5,0 s |
+
+  Ergebnis: Saubere Builds und Tests sind gleich schnell (innerhalb der Streuung). Eine UI-Änderung ist knapp 1 s
+  schneller, weil das KSP von `:app` kein Room mehr verarbeitet. Eine geänderte DAO-Abfrage bringt nichts: der
+  `@Query`-Text steht in der Klassendatei, die ABI von `:core:database` ändert sich, also laufen KSP, Kotlin und Hilt
+  in `:app` trotzdem. Die Annahme des Plans („>95.000 Zeilen bremsen spürbar“) trifft nicht zu: `app/src/main` hat jetzt
+  34.755 Zeilen Kotlin (vorher 36.578), der Build war schon schnell. Der Nutzen ist Struktur (Room-KSP getrennt, Datenbank
+  mit eigenen Tests, klare Abhängigkeitsrichtung), nicht Tempo – auch deshalb lohnt der riskante Umbau für 10.3 jetzt
+  nicht.
+- **Merge mit `p6-downloads`:** Dessen Stand vom 5.11. mittags (c50f4fd) hat eine neue Stelle, die `Parsed.episodeId`
+  smart-castet (`ui/common/ItemActions.kt`, `titleOf` um Zeile 127): nach dem Merge braucht sie dieselbe
+  Ein-Zeilen-Korrektur (`val episodeId = p.episodeId`, dann `episodeId` statt `p.episodeId`); der Compiler meldet jede
+  solche Stelle mit „Smart cast … declared in different module“.
+- **CI:** `.github/workflows/ci.yml` ruft zusätzlich `:core:model:test`; `lint` und `testDebugUnitTest` (Wurzel)
+  erreichen `:core:database` von selbst, `lint` auch `:core:model`. README: Build-Befehl und eine Zeile zu den Modulen.
+- Keine Version, keine What's-new-Zeile (nichts Sichtbares). **Claudes Wahl.**

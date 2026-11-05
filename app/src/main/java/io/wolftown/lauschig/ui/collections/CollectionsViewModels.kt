@@ -123,10 +123,11 @@ internal suspend fun collectionEntries(
     val out = entries.mapNotNull { e ->
         val p = PlayableKey.parse(e.itemKey)
         val parent = items.get(serverId, p.libraryItemId)
-        val ui: CollectionEntryUi? = if (p.episodeId == null) {
+        val episodeId = p.episodeId
+        val ui: CollectionEntryUi? = if (episodeId == null) {
             parent?.let { CollectionEntryUi.Book(it.toSummary(covers, progress[it.id], it.id in downloaded)) }
         } else {
-            episodes.get(serverId, p.libraryItemId, p.episodeId)?.let { ep ->
+            episodes.get(serverId, p.libraryItemId, episodeId)?.let { ep ->
                 CollectionEntryUi.Episode(e.itemKey, ep.title, parent?.title, ep.durationSec, e.itemKey in downloaded, progress[e.itemKey]?.isFinished == true)
             }
         }
