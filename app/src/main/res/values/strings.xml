@@ -500,7 +500,7 @@
     <string name="library_tab_device">On this device</string>
     <string name="settings_section_local">On this device</string>
     <string name="local_add_folder">Add folder</string>
-    <string name="local_add_folder_hint">Audiobooks that only live on this phone. They play without a server and stay on this device.</string>
+    <string name="local_add_folder_hint">Audiobooks that only live on this device. They play without a server and stay here.</string>
     <string name="local_add_failed">The folder could not be added.</string>
     <string name="local_rescan">Scan again now</string>
     <string name="local_rescan_hint">Picks up added and removed files</string>
@@ -1060,4 +1060,5 @@
     <string name="profiles_remove_checking">Checking what belongs to it …</string>
     <string name="setup_add_intro">Sign in with another account. The current one stays signed in. If the new one is on the same server, just leave the addresses as they are.</string>
     <string name="profiles_picker_title">Who\'s listening?</string>
+    <string name="downloads_other_profiles">Other profiles on this device: %1$s</string>
 </resources>

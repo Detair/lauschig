@@ -500,7 +500,7 @@
     <string name="library_tab_device">Auf dem Gerät</string>
     <string name="settings_section_local">Auf dem Gerät</string>
     <string name="local_add_folder">Ordner hinzufügen</string>
-    <string name="local_add_folder_hint">Hörbücher, die nur auf diesem Handy liegen. Sie spielen ohne Server und bleiben auf diesem Gerät.</string>
+    <string name="local_add_folder_hint">Hörbücher, die nur auf diesem Gerät liegen. Sie spielen ohne Server und bleiben hier.</string>
     <string name="local_add_failed">Der Ordner konnte nicht hinzugefügt werden.</string>
     <string name="local_rescan">Jetzt neu einlesen</string>
     <string name="local_rescan_hint">Findet neue und entfernte Dateien</string>
@@ -1060,4 +1060,5 @@
     <string name="profiles_remove_checking">Prüfe, was dazugehört …</string>
     <string name="setup_add_intro">Melde dich mit einem weiteren Konto an. Das bisherige bleibt angemeldet. Liegt das neue auf demselben Server, lass die Adressen einfach stehen.</string>
     <string name="profiles_picker_title">Wer hört zu?</string>
+    <string name="downloads_other_profiles">Andere Profile auf diesem Gerät: %1$s</string>
 </resources>
