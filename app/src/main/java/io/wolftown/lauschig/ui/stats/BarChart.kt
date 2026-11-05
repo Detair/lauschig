@@ -4,59 +4,59 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.hideFromAccessibility
-import androidx.compose.ui.semantics.isTraversalGroup
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.traversalIndex
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.lerp
-import io.wolftown.lauschig.R
-import kotlin.math.roundToInt
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.theme.contrastRatio
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The colour of the plain bars: the scheme's `outline` where it keeps 3:1 against [surface] (graphics contrast, WCAG
@@ -78,10 +78,9 @@ data class BarTip(val title: String, val value: String)
  * Without [tips] the chart is one quiet node whose [description] lists the values (the drawing and the labels are
  * hidden behind it). With [tips] (one per bar) a tap on a bar marks its column and shows a small tooltip above it with
  * its date and time – in a band kept free above the bars, so it never covers one – a second tap hides it; for a screen
- * reader the [description] comes first, then every bar is its own node that says its
- * tip (exploring by touch reads the bar under the finger) and can be selected like a tap; the summary sits on the
- * labels' strip, since Compose hides nodes that others cover from screen readers. [height] is the bars' height; the
- * band comes on top of it.
+ * reader the [description] comes first, then every bar is its own node that says its tip (exploring by touch reads
+ * the bar under the finger) and can be selected like a tap; the summary sits on the labels' strip, since Compose hides
+ * nodes that others cover from screen readers. [height] is the bars' height; the band comes on top of it.
  */
 @Composable
 fun BarChart(
@@ -101,9 +100,10 @@ fun BarChart(
     /** One per bar: makes the bars tappable, with a tooltip (see above); null keeps the chart a picture. */
     tips: List<BarTip>? = null,
 ) {
-    val interactive = tips != null && tips.size == values.size && values.isNotEmpty()
-    var selected by remember { mutableStateOf<Int?>(null) }
-    if (selected?.let { it !in values.indices } == true) selected = null
+    val barTips = tips?.takeIf { it.size == values.size && values.isNotEmpty() }
+    val interactive = barTips != null
+    var selection by remember { mutableStateOf<Int?>(null) }
+    val selected = selection?.takeIf { it in values.indices }
     val semantics = if (interactive) Modifier.semantics { isTraversalGroup = true }
     else Modifier.clearAndSetSemantics { if (description != null) contentDescription = description }
     // Room for the tooltip above the bars: its two lines (they grow with the text size – each converted on its own, as
@@ -147,8 +147,8 @@ fun BarChart(
                     drawCircle(currentColor, radius = dot, center = Offset(barCenterX(current, n, size.width, rtl), floor + line + MARKER_SPACE.toPx() / 2))
                 }
             }
-            if (interactive) {
-                val spoken = tips!!.map { stringResource(R.string.stats_bar_tip, it.title, it.value) }
+            if (barTips != null) {
+                val spoken = barTips.map { stringResource(R.string.stats_bar_tip, it.title, it.value) }
                 // One slot per bar over the whole height (thin bars stay easy to hit); a Row mirrors itself in RTL like the bars.
                 Row(Modifier.matchParentSize()) {
                     values.indices.forEach { i ->
@@ -157,14 +157,14 @@ fun BarChart(
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .selectable(selected = selected == i, interactionSource = null, indication = null) {
-                                    selected = if (selected == i) null else i
+                                    selection = if (selected == i) null else i
                                 }
                                 .semantics { contentDescription = spoken[i] }
                                 .testTag("chartBar:$i"),
                         )
                     }
                 }
-                BarTooltip(values.size, selected, tips)
+                BarTooltip(values.size, selected, barTips)
             }
         }
         // Interactive, the labels' strip carries the spoken summary, read first: the drawing lies under the bars' nodes,
@@ -209,10 +209,11 @@ fun BarChart(
  */
 @Composable
 private fun BoxScope.BarTooltip(count: Int, selected: Int?, tips: List<BarTip>) {
-    var shown by remember { mutableStateOf<Int?>(null) }
-    if (selected != null) shown = selected
+    // The last selected bar, so the tooltip can fade out where it was (a plain holder: no state written while composing).
+    val shown = remember { LastShown() }
+    if (selected != null) shown.index = selected
     val alpha by animateFloatAsState(if (selected != null) 1f else 0f, tween(TOOLTIP_MS), label = "tooltipAlpha")
-    val index = shown ?: return
+    val index = shown.index ?: return
     if (selected == null && alpha == 0f) return
     // Created with the tooltip, so it starts at its first bar and only glides when the selection moves.
     val position by animateFloatAsState(index.toFloat(), tween(TOOLTIP_MS), label = "tooltipPosition")
@@ -260,6 +261,10 @@ private val TOOLTIP_LINE_1 = 20.sp
 private val TOOLTIP_LINE_2 = 16.sp
 private val TOOLTIP_PADDING = 4.dp
 private val TOOLTIP_GAP = 6.dp
+
+private class LastShown {
+    var index: Int? = null
+}
 
 /** How long the tooltip takes to fade in or out and to glide to another bar. */
 private const val TOOLTIP_MS = 180
