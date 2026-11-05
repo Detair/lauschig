@@ -128,7 +128,7 @@ class ExternalSeriesRepository @Inject constructor(
                 runtimeMin = p.runtimeLengthMin,
                 language = p.language,
                 abridged = p.formatType.equals("abridged", ignoreCase = true),
-                coverUrl = p.productImages?.let { it["500"] ?: it.values.firstOrNull() },
+                coverUrl = httpsOnly(p.productImages?.let { it["500"] ?: it.values.firstOrNull() }),
                 summary = p.merchandisingSummary,
             )
         }
@@ -142,3 +142,6 @@ class ExternalSeriesRepository @Inject constructor(
         private const val MAX_ASINS = 5
     }
 }
+
+/** A cover address comes from the catalog's answer; only an encrypted one is ever loaded (the app allows cleartext for its own server). */
+internal fun httpsOnly(url: String?): String? = url?.takeIf { it.startsWith("https://", ignoreCase = true) }

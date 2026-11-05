@@ -23,9 +23,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.FilterListOff
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,6 +92,7 @@ fun BrowseRoute(
         onPlay = actions::play, onMenu = { menuFor = it },
         missingActions = { RmabMissingActions(it.volume, rmabState, rmab::request) },
         missingStatuses = if (rmabState.connected) rmabState.statuses else emptyMap(),
+        onAnswerMissingVolumes = viewModel::answerMissingVolumes,
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }
 }
@@ -109,6 +112,7 @@ fun BrowseScreen(
     missingActions: @Composable (MissingVolume) -> Unit = {},
     /** ReadMeABook status by ASIN; the missing tile shows a small symbol for it. */
     missingStatuses: Map<String, RmabStatus> = emptyMap(),
+    onAnswerMissingVolumes: (allow: Boolean) -> Unit = {},
 ) {
     var sheetFor by remember { mutableStateOf<MissingVolume?>(null) }
     Column(modifier.fillMaxSize()) {
@@ -122,6 +126,11 @@ fun BrowseScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { Header(state) }
+            if (state.askMissingVolumes) {
+                item(key = "askMissingVolumes", span = { GridItemSpan(maxLineSpan) }, contentType = "ask") {
+                    MissingVolumesQuestion(onAnswerMissingVolumes)
+                }
+            }
             if (state.series.isNotEmpty()) {
                 item(key = "series", span = { GridItemSpan(maxLineSpan) }, contentType = "series") {
                     Column {
@@ -159,6 +168,28 @@ fun BrowseScreen(
 private fun BrowseEntry.key(): String = when (this) {
     is BrowseEntry.Tile -> item.key
     is BrowseEntry.Missing -> "missing:$sequence"
+}
+
+/** Asks once before the first lookup; both answers are equally easy, and the settings can change it later. */
+@Composable
+private fun MissingVolumesQuestion(onAnswer: (allow: Boolean) -> Unit) {
+    Card(Modifier.fillMaxWidth().testTag("askMissingVolumes")) {
+        Column(Modifier.padding(Spacing.m)) {
+            Text(stringResource(R.string.browse_ask_missing_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.browse_ask_missing_text),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = Spacing.xs),
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = Spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.End),
+            ) {
+                OutlinedButton(onClick = { onAnswer(false) }) { Text(stringResource(R.string.browse_ask_missing_no)) }
+                OutlinedButton(onClick = { onAnswer(true) }) { Text(stringResource(R.string.browse_ask_missing_yes)) }
+            }
+        }
+    }
 }
 
 @Composable

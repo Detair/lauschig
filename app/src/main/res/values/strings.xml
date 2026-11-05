@@ -228,8 +228,12 @@
     <string name="missing_released">Released on %s</string>
     <string name="missing_duration_min">%d min</string>
     <string name="missing_duration_h_min">%1$d h %2$d min</string>
+    <string name="browse_ask_missing_title">Show missing volumes?</string>
+    <string name="browse_ask_missing_text">Lauschig can look up in the public Audible catalog which volumes of a series you are missing. For this, the ASINs of your books and your IP address go to Audible, but no account data, server address or listening progress. This applies to all series; you can change it in the settings.</string>
+    <string name="browse_ask_missing_yes">Allow</string>
+    <string name="browse_ask_missing_no">No, thanks</string>
     <string name="settings_missing_volumes">Add missing volumes from Audible</string>
-    <string name="settings_missing_volumes_hint">Looks volumes up in the public Audible catalog. Only book ASINs are sent, nothing about you.</string>
+    <string name="settings_missing_volumes_hint">Looks volumes up in the public Audible catalog. The ASINs of your books and your IP address go to Audible, no account data. Off until you agree.</string>
     <string name="settings_audible_region">Audible region</string>
     <string name="settings_audible_region_hint">Catalog used for the lookup.</string>
     <string name="settings_section_rmab">ReadMeABook</string>
