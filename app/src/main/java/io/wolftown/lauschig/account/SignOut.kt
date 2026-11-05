@@ -72,6 +72,24 @@ interface AccountSignOut {
 }
 
 /**
+ * Profile switch on a shared device (Phase 6 seam for Phase 7, no screen uses it yet): the active account is left like a
+ * sign-out with „Behalten“ – playback stops, its work stops, waiting downloads pause, the last-played title and the
+ * per-account state outside Room go – but it stays signed in: no server logout, its tokens are set aside in the store
+ * ([AccountStore.saved]) and nobody is asked to delete its data. The next account becomes active as the last step, so
+ * the app never sees "no account" in between.
+ */
+interface ProfileSwitch {
+    /** Switches to the saved account [serverId]. False, touching nothing, if it is not saved. */
+    suspend fun switchProfile(serverId: String): Boolean
+
+    /**
+     * Sets the active account aside and makes the newly signed-in [next] the active one ([AccountStore.add]); the same
+     * account signing in again (or none active) just saves.
+     */
+    suspend fun addProfile(next: Account, accessToken: String, refreshToken: String)
+}
+
+/**
  * Sign-out („Abmelden“), in this order: playback stops and the queue is emptied → the account's work is cancelled (and
  * stopped) → the server logout runs alongside (at most [LOGOUT_TIMEOUT_MS], never decisive) → keep: waiting downloads
  * pause and the account is remembered for the next one's question ([KeptAccountStore]); else every row, file and cache of
@@ -79,6 +97,7 @@ interface AccountSignOut {
  * recent searches, an open download question and the cover caches go → the account and its tokens go **last**
  * ([AccountStore.clear]), so the app turns to the sign-in only when the data is in its final state. Device titles are
  * never touched. Runs to the end even if the caller is cancelled; a failing step is logged and the rest still runs.
+ * The same steps leave an account for a [ProfileSwitch], without the logout and without forgetting anything.
  */
 class SignOut(
     private val accounts: AccountStore,
@@ -97,7 +116,7 @@ class SignOut(
     private val logout: suspend (Account, refreshToken: String) -> Boolean,
     /** Per-account state outside Room and the downloads (secrets, caches, open questions). */
     private val clearAccountState: suspend (serverId: String) -> Unit,
-) : AccountSignOut {
+) : AccountSignOut, ProfileSwitch {
     @Inject constructor(
         accounts: AccountStore,
         data: AccountData,
@@ -153,22 +172,52 @@ class SignOut(
     }
 
     override suspend fun execute(keepDownloads: Boolean, shownUnsynced: Int?): SignOutResult =
-        signOut(keepDownloads, shownUnsynced) { accounts.clear(keepDownloads) }
+        leave(if (keepDownloads) Leave.KEEP else Leave.PURGE, shownUnsynced) { accounts.clear(keepDownloads) }
 
     override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) {
         withContext(NonCancellable) {
             if (accounts.account.first() == null) accounts.save(next, accessToken, refreshToken)
-            else signOut(keepDownloads = true, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
+            else leave(Leave.KEEP, shownUnsynced = null) { accounts.save(next, accessToken, refreshToken) }
         }
     }
 
-    /** The sign-out; [finish] is its last step, once the data is in its final state (clearing or replacing the account). */
-    private suspend fun signOut(keepDownloads: Boolean, shownUnsynced: Int?, finish: suspend () -> Unit): SignOutResult = withContext(NonCancellable) {
+    override suspend fun switchProfile(serverId: String): Boolean = withContext(NonCancellable) {
+        if (accounts.saved.first().none { it.serverId == serverId }) return@withContext false
+        if (accounts.account.first() == null) return@withContext accounts.activate(serverId)
+        var switched = false
+        leave(Leave.SET_ASIDE, shownUnsynced = null) { switched = accounts.activate(serverId) }
+        switched
+    }
+
+    override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) {
+        withContext(NonCancellable) {
+            val current = accounts.account.first()
+            if (current == null || current.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
+            else leave(Leave.SET_ASIDE, shownUnsynced = null) { accounts.add(next, accessToken, refreshToken) }
+        }
+    }
+
+    /** What becomes of the account that is left. */
+    private enum class Leave {
+        /** „Abmelden“: everything of the account goes. */
+        PURGE,
+
+        /** „Abmelden“ with „Behalten“: its data stays, the next account is asked about it. */
+        KEEP,
+
+        /** Profile switch: its data stays and it stays signed in (no server logout, not offered for deletion). */
+        SET_ASIDE,
+    }
+
+    /** Leaves the active account; [finish] is the last step, once the data is in its final state (clearing, replacing or switching the account). */
+    private suspend fun leave(mode: Leave, shownUnsynced: Int?, finish: suspend () -> Unit): SignOutResult = withContext(NonCancellable) {
         val account = accounts.account.first() ?: return@withContext SignOutResult.Done
         val serverId = account.serverId
-        val refresh = try { accounts.refreshToken() } catch (e: Exception) { null }
+        // Only a sign-out ends the session on the server; a profile set aside keeps it for the way back.
+        val refresh = if (mode == Leave.SET_ASIDE) null
+        else try { accounts.credentials()?.takeIf { it.serverId == serverId }?.refreshToken } catch (e: Exception) { null }
         step("stop playback") { stopPlayback() }
-        if (!keepDownloads && shownUnsynced != null) {
+        if (mode == Leave.PURGE && shownUnsynced != null) {
             val now = step("recount") { data.unsynced(serverId) }
             if (now != null && now > shownUnsynced) {
                 Log.i(TAG, "more unsynced changes than shown ($now > $shownUnsynced): asking again")
@@ -180,10 +229,12 @@ class SignOut(
             if (refresh == null) false
             else withTimeoutOrNull(LOGOUT_TIMEOUT_MS) { step("logout") { logout(account, refresh) } } == true
         }
-        if (keepDownloads) {
+        if (mode != Leave.PURGE) {
             step("pause downloads") { data.pauseDownloads(serverId) }
             step("remember") {
-                kept.put(KeptAccount(serverId, account.username, account.displayHost, userId = account.userId))
+                // Kept: the next account is asked about it. Set aside: still signed in, nobody is asked to delete it.
+                if (mode == Leave.KEEP) kept.put(KeptAccount(serverId, account.username, account.displayHost, userId = account.userId))
+                else kept.remove(serverId)
                 // A purge that failed earlier for this account must never run on the data the user now keeps.
                 kept.removePendingPurge(serverId)
             }
@@ -197,8 +248,9 @@ class SignOut(
         val serverConfirmed = loggedOut.await()
         // Late writes of the stopping service (its last progress save) or a worker: the rows once more, now that up to
         // the logout's few seconds have passed. Idempotent.
-        if (!keepDownloads) step("rows again") { data.deleteRows(serverId) }
-        Log.i(TAG, "signed out (kept downloads: $keepDownloads, server logout: $serverConfirmed)")
+        if (mode == Leave.PURGE) step("rows again") { data.deleteRows(serverId) }
+        if (mode == Leave.SET_ASIDE) Log.i(TAG, "set aside for another profile")
+        else Log.i(TAG, "signed out (kept downloads: ${mode == Leave.KEEP}, server logout: $serverConfirmed)")
         finish()
         SignOutResult.Done
     }
@@ -227,4 +279,5 @@ class SignOut(
 @InstallIn(SingletonComponent::class)
 abstract class SignOutModule {
     @Binds abstract fun signOut(impl: SignOut): AccountSignOut
+    @Binds abstract fun profileSwitch(impl: SignOut): ProfileSwitch
 }

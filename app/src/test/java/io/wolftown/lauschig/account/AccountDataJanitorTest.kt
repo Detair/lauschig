@@ -102,4 +102,16 @@ class AccountDataJanitorTest {
         // here and has no rows: nobody owns it.
         assertEquals(listOf(failed, orphan), deletedDirs)
     }
+
+    @Test fun aSavedAccount_ownsItsDirectory_andItsPendingPurgeIsVoid() = runTest {
+        val saved = "ffffffffffffffff"
+        dirs += saved // no rows yet (e.g. only a partial download)
+        accounts.aside.value = listOf(io.wolftown.lauschig.net.FakeAccountStore.Aside(Account(saved, "u9", "lukas", false, ServerAddresses(null, null), emptySet()), "x", "y", false))
+        kept.pending.value = setOf(saved)
+        janitor().run()
+        assertEquals(emptyList<String>(), purged)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        // Only the directories nobody owns go.
+        assertEquals(listOf(failed, orphan), deletedDirs)
+    }
 }

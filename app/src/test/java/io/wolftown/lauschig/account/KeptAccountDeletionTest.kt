@@ -67,6 +67,14 @@ class KeptAccountDeletionTest {
         assertTrue(signedIn in kept.list.value)
     }
 
+    @Test fun aSavedAccount_isNeverDeleted() = runTest {
+        // Set aside for a profile switch (still signed in), with a stale kept entry.
+        accounts.aside.value = listOf(io.wolftown.lauschig.net.FakeAccountStore.Aside(Account(entry.serverId, "u1", "fabian", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()), "x", "y", false))
+        assertFalse(KeptAccountDeletion(accounts, data, kept).delete(entry))
+        assertEquals(emptyList<String>(), purged)
+        assertTrue(entry in kept.list.value)
+    }
+
     @Test fun anUnreadableAccountStore_deletesNothing() = runTest {
         val broken = object : AccountStore by accounts {
             override val account: kotlinx.coroutines.flow.Flow<Account?> = kotlinx.coroutines.flow.flow { throw java.io.IOException("corrupt") }

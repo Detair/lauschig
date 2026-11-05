@@ -213,6 +213,79 @@ class SignOutTest {
         assertTrue(cancelled.isEmpty())
     }
 
+    // Profile switch (Phase 6 seam, Task 12.1): the same steps, but the account stays signed in.
+
+    private val lukas = Account(b, "u2", "lukas", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
+
+    @Test fun switchProfile_setsTheAccountAside_keepsItsData_neverLogsOut() = runTest {
+        seed(a)
+        db.downloadDao().upsert(DownloadEntity(a, "book2", DownloadState.QUEUED, 1))
+        lastPlayed.value = LastPlayed(a, "book1", 1)
+        kept.pending.value = setOf(a) // a stale purge must never run on data that stays
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        accounts.onSwitch = { calls += "switch" }
+        val seen = mutableListOf<String?>()
+        val watching = backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) {
+            accounts.acc.collect { seen += it?.serverId }
+        }
+
+        assertTrue(signOut().switchProfile(b))
+
+        // Like „Behalten“: rows, files and a paused download stay, the work stops, the last title is forgotten ...
+        assertEquals(List(6) { true }, rows(a))
+        assertTrue(File(root, "$a/book1/0.mp3").isFile)
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(a, "book2")!!.state)
+        assertEquals(listOf(a), cancelled)
+        assertNull(lastPlayed.value)
+        // ... but it stays signed in: no logout, nobody is asked to delete it, its tokens wait in the store.
+        assertEquals(emptyList<String>(), logouts)
+        assertEquals(emptyList<KeptAccount>(), kept.list.value)
+        assertEquals(emptySet<String>(), kept.pending.value)
+        assertEquals(listOf("stop", "work", "pauseDownloads", "forget", "lastPlayed", "state:$a", "switch"), calls)
+        assertNull(accounts.clearedKeeping)
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals("access-2", accounts.access)
+        assertEquals(listOf(FakeAccountStore.Aside(account, "access-1", "refresh-1", false)), accounts.aside.value)
+        // Never "no account" in between.
+        assertEquals(listOf<String?>(a, b), seen)
+        watching.cancel()
+    }
+
+    @Test fun switchProfile_toAnAccountThatIsNotSaved_touchesNothing() = runTest {
+        seed(a)
+        assertFalse(signOut().switchProfile(b))
+        assertTrue(calls.isEmpty())
+        assertTrue(cancelled.isEmpty())
+        assertEquals(account, accounts.acc.value)
+    }
+
+    @Test fun switchProfile_whileSignedOut_justActivates() = runTest {
+        accounts.acc.value = null
+        accounts.aside.value = listOf(FakeAccountStore.Aside(lukas, "access-2", "refresh-2", false))
+        assertTrue(signOut().switchProfile(b))
+        assertEquals(lukas, accounts.acc.value)
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun addProfile_setsTheActiveAccountAside_andSignsInTheNext() = runTest {
+        seed(a)
+        lastPlayed.value = LastPlayed(a, "book1", 1)
+        accounts.onSwitch = { calls += "switch" }
+        signOut().addProfile(lukas, "access-2", "refresh-2")
+        assertEquals(List(6) { true }, rows(a))
+        assertEquals(emptyList<String>(), logouts)
+        assertEquals(listOf("stop", "work", "pauseDownloads", "forget", "lastPlayed", "state:$a", "switch"), calls)
+        assertEquals(lukas, accounts.acc.value)
+        assertEquals(listOf(a), accounts.aside.value.map { it.account.serverId })
+    }
+
+    @Test fun addProfile_ofTheSameAccount_justSavesItsNewTokens() = runTest {
+        signOut().addProfile(account, "access-9", "refresh-9")
+        assertTrue(calls.isEmpty())
+        assertEquals("access-9", accounts.access)
+        assertEquals(emptyList<FakeAccountStore.Aside>(), accounts.aside.value)
+    }
+
     @Test fun moreChangesAfterStopping_thanShown_abortWithoutDeleting() = runTest {
         seed(a) // 2 unsynced: the dirty progress row and the pending bookmark
         val out = SignOut(

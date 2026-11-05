@@ -19,6 +19,8 @@ import retrofit2.HttpException
  * - Refresh rejected (401/403): [AccountStore.markNeedsReauth]; account and data stay untouched.
  * - Network error during refresh: nothing is flagged, the 401 just propagates.
  * - Concurrent 401s are serialized; later ones reuse the token the first one obtained.
+ * - Tokens belong to the account that sent the request ([SentBy]): another account active by now (profile switch) means
+ *   no retry and no refresh; a refresh that was already running stores its tokens with its own account, wherever it is.
  *
  * [refreshClient] must NOT contain this authenticator (avoids recursion). Redirects are never followed for the
  * refresh call: a 3xx would replay the refresh token (307/308 keep the body) to wherever the Location points.
@@ -42,28 +44,33 @@ class TokenAuthenticator(
     }
 
     private suspend fun refreshAndRetry(request: Request, sentToken: String?): Request? {
-        val current = store.accessToken()
+        val now = store.credentials()
+        val sentBy = request.tag(SentBy::class.java)?.serverId
+        if (sentBy != null && now?.serverId != sentBy) return null // another account (or none) since: not ours to answer
+        val current = now?.accessToken
         if (current != null && current != sentToken) return request.withToken(current) // someone else refreshed
-        val refresh = store.refreshToken()
+        val refresh = now?.refreshToken
         if (refresh == null) {
             // Signed in but no usable refresh token (e.g. undecryptable after keystore loss): ask for re-login.
-            if (store.account.first() != null) store.markNeedsReauth()
+            if (now != null) store.markNeedsReauth(now.serverId)
             return null
         }
         val user = try {
             authApi.refresh(refresh).user
         } catch (e: HttpException) {
-            if (e.code() == 401 || e.code() == 403) store.markNeedsReauth()
+            if (e.code() == 401 || e.code() == 403) store.markNeedsReauth(now.serverId)
             return null
         } catch (_: Exception) {
             return null
         }
         val access = user.accessToken ?: return null
         try {
-            store.updateTokens(access, user.refreshToken ?: refresh)
+            store.updateTokens(now.serverId, access, user.refreshToken ?: refresh)
         } catch (_: Exception) {
             return null // storage failure: no crash, no reauth flag
         }
+        // Switched while refreshing: the tokens went to their account (now set aside); its request is not sent again.
+        if (store.account.first()?.serverId != now.serverId) return null
         return request.withToken(access)
     }
 
