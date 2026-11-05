@@ -40,17 +40,19 @@ class PlaybackOutputTest {
         assertTrue(exo.isReleased)
     }
 
-    /** What a Cast output looks like to the service: another player on top of the device's, playing on a receiver. */
-    @Test fun anOutputWhosePlayerPlaysElsewhere_isNotLocal_andKeepsTheDevicePlayerForTheEffects() {
-        val receiver = object : ForwardingPlayer(exo) {
-            override fun getDeviceInfo(): DeviceInfo = DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).build()
-        }
-        val out = object : PlaybackOutput {
-            override val player: Player = receiver
+    /**
+     * [PlaybackOutput.isLocal] (the interface's own rule) follows what the player says: a player on top of the device's
+     * that plays on a receiver – as a Cast output will be – is not local; one that plays here is.
+     */
+    @Test fun isLocal_followsWhereThePlayerPlays() {
+        fun outputOver(type: Int) = object : PlaybackOutput {
+            override val player: Player = object : ForwardingPlayer(exo) {
+                override fun getDeviceInfo(): DeviceInfo = DeviceInfo.Builder(type).build()
+            }
             override val device: ExoPlayer = exo
             override fun release() = exo.release()
         }
-        assertFalse(out.isLocal)
-        assertSame(exo, out.device)
+        assertFalse(outputOver(DeviceInfo.PLAYBACK_TYPE_REMOTE).isLocal)
+        assertTrue(outputOver(DeviceInfo.PLAYBACK_TYPE_LOCAL).isLocal)
     }
 }
