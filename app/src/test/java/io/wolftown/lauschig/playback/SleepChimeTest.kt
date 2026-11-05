@@ -30,4 +30,12 @@ class SleepChimeTest {
         val maxStep = (1 until pcm.size).maxOf { abs(pcm[it] - pcm[it - 1]) } / Short.MAX_VALUE.toDouble()
         assertTrue("step $maxStep", maxStep < 0.05)
     }
+
+    // Review 7: a failed write leaves an empty buffer – nothing to play; a short one still plays, with a warning.
+    @Test fun written_errorOrNothing_isNotPlayed_aShortWriteIs() {
+        assertTrue(AudioTrackChime.playable(written = pcm.size, expected = pcm.size))
+        assertTrue(AudioTrackChime.playable(written = pcm.size / 2, expected = pcm.size))
+        assertTrue(!AudioTrackChime.playable(written = 0, expected = pcm.size))
+        assertTrue(!AudioTrackChime.playable(written = -3, expected = pcm.size)) // AudioTrack.ERROR_INVALID_OPERATION
+    }
 }

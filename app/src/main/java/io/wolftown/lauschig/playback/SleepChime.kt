@@ -72,7 +72,12 @@ class AudioTrackChime @Inject constructor() : SleepChime {
                 .setBufferSizeInBytes(pcm.size * 2)
                 .build()
             try {
-                track.write(pcm, 0, pcm.size)
+                val written = track.write(pcm, 0, pcm.size)
+                if (written != pcm.size) Log.w(TAG, "sleep chime: wrote $written of ${pcm.size} samples")
+                if (!playable(written, pcm.size)) {
+                    release(track)
+                    return
+                }
                 track.play()
                 Log.i(TAG, "sleep timer hint tone")
                 Handler(Looper.getMainLooper()).postDelayed({ release(track) }, (SoftChime.LENGTH_SEC * 1000).toLong() + RELEASE_MARGIN_MS)
@@ -89,8 +94,11 @@ class AudioTrackChime @Inject constructor() : SleepChime {
         try { track.release() } catch (e: Exception) { Log.w(TAG, "release failed", e) }
     }
 
-    private companion object {
-        const val TAG = "SleepChime"
-        const val RELEASE_MARGIN_MS = 300L
+    companion object {
+        private const val TAG = "SleepChime"
+        private const val RELEASE_MARGIN_MS = 300L
+
+        /** What `AudioTrack.write` returned is worth playing: some samples (a short write still sounds), not an error code. */
+        fun playable(written: Int, expected: Int): Boolean = written in 1..expected
     }
 }
