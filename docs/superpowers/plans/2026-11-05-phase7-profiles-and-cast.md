@@ -260,7 +260,7 @@ Alle Befunde des Reviews übernommen. Neue Tests liefen vorher rot; `anOpenDownl
   - `set(last, account)` schreibt unter `item_id:device:<konto>`; der Dienst gibt das Konto des Moments mit, ein später Schreibvorgang bleibt also bei A.
   - `forAccount` = neuester eigener Titel, sonst der gemeinsame Eintrag `item_id:device`. Der stammt aus der Zeit vor dem ersten neuen Schreiben, aus der Zeit ohne Anmeldung oder von einem abgemeldeten Konto. Das nächste Spielen beendet ihn.
   - **Claudes Wahl – Abmelden wie in 0.4.0:** `forget` gibt den Gerätetitel nur dann ans Gerät zurück, wenn er der letzte Titel des Kontos war; war es ein Server-Titel, bleibt nichts zum Fortsetzen. Ein einzelnes Konto merkt also nichts.
-  - Widget: Ein Wechsel entfernt auch einen gespeicherten Gerätetitel (`clearUnlessOf`), `WidgetPublisher.forgetTitle` verhindert, dass der alte Titel zurückgeschrieben wird. Abmelden und Anmelden behalten ihn wie bisher.
+  - Widget: Ein Wechsel entfernt auch einen gespeicherten Gerätetitel (`clearUnlessOf`), `WidgetPublisher.forgetTitle` verhindert, dass der alte Titel zurückgeschrieben wird. Abmelden und Anmelden derselben Person behalten ihn wie bisher (seit Fix-Runde 2: bei einer anderen Person geht er auch mit einer Abmeldung dazwischen).
 - **M1** Der Merker wird vor `work.cancel` geschrieben und vor dem Pausieren noch einmal (**Claudes Wahl:** `cancel` kann Sekunden dauern, was in der Zeit dazukommt, soll nicht verloren gehen). `resume` reiht auch vermerkte Zeilen in `QUEUED` und `RUNNING` ein; `KEEP` lässt laufende Arbeit in Ruhe.
 - **M2** Siehe oben (Download-Worker). `setStateIf` liefert dafür die Zahl der geänderten Zeilen, keine Schemaänderung.
 - **M3** `ProfileSwitchFlowTest` baut `SignOut` über den `@Inject`-Konstruktor. `FakeFacade.onPause` speichert die Position 150 ms nach der Pause, wie der Tracker. Mutationen geprüft: ohne die 300 ms Wartezeit wird er rot, ebenso ohne `stopAgain` und ohne den eigenen letzten Titel im Mini-Player.
@@ -273,3 +273,28 @@ Alle Befunde des Reviews übernommen. Neue Tests liefen vorher rot; `anOpenDownl
 **Emulator 5554 (Build 4d1e649, angemeldet als root):** „Die Mitte“ nach Löschen des Downloads gestreamt, ohne Fehler (`PLAYING`, Download beim Abspielen lief mit). Ein Gerätetitel steht unter `item_id:device:<id>`. Medientaste mit sichtbarer App spielt, der Guard griff nirgends fälschlich ein.
 
 **Neuer Befund, nicht behoben:** Die Medientaste bei kalt gestartetem Dienst im Hintergrund lädt den Titel, spielt aber nicht: Android 15 lehnt die Audio-Fokus-Anfrage ab (`AS.HardeningEnforcer: Focus request DENIED`), weil der Dienst noch nicht im Vordergrund ist; danach `playWhenReady=false reason=2`. Der Stand vor dieser Runde (942b4cf) zeigt das genauso (je 3 von 3), die Ursache liegt also nicht in dieser Runde.
+
+### Fix-Runde 2 nach Re-Review (2026-11-05)
+
+Fünf kleine Befunde, alle übernommen, weil die Vorgabe wörtlich gilt: „keine Anfrage von Konto A mit dem Token von Konto B“. Neue Tests liefen vorher rot, bis auf Gegenproben (siehe Bericht).
+
+- **N1 – Der Stream gehört dem Konto des Titels.** Bisher stoppte der Guard einen spät gelandeten Titel erst danach; seine erste Anfrage konnte B's Token tragen.
+  - Die Stream-URL nennt den Besitzer im Fragment (`…/download#<serverId>`, `MediaItemFactory`). `StreamCalls` (aus dem `PlaybackService` herausgelöst) schickt über den Client dieses Kontos; `AuthInterceptor` lehnt ab, solange ein anderes angemeldet ist. Ohne Besitzer oder auf fremder Adresse: Client ohne Token.
+  - **Vorher geprüft:** Media3s `OkHttpDataSource` behält das Fragment, auf der Leitung erscheint es nicht (`StreamCallsTest`, durch die echte Datenquelle bis zum Server). URIs zweier Aufbauten sind gleich, `syncSources` lädt also nichts neu (`MediaItemFactoryTest`). Der Gang durch den `MediaController` zum Dienst: Emulator; ohne Fragment käme ein 401.
+  - `ServiceTitleStarter.start` fragt nach `resolve` noch einmal, ob das Konto noch da ist. Das schließt auch den Gerätetitel als nächsten Eintrag der Warteschlange und den Download beim Abspielen ein.
+  - `QueueAdvancer`: Ein Eintrag geht erst, wenn über seinen Start entschieden ist. **Claudes Wahl:** Scheitert der Start, wird er wie bisher verworfen, außer das Konto ist inzwischen weg; dann bleibt er für die Rückkehr, und nichts weiter wird versucht. Nebenwirkung: Die Warteschlange schützt den Titel während des Starts vor dem automatischen Aufräumen.
+  - `CarStarts` liest das Konto einmal beim Eintritt und vergleicht nach `resolveTitle` damit.
+- **N2** `PlayerControllerImpl.stop` setzt den leeren Zustand in `finally`: Ein hängender oder scheiternder Stopp lässt keinen Titel im Mini-Player.
+- **N3 – Der Geräte-Eintrag gibt nichts an andere weiter.**
+  - `removeProfile` nutzt `LastPlayedStore.drop`: alle Einträge des Profils gehen, nichts wird übergeben.
+  - `adoptDeviceEntry`: Der gemeinsame Eintrag wird beim App-Start und beim Beiseitelegen zum Gerätetitel des aktiven Kontos, wenn es keinen eigenen hat. Der Weg läuft über `AccountStateCleaner.migrate`. `clear` tut das nicht: Dort hat die Abmeldung den Titel gerade für die nächste Person hinterlegt.
+  - `WidgetAccountWatcher` und `AccountPlaybackGuard` vergleichen mit dem zuletzt angemeldeten Konto: A → abgemeldet → A behält den Gerätetitel, A → abgemeldet → B verliert ihn. Der Vergleich gilt je Prozess; nach einem Neustart im abgemeldeten Zustand ist die vorige Person unbekannt.
+  - Abmelden ohne weiteres Konto bleibt, wie es war.
+- **N4** Die Prüfung im Flow-Test sagt jetzt, was sie zeigt (Details des Titels, nicht der Stream); den Stream prüft `StreamCallsTest`. **Der Gerätetest mit einem echten Wechsel zieht in den Durchlauf von Task 2:** Wechsel, während ein Titel von A startet, dann im Server-Log B's Token auf A's Pfaden suchen.
+- **N5** Nach dem letzten Stopp löscht `PURGE` die Zeilen noch einmal: Die letzte Speicherung eines Titels, den erst dieser Stopp beendet hat, bleibt nicht zurück.
+
+**Tests:** App 1916, abs-api 48, core:model 3, core:database 66, keine Fehler; 31 neue Testfälle in dieser Runde.
+
+**Emulator 5554 (Build 70858bc, root):** „Der Anfang“ nach Löschen des Downloads gestreamt: `PLAYING`, Server-Log „User root requested download“ ohne Fehler, keine `AccountChangedException`.
+
+**Noch offen:** die Medientaste im Hintergrund unter Android 15 (Fix-Runde 1, neuer Befund); sie braucht eine eigene Entscheidung.
