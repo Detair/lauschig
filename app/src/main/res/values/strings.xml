@@ -816,6 +816,23 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string name="cast_refused_device_title">This title is only on this device, a Cast device cannot play it. It is waiting for you here.</string>
+    <string name="cast_refused_car">While a car is connected, playback stays on this device.</string>
+    <string name="cast_connect_failed">Could not connect to the Cast device. Is it switched on and on the same Wi-Fi?</string>
+    <string name="cast_server_offline">Your server is not answering right now, so this title cannot be cast.</string>
+    <string name="cast_open_failed">The server did not make this title available to the Cast device. Try again after a sync.</string>
+    <string name="cast_unreachable">The Cast device cannot reach your server. The Cast device itself is fine, it is missing the address: it needs a server address that is publicly reachable. Playback is waiting here, at the same spot.</string>
+    <string name="cast_unreachable_http">The Cast device cannot reach your server. The Cast device itself is fine, but your server address uses http, which it may not load. Playback is waiting here, at the same spot.</string>
+    <string name="cast_format_failed">The Cast device cannot play the audio format of this title. Playback is waiting here, at the same spot.</string>
+    <string name="cast_playing_on">Playing on %1$s</string>
+    <string name="cast_playing_elsewhere">Playing on the Cast device</string>
+    <string name="cast_device_title_button">Play on a Cast device: not possible for this title</string>
+    <string name="cast_device_title_heading">Only on this device</string>
+    <string name="cast_device_title_text">This title is in a folder on this device. A Cast device only plays what it can load from the server.</string>
+    <string name="cast_effects_unavailable">Not available while casting: the Cast device makes the sound, not this device.</string>
+    <string name="cast_sound_unavailable_description">Sound: not available while casting</string>
+    <string name="cast_speed_limit">Cast devices play at 2× at most.</string>
+    <string name="cast_understood">Got it</string>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
         <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
@@ -824,6 +841,7 @@
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
         <item>The downloads page shows how much space the other profiles take</item>
         <item>Protect a profile if you like: before a switch the app asks for the device lock or a PIN of its own</item>
+        <item>Chromecast and Google TV: send a server title from the player to a Cast device, control it from here and take it back</item>
     </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>

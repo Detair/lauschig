@@ -816,6 +816,23 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string name="cast_refused_device_title">Dieser Titel liegt nur auf diesem Gerät, ein Cast-Gerät kann ihn nicht abspielen. Er wartet hier auf dich.</string>
+    <string name="cast_refused_car">Solange ein Auto verbunden ist, bleibt die Wiedergabe auf diesem Gerät.</string>
+    <string name="cast_connect_failed">Keine Verbindung zum Cast-Gerät. Ist es eingeschaltet und im selben WLAN?</string>
+    <string name="cast_server_offline">Dein Server antwortet gerade nicht, deshalb kann dieser Titel nicht gecastet werden.</string>
+    <string name="cast_open_failed">Der Server hat den Titel nicht für das Cast-Gerät freigegeben. Versuch es nach einem Sync noch einmal.</string>
+    <string name="cast_unreachable">Das Cast-Gerät erreicht deinen Server nicht. Mit dem Cast-Gerät ist alles in Ordnung, ihm fehlt die Adresse: Es braucht eine öffentlich erreichbare Serveradresse. Die Wiedergabe wartet hier, an derselben Stelle.</string>
+    <string name="cast_unreachable_http">Das Cast-Gerät erreicht deinen Server nicht. Mit dem Cast-Gerät ist alles in Ordnung, aber deine Serveradresse nutzt http, und das lädt es womöglich nicht. Die Wiedergabe wartet hier, an derselben Stelle.</string>
+    <string name="cast_format_failed">Das Cast-Gerät kann das Audioformat dieses Titels nicht abspielen. Die Wiedergabe wartet hier, an derselben Stelle.</string>
+    <string name="cast_playing_on">Wird auf %1$s abgespielt</string>
+    <string name="cast_playing_elsewhere">Wird auf dem Cast-Gerät abgespielt</string>
+    <string name="cast_device_title_button">Auf Cast-Gerät abspielen: für diesen Titel nicht möglich</string>
+    <string name="cast_device_title_heading">Nur auf diesem Gerät</string>
+    <string name="cast_device_title_text">Dieser Titel liegt in einem Ordner auf diesem Gerät. Ein Cast-Gerät spielt nur, was es vom Server laden kann.</string>
+    <string name="cast_effects_unavailable">Beim Casten nicht verfügbar: Den Ton macht das Cast-Gerät, nicht dieses Gerät.</string>
+    <string name="cast_sound_unavailable_description">Klang: beim Casten nicht verfügbar</string>
+    <string name="cast_speed_limit">Cast-Geräte spielen höchstens mit 2×.</string>
+    <string name="cast_understood">Verstanden</string>
     <string-array name="whatsnew_0_5_0">
         <item>Mehrere Profile auf einem Gerät: In den Einstellungen wechselst du zwischen Konten, ohne dich abzumelden</item>
         <item>Fortschritt, Downloads, RMAB-Verbindung und letzte Suchen bleiben bei ihrem Profil; ein Wechsel löscht nichts</item>
@@ -824,6 +841,7 @@
         <item>Nach dem Abmelden fragt die App „Wer hört zu?“, wenn weitere Profile da sind</item>
         <item>Die Downloads-Seite zeigt, wie viel Platz die anderen Profile belegen</item>
         <item>Profil schützen, wenn du möchtest: Vor dem Wechsel fragt die App nach der Gerätesperre oder einer eigenen PIN</item>
+        <item>Chromecast und Google TV: Schick einen Titel vom Server aus dem Player aufs Cast-Gerät, steuere ihn von hier und hol ihn zurück</item>
     </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Sprungzeiten einstellbar: zurück 5–30 s, vor 15–60 s – im Player, in der Benachrichtigung, im Auto und am Kopfhörer</item>

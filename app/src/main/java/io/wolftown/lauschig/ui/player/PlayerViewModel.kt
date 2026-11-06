@@ -76,6 +76,8 @@ data class PlayerScreenState(
     /** The seek steps of the settings, for the back / forward buttons. */
     val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
     val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
+    /** The Cast device that plays; null while the sound comes from this device. */
+    val castDevice: String? = null,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -169,6 +171,7 @@ class PlayerViewModel(
             coverVersion = m?.coverVersion,
             seekBackSec = p.seekBackSec,
             seekForwardSec = p.seekForwardSec,
+            castDevice = p.outputName,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 
