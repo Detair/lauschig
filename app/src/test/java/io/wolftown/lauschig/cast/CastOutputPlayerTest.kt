@@ -1158,6 +1158,8 @@ class CastOutputPlayerTest {
         status(ReceiverActivity.STOPPED)
         suspendSession()
         assertEquals(CastActivity.SUSPENDED, activities.last())
+        // A client without its old status says nothing yet, and the silence is no reason here.
+        link.now = ReceiverActivity.BUSY
         resumeSession()
         assertEquals(CastActivity.CONNECTED, activities.last())
         assertEquals(Player.STATE_READY, output.playbackState)
@@ -1369,6 +1371,9 @@ class CastOutputPlayerTest {
         output.play()
         idle()
         assertFalse(device.pwr)
+        output.onCastTakenBack()
+        idle()
+        assertFalse("the window for taking the cast back was the old title's", device.pwr)
         pass(3)
         output.play()
         idle()

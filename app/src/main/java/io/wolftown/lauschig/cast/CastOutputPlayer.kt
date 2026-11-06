@@ -325,6 +325,8 @@ class CastOutputPlayer(
         session = null
         kept = null
         cast = null
+        // "This phone" from now on would start this title, not take the cast's back.
+        playingUntil = null
         phase = Phase.LEAVING
         putOnDevice(other)
         invalidateState()

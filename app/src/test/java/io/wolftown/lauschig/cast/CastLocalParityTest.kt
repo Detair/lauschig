@@ -11,6 +11,7 @@ import androidx.media3.cast.CastPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
@@ -45,7 +46,8 @@ class CastLocalParityTest {
     private fun listener(into: ArrayList<String>) = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) { into += "error:${error.errorCodeName}" }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { into += "pwr:$playWhenReady:$reason" }
-        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) { into += "disc:$reason" }
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) { into += "disc:$reason:${oldPosition.positionMs}:${newPosition.positionMs}" }
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) { into += "timeline:$reason" }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { into += "transition:$reason" }
         override fun onIsPlayingChanged(isPlaying: Boolean) { into += "playing:$isPlaying" }
         override fun onPlaybackStateChanged(playbackState: Int) { into += "state:$playbackState" }
