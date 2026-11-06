@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -52,8 +53,12 @@ class ApiProvider(
     private val firstCheck = MutableStateFlow(true)
     private val shared = connection
         .onStart { firstCheck.value = true }
-        .onEach { firstCheck.value = it == null }
-        .map { it ?: ConnectionState.Offline }
+        // An answer ends the check only once it is published: whoever sees the check end finds the answer in the state.
+        .transform {
+            if (it == null) firstCheck.value = true
+            emit(it ?: ConnectionState.Offline)
+            if (it != null) firstCheck.value = false
+        }
         .onCompletion { firstCheck.value = true }
         .stateIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000, replayExpirationMillis = 0), ConnectionState.Offline)
 

@@ -3,6 +3,7 @@ package io.wolftown.lauschig.net
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.connection.ConnectionState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
@@ -54,6 +55,24 @@ class ApiProviderTest {
         advanceTimeBy(6_000)
         runCurrent()
         assertEquals(ConnectionState.Offline, provider.connectionState.value)
+    }
+
+    @Test
+    fun whoeverSeesTheCheckEnd_findsTheAnswerInTheState() = runTest {
+        val online = ConnectionState.Online("http://abs.test/".toHttpUrl(), ConnectionState.Via.PUBLIC)
+        val upstream = flow {
+            emit(online)
+            awaitCancellation()
+        }
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        val seen = mutableListOf<ConnectionState>()
+        // Unconfined: this runs inside the write to `checking`, before anything that comes after that write.
+        backgroundScope.launch(Dispatchers.Unconfined) {
+            provider.checking.collect { if (!it) seen += provider.connectionState.value }
+        }
+        backgroundScope.launch { provider.connection.collect {} }
+        runCurrent()
+        assertEquals(listOf<ConnectionState>(online), seen)
     }
 
     @Test

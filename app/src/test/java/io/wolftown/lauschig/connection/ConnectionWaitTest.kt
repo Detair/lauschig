@@ -2,7 +2,9 @@ package io.wolftown.lauschig.connection
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -36,6 +38,17 @@ class ConnectionWaitTest {
         runCurrent()
         assertFalse(r.await())
         assertEquals(6_000, testScheduler.currentTime)
+    }
+
+    @Test fun theCheckEndsBeforeTheWaiterSawTheStatePublishedEarlier_itStillCounts() = runTest {
+        // combine collects the two flows separately: "no longer checking" can overtake the newer state on another thread.
+        val lagging = connection.onEach { if (it is ConnectionState.Online) delay(1) }
+        val r = async { awaitOnlineAnswer(lagging, checking, 10_000) }
+        runCurrent()
+        connection.value = online
+        checking.value = false
+        runCurrent()
+        assertEquals(online, r.await())
     }
 
     @Test fun aCheckThatNeverAnswers_givesUpAfterTheMaximum() = runTest {
