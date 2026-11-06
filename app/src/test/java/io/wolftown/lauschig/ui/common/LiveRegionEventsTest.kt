@@ -7,12 +7,26 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.test.core.app.ApplicationProvider
+import io.wolftown.lauschig.ui.LauschigTheme
+import io.wolftown.lauschig.ui.setup.SetupError
+import io.wolftown.lauschig.ui.setup.SetupScreen
+import io.wolftown.lauschig.ui.setup.SetupUiState
+import io.wolftown.lauschig.ui.welcome.WelcomeScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -23,18 +37,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
-import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.Text
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.platform.testTag
-import androidx.test.core.app.ApplicationProvider
-import io.wolftown.lauschig.ui.LauschigTheme
-import io.wolftown.lauschig.ui.setup.SetupError
-import io.wolftown.lauschig.ui.setup.SetupScreen
-import io.wolftown.lauschig.ui.setup.SetupUiState
-import io.wolftown.lauschig.ui.welcome.WelcomeScreen
 
 /**
  * The accessibility events themselves, as Compose sends them with a screen reader on: why [AnnouncedLine] looks the way it
@@ -65,7 +67,7 @@ class LiveRegionEventsTest {
         }
     }
 
-    private fun show(content: @androidx.compose.runtime.Composable () -> Unit) {
+    private fun show(content: @Composable () -> Unit) {
         rule.runOnUiThread {
             val host = Host(rule.activity)
             host.addView(ComposeView(rule.activity).apply { setContent(content) })
@@ -114,7 +116,7 @@ class LiveRegionEventsTest {
         show {
             Column {
                 Text("above")
-                text?.let { Text(it, Modifier_liveRegion()) }
+                text?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("new")) }
             }
         }
         settle()
@@ -152,6 +154,4 @@ class LiveRegionEventsTest {
         settle()
         assertTrue("events: $events", spokenFrom(id).isNotEmpty())
     }
-
-    private fun Modifier_liveRegion() = androidx.compose.ui.Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("new")
 }
