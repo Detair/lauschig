@@ -58,7 +58,7 @@ class ForegroundStartGuard(
 
     private var job: Job? = null
     private var isArmed = false
-    /** Play keys that found the player empty, so Media3 asked the resumption for a title, and have no answer yet. */
+    /** Times Media3 asked the resumption for a title during this arming ([resumptionAsked]) with no answer yet. */
     private var openResumptions = 0
     /** A resumption answered with a title: what is left is waiting for it to play. */
     private var resumed = false
@@ -99,7 +99,6 @@ class ForegroundStartGuard(
      */
     fun arm() {
         if (isArmed) {
-            if (!host.hasItems()) openResumptions++
             if (foregroundFirst) {
                 val placeholder = placeholderUp
                 placeholderUp = false
@@ -110,7 +109,7 @@ class ForegroundStartGuard(
         isArmed = true
         resumed = false
         placeholderUp = false
-        openResumptions = if (host.hasItems()) 0 else 1
+        openResumptions = 0
         if (foregroundFirst && goForeground()) return adopted(placeholder = false)
         job = scope.launch {
             delay(timeoutMs)
@@ -131,10 +130,18 @@ class ForegroundStartGuard(
     }
 
     /**
+     * Media3 asks the resumption for a title: an answer ([resumption]) will come. Counted here and not at the key, because
+     * a key does not always ask: on an empty player that still has `playWhenReady` set a PLAY_PAUSE only pauses. Such a key
+     * ends at the deadline. In doubt the guard settles early rather than showing its placeholder up to the cap.
+     */
+    fun resumptionAsked() {
+        if (isArmed) openResumptions++
+    }
+
+    /**
      * A playback resumption answered. A success waits for playback (or the deadline). A failure settles once the last open
      * one has answered, also if another press is still waiting for its title: stopping the service now would destroy
-     * that title on arrival. A key that never gets an answer leaves the end to the deadline and the cap.
-     * True if this failure ended the arming, so the caller says why.
+     * that title on arrival. True if this failure ended the arming, so the caller says why.
      */
     fun resumption(ok: Boolean): Boolean {
         if (!isArmed) return false
@@ -149,7 +156,10 @@ class ForegroundStartGuard(
         disarm()
         tidyJob?.cancel()
         tidyJob = null
-        placeholderLeft = false
+        if (placeholderLeft) {
+            placeholderLeft = false
+            host.cancelPlaceholder()
+        }
     }
 
     private fun settle() {

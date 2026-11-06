@@ -45,6 +45,12 @@ class ForegroundStartGuardTest {
     private fun playKey(code: Int = KeyEvent.KEYCODE_MEDIA_PLAY) =
         Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, code))
 
+    /** A key on an empty player: the guard arms, then Media3 asks the resumption for a title. */
+    private fun ForegroundStartGuard.press() {
+        arm()
+        resumptionAsked()
+    }
+
     private val host = FakeHost()
     private val timeout = 7_000L
     private val cap = 60_000L
@@ -103,9 +109,9 @@ class ForegroundStartGuardTest {
         // Something took the foreground away after the first press; the second start set a new deadline at Android, and a
         // service that stops with that deadline open crashes the app.
         val g = firstGuard(backgroundScope)
-        g.arm()
+        g.press()
         assertEquals(listOf("placeholder"), host.calls)
-        g.arm()
+        g.press()
         assertEquals(listOf("placeholder", "placeholder"), host.calls)
         assertTrue(g.armed)
         g.resumption(ok = false)
@@ -118,8 +124,8 @@ class ForegroundStartGuardTest {
         // Each press on an empty player asks for a title. A failed answer must not stop the service under the other one:
         // its title would arrive just to be destroyed.
         val g = firstGuard(backgroundScope)
-        g.arm()
-        g.arm()
+        g.press()
+        g.press()
         assertFalse(g.resumption(ok = false))
         assertEquals(listOf("placeholder", "placeholder"), host.calls)
         assertTrue(g.armed)
@@ -133,8 +139,8 @@ class ForegroundStartGuardTest {
 
     @Test fun secondPress_bothResumptionsFail_leavesAtTheLastAnswer_andSaysSoOnce() = runTest {
         val g = firstGuard(backgroundScope)
-        g.arm()
-        g.arm()
+        g.press()
+        g.press()
         assertFalse(g.resumption(ok = false))
         assertTrue(g.resumption(ok = false))
         assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
@@ -143,8 +149,8 @@ class ForegroundStartGuardTest {
 
     @Test fun secondPress_successThenFailure_doesNotLeave_untilTheDeadline() = runTest {
         val g = firstGuard(backgroundScope)
-        g.arm()
-        g.arm()
+        g.press()
+        g.press()
         assertFalse(g.resumption(ok = true))
         assertFalse(g.resumption(ok = false))
         assertEquals(listOf("placeholder", "placeholder"), host.calls)
@@ -158,8 +164,8 @@ class ForegroundStartGuardTest {
 
     @Test fun secondPress_theOtherAnswerNeverComes_theCapEndsIt() = runTest {
         val g = firstGuard(backgroundScope)
-        g.arm()
-        g.arm()
+        g.press()
+        g.press()
         assertFalse(g.resumption(ok = false))
         advanceTimeBy(timeout + cap - 10)
         runCurrent()
@@ -170,15 +176,69 @@ class ForegroundStartGuardTest {
         assertFalse(g.armed)
     }
 
-    @Test fun secondPress_onALoadedTitle_opensNoResumption() = runTest {
-        // Only an empty player asks for a title: the failure of the first press still decides.
+    @Test fun secondPress_thatAsksForNothing_opensNoResumption() = runTest {
+        // A key on a loaded title, or one Media3 turns into a pause: the failure of the first press still decides.
         val g = firstGuard(backgroundScope)
+        g.press()
         g.arm()
-        host.hasItems = true
-        g.arm()
-        host.hasItems = false
         assertTrue(g.resumption(ok = false))
         assertFalse(g.armed)
+    }
+
+    @Test fun aKeyThatAsksForNothing_leavesAtTheDeadline_notAtTheCap() = runTest {
+        // A bound controller keeps the service alive after a failed key, and the player stays empty with playWhenReady
+        // set: Media3 turns the next PLAY_PAUSE into a pause and asks the resumption for nothing.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout - 1)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun aKeyThatAsksForNothing_thenARealPlay_theFailureSettlesAtOnce() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.press()
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun anAskWithoutAnArming_isNotCounted() = runTest {
+        // A car or SystemUI on the empty player: no key, nothing for the guard to wait for later.
+        val g = firstGuard(backgroundScope)
+        g.resumptionAsked()
+        g.arm()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun anAskFromElsewhereWhileArmed_itsFailureDoesNotEndTheKeysWait() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.resumptionAsked()
+        assertFalse(g.resumption(ok = false))
+        assertTrue(g.armed)
+        assertTrue(g.resumption(ok = false))
+        assertFalse(g.armed)
+    }
+
+    @Test fun release_cancelsAPlaceholderLeftBehind() = runTest {
+        // Play and pause within milliseconds detach the placeholder; a swipe from Recents ends the service before the tidy-up.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        g.release()
+        assertEquals(listOf("placeholder", "cancel"), host.calls)
+        advanceTimeBy(timeout * 2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "cancel"), host.calls)
     }
 
     @Test fun onePress_failingResumption_saysSo() = runTest {
@@ -195,8 +255,8 @@ class ForegroundStartGuardTest {
 
     @Test fun beforeApi35_secondPress_oneResumptionFails_waitsForTheOther() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
-        g.arm()
+        g.press()
+        g.press()
         assertFalse(g.resumption(ok = false))
         assertEquals(emptyList<String>(), host.calls)
         assertTrue(g.armed)
@@ -273,7 +333,7 @@ class ForegroundStartGuardTest {
 
     @Test fun foregroundFirst_heldUpdate_atTheCap_runsAfterLeaving() = runTest {
         val g = firstGuard(backgroundScope)
-        g.arm()
+        g.press()
         assertTrue(g.holdsNotificationUpdate())
         advanceTimeBy(timeout + cap + 1)
         runCurrent()
@@ -407,7 +467,7 @@ class ForegroundStartGuardTest {
 
     @Test fun foregroundFirst_slowResumption_keepsThePlaceholderUpToTheCap() = runTest {
         val g = firstGuard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + cap - 10)
         runCurrent()
         assertEquals(listOf("placeholder"), host.calls)
@@ -478,7 +538,7 @@ class ForegroundStartGuardTest {
 
     @Test fun pendingResumption_placeholderAtTheDeadline_capStopsIt() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         assertEquals(listOf("placeholder"), host.calls)
@@ -492,13 +552,13 @@ class ForegroundStartGuardTest {
         assertEquals(listOf("placeholder", "leave"), host.calls)
         assertFalse(g.armed)
         // And the next play key arms again.
-        g.arm()
+        g.press()
         assertTrue(g.armed)
     }
 
     @Test fun pendingResumption_thatFailsLater_stopsThen() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         g.resumption(ok = false)
@@ -510,7 +570,7 @@ class ForegroundStartGuardTest {
 
     @Test fun pendingResumption_thatPlaysLater_handsOverToMedia3() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         g.resumption(ok = true)

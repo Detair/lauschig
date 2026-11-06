@@ -60,6 +60,8 @@ class LibraryCallback(
     private val onSubscribed: (parentId: String) -> Unit,
     /** A playback resumption for playing answered: started (or already loaded), or failed with a message. */
     private val onResumption: (ok: Boolean, message: String?) -> Unit = { _, _ -> },
+    /** Media3 asks for a playback resumption for playing, so [onResumption] will answer. Main thread, before that answer. */
+    private val onResumptionAsked: () -> Unit = {},
 ) : MediaLibrarySession.Callback {
     private val own = context.packageName
     private val coverAuthority = CoverUris.authority(own)
@@ -169,23 +171,26 @@ class LibraryCallback(
 
     override fun onPlaybackResumption(
         mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean,
-    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = future {
-        if (!isForPlayback) {
-            // Boot time, SystemUI's resumption card: metadata only, no server needed.
-            val title = lastTitle() ?: throw IllegalStateException("nothing to resume")
-            val entry = library.item(title, carContext()) ?: throw IllegalStateException("last title is gone")
-            MediaSession.MediaItemsWithStartPosition(listOf(mediaItems.toMediaItem(entry)), 0, C.TIME_UNSET)
-        } else {
-            val out = try {
-                starts.forResumption()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                onResumption(false, null)
-                throw e
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        if (isForPlayback) onResumptionAsked()
+        return future {
+            if (!isForPlayback) {
+                // Boot time, SystemUI's resumption card: metadata only, no server needed.
+                val title = lastTitle() ?: throw IllegalStateException("nothing to resume")
+                val entry = library.item(title, carContext()) ?: throw IllegalStateException("last title is gone")
+                MediaSession.MediaItemsWithStartPosition(listOf(mediaItems.toMediaItem(entry)), 0, C.TIME_UNSET)
+            } else {
+                val out = try {
+                    starts.forResumption()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    onResumption(false, null)
+                    throw e
+                }
+                onResumption(out !is CarStarts.Outcome.Failed, (out as? CarStarts.Outcome.Failed)?.let { context.getString(message(it.reason)) })
+                ready(mediaSession, controller, out)
             }
-            onResumption(out !is CarStarts.Outcome.Failed, (out as? CarStarts.Outcome.Failed)?.let { context.getString(message(it.reason)) })
-            ready(mediaSession, controller, out)
         }
     }
 
