@@ -593,3 +593,19 @@ Vier wichtige Befunde und die kleinen 1 bis 7, fast alle rund um einen Suspend u
 3. **„Dieses Telefon“ im Suspend spielt, sobald die Sitzung endet,** und wird vergessen, wenn sie zurückkommt. Das ist die eine Zeile aus den Vorgaben, und sie behält, was die Person wollte.
 
 Mutationen und Prüfliste (Datenrisiken zuerst) stehen im Bericht von Task 4.
+
+### Fix-Runde 3 nach Re-Review 2 (2026-11-06)
+
+Zwei wichtige Befunde und vier kleine, alle in Code der Runde davor. Danach kommt der Gerätetest. Keine neue Phase.
+
+- **T1:** Ist ein Titel per `contentId` bewiesen und Media3 noch nicht so weit, bleibt der Zustand maskiert, und ein ruhiger Empfänger meldet sich bis zur nächsten Pause oder Dateigrenze nicht. Solange der Empfänger unseren Titel hält und der Zustand nicht `trusted` ist, fragt `ACTIVE` jetzt alle 5 s nach einem frischen Status. Eine Antwort beendet das.
+- **T2:** Ein Halten ist jetzt eine Tatsache, die die Phase überlebt: `unproven` gilt ab dem Limit bis zu einem neuen Load oder einem Beweis. An der Wache zählt `BUFFERING` wie `READY`. Ein echter Stopp, ein fremder Titel oder ein Fehler beenden das Halten. Der Weg zurück führt immer durch `startProven` (`backToHold`), nie über `becomeActive(fromReceiver = true)`. Das gilt auch nach einem Suspend, denn dort war dieselbe Lücke.
+- **Klein:** 1 Ein Titel, der im Halten zu Ende spielt, sagt `cast_played_out_unseen`, wartet pausiert an der letzten bewiesenen Stelle und gilt nicht als fertig. 2 siehe unten. 3 Bei `cast_suspended_title_here` löscht der Controller `starting`: kein Spinner, und der erste Druck spielt. 4 Der behaltene Grund geht beim nächsten Druck, auch von der Benachrichtigung oder einer Taste. Dort erst, wenn er einmal gestanden hat, weil die Meldung den Zustand des `MediaController` überholen kann.
+- **Debug-Zeilen:** Status, Sitzungsereignisse und Phasen stehen in Logcat auf Stufe Debug, also nicht im Diagnose-Log. Die Prüfliste liest sie.
+
+**Claudes Wahl**
+
+1. **Der Sleep-Timer läuft weiter, wenn der Fernseher spielt und der Player es nicht zeigen kann.** Der maskierte Zustand muss „lädt“ bleiben, sonst speichert der Tracker. Darum meldet der Player `CastActivity.PLAYING_UNSEEN`, und die Zeile unter dem Titel liest sich wie bei `PLAYING`. `SleepTimer` zählt dann selbst: Minuten als Hörzeit, das Kapitelende von der letzten bekannten Stelle aus im Tempo des Titels. Eine echte Position übernimmt sofort. Blende und Pause erreichen den Fernseher, getestet durch den echten Controller; der Schritt über `MediaController` und `CarSafePlayer` steht auf der Prüfliste. Ein normaler Load hält den Timer wie bisher an.
+2. **Findet die Wache nichts vor, gilt das als Stopp,** obwohl nur ein echter Stopp das Halten beenden soll. Sonst bliebe ein Empfänger, der den Titel verloren hat und schweigt, für immer „lädt“. Falls das falsch war, kostet es nichts: Das nächste `READY` führt zurück ins Halten.
+
+Die endgültige Prüfliste für den Gerätetest steht als ein Abschnitt im Bericht von Task 4, Datenrisiken zuerst.
