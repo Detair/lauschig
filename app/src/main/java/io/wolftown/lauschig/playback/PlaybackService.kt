@@ -442,8 +442,16 @@ class PlaybackService : MediaLibraryService() {
     /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val p = player
-        if (intent != null && p != null && ForegroundStartGuard.shouldArm(intent, engaged = isEngaged(p))) startGuard?.arm()
-        return super.onStartCommand(intent, flags, startId)
+        val guard = startGuard
+        if (p == null || guard == null) return super.onStartCommand(intent, flags, startId)
+        return guard.onStart(intent, engaged = isEngaged(p)) { super.onStartCommand(intent, flags, startId) }
+    }
+
+    /** See [ForegroundStartGuard.holdsNotificationUpdate]. */
+    @OptIn(UnstableApi::class)
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        if (!startInForegroundRequired && startGuard?.holdsNotificationUpdate() == true) return
+        super.onUpdateNotification(session, startInForegroundRequired)
     }
 
     /** Something plays or buffers to play: Media3 shows the notification and goes foreground itself. */
@@ -486,6 +494,7 @@ class PlaybackService : MediaLibraryService() {
                 val notification = NotificationCompat.Builder(this@PlaybackService, START_CHANNEL)
                     .setSmallIcon(R.drawable.ic_widget_play)
                     .setContentTitle(getString(R.string.app_name))
+                    .setContentText(getString(R.string.playback_start_text))
                     .setSilent(true)
                     .build()
                 ServiceCompat.startForeground(this@PlaybackService, START_NOTIFICATION_ID, notification, foregroundType())
@@ -510,6 +519,13 @@ class PlaybackService : MediaLibraryService() {
             Log.i(TAG, "play key started nothing: left the foreground start")
             if (p.mediaItemCount == 0) stopSelf()
         }
+
+        override fun cancelPlaceholder() {
+            getSystemService(NotificationManager::class.java)?.cancel(START_NOTIFICATION_ID)
+        }
+
+        @OptIn(UnstableApi::class)
+        override fun updateNotification() = triggerNotificationUpdate()
     }
 
     /**
