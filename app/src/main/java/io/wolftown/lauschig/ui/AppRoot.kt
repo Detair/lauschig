@@ -15,7 +15,6 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import io.wolftown.lauschig.AppPages
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
@@ -125,7 +124,8 @@ fun AppRoot(
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         LauschigTheme(appearance) {
             WindowBackground()
-            AccountPages(pages.owner, pagesScope) { navController, pageModels ->
+            AccountPages(pages.owner, pagesScope) { account ->
+                val navController = account.controller
                 LaunchedEffect(openRequest, signedIn) {
                     if (openRequest == null) return@LaunchedEffect
                     when (incomingGate(signedIn)) {
@@ -211,13 +211,11 @@ fun AppRoot(
                     showSnackbars = !playerUp,
                     connectionBanner = connectionBanner,
                 ) {
-                    CompositionLocalProvider(LocalViewModelStoreOwner provides pageModels) {
-                        AppNavHost(
-                            navController, pages.start, homeRoute = startTab.route(), snackbarHost = snackbarHost,
-                            onOpenProfiles = { profilesOpen = true },
-                            startHeader = { ProfileHeaderButton(profileRows, onClick = { profilesOpen = true }) },
-                        )
-                    }
+                    AppNavHost(
+                        account, pages.start, homeRoute = startTab.route(), snackbarHost = snackbarHost,
+                        onOpenProfiles = { profilesOpen = true },
+                        startHeader = { ProfileHeaderButton(profileRows, onClick = { profilesOpen = true }) },
+                    )
                 }
                 PlayerOverlay(
                     playerLayer.slide,

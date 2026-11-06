@@ -5,6 +5,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -15,12 +18,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import io.wolftown.lauschig.ui.TopLevelTab
 import org.junit.Assert.assertEquals
@@ -63,17 +64,15 @@ class AccountPagesTest {
 
     @Composable
     private fun Pages() {
-        AccountPages(owner, scope) { navController, pageModels ->
-            nav = navController
-            CompositionLocalProvider(LocalViewModelStoreOwner provides pageModels) {
-                NavHost(navController, startDestination = if (owner == null) Setup() else Start) {
-                    composable<Setup> { Page("setup") }
-                    composable<Start> { Page("start") }
-                    composable<Library> { Page("library") }
-                    composable<Settings> { Page("settings") }
-                    composable<ItemDetail> { Page("item") }
-                    composable<Player> { Page("player") }
-                }
+        AccountPages(owner, scope) { pages ->
+            nav = pages.controller
+            AccountNavHost(pages, startDestination = if (owner == null) Setup() else Start) {
+                composable<Setup> { Page("setup") }
+                composable<Start> { Page("start") }
+                composable<Library> { Page("library") }
+                composable<Settings> { Page("settings") }
+                composable<ItemDetail> { Page("item") }
+                composable<Player> { Page("player") }
             }
         }
     }
@@ -209,23 +208,71 @@ class AccountPagesTest {
         restore.setContent { Pages() }
         go { nav.navigateToTab(TopLevelTab.Library) }
         go { nav.navigate(Settings) }
+        val before = models.getValue("settings")
 
         scope = AccountPagesScope() // what is kept across a rotation is gone with the process
         restore.emulateSavedInstanceStateRestore()
         rule.waitForIdle()
         assertEquals(listOf("start", "library", "settings"), stack())
+        assertNotSame(before, models.getValue("settings"))
     }
 
-    @Test fun aSwitchThatEndedWhileTheProcessWasGone_doesNotBringTheOtherPagesBack() {
-        val restore = StateRestorationTester(rule)
-        restore.setContent { Pages() }
-        go { nav.navigate(Settings) }
+    // A's pages were saved, then the account changed, before the app came back: Home during a switch, then the system
+    // recreated the activity or ended the process. What is saved is A's; StateRestorationTester cannot change the owner
+    // between saving and restoring, so this does the same steps by hand.
 
-        scope = AccountPagesScope()
-        owner = "b"
-        restore.emulateSavedInstanceStateRestore()
+    private var alive by mutableStateOf(true)
+    private var restored: Map<String, List<Any?>>? = null
+    private lateinit var registry: SaveableStateRegistry
+
+    private fun showRecreatable() = rule.setContent {
+        if (alive) {
+            val current = remember { SaveableStateRegistry(restored) { true } }
+            registry = current
+            CompositionLocalProvider(LocalSaveableStateRegistry provides current) { Pages() }
+        }
+    }
+
+    private fun recreateWith(next: String?, sameProcess: Boolean) {
+        rule.runOnIdle { restored = registry.performSave() }
+        alive = false
+        rule.waitForIdle()
+        if (!sameProcess) scope = AccountPagesScope()
+        owner = next
+        alive = true
+        rule.waitForIdle()
+    }
+
+    private fun aDeepPageThenRecreatedOnTheNextAccount(sameProcess: Boolean) {
+        showRecreatable()
+        go { nav.navigateToTab(TopLevelTab.Library) }
+        go { nav.navigate(Settings) }
+        recreateWith("b", sameProcess)
+        assertEquals(listOf("start"), stack())
+    }
+
+    @Test fun aSwitchThatEndedWhileTheProcessWasGone_doesNotBringTheOtherPagesBack() = aDeepPageThenRecreatedOnTheNextAccount(sameProcess = false)
+
+    /** Review M2. */
+    @Test fun afterThat_backOnTheAccountBefore_itsOldPagesDoNotComeBack() {
+        aDeepPageThenRecreatedOnTheNextAccount(sameProcess = false)
+        owner = "a"
         rule.waitForIdle()
         assertEquals(listOf("start"), stack())
+    }
+
+    @Test fun afterARecreationInTheSameProcess_itsOldPagesDoNotComeBackEither() {
+        aDeepPageThenRecreatedOnTheNextAccount(sameProcess = true)
+        owner = "a"
+        rule.waitForIdle()
+        assertEquals(listOf("start"), stack())
+    }
+
+    @Test fun andWhatIsRecreatedOnTheSameAccount_comesBack() {
+        showRecreatable()
+        go { nav.navigate(Settings) }
+        recreateWith("a", sameProcess = true)
+        assertEquals(listOf("start", "settings"), stack())
     }
 
     @Test fun theActivityIsLeftWithoutOldNavigationsRegistered() {

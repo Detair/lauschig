@@ -1,10 +1,8 @@
 package io.wolftown.lauschig.ui.nav
 
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
@@ -16,7 +14,6 @@ import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import io.wolftown.lauschig.admin.ServerAdminRoute
@@ -53,7 +50,7 @@ import io.wolftown.lauschig.ui.welcome.WelcomeRoute
  */
 @Composable
 fun AppNavHost(
-    navController: NavHostController,
+    pages: AccountNavigation,
     startDestination: Any,
     modifier: Modifier = Modifier,
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
@@ -65,17 +62,10 @@ fun AppNavHost(
     /** In the start page's header, beside the gear: the way to the profiles, if there are several. */
     startHeader: @Composable () -> Unit = {},
 ) {
+    val navController = pages.controller
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
-    NavHost(
-        navController, startDestination = startDestination, modifier = modifier,
-        // The navigation library's own fades everywhere, except that the page under the player stays put while the
-        // player (PlayerOverlay) slides over it and is there at once when the player slides away.
-        enterTransition = { fadeIn(tween(DEFAULT_FADE_MS)) },
-        exitTransition = { if (targetState.destination.hasRoute<Player>()) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(DEFAULT_FADE_MS)) },
-        popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
-        popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
-    ) {
+    AccountNavHost(pages, startDestination, modifier) {
         composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }, headerAction = startHeader) }
         composable<Settings> {
             ReadableWidth {
@@ -177,9 +167,6 @@ fun AppNavHost(
         }
     }
 }
-
-/** The navigation library's default cross-fade, kept for every page but the player. */
-private const val DEFAULT_FADE_MS = 700
 
 /** The player's own actions, used by [PlayerOverlay]: close, and details that replace the player. */
 fun NavHostController.closePlayer() {
