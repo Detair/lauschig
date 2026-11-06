@@ -54,7 +54,7 @@ class CastControlTest {
 
     @Test fun thePlayerSaysWhereItPlays() {
         rule.setContent {
-            LauschigTheme { PlayerScreen(PlayerScreenState(itemId = "li", title = "T", castDevice = "Living Room TV"), onClose = {}) }
+            LauschigTheme { PlayerScreen(PlayerScreenState(itemId = "li", title = "T", castDevice = "Living Room TV", castActivity = CastActivity.PLAYING), onClose = {}) }
         }
         rule.onNodeWithText("Playing on Living Room TV").assertExists()
         rule.onNodeWithTag("sourceStreaming").assertDoesNotExist()
@@ -70,7 +70,7 @@ class CastControlTest {
     }
 
     @Test fun aDeviceWithoutAName_stillReads() {
-        rule.setContent { LauschigTheme { CastOutputLine("") } }
+        rule.setContent { LauschigTheme { CastOutputLine("", CastActivity.PLAYING) } }
         rule.onNodeWithText("Playing on the Cast device").assertExists()
     }
 

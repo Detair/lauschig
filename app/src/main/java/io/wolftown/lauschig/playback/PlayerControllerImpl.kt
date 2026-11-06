@@ -173,7 +173,7 @@ class PlayerControllerImpl(
     private var seekBack = PlaybackSettings.DEFAULT_SEEK_BACK
     private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
     private var output: String? = null
-    private var activity = CastActivity.PLAYING
+    private var activity = CastActivity.CONNECTED
 
     /** A fresh state for a new or no title; the settings it shows are kept. */
     private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =

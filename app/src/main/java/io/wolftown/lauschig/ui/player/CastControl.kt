@@ -96,7 +96,7 @@ private fun DeviceTitleCastButton() {
 
 /** "Playing on Living Room TV" under the title, or what is true instead; a change is announced by TalkBack. */
 @Composable
-fun CastOutputLine(deviceName: String, activity: CastActivity = CastActivity.PLAYING, modifier: Modifier = Modifier) {
+fun CastOutputLine(deviceName: String, activity: CastActivity, modifier: Modifier = Modifier) {
     val named = deviceName.isNotBlank()
     val text = when (activity) {
         CastActivity.NONE -> return

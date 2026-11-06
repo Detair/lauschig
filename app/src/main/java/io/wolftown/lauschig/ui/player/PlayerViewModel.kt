@@ -80,7 +80,7 @@ data class PlayerScreenState(
     /** The Cast device that plays; null while the sound comes from this device. */
     val castDevice: String? = null,
     /** What it is doing, for the line under the title. */
-    val castActivity: CastActivity = CastActivity.PLAYING,
+    val castActivity: CastActivity = CastActivity.CONNECTED,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */

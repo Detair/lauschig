@@ -98,6 +98,20 @@ class CastOutputTest {
         assertEquals(ReceiverActivity.BUSY, runtime.activity())
     }
 
+    /** Minor 5: with no service running nothing publishes: the line says "connected", only the player can say that something plays. */
+    @Test fun aDeviceThatConnects_readsConnected_untilThePlayerSaysMore() {
+        assertEquals(CastActivity.CONNECTED, CastUi().activity)
+        assertEquals(CastActivity.CONNECTED, io.wolftown.lauschig.playback.PlayerUiState().outputActivity)
+        assertEquals(CastActivity.CONNECTED, io.wolftown.lauschig.ui.player.PlayerScreenState().castActivity)
+        val runtime = GmsCastRuntime(context, state)
+        state.update { it.copy(activity = CastActivity.NONE) }
+        runtime.sessions.onSessionStarted(anyCastSession(), "session")
+        assertEquals(CastActivity.CONNECTED, state.ui.value.activity)
+        state.update { it.copy(activity = CastActivity.PLAYING) }
+        runtime.sessions.onSessionEnded(anyCastSession(), 0)
+        assertEquals(CastActivity.CONNECTED, state.ui.value.activity)
+    }
+
     @Test fun noButton_withoutARoute_orWithACar() {
         assertFalse(CastUi().showButton)
         assertTrue(CastUi(routeAvailable = true).showButton)

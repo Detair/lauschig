@@ -199,14 +199,15 @@ class GmsCastRuntime @Inject constructor(
 
     private fun connected(session: CastSession) {
         suspended = false
-        state.update { it.copy(deviceName = session.castDevice?.friendlyName.orEmpty(), routeAvailable = true) }
+        // What it does is the player's to say, right after this if it is there.
+        state.update { it.copy(deviceName = session.castDevice?.friendlyName.orEmpty(), routeAvailable = true, activity = CastActivity.CONNECTED) }
         dropClient()
         client = session.remoteMediaClient?.also { it.registerCallback(mediaClientCallback) }
     }
 
     private fun disconnected() {
         suspended = false
-        state.update { it.copy(deviceName = null) }
+        state.update { it.copy(deviceName = null, activity = CastActivity.CONNECTED) }
         dropClient()
     }
 

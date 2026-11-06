@@ -34,8 +34,8 @@ data class CastUi(
     val deviceName: String? = null,
     /** A car is connected: playback stays on this device. */
     val carConnected: Boolean = false,
-    /** What [deviceName] is doing. */
-    val activity: CastActivity = CastActivity.PLAYING,
+    /** What [deviceName] is doing. Only the player can say that something plays; with no service running nothing does. */
+    val activity: CastActivity = CastActivity.CONNECTED,
 ) {
     val showButton: Boolean get() = routeAvailable && !carConnected
 }

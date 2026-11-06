@@ -42,7 +42,7 @@ data class PlayerUiState(
     /** The Cast device that plays; null while the sound comes from this device. */
     val outputName: String? = null,
     /** What [outputName] is doing, for the line under the title. */
-    val outputActivity: CastActivity = CastActivity.PLAYING,
+    val outputActivity: CastActivity = CastActivity.CONNECTED,
 )
 
 interface PlayerController {

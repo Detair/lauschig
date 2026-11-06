@@ -587,7 +587,13 @@ class CastOutputPlayer(
 
     // ---- What the receiver says.
 
-    override fun onReceiverStatus() = evaluate()
+    /**
+     * Posted: the framework tells this runtime before `RemoteCastPlayer`, whose index would still be the old file's while the
+     * position and the content id are the new one's already. Its news reaches the Cast player ahead of anything posted.
+     */
+    override fun onReceiverStatus() {
+        handler.post { evaluate() }
+    }
 
     override fun onReceiverError(detailedCode: Int?) {
         receiverError = detailedCode
@@ -755,6 +761,7 @@ class CastOutputPlayer(
      */
     private fun remember(c: CastTitle, active: Player) {
         if (!holdsPlaying(active) || !holdsOwn(c, active)) return
+        val wasTrusted = trusted(c)
         val index = receiverIndex(active)
         c.playWhenReady = active.playWhenReady
         val seek = seekAt
@@ -779,13 +786,15 @@ class CastOutputPlayer(
                 boundaryAt = null
             }
         }
-        if (boundaryAt == null || positionSane(active)) {
-            if (boundaryAt != null) boundaryAt = null
+        val atBoundary = boundaryAt != null
+        if (!atBoundary || positionSane(active)) {
+            boundaryAt = null
             val position = active.currentPosition.coerceAtLeast(0)
             // Media3 has not placed the item yet and only the content id says it is ours: its position may be a first status's 0.
             if (c.owns(active.currentMediaItem) || position >= c.positionMs - POSITION_SLACK_MS) c.positionMs = position
         }
-        invalidateState()
+        // A masked state shows the position it remembers, and a state that stops being masked has to say so.
+        if (atBoundary || !wasTrusted || !trusted(c)) invalidateState()
     }
 
     /** After a boundary: at most what can have been played since. After [DOUBT_MS] it is what the receiver says (a TV remote can jump too). */
@@ -897,13 +906,21 @@ class CastOutputPlayer(
         return when {
             phase == Phase.SUSPENDED && c != null -> masked(live, c)
             !onReceiver -> live
-            phase == Phase.ACTIVE && c != null && trusted(c) -> live
+            phase == Phase.ACTIVE && c != null && trusted(c) -> guarded(live, c)
             c != null -> masked(live, c)
             // Being left with nothing in it (a stop, a sign-out): whatever the receiver still reports is over.
             phase == Phase.LEAVING -> emptied(live)
             else -> live
         }
     }
+
+    /**
+     * A state's position is read when it is asked for, and the state before a change only at the change, when the Cast player has moved
+     * on. What the progress saves there (the old title's place) must not pair the file it stood at with a position of another one.
+     */
+    private fun guarded(live: SimpleBasePlayer.State, c: CastTitle): SimpleBasePlayer.State = live.buildUpon()
+        .setContentPositionMs(SimpleBasePlayer.PositionSupplier { if (trusted(c)) live.contentPositionMsSupplier.get() else c.positionMs })
+        .build()
 
     private fun masked(live: SimpleBasePlayer.State, c: CastTitle): SimpleBasePlayer.State {
         val playlist = c.local.mapIndexed { i, item ->

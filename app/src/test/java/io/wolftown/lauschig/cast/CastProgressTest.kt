@@ -203,6 +203,47 @@ class CastProgressTest {
         assertTrue(!progress()!!.isFinished)
     }
 
+    /** Minor 2 through the real tracker: the index's fallback to 0 for a status moves nothing, and what comes after it goes on. */
+    @Test fun aFallbackToIndexZero_doesNotReachTheProgress() {
+        output.setMediaItems(book, 1, 5_000)
+        output.prepare()
+        output.play()
+        settle()
+        onReceiver()
+        reported(60_000)
+        receiver.status(Player.STATE_READY, index = 0, position = 61_000, paused = false)
+        settle()
+        output.pause()
+        settle()
+        assertEquals(160.0, progress()!!.currentTimeSec, 0.01)
+        output.play()
+        settle()
+        receiver.status(Player.STATE_READY, index = 1, position = 62_000, paused = false)
+        settle()
+        output.pause()
+        settle()
+        assertEquals(162.0, progress()!!.currentTimeSec, 0.01)
+    }
+
+    /** The framework tells the runtime before Media3: the new file's position is there, Media3's index still the old file's. That pair is never saved. */
+    @Test fun aCrossing_heardBeforeMedia3HasIt_savesNoWrongPlace() {
+        playingHere(90_000)
+        onReceiver()
+        reported(99_000)
+        link.content = "li#2"
+        receiver.status(Player.STATE_READY, index = 1, position = 800)
+        output.onReceiverStatus()
+        settle()
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(800, output.currentPosition)
+        assertTrue(output.isPlaying)
+        val saved = progress()?.currentTimeSec ?: 99.0
+        assertTrue("saved $saved", saved >= 90.0)
+        output.pause()
+        settle()
+        assertEquals(100.8, progress()!!.currentTimeSec, 0.01)
+    }
+
     @Test fun aNewTitleOnTheReceiver_savesTheOldOneWhereItWas() {
         playingHere()
         onReceiver()
