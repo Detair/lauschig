@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cast.CastState
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
@@ -82,6 +83,10 @@ class PlayerControllerImpl(
     private val seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
     /** Whether [serverId] is the signed-in account. */
     private val isSignedIn: suspend (serverId: String) -> Boolean = { true },
+    /** The Cast device that plays (null: this device). */
+    private val outputName: Flow<String?> = emptyFlow(),
+    /** What the player should say about a cast (why it ended or did not start). */
+    private val outputMessages: Flow<Int> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -97,6 +102,7 @@ class PlayerControllerImpl(
         monitor: StreamMonitor,
         playbackSettings: PlaybackSettings,
         accounts: AccountStore,
+        cast: CastState,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -118,6 +124,8 @@ class PlayerControllerImpl(
         onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
         seekSteps = combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair),
         isSignedIn = { sid -> accounts.account.first()?.serverId == sid },
+        outputName = cast.ui.map { it.deviceName },
+        outputMessages = cast.messages,
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -161,12 +169,13 @@ class PlayerControllerImpl(
     private var throttled = false
     private var seekBack = PlaybackSettings.DEFAULT_SEEK_BACK
     private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
+    private var output: String? = null
 
     /** A fresh state for a new or no title; the settings it shows are kept. */
     private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =
         PlayerUiState(
             itemId = itemId, title = title, isStreaming = isStreaming, isLoading = isLoading, downloadThrottled = throttled,
-            seekBackSec = seekBack, seekForwardSec = seekForward,
+            seekBackSec = seekBack, seekForwardSec = seekForward, outputName = output,
         )
 
     init {
@@ -187,6 +196,8 @@ class PlayerControllerImpl(
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
         }
+        scope.launch { outputName.distinctUntilChanged().collect { name -> output = name; _state.update { it.copy(outputName = name) } } }
+        scope.launch { outputMessages.collect { message -> _state.update { it.copy(error = message) } } }
         // Only what the UI shows: a playing stream's stats change constantly but map to null.
         scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
         scope.launch { downloadThrottled.collect { t -> throttled = t; _state.update { it.copy(downloadThrottled = t) } } }
@@ -276,7 +287,8 @@ class PlayerControllerImpl(
             facade.play()
             refresh()
             watchDownloads(started)
-            if (!allLocal && !deviceTitle) onStreamStarted(serverId, itemId)
+            // A receiver loads from the server by itself: nothing here to download for it.
+            if (!allLocal && !deviceTitle && output == null) onStreamStarted(serverId, itemId)
         }
     }
 

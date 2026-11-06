@@ -56,6 +56,19 @@ class SleepTimerTest {
         assertEquals(1, chimes)
     }
 
+    /** The sound is elsewhere, and the keys steer the receiver: no tone at an unknown loudness from the phone. */
+    @Test fun chime_silentWhileCasting_theFadeStillRuns() {
+        player.state.value = player.state.value.copy(outputName = "Wohnzimmer")
+        timer.start(SleepMode.Minutes(1))
+        timer.step(31_000)
+        assertEquals(0, chimes)
+        timer.step(25_000)
+        assertEquals(true, player.volumes.any { it < 1f })
+        timer.step(10_000)
+        assertEquals(1, player.pauses)
+        assertEquals(1f, player.volumes.last())
+    }
+
     @Test fun chime_silentWhenTurnedOff() {
         chimeOn.value = false
         timer.start(SleepMode.Minutes(1))

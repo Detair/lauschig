@@ -143,7 +143,8 @@ class PlayerVolume(private val apply: (Float) -> Unit) {
         push()
     }
 
-    private fun push() = apply(requested * switchGain)
+    /** The output changed (a Cast receiver, back to this device): what is asked for applies there. */
+    fun push() = apply(requested * switchGain)
 }
 
 /**

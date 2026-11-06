@@ -135,7 +135,9 @@ class SleepTimer(
         // Near the end the poll of the controller is too coarse: read the player now.
         if ((machine.remainingMs(input()) ?: Long.MAX_VALUE) <= machine.fadeMs + 2 * tickMs) player.refreshNow()
         val effect = machine.tick(input(), deltaMs)
-        if (effect.playChime && chimeOn) chime.play()
+        // Not while casting: the sound is in another place, and this phone's media volume is out of reach of the keys (they steer the
+        // receiver), so a tone could come at any loudness in a quiet room. The receiver's fade says the same.
+        if (effect.playChime && chimeOn && s.outputName == null) chime.play()
         if (effect.pause) {
             player.pause()
             finish()

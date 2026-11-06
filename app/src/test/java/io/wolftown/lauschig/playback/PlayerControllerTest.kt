@@ -375,6 +375,8 @@ class PlayerControllerTest {
         onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
         seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
         isSignedIn: suspend (String) -> Boolean = { true },
+        outputName: Flow<String?> = emptyFlow(),
+        outputMessages: Flow<Int> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -393,7 +395,56 @@ class PlayerControllerTest {
         onlineBase = onlineBase,
         seekSteps = seekSteps,
         isSignedIn = isSignedIn,
+        outputName = outputName,
+        outputMessages = outputMessages,
     )
+
+    @Test fun theCastDevice_isInTheState_alsoAcrossANewTitle() = runTest {
+        val f = FakeFacade()
+        val name = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputName = name)
+        assertEquals(null, c.state.value.outputName)
+        name.value = "Wohnzimmer"
+        assertEquals("Wohnzimmer", c.state.value.outputName)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        assertEquals("Wohnzimmer", c.state.value.outputName)
+        name.value = null
+        assertEquals(null, c.state.value.outputName)
+    }
+
+    /** Why a cast ended stays readable until something plays again. */
+    @Test fun whatACastHasToSay_isThePlayersError_untilItPlaysAgain() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(io.wolftown.lauschig.R.string.cast_unreachable)
+        testScheduler.runCurrent()
+        assertEquals(io.wolftown.lauschig.R.string.cast_unreachable, c.state.value.error)
+        c.refreshNow()
+        assertEquals(io.wolftown.lauschig.R.string.cast_unreachable, c.state.value.error)
+        f.snap = f.snap.copy(isPlaying = true)
+        c.refreshNow()
+        assertEquals(null, c.state.value.error)
+    }
+
+    /** A receiver loads from the server itself: no download on play for it. */
+    @Test fun aTitleStartedWhileCasting_startsNoDownloadOnPlay() = runTest {
+        val f = FakeFacade()
+        val streamed = mutableListOf<String>()
+        val c = controller(
+            f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", onStreamStarted = { _, id -> streamed += id },
+            outputName = kotlinx.coroutines.flow.flowOf("Wohnzimmer"),
+        )
+        testScheduler.runCurrent()
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, f.setCalls)
+        assertEquals(emptyList<String>(), streamed)
+    }
 
     /** A page that outlived a switch: A's title would stream with B's token and write under A. */
     @Test fun play_aTitleOfAnotherAccountThanTheSignedInOne_doesNotStart() = runTest {

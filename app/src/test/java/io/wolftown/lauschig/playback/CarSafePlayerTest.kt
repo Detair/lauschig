@@ -157,4 +157,22 @@ class CarSafePlayerTest {
         }.map { it.name }
         assertEquals(emptyList<String>(), missing)
     }
+
+    /** A Cast receiver may not offer a volume; the fade has its owner in the service and must get there all the same. */
+    @Test fun withAVolumeOwner_theVolumeIsOfferedAlways_andGoesToTheOwner() {
+        val fake = Fake().apply { durations = emptyList() }
+        val written = mutableListOf<Float>()
+        val safe = CarSafePlayer(fake.player, 10_000, 30_000, PlayerVolume { written += it })
+        assertEquals(true, safe.isCommandAvailable(Player.COMMAND_SET_VOLUME))
+        assertEquals(true, safe.availableCommands.contains(Player.COMMAND_SET_VOLUME))
+        safe.volume = 0.25f
+        assertEquals(listOf(0.25f), written)
+        assertEquals(emptyList<Float>(), fake.directVolumes)
+    }
+
+    @Test fun withoutAnOwner_theVolumeCommandIsThePlayers() {
+        val fake = Fake().apply { durations = emptyList() }
+        val safe = CarSafePlayer(fake.player, 10_000, 30_000)
+        assertEquals(false, safe.isCommandAvailable(Player.COMMAND_SET_VOLUME))
+    }
 }

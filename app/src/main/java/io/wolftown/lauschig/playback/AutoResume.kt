@@ -125,7 +125,8 @@ class AutoResumer @Inject constructor(
         val go = policy.onDevicesAdded(
             devices,
             enabled = callback != null,
-            isPlayingOrLoading = s.isPlaying || s.isLoading,
+            // Headphones on this device say nothing about a receiver somewhere else.
+            isPlayingOrLoading = s.isPlaying || s.isLoading || s.outputName != null,
             lastPausedAt = last?.pausedAt,
             now = System.currentTimeMillis(),
             inCall = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_RINGTONE,

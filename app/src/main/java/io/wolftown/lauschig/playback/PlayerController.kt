@@ -38,6 +38,8 @@ data class PlayerUiState(
     /** The seek steps of the settings (back / forward buttons), whatever is loaded. */
     val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
     val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
+    /** The Cast device that plays; null while the sound comes from this device. */
+    val outputName: String? = null,
 )
 
 interface PlayerController {

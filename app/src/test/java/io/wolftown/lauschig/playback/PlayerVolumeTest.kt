@@ -21,4 +21,14 @@ class PlayerVolumeTest {
         volume.setSwitchGain(-1f)
         assertEquals(listOf(1f, 0f), applied)
     }
+
+    /** On a new output (a Cast receiver, back on this device) what is asked for applies there. */
+    @Test fun push_writesTheCurrentValueAgain() {
+        val written = mutableListOf<Float>()
+        val volume = PlayerVolume { written += it }
+        volume.request(0.5f)
+        written.clear()
+        volume.push()
+        assertEquals(listOf(0.5f), written)
+    }
 }
