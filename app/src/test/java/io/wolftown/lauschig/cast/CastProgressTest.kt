@@ -95,10 +95,9 @@ class CastProgressTest {
         settle()
     }
 
-    /** A progress report, and the player's second-by-second look at it. */
+    /** A status with the position, and the player's second-by-second look at it. */
     private fun reported(positionMs: Long) {
-        receiver.report(positionMs)
-        receiver.changed()
+        receiver.status(position = positionMs)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
         settle()
     }

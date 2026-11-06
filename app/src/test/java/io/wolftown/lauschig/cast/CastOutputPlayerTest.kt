@@ -40,7 +40,7 @@ import java.time.Duration
 class CastOutputPlayerTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val device = FakeDevice()
-    private val receiver = FakeReceiver()
+    private val receiver = FakeReceiver { now }
     private val sessions = FakeSessions()
     private val said = ArrayList<Int>()
     private val activities = ArrayList<CastActivity>()
@@ -107,9 +107,10 @@ class CastOutputPlayerTest {
         idle()
     }
 
-    /** The receiver plays on: a progress report, and the player's second-by-second look at it. */
+    /** The receiver plays on, and it is at [positionMs] two seconds after a status (the player looks once a second). */
     private fun playedTo(positionMs: Long) {
-        receiver.report(positionMs)
+        val moves = receiver.pwr && receiver.playback == Player.STATE_READY
+        receiver.status(position = if (moves) positionMs - 2_000 else positionMs)
         pass(2)
     }
 
@@ -204,7 +205,8 @@ class CastOutputPlayerTest {
         assertEquals(1.5f, output.playbackParameters.speed)
         receiver.loaded()
         idle()
-        receiver.report(6_000)
+        receiver.status(position = 6_000)
+        idle()
         assertEquals(Player.STATE_READY, output.playbackState)
         assertTrue(output.isPlaying)
         assertEquals(6_000, output.currentPosition)
@@ -255,9 +257,11 @@ class CastOutputPlayerTest {
         idle()
         assertEquals(60_000, output.currentPosition)
         assertFalse(output.isPlaying)
-        // The next progress report shows where it really is, without any further status.
-        receiver.report(61_000)
-        pass(2)
+        assertEquals("asked for a fresh status", 1, link.statusRequests)
+        // Only a new status can correct it.
+        receiver.status(position = 61_000)
+        output.onReceiverStatus()
+        idle()
         assertEquals(61_000, output.currentPosition)
         assertTrue(output.isPlaying)
     }
@@ -314,9 +318,10 @@ class CastOutputPlayerTest {
         assertEquals(1, output.currentMediaItemIndex)
         assertEquals(0, output.currentPosition)
         assertFalse(output.isPlaying)
-        // The next report: the new file really.
-        receiver.report(800)
-        pass(2)
+        // The next status: the new file really.
+        receiver.status(position = 800)
+        output.onReceiverStatus()
+        idle()
         assertEquals(1, output.currentMediaItemIndex)
         assertEquals(800, output.currentPosition)
         assertTrue(output.isPlaying)

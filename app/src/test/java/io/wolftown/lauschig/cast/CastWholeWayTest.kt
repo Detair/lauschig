@@ -119,7 +119,7 @@ class CastWholeWayTest {
         online.value = public.toHttpUrl()
         idle()
         assertEquals(1, receiver.sent.size)
-        receiver.report(40_000)
+        receiver.status(position = 40_000)
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
 
         // The cast ends: the title is back, paused, where it was, with the new address.

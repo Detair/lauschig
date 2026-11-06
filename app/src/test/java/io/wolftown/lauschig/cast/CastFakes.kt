@@ -65,8 +65,10 @@ internal abstract class FakeBase(private val info: DeviceInfo) : SimpleBasePlaye
             .setPlaybackParameters(PlaybackParameters(speed))
             .setPlaylist(list.mapIndexed { i, it -> MediaItemData.Builder("${uidPrefix()}-$i-${it.mediaId}").setMediaItem(it).setDurationUs(100_000_000L).setIsSeekable(true).build() })
         return if (list.isEmpty()) b.setPlaybackState(Player.STATE_IDLE).build()
-        else b.setPlaybackState(playback).setCurrentMediaItemIndex(index.coerceIn(0, list.lastIndex)).setContentPositionMs(PositionSupplier { position }).build()
+        else b.setPlaybackState(playback).setCurrentMediaItemIndex(index.coerceIn(0, list.lastIndex)).setContentPositionMs(PositionSupplier { positionNow() }).build()
     }
+
+    protected open fun positionNow(): Long = position
 
     protected open fun uidPrefix() = "p"
 
@@ -107,18 +109,20 @@ internal class FakeDevice : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE
 /**
  * What `RemoteCastPlayer` 1.11.1 does, in the orders the bytecode allows:
  * - Empty until a status shows the queue. A load moves nothing by itself.
- * - [position] is `lastReportedPositionMs`: only a progress report moves it ([report]), a new load does not, the end of a session
- *   does not.
+ * - While it has a client the position is `client.getApproximateStreamPosition()`: what the last status said, plus for a playing
+ *   receiver the time since then at its speed, up to the file's end. Only a new status corrects a wrong one. A load moves nothing
+ *   until its status, nor does the end of a session (`lastReportedPositionMs` counts only with no client, and only here does it stand still).
  * - The index only moves with a status ([status]), and that status may come before the queue, at index 0 of N, or at position 0.
  * - [pwr] is `!isPaused`: true while idle, whatever was asked before the status.
  * - Speed at most 2×, reset by every load.
  */
 @OptIn(UnstableApi::class)
-internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(20).build()) {
+internal class FakeReceiver(private val clock: () -> Long = { 0L }) : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(20).build()) {
     /** Every queue sent to the receiver. */
     val sent = ArrayList<Sent>()
     data class Sent(val items: List<MediaItem>, val index: Int, val position: Long, val playWhenReady: Boolean)
     private var queueShown = false
+    private var positionAt = 0L
     var volumeCommand = true
     var replaced = 0
 
@@ -132,9 +136,33 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
     override fun shown(): List<MediaItem> = if (queueShown) items else emptyList()
     override fun uidPrefix() = "rx"
 
+    override fun positionNow(): Long {
+        if (!queueShown || playback != Player.STATE_READY || !pwr) return position
+        val played = position + ((clock() - positionAt) * speed).toLong()
+        return played.coerceAtMost(maxOf(position, FILE_MS))
+    }
+
+    /** From here on the position counts from what it is now. */
+    private fun fix(at: Long = positionNow()) {
+        position = at
+        positionAt = clock()
+    }
+
+    override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        fix()
+        return super.handleSetPlayWhenReady(playWhenReady)
+    }
+
+    override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
+        val done = super.handleSeek(mediaItemIndex, positionMs, seekCommand)
+        fix(positionMs)
+        return done
+    }
+
     override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
         val i = startIndex.coerceAtLeast(0)
         val p = startPositionMs.coerceAtLeast(0)
+        fix()
         sent += Sent(mediaItems, i, p, pwr)
         items = mediaItems
         queueShown = false
@@ -144,10 +172,10 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
 
     /** A status: the receiver holds the queue, in [state], at what it says. Nulls keep the last values. */
     fun status(state: Int = Player.STATE_READY, index: Int? = null, position: Long? = null, paused: Boolean? = null) {
+        fix(position ?: positionNow())
         queueShown = true
         playback = state
         index?.let { this.index = it }
-        position?.let { this.position = it }
         paused?.let { pwr = !it }
         changed()
     }
@@ -155,14 +183,12 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
     /** The load arrived as it should: the first status names the start file and position. */
     fun loaded(state: Int = Player.STATE_READY) {
         val s = sent.last()
-        speed = 1f
         status(state, s.index, s.position, paused = !s.playWhenReady)
+        speed = 1f
     }
 
-    /** A progress report: no event, the player just answers with it. */
-    fun report(positionMs: Long) { position = positionMs }
-
     fun queueGone() {
+        fix()
         queueShown = false
         playback = Player.STATE_IDLE
         pwr = true
@@ -170,9 +196,10 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
     }
 
     /** With no session this does nothing to the receiver: the receiver plays on, only this player's state goes idle. */
-    override fun handleStop(): ListenableFuture<*> { playback = Player.STATE_IDLE; return Futures.immediateVoidFuture() }
+    override fun handleStop(): ListenableFuture<*> { fix(); playback = Player.STATE_IDLE; return Futures.immediateVoidFuture() }
     override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
     override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<*> {
+        fix()
         speed = playbackParameters.speed.coerceIn(0.5f, 2f)
         return Futures.immediateVoidFuture()
     }
@@ -181,6 +208,11 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
     override fun handleSetVolume(volume: Float, volumeOperationType: Int): ListenableFuture<*> { volumes += volume; return Futures.immediateVoidFuture() }
     val deviceVolumes = ArrayList<Int>()
     override fun handleSetDeviceVolume(deviceVolume: Int, flags: Int): ListenableFuture<*> { deviceVolumes += deviceVolume; return Futures.immediateVoidFuture() }
+
+    private companion object {
+        /** [FakeBase]'s duration of an item. */
+        const val FILE_MS = 100_000L
+    }
 }
 
 /** Media3's `CastPlayer` (`CastPlayerImpl.updateActivePlayer`), line by line, with a session that a test starts and ends. */
