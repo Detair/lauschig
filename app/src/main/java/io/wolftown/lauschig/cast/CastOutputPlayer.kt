@@ -51,8 +51,9 @@ import kotlin.math.abs
  *   boundary or a doubt: nothing ends, and a doubt that lasts [DOUBT_MS] leaves the title paused, with the play button loading it.
  * - **A load failure ends the cast**, with the reason said plainly; paused here, position kept.
  * - **A suspended session leaves the receiver alone.** The phone's Wi-Fi drops, Media3 moves to the device, and the receiver plays
- *   on. The player then shows neither playing nor paused (buffering, on the receiver), makes no sound and sends nothing: nothing
- *   here can reach the TV. On resume it finds out what the receiver does, and takes that over without any load.
+ *   on. The player then shows neither playing nor paused (buffering, on the receiver), makes no sound, prepares no stream and sends
+ *   nothing: nothing here can reach the TV. On resume it finds out what the receiver does, and takes that over; only a failure or
+ *   silence loads again.
  *
  * Main thread only.
  */
@@ -76,6 +77,9 @@ class CastOutputPlayer(
     private class CastTitle(val serverId: String, val key: String, var local: List<MediaItem>, var index: Int, var positionMs: Long, var playWhenReady: Boolean, var speed: Float) {
         /** It plays on here once back on the device: only if a person took it back in the system's output switcher, or it never left. */
         var resumeOnDevice = false
+
+        /** What it was on the receiver when it left there: a resume goes back to that. */
+        var left = Phase.NONE
 
         fun owns(item: MediaItem?) = item?.titleKey() == (serverId to key)
     }
@@ -102,7 +106,10 @@ class CastOutputPlayer(
         /** The connection is lost for now and the receiver may play on. Media3 is on the device, which stays silent. */
         SUSPENDED,
 
-        /** The Cast session is ending; the title goes back to the device. */
+        /**
+         * The Cast session is ending; the title goes back to the device. Also with Media3 on the device already, once another title
+         * took over from a suspended cast: then only a play waits for the end, see [otherTitleHere].
+         */
         LEAVING,
     }
 
@@ -123,6 +130,8 @@ class CastOutputPlayer(
 
     /** The title that went to the device with the Cast session not over yet: a suspend may come back for it. */
     private var kept: CastTitle? = null
+    /** The framework said the session is over. It may say so before Media3's transfer (a TV switched off), which then keeps nothing. */
+    private var sessionOver = false
     /** The session of the title on the receiver. Closed when the cast ends or anything is loaded anew. */
     private var session: OpenCastSession? = null
     /** Bumped by every new load and every end: a session that opens too late is closed again. */
@@ -179,11 +188,12 @@ class CastOutputPlayer(
     // ---- The way there and back: called by Media3's CastPlayer right before it changes the active player.
 
     override fun transferState(sourcePlayer: Player, targetPlayer: Player) {
-        if (sourcePlayer === device) toReceiver() else toDevice()
+        if (sourcePlayer === device) toReceiver() else toDevice(sourcePlayer)
     }
 
     private fun toReceiver() {
         receiverError = null
+        sessionOver = false
         val back = kept?.takeIf { it.owns(device.currentMediaItem) }
         kept = null
         if (back != null) {
@@ -220,7 +230,7 @@ class CastOutputPlayer(
      * The position is the one the player remembered, never `source.currentPosition`: `RemoteCastPlayer` answers with its last
      * report there, which survives a session and may be a previous cast's.
      */
-    private fun toDevice() {
+    private fun toDevice(source: Player) {
         generation++
         stopJobs()
         val c = cast
@@ -230,24 +240,36 @@ class CastOutputPlayer(
         loadSent = false
         pendingSeek = false
         if (c == null) return
+        c.left = was
         playingUntil = if (was == Phase.ACTIVE && c.playWhenReady) clock() + TAKE_BACK_WINDOW_MS else null
-        putOnDevice(c)
-        kept = c
-        if (link.isSuspended()) suspended(c)
+        when {
+            sessionOver -> putOnDevice(c)
+            link.isSuspended() -> {
+                kept = c
+                putOnDevice(c, prepare = false)
+                // Media3 prepares the device after this unless the source is idle, and stops the source anyway: this only comes first.
+                source.stop()
+                suspended(c)
+            }
+            else -> {
+                putOnDevice(c)
+                kept = c
+            }
+        }
         handler.post { onOutputChanged() }
     }
 
-    private fun putOnDevice(c: CastTitle) {
+    private fun putOnDevice(c: CastTitle, prepare: Boolean = true) {
         device.setPlaybackParameters(PlaybackParameters(c.speed))
         device.setMediaItems(c.local, c.index.coerceIn(0, (c.local.size - 1).coerceAtLeast(0)), c.positionMs)
-        device.playWhenReady = c.resumeOnDevice
-        device.prepare()
+        device.playWhenReady = prepare && c.resumeOnDevice
+        if (prepare) device.prepare()
     }
 
     override fun onCastTakenBack() {
         val c = cast
-        if (onReceiver && c != null) {
-            // Before the session's end: it goes with the title.
+        if (casting && c != null) {
+            // Before the session's end: it goes with the title. Nothing sounds here while the receiver may play on.
             c.resumeOnDevice = c.playWhenReady
             return
         }
@@ -257,16 +279,57 @@ class CastOutputPlayer(
     }
 
     override fun onCastSessionEnded() {
+        sessionOver = true
         session?.let(sessions::close)
         session = null
         kept = null
         if (phase == Phase.SUSPENDED) {
             stopJobs()
+            val c = cast
             cast = null
             phase = Phase.NONE
+            // Now it really is back. A phone without a network fails here, and the player keeps the reason it was told first.
+            if (c != null) {
+                device.playWhenReady = c.resumeOnDevice
+                device.prepare()
+            }
             invalidateState()
             handler.post { onOutputChanged() }
+        } else if (phase == Phase.LEAVING && !onReceiver) {
+            endHold()
         }
+    }
+
+    /**
+     * Another title while suspended: nothing can reach the receiver, and what the person reads is that it waits here. So it does: the
+     * `play()` that belongs to the same request starts nothing, until the framework says the session is over, or [HOLD_MS] if it
+     * never says. A press after that plays. Everything else already is the device's.
+     */
+    private fun otherTitleHere(other: CastTitle) {
+        say(R.string.cast_suspended_title_here)
+        generation++
+        stopJobs()
+        session?.let(sessions::close)
+        session = null
+        kept = null
+        cast = null
+        phase = Phase.LEAVING
+        putOnDevice(other)
+        invalidateState()
+        watchdog = scope.launch {
+            delay(HOLD_MS)
+            if (phase == Phase.LEAVING && !onReceiver) endHold()
+        }
+        handler.post {
+            link.endSession(stopReceiver = true)
+            onOutputChanged()
+        }
+    }
+
+    private fun endHold() {
+        stopJobs()
+        phase = Phase.NONE
+        invalidateState()
     }
 
     // ---- A suspended session.
@@ -280,6 +343,9 @@ class CastOutputPlayer(
         if (phase == Phase.SUSPENDED) return
         cast = c
         phase = Phase.SUSPENDED
+        // The title waits on the device for the way back, not prepared: it may all come back, and a phone without a network has no stream to load.
+        device.playWhenReady = false
+        device.stop()
         watchdog?.cancel()
         // The framework may never say: a phone that stays away gives up. Closing the session also stops a receiver out of reach, at its next read.
         watchdog = scope.launch {
@@ -293,11 +359,23 @@ class CastOutputPlayer(
         invalidateState()
     }
 
-    /** The session is back. What the receiver does is the question: it played on, so nothing is sent until it has answered. */
+    /**
+     * The session is back. What the receiver does is the question: it played on, so nothing is sent until it has answered. Only a
+     * failure or silence may send again. The status may be the old one for a moment: a client may keep it through a suspend, and what
+     * the fresh one says then is handled like anywhere else.
+     */
     private fun resume(c: CastTitle) {
         stopJobs()
         device.playWhenReady = false
         cast = c
+        c.resumeOnDevice = false
+        handler.post { link.requestStatus() }
+        // It held nothing of ours before the suspend: it goes back to that, and only a press loads.
+        when (c.left) {
+            Phase.ENDED -> return ended(c)
+            Phase.STOPPED -> return toStopped(c)
+            else -> Unit
+        }
         phase = Phase.RESUMING
         loadSent = false
         pendingSeek = false
@@ -308,7 +386,6 @@ class CastOutputPlayer(
         sentIndex = c.index
         sentPositionMs = c.positionMs
         sentAt = clock()
-        handler.post { link.requestStatus() }
         watchdog = scope.launch {
             delay(RESUME_PROOF_MS)
             if (phase == Phase.RESUMING && cast === c) {
@@ -515,7 +592,12 @@ class CastOutputPlayer(
                     if (startProven(c, active)) becomeActive(c, active, fromReceiver = false) else askForStatus()
             }
             Phase.RESUMING -> when {
-                activity == ReceiverActivity.FAILED || activity == ReceiverActivity.FINISHED || activity == ReceiverActivity.STOPPED -> sendAgain(c)
+                activity == ReceiverActivity.FAILED -> sendAgain(c)
+                // Stopped or played out during the gap: nothing here restarts a TV.
+                activity == ReceiverActivity.STOPPED -> toStopped(c)
+                activity == ReceiverActivity.FINISHED -> if (atTheEnd(c)) ended(c) else toStopped(c)
+                // Another sender's title is no silence.
+                holdsPlaying(active) && link.contentId()?.startsWith("${c.key}#") == false -> toStopped(c)
                 holdsPlaying(active) && c.owns(active.currentMediaItem) && resumeProven(active) -> becomeActive(c, active, fromReceiver = true)
             }
             Phase.ACTIVE -> when {
@@ -782,13 +864,10 @@ class CastOutputPlayer(
                 if (sameTitle && c != null) {
                     if (local.isNotEmpty()) {
                         c.local = local
-                        putOnDevice(c)
+                        putOnDevice(c, prepare = false)
                     }
                 } else {
-                    // Nothing can reach the receiver, and nothing starts by itself: it waits here, and the cast is over.
-                    say(R.string.cast_suspended_title_here)
-                    putOnDevice(CastTitle(key.first, key.second, mediaItems, index, position, playWhenReady = false, speed = c?.speed ?: 1f))
-                    leave()
+                    otherTitleHere(CastTitle(key.first, key.second, mediaItems, index, position, playWhenReady = false, speed = c?.speed ?: 1f))
                 }
             }
             DeviceLibrary.isLocal(key.first, key.second) -> {
@@ -811,6 +890,7 @@ class CastOutputPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (playWhenReady && phase == Phase.LEAVING && !onReceiver) return Futures.immediateVoidFuture()
         val c = cast
         if (!casting || c == null) return super.handleSetPlayWhenReady(playWhenReady)
         // Suspended, nothing can reach the receiver, and a press here would be a pretence (or sound on both).
@@ -903,6 +983,8 @@ class CastOutputPlayer(
             playWhenReady = false
             resumeOnDevice = false
         }
+        // A stopped player is not prepared, and a sign-out goes on to clear it: the title stays on the device as it is.
+        if (phase == Phase.SUSPENDED) cast = null
         endCast()
         return Futures.immediateVoidFuture()
     }
@@ -919,6 +1001,7 @@ class CastOutputPlayer(
         val wasCasting = casting
         generation++
         stopJobs()
+        cast = null
         onCastSessionEnded()
         if (wasCasting) link.endSession(stopReceiver = true)
         return super.handleRelease()
@@ -945,6 +1028,8 @@ class CastOutputPlayer(
         const val FINISHED_TOLERANCE_MS = 15_000L
         /** Between "this phone" in the system's output switcher and the session's end, in whichever order they arrive. */
         const val TAKE_BACK_WINDOW_MS = 15_000L
+        /** See [otherTitleHere]. */
+        const val HOLD_MS = 5_000L
         /** The same title set again at about the same position (new sources) is no seek. */
         const val SAME_POSITION_MS = 3_000L
         const val SPEED_SLACK = 0.001f

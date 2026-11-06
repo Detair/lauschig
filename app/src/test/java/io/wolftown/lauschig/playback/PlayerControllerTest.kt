@@ -464,6 +464,40 @@ class PlayerControllerTest {
         assertEquals(null, c.state.value.outputName)
     }
 
+    /** A phone that lost its network loses its Cast session, and then the title's stream too: why it all stopped is the reason it has. */
+    @Test fun aStreamThatFailsRightAfterADroppedCast_keepsTheReason() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        said.tryEmit(R.string.cast_suspended_title_here)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_suspended_title_here, c.state.value.error)
+    }
+
+    @Test fun aStreamThatFails_withNoCastBehindIt_saysSo() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_unreachable)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+    }
+
     /** Why a cast ended stays readable until something plays again. */
     @Test fun whatACastHasToSay_isThePlayersError_untilItPlaysAgain() = runTest {
         val f = FakeFacade()

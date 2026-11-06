@@ -744,6 +744,7 @@ class CastOutputPlayerTest {
         idle()
         assertEquals(CastActivity.SUSPENDED, activities.last())
         assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        assertEquals("no stream on this device", Player.STATE_IDLE, device.playback)
         resumeSession()
         receiver.status(Player.STATE_READY, index = 1, position = 40_000, paused = false)
         idle()
@@ -756,7 +757,7 @@ class CastOutputPlayerTest {
         playedTo(30_000)
         suspendSession()
         resumeSession()
-        status(ReceiverActivity.STOPPED)
+        status(ReceiverActivity.FAILED)
         assertEquals(2, receiver.sent.size)
         assertEquals(30_000, receiver.sent.last().position)
         assertEquals(1, receiver.sent.last().index)
@@ -775,6 +776,230 @@ class CastOutputPlayerTest {
         pass(3)
         assertEquals(2, receiver.sent.size)
         assertEquals(30_000, receiver.sent.last().position)
+    }
+
+    // ---- R2: only a failure or silence sends again. A client may keep its old status through a suspend, or not: both are here.
+
+    /** Stopped at the TV during the gap: a client without a status hears it first, and nothing restarts. */
+    @Test fun aResume_whereItWasStoppedOnPurpose_startsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        status(ReceiverActivity.STOPPED)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertFalse(output.playWhenReady)
+        assertEquals(30_000, output.currentPosition)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        // A press loads, as after any stop.
+        output.play()
+        idle()
+        assertEquals(2, receiver.sent.size)
+        assertEquals(30_000, receiver.sent.last().position)
+        assertTrue(receiver.sent.last().playWhenReady)
+    }
+
+    /** The same with a client that kept its old status: the title looks alive, until the fresh status says otherwise. */
+    @Test fun aResume_withTheOldStatusKept_thenStopped_startsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        receiver.status(position = 30_000)
+        output.onReceiverStatus()
+        idle()
+        assertEquals("the old status is enough to go on", 1, receiver.sent.size)
+        status(ReceiverActivity.STOPPED)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertFalse(output.playWhenReady)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+    }
+
+    @Test fun aResume_whereItPlayedToTheEnd_isTheEnd_andStartsNothing() {
+        onReceiverNow()
+        playedTo(90_000)
+        suspendSession()
+        resumeSession()
+        status(ReceiverActivity.FINISHED)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        assertFalse(output.playWhenReady)
+    }
+
+    @Test fun aResume_withFinishedElsewhere_isStopped_andStartsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        status(ReceiverActivity.FINISHED)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertFalse(output.playWhenReady)
+        assertEquals(30_000, output.currentPosition)
+    }
+
+    @Test fun aResume_withTheOldStatusKept_thenFinishedElsewhere_startsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        receiver.status(position = 30_000)
+        output.onReceiverStatus()
+        idle()
+        status(ReceiverActivity.FINISHED)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertFalse(output.playWhenReady)
+    }
+
+    /** Another sender's title after the gap is no silence: it plays, and it stays. */
+    @Test fun aResume_withAnotherSendersTitle_sendsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        link.content = "someone-elses-title"
+        receiver.status(position = 1_000)
+        output.onReceiverStatus()
+        idle()
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertFalse(output.playWhenReady)
+    }
+
+    /** A title stopped before the suspend goes back to that, whichever status the client has: only a press loads. */
+    @Test fun aTitleThatWasStoppedBeforeTheSuspend_goesBackToThat_withoutALoad() {
+        onReceiverNow()
+        status(ReceiverActivity.STOPPED)
+        suspendSession()
+        assertEquals(CastActivity.SUSPENDED, activities.last())
+        resumeSession()
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertFalse(output.playWhenReady)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        output.play()
+        idle()
+        assertEquals(2, receiver.sent.size)
+    }
+
+    @Test fun aTitleThatHadEndedBeforeTheSuspend_goesBackToThat_withoutALoad() {
+        onReceiverNow()
+        playedTo(90_000)
+        status(ReceiverActivity.FINISHED)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        suspendSession()
+        link.now = ReceiverActivity.BUSY
+        resumeSession()
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        pass(12)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+    }
+
+    // ---- M1: while suspended no stream is prepared here: it may all come back, and the phone may have no network.
+
+    @Test fun whileSuspended_nothingIsPreparedHere_untilTheTitleReallyComesBack() {
+        onReceiverNow()
+        playedTo(30_000)
+        val prepared = device.prepared
+        suspendSession()
+        pass(5)
+        assertEquals("no stream on this device", prepared, device.prepared)
+        assertEquals(Player.STATE_IDLE, device.playback)
+        assertEquals(2, output.mediaItemCount)
+        assertEquals(30_000, output.currentPosition)
+        assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        output.onCastSessionEnded()
+        idle()
+        assertEquals(prepared + 1, device.prepared)
+        assertEquals(book, device.items)
+        assertEquals(1, device.index)
+        assertEquals(30_000, device.position)
+        assertEquals(Player.STATE_READY, device.playback)
+        assertFalse(device.pwr)
+    }
+
+    /** Back again: the receiver goes on, and nothing was ever prepared here. */
+    @Test fun aSuspendThatComesBack_preparedNothingHere() {
+        onReceiverNow()
+        playedTo(30_000)
+        val prepared = device.prepared
+        suspendSession()
+        resumeSession()
+        receiver.status(position = 40_000)
+        output.onReceiverStatus()
+        idle()
+        assertEquals(prepared, device.prepared)
+        assertEquals(1, receiver.sent.size)
+        assertTrue(output.isPlaying)
+    }
+
+    @Test fun whileSuspended_newSources_areForTheWayBack_andPrepareNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        val downloaded = listOf(localItem("srv", "li", 1, "file:///d/1.mp3"), localItem("srv", "li", 2, "file:///d/2.mp3"))
+        output.setMediaItems(downloaded, 1, 30_000)
+        output.replaceMediaItem(0, localItem("srv", "li", 1, "file:///d/1b.mp3"))
+        idle()
+        assertEquals(Player.STATE_IDLE, device.playback)
+        output.onCastSessionEnded()
+        idle()
+        assertEquals("file:///d/1b.mp3", device.items[0].localConfiguration!!.uri.toString())
+        assertEquals("file:///d/2.mp3", device.items[1].localConfiguration!!.uri.toString())
+    }
+
+    @Test fun aStopWhileSuspended_leavesTheTitleHere_notPrepared() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        val prepared = device.prepared
+        output.stop()
+        idle()
+        assertEquals(prepared, device.prepared)
+        assertEquals(book, device.items)
+        assertEquals(30_000, device.position)
+        assertFalse(device.pwr)
+    }
+
+    // ---- Minor 4.
+
+    /** "This phone" during a suspend: no sound that cannot be paused; the session's end brings it here, playing, as it was asked. */
+    @Test fun thePhonesOutputSwitcher_whileSuspended_makesNoSound_untilTheSessionEnds() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        output.onCastTakenBack()
+        idle()
+        assertFalse(device.pwr)
+        output.onCastSessionEnded()
+        idle()
+        assertTrue(device.pwr)
+        assertEquals(30_000, device.position)
+        output.pause()
+        idle()
+        assertFalse(device.pwr)
+    }
+
+    @Test fun thePhonesOutputSwitcher_whileSuspended_isForgottenIfTheSessionComesBack() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        output.onCastTakenBack()
+        resumeSession()
+        receiver.status(position = 40_000)
+        output.onReceiverStatus()
+        idle()
+        ended()
+        assertFalse(device.pwr)
     }
 
     @Test fun aPausedCast_staysPausedAcrossASuspend() {
@@ -833,20 +1058,114 @@ class CastOutputPlayerTest {
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
     }
 
+    /** The app's path: the items, a prepare, and the play that belongs to them. The text says it waits here, so it does; a person's press afterwards plays. */
     @Test fun anotherTitleWhileSuspended_waitsHere_paused_andTheCastEnds() {
         onReceiverNow()
         suspendSession()
         val other = listOf(localItem("srv", "other", 1))
         output.setMediaItems(other, 0, 1_000)
+        output.prepare()
         output.play()
+        assertFalse("the play of the same request starts nothing", device.pwr)
         idle()
         assertEquals(listOf(R.string.cast_suspended_title_here), said)
         assertEquals(other, device.items)
+        assertEquals(1_000, device.position)
+        assertFalse(device.pwr)
+        assertFalse(output.playWhenReady)
         assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(listOf(true), link.ends)
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        // The framework has said the session is over.
+        output.play()
+        idle()
+        assertTrue(device.pwr)
+        assertEquals(1, receiver.sent.size)
     }
 
-    /** A new Cast session on another day: what the old one left does not come back. */
+    /** The framework may never say: a short bound, and then a press plays. */
+    @Test fun anotherTitleWhileSuspended_andTheFrameworkSaysNothing_aPressPlaysAfterTheBound() {
+        link.onEnd = {}
+        onReceiverNow()
+        suspendSession()
+        val other = listOf(localItem("srv", "other", 1))
+        output.setMediaItems(other, 0, 1_000)
+        output.prepare()
+        output.play()
+        idle()
+        assertFalse(device.pwr)
+        pass(3)
+        output.play()
+        idle()
+        assertFalse("still the hold", device.pwr)
+        pass(3)
+        output.play()
+        idle()
+        assertTrue(device.pwr)
+        output.pause()
+        idle()
+        assertFalse(device.pwr)
+    }
+
+    /** A seek or a pause in the hold is the device's: only a play waits. */
+    @Test fun anotherTitleWhileSuspended_aSeekInTheHold_isTheDevices() {
+        link.onEnd = {}
+        onReceiverNow()
+        suspendSession()
+        output.setMediaItems(listOf(localItem("srv", "other", 1), localItem("srv", "other", 2)), 0, 1_000)
+        output.seekTo(1, 2_000)
+        idle()
+        assertEquals(1, device.index)
+        assertEquals(2_000, device.position)
+    }
+
+    // ---- R4: a new Cast session on another day: what the old one left does not come back.
+
+    private fun aNewCastAfterAnEnd_startsFromHere_inTheStateHere(end: () -> Unit) {
+        onReceiverNow()
+        playedTo(30_000)
+        end()
+        idle()
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(30_000, device.position)
+        // An hour on this device: another file, another position, paused again.
+        output.seekTo(0, 77_000)
+        output.play()
+        idle()
+        output.pause()
+        idle()
+        connect()
+        assertEquals("loaded at once, no resume that waits", 2, receiver.sent.size)
+        assertEquals(0, receiver.sent.last().index)
+        assertEquals(77_000, receiver.sent.last().position)
+        assertFalse(receiver.sent.last().playWhenReady)
+        assertEquals(0, output.currentMediaItemIndex)
+        assertEquals(77_000, output.currentPosition)
+        assertFalse(output.playWhenReady)
+    }
+
+    @Test fun aNewCastAfterAnEnd_theTransferFirst_startsFromHere() = aNewCastAfterAnEnd_startsFromHere_inTheStateHere { ended() }
+
+    /** The TV switched off, or stopped there: no `onSessionEnding`, the runtime's listener hears the end before Media3's transfer. */
+    @Test fun aNewCastAfterAnEnd_theEndFirst_startsFromHere() = aNewCastAfterAnEnd_startsFromHere_inTheStateHere {
+        output.onCastSessionEnded()
+        cast.sessionAvailable(false)
+    }
+
+    /** An end before the transfer still leaves the title here, and closes its session once. */
+    @Test fun anEndBeforeTheTransfer_leavesTheTitleHere() {
+        onReceiverNow()
+        playedTo(30_000)
+        output.onCastSessionEnded()
+        cast.sessionAvailable(false)
+        idle()
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(book, device.items)
+        assertEquals(1, device.index)
+        assertEquals(30_000, device.position)
+        assertFalse(device.pwr)
+    }
+
     @Test fun aNewCastAfterARealEnd_startsFromTheDevice() {
         onReceiverNow()
         playedTo(30_000)

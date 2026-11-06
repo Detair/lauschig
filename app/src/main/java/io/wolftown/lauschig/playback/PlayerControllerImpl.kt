@@ -186,7 +186,8 @@ class PlayerControllerImpl(
         facade.setOnChange { refresh() }
         facade.setOnError { code ->
             starting = false
-            _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
+            // A phone that lost its network also loses its stream once a dropped cast's title is back here: why it stopped is the reason it has.
+            _state.update { it.copy(isPlaying = false, isLoading = false, error = it.error?.takeIf(CAST_LOST::contains) ?: R.string.error_playback_failed) }
             // A stream that ran dry at an old address (home LAN, now in the car): move to the new one. It plays on only
             // because ExoPlayer still wants to (playWhenReady survives the error); nothing here ever starts playback.
             if (code in IO_ERRORS && facade.streamBase() != null) applyPendingBase()
@@ -663,5 +664,7 @@ class PlayerControllerImpl(
         const val STOP_SETTLE_MS = 300L
         /** `PlaybackException.ERROR_CODE_IO_*`: the source could not be read (network gone, address unreachable, 4xx/5xx). */
         val IO_ERRORS = 2000..2999
+        /** The messages of a cast that lost its connection. */
+        val CAST_LOST = setOf(R.string.cast_dropped, R.string.cast_suspended_title_here)
     }
 }
