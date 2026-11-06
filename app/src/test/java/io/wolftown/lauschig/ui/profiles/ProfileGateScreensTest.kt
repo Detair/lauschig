@@ -253,11 +253,19 @@ class ProfileGateScreensTest {
         rule.onNodeWithText("This keeps children from switching to this profile. It does not protect against someone with full access to the device.").assertExists()
     }
 
+    /** The review's C1 and M3: what the protection does not hold against is said where it is chosen. */
+    @Test fun theChoice_saysWhoStillGetsIn() {
+        showChoice()
+        rule.onNodeWithText("With SSO the app asks for a fresh login. A provider may ignore that, and a password saved in the browser can be filled in.").assertExists()
+        rule.onNodeWithText("Anyone who can unlock the device gets in here too.").assertExists()
+    }
+
     @Test fun theChoice_withoutADeviceLock_greyed_withAHint() {
         showChoice(device = false)
         rule.onNodeWithTag("protection:DEVICE").assertIsNotEnabled().performClick()
         assertTrue(calls.isEmpty())
         rule.onNodeWithText("This device has no screen lock.").assertExists()
+        rule.onNodeWithText("Anyone who can unlock the device gets in here too.").assertDoesNotExist()
     }
 
     /** I1 of Task 2: on the node that was there before. */

@@ -292,13 +292,14 @@ class SetupViewModel(
         }
         if (needsCleartextConfirmation(listOfNotNull(local, public), ::loginWithSso)) return
         _state.update { it.copy(loading = true, error = null) }
-        val flow = OidcFlowContext(
-            local = local?.toString(), public = public?.toString(),
-            ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
-            addProfile = s.addProfile,
-            unlockServerId = s.unlockServerId,
-        )
         viewModelScope.launch {
+            val flow = OidcFlowContext(
+                local = local?.toString(), public = public?.toString(),
+                ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
+                addProfile = s.addProfile,
+                unlockServerId = s.unlockServerId,
+                freshLogin = needsFreshLogin(s),
+            )
             var failure = SetupError.UNREACHABLE
             for (url in listOfNotNull(public, local)) {
                 when (val r = oidc.start(url, flow)) {
@@ -312,6 +313,20 @@ class SetupViewModel(
             }
             fail(failure)
         }
+    }
+
+    /**
+     * The browser may still have a session at the provider, of whoever signed in here last, and it would answer without a word.
+     * That walks past the protection of a profile, and it signs the wrong person in. So: on the way of a forgotten PIN, for one more
+     * profile, and whenever other profiles are on the device. A single account's sign-in and re-auth stay as they were. Who else
+     * is on the device cannot be read: the stricter way.
+     */
+    private suspend fun needsFreshLogin(s: SetupUiState): Boolean = s.addProfile || s.unlockServerId != null || try {
+        accounts.saved.first().isNotEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        true
     }
 
     /** The screen has handed the URL to the Custom Tab. */

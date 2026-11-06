@@ -1094,6 +1094,8 @@
     <string name="profiles_protect_pin">App PIN</string>
     <string name="profiles_protect_no_device_lock">This device has no screen lock.</string>
     <string name="profiles_protect_note">This keeps children from switching to this profile. It does not protect against someone with full access to the device.</string>
+    <string name="profiles_protect_sso">With SSO the app asks for a fresh login. A provider may ignore that, and a password saved in the browser can be filled in.</string>
+    <string name="profiles_protect_device_hint">Anyone who can unlock the device gets in here too.</string>
     <string name="profiles_protect_save_failed">The protection could not be saved. Nothing has changed.</string>
     <string name="profiles_device_title">Profile %1$s</string>
     <string name="profiles_device_subtitle">Confirm with your screen lock</string>

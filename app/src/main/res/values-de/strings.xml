@@ -1094,6 +1094,8 @@
     <string name="profiles_protect_pin">App-PIN</string>
     <string name="profiles_protect_no_device_lock">Dieses Gerät hat keine Bildschirmsperre.</string>
     <string name="profiles_protect_note">Das hält Kinder vom Wechsel in dieses Profil ab. Gegen jemanden mit vollem Zugriff auf das Gerät schützt es nicht.</string>
+    <string name="profiles_protect_sso">Bei SSO verlangt die App eine neue Anmeldung. Ein Anbieter kann das übergehen, und ein im Browser gespeichertes Passwort lässt sich eintragen.</string>
+    <string name="profiles_protect_device_hint">Wer das Gerät entsperren kann, kommt auch hier hinein.</string>
     <string name="profiles_protect_save_failed">Der Schutz ließ sich nicht speichern. Es hat sich nichts geändert.</string>
     <string name="profiles_device_title">Profil %1$s</string>
     <string name="profiles_device_subtitle">Mit der Bildschirmsperre bestätigen</string>

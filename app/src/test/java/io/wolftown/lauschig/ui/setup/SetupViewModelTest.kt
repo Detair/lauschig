@@ -878,4 +878,62 @@ class SetupViewModelTest {
         assertTrue(unlocked.isEmpty())
         assertEquals(listOf("oma"), added.map { it.username })
     }
+
+    // --- Task 3, C1: when a session at the provider is no proof ---
+
+    private fun ssoFrom(v: SetupViewModel): Boolean {
+        v.loginWithSso()
+        return oidc.lastFlow.freshLogin
+    }
+
+    @Test fun sso_theFirstSignIn_alone_asksNothingNew() {
+        val v = vm()
+        v.onPublicChanged("https://abs.example.org")
+        assertFalse(ssoFrom(v))
+    }
+
+    @Test fun sso_aReauth_ofTheOnlyAccount_asksNothingNew() {
+        signedInAsFabian()
+        assertFalse(ssoFrom(vm()))
+    }
+
+    @Test fun sso_addingAProfile_asksForAFreshLogin() {
+        signedInAsFabian()
+        val v = addVm()
+        v.onPublicChanged("https://abs.example.org")
+        assertTrue(ssoFrom(v))
+    }
+
+    /** The picker's form has nobody active. */
+    @Test fun sso_addingAProfile_fromThePicker_asksForAFreshLogin() {
+        store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a", "r", false))
+        assertTrue(ssoFrom(addVm()))
+    }
+
+    @Test fun sso_aForgottenPin_asksForAFreshLogin() {
+        kindIsSaved()
+        assertTrue(ssoFrom(unlockVm()))
+    }
+
+    @Test fun sso_aReauth_withOtherProfilesOnTheDevice_asksForAFreshLogin() {
+        kindIsSaved()
+        assertTrue(ssoFrom(vm()))
+    }
+
+    @Test fun sso_aSignIn_withNobodyActive_butProfilesThere_asksForAFreshLogin() {
+        store.aside.value = listOf(FakeAccountStore.Aside(kindAtHome, "a", "r", false))
+        val v = vm()
+        v.onPublicChanged("https://abs.example.org")
+        assertTrue(ssoFrom(v))
+    }
+
+    /** It cannot be told who else is on the device: the stricter way. */
+    @Test fun sso_profilesThatCannotBeRead_asksForAFreshLogin() {
+        val broken = object : io.wolftown.lauschig.account.AccountStore by store {
+            override val saved: Flow<List<Account>> = kotlinx.coroutines.flow.flow { throw IOException("unreadable") }
+        }
+        val v = viewModels.own(SetupViewModel(broken, login, net, sync, oidc, bus, signOut))
+        v.onPublicChanged("https://abs.example.org")
+        assertTrue(ssoFrom(v))
+    }
 }

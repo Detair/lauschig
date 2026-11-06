@@ -97,12 +97,13 @@ fun ProtectionChoiceDialog(step: ProtectionStep.Choose, onChoose: (ProfileLockKi
                     ProtectionOption(ProfileLockKind.NONE, step.current, enabled = true, hint = null, onChoose)
                     ProtectionOption(
                         ProfileLockKind.DEVICE, step.current, enabled = step.deviceLockAvailable,
-                        hint = if (step.deviceLockAvailable) null else stringResource(R.string.profiles_protect_no_device_lock),
+                        hint = stringResource(if (step.deviceLockAvailable) R.string.profiles_protect_device_hint else R.string.profiles_protect_no_device_lock),
                         onChoose,
                     )
                     ProtectionOption(ProfileLockKind.PIN, step.current, enabled = true, hint = null, onChoose)
                 }
                 Text(stringResource(R.string.profiles_protect_note), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.profiles_protect_sso), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AnnouncedLine(
                     if (step.saveFailed) stringResource(R.string.profiles_protect_save_failed) else null,
                     tag = "protectionError",
