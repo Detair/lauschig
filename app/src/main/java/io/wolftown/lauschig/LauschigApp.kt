@@ -53,7 +53,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
 
-    /** The only image loader: cover requests go through the authenticated, cleartext-guarded client. */
+    /** The only image loader: cover requests go through the cleartext-guarded client, without a token. */
     override fun newImageLoader(context: PlatformContext): ImageLoader = newCoverImageLoader(this, apiProvider)
 
     override fun onCreate() {

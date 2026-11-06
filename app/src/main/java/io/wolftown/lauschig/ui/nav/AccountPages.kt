@@ -46,8 +46,8 @@ class AccountPagesScope @Inject constructor() : ViewModel() {
  * The pages of one account: [content] gets a navigation controller of their own, and for its `NavHost` the owner of their
  * view models (`LocalViewModelStoreOwner`). Another [owner] ends all of it in one step: the page on screen, its remembered
  * state, the tabs saved away and every view model. Nothing of an account outlives it – a page left on screen would ask for
- * its covers with the next account's token (`GuardedCallFactory`), and a page that reads its account once would show the
- * old one. A switch does not animate; the next account's start tab is simply there.
+ * what the next account's rows say, and a page that reads its account once would show the old one. A switch does not
+ * animate; the next account's start tab is simply there.
  *
  * A rotation and a process death keep the pages: their state is saved under the owner's key, and [scope] outlives the rotation.
  */

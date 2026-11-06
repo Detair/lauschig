@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -106,7 +105,7 @@ class ApiProvider(
     private fun <T : Any> apiOf(serverId: String, type: Class<T>): Flow<T?> =
         retrofit.map { bound -> bound?.takeIf { it.owner == serverId }?.retrofit?.create(type) }
 
-    /** Guarded client without credentials, for requests while no server is online (they fail fast). */
+    /** Guarded client without credentials: what needs no account (the covers), and requests while no server is online. */
     fun unauthenticatedClient(): OkHttpClient = okHttp
 
     /**
@@ -115,13 +114,6 @@ class ApiProvider(
      */
     fun unauthenticatedClient(account: Account): OkHttpClient =
         baseClient.newBuilder().addNetworkInterceptor(CleartextGuardInterceptor { account.allowCleartext }).build()
-
-    /**
-     * The authenticated client of whoever is signed in now, for requests that belong to no account in particular (the
-     * covers of the page on screen). Reads the account store; not for the main thread. Work for one account takes the
-     * client of that account.
-     */
-    fun clientFor(baseUrl: HttpUrl): OkHttpClient = clientFor(runBlocking { signedIn() }, baseUrl)
 
     /**
      * The authenticated client of account [serverId] for [baseUrl] (origin-scoped Bearer + token refresh); also used for
