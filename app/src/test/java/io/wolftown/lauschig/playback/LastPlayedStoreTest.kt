@@ -180,4 +180,71 @@ class LastPlayedStoreTest {
         oldVersionStored(dev, "local:x", 7)
         assertEquals(LastPlayed(dev, "local:x", 7), store.forAccount(a))
     }
+
+    // Re-review F2: what the device's entry does must not depend on whether the app restarted in between. The start of the
+    // app adopts it (AccountStateCleaner.migrate); nothing does at a sign-in.
+
+    private var runs = 0
+
+    /** [story] on a fresh store, with a restart at its point or without; what each one ends up with. */
+    private fun outcome(restart: Boolean, story: suspend DataStoreLastPlayedStore.(restart: suspend () -> Unit) -> Unit): List<LastPlayed?> = runBlocking {
+        val own = File(ApplicationProvider.getApplicationContext<Context>().cacheDir, "last-${System.nanoTime()}-${runs++}.preferences_pb")
+        try {
+            val s = DataStoreLastPlayedStore(PreferenceDataStoreFactory.create(migrations = listOf(LastPlayedMigration), scope = scope) { own })
+            s.story { if (restart) s.adoptDeviceEntry(b) }
+            listOf(s.forAccount(a), s.forAccount(b), s.get(dev))
+        } finally {
+            own.delete()
+        }
+    }
+
+    private fun sameWithAndWithoutARestart(story: suspend DataStoreLastPlayedStore.(restart: suspend () -> Unit) -> Unit): List<LastPlayed?> {
+        val without = outcome(restart = false, story)
+        assertEquals(without, outcome(restart = true, story))
+        return without
+    }
+
+    /** The review's scenario: A's device title must not take the place of B's own older title, and it stays for A. */
+    @Test fun aSignedOutAccountsDeviceTitle_doesNotReplaceTheNextAccountsOwnTitle() {
+        val title = LastPlayed(dev, "local:a", 200)
+        val result = sameWithAndWithoutARestart { restart ->
+            set(LastPlayed(b, "b-book", 100))
+            set(title, account = a)
+            forget(a) // A signs out: its device title stays on the device
+            restart() // B is signed in
+        }
+        assertEquals(listOf(title, LastPlayed(b, "b-book", 100), title), result)
+    }
+
+    @Test fun adopting_onlyByAnAccountWithoutAnyTitle() = runBlocking {
+        store.set(LastPlayed(b, "b-book", 100))
+        store.set(LastPlayed(dev, "local:x", 200))
+        store.adoptDeviceEntry(b)
+        assertEquals(LastPlayed(b, "b-book", 100), store.forAccount(b))
+        assertNull(store.deviceTitleOf(b))
+        assertEquals(LastPlayed(dev, "local:x", 200), store.get(dev))
+    }
+
+    @Test fun aSignedOutAccountsDeviceTitle_withANextAccountWithoutTitles_comesBackToIt_restartOrNot() {
+        val title = LastPlayed(dev, "local:a", 200)
+        val result = sameWithAndWithoutARestart { restart ->
+            set(title, account = a)
+            forget(a)
+            restart() // B has nothing of its own and may hear it
+            forget(b) // B signs out without having played anything
+        }
+        assertEquals(listOf(title, title, title), result)
+    }
+
+    @Test fun whoPlaysNext_endsTheEntry_restartOrNot() {
+        val title = LastPlayed(dev, "local:a", 200)
+        val result = sameWithAndWithoutARestart { restart ->
+            set(title, account = a)
+            forget(a)
+            restart()
+            set(LastPlayed(b, "b-book", 300))
+            forget(b)
+        }
+        assertEquals(listOf<LastPlayed?>(null, null, null), result)
+    }
 }

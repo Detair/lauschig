@@ -129,6 +129,68 @@ class QueueAdvanceTest {
         assertEquals(listOf("next", "after"), queue.toList())
     }
 
+    // A start can throw, not only return false: a revoked folder, a database error, or after setQueue already started it.
+
+    private class Throwing(val queue: MutableList<String>, var owner: Boolean = true, val failure: Exception = java.io.IOException("gone")) {
+        val started = mutableListOf<String>()
+        val advancer = QueueAdvancer(
+            entries = { queue.toList() },
+            remove = { _, k -> queue.remove(k) },
+            check = { _, _ -> PLAYABLE },
+            sleepEndOfChapter = { false },
+            start = { _, k ->
+                started += k
+                if (k == "bad") throw failure
+                true
+            },
+            stillOwner = { owner },
+        )
+    }
+
+    @Test fun aStartThatThrows_doesNotBlockTheQueue_theNextOneStarts() = runTest {
+        val r = Throwing(mutableListOf("a", "bad", "c"))
+        assertEquals("c", r.advancer.onEnded(s, "a"))
+        assertEquals(listOf("bad", "c"), r.started)
+        assertEquals(emptyList<String>(), r.queue)
+    }
+
+    /** It may have started before it threw: it must not start a second time at the next end. */
+    @Test fun aStartThatThrows_isNotTriedAgain() = runTest {
+        val r = Throwing(mutableListOf("bad"))
+        assertNull(r.advancer.onEnded(s, "a"))
+        assertNull(r.advancer.onEnded(s, "bad"))
+        assertEquals(listOf("bad"), r.started)
+        assertEquals(emptyList<String>(), r.queue)
+    }
+
+    /** The same rule as a start that returns false: the account was left meanwhile, so the entry waits for its return. */
+    @Test fun aStartThatThrows_afterTheAccountWasLeft_leavesTheEntry_andTriesNoOther() = runTest {
+        val r = Throwing(mutableListOf("bad", "c"))
+        val leaving = QueueAdvancer(
+            entries = { r.queue.toList() },
+            remove = { _, k -> r.queue.remove(k) },
+            check = { _, _ -> PLAYABLE },
+            sleepEndOfChapter = { false },
+            start = { _, k ->
+                r.started += k
+                r.owner = false
+                throw java.io.IOException("gone")
+            },
+            stillOwner = { r.owner },
+        )
+        assertNull(leaving.onEnded(s, "a"))
+        assertEquals(listOf("bad"), r.started)
+        assertEquals(listOf("bad", "c"), r.queue)
+    }
+
+    @Test fun aStartThatIsCancelled_isNoFailedStart() = runTest {
+        val r = Throwing(mutableListOf("bad", "c"), failure = kotlinx.coroutines.CancellationException("the service is ending"))
+        val thrown = runCatching { r.advancer.onEnded(s, "a") }.exceptionOrNull()
+        assertTrue(thrown is kotlinx.coroutines.CancellationException)
+        assertEquals(listOf("bad"), r.started)
+        assertEquals("nothing was decided", listOf("bad", "c"), r.queue)
+    }
+
     @Test fun sleepTimerAtEndOfChapter_startsNothing() = runTest {
         val r = Run(mutableListOf("a", "b"), emptyMap(), sleep = true)
         assertNull(r.advancer.onEnded(s, "a"))

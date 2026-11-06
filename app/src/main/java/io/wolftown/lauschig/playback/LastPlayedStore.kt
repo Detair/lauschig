@@ -50,8 +50,10 @@ interface LastPlayedStore {
     suspend fun drop(serverId: String)
 
     /**
-     * The device's own entry becomes [account]'s device title if it has none of its own: at the start of the app and when
-     * an account is set aside, so a title from before profiles stays with the account of that time and goes to nobody else.
+     * The device's own entry becomes [account]'s device title if it has no title of its own at all, server or device: at the
+     * start of the app and when an account is set aside, so a title from before profiles stays with the account of that time
+     * and goes to nobody else. An account with its own title leaves it alone, whatever is newer: it stays for whoever left it,
+     * and whether the app restarted in between makes no difference.
      */
     suspend fun adoptDeviceEntry(account: String)
 }
@@ -154,7 +156,7 @@ class DataStoreLastPlayedStore(private val store: DataStore<Preferences>) : Last
         store.edit {
             val item = it[LastPlayedMigration.itemKey(device)] ?: return@edit
             val at = it[LastPlayedMigration.atKey(device)] ?: return@edit
-            if (it[LastPlayedMigration.itemKey(own)] != null) return@edit
+            if (it[LastPlayedMigration.itemKey(own)] != null || it[LastPlayedMigration.itemKey(account)] != null) return@edit
             it[LastPlayedMigration.itemKey(own)] = item
             it[LastPlayedMigration.atKey(own)] = at
             it.remove(LastPlayedMigration.itemKey(device))

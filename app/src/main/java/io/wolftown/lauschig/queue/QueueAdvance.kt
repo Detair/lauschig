@@ -5,7 +5,9 @@ import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.playback.PlayableKey
+import kotlinx.coroutines.CancellationException
 
 /** Whether a queued title can start right now. */
 enum class QueueEntryState {
@@ -58,7 +60,8 @@ suspend fun queueEntryState(items: ItemDao, episodes: EpisodeDao, downloads: Dow
  *
  * The queue wins over the next-volume suggestion: when an entry starts, the suggestion only remains on the finished
  * title. The ended title leaves the queue if it was queued too. Entries are tried in order: a [QueueEntryState.MISSING]
- * one is dropped, one that fails to start is dropped, and the next one is tried; an [QueueEntryState.UNAVAILABLE_NOW]
+ * one is dropped, one that fails to start (also by throwing, which may have been after it started: it must not start
+ * again at the next end) is dropped, and the next one is tried; an [QueueEntryState.UNAVAILABLE_NOW]
  * one (offline, not downloaded) is skipped but stays for later. An entry leaves when its start is decided: if the account
  * was left meanwhile (a switch during the start) it stays for the account's return and nothing else is tried. Nothing
  * starts while the sleep timer waits for the end of a chapter (the listener wants to stop); with nothing playable the
@@ -92,7 +95,14 @@ class QueueAdvancer(
                 QueueEntryState.PLAYABLE -> {
                     if (!stillOwner(serverId)) return null
                     pick(serverId, key)
-                    val started = start(serverId, key)
+                    val started = try {
+                        start(serverId, key)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "queue: a start failed", e)
+                        false
+                    }
                     if (!started && !stillOwner(serverId)) return null
                     remove(serverId, key)
                     if (started) return key
@@ -100,5 +110,9 @@ class QueueAdvancer(
             }
         }
         return null
+    }
+
+    private companion object {
+        const val TAG = "QueueAdvancer"
     }
 }

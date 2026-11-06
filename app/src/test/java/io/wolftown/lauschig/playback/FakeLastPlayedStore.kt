@@ -42,7 +42,7 @@ open class FakeLastPlayedStore : LastPlayedStore {
     }
     override suspend fun adoptDeviceEntry(account: String) {
         val shared = titles[DeviceLibrary.SERVER_ID] ?: return
-        if (account in deviceTitles) return
+        if (account in deviceTitles || account in titles) return
         deviceTitles[account] = shared
         titles.remove(DeviceLibrary.SERVER_ID)
     }
