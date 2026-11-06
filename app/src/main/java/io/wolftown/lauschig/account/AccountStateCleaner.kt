@@ -21,14 +21,14 @@ import javax.inject.Inject
 /**
  * Per-account state outside Room and the downloads. Each part is cleared on its own; one failing never stops the others.
  *
- * - [clear], every sign-out (also when the downloads are kept): the account's RMAB connection (its token) and recent
+ * - [clear], every sign-out (also when the downloads are kept): the account's protection, its RMAB connection (its token) and recent
  *   searches, a pending SSO attempt, an open download question of that server, the image caches (server covers only; a
  *   kept download's cover is a file in its download directory), the cleanup reminder (it names the account's titles), the
  *   diagnostic log and what this process holds in memory about the account.
- * - [setAside], a profile switch: the same, but the account's own RMAB connection and searches wait for its return, and
+ * - [setAside], a profile switch: the same, but the account's own protection, RMAB connection and searches wait for its return, and
  *   the covers on disk stay. Their keys are the cover URLs, without any token ([io.wolftown.lauschig.ui.common.coverModel]),
  *   and the next account only asks for the titles of its own rows; back on the account its covers are there at once.
- * - [forget], a saved profile is removed while another account is active: its connection and searches, and like at a
+ * - [forget], a saved profile is removed while another account is active: its protection, connection and searches, and like at a
  *   sign-out the image caches (the active account fetches its own covers again; they cannot be told apart by account).
  *   Everything else here is the active account's by now.
  */
@@ -49,6 +49,8 @@ class AccountStateCleaner(
     private val clearMoments: () -> Unit = {},
     /** The device's own last title becomes this account's if it has none ([io.wolftown.lauschig.playback.LastPlayedStore.adoptDeviceEntry]). */
     private val adoptDeviceTitle: suspend (account: String) -> Unit = {},
+    /** Its protection: a later sign-in starts without ([ProfileLocks]). */
+    private val removeProtection: suspend (serverId: String) -> Unit = {},
 ) {
     @Inject constructor(
         rmab: RmabRepository,
@@ -59,6 +61,7 @@ class AccountStateCleaner(
         jumps: io.wolftown.lauschig.sync.PositionJumpBus,
         log: io.wolftown.lauschig.connection.ConnectionLog,
         lastPlayed: io.wolftown.lauschig.playback.LastPlayedStore,
+        locks: ProfileLocks,
     ) : this(
         rmab, oidc, recentSearches, prompts,
         clearImageCaches = {
@@ -75,10 +78,12 @@ class AccountStateCleaner(
         clearMemoryCovers = { SingletonImageLoader.get(context).memoryCache?.clear() },
         clearMoments = { jumps.clear(); log.clear() },
         adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
+        removeProtection = locks::remove,
     )
 
     suspend fun clear(serverId: String) {
         part("old values") { migrateValues(serverId) }
+        part("protection") { removeProtection(serverId) }
         part("rmab") { rmab.forget(serverId) }
         part("searches") { recentSearches.clear(serverId) }
         part("images") { clearImageCaches() }
@@ -93,6 +98,7 @@ class AccountStateCleaner(
     }
 
     suspend fun forget(serverId: String) {
+        part("protection") { removeProtection(serverId) }
         part("rmab") { rmab.forget(serverId) }
         part("searches") { recentSearches.clear(serverId) }
         part("images") { clearImageCaches() }

@@ -83,7 +83,7 @@ class AccountStateCleanerTest {
         nm.createNotificationChannel(android.app.NotificationChannel("t", "t", android.app.NotificationManager.IMPORTANCE_LOW))
         nm.notify(io.wolftown.lauschig.cleanup.CleanupReminderWorker.NOTIFICATION_ID, androidx.core.app.NotificationCompat.Builder(ctx, "t").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Der Anfang").build())
         assertEquals(1, nm.activeNotifications.size)
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
         assertEquals(0, nm.activeNotifications.size)
     }
 
@@ -103,7 +103,7 @@ class AccountStateCleanerTest {
     @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
         assertEquals(false, legacy.exists())
     }
 
@@ -196,10 +196,10 @@ class AccountStateCleanerTest {
         disk.openEditor("cover-key")!!.apply { disk.fileSystem.write(data) { writeUtf8("x") }; commitAndOpenSnapshot()!!.close() }
         val key = coil3.memory.MemoryCache.Key("cover-key")
         images.memoryCache!![key] = coil3.memory.MemoryCache.Value(coil3.ColorImage(0, 1, 1))
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).setAside(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).setAside(a)
         assertNull(images.memoryCache!![key])
         assertTrue(disk.openSnapshot("cover-key")!!.use { true })
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
         assertNull(disk.openSnapshot("cover-key"))
     }
 
@@ -207,5 +207,31 @@ class AccountStateCleanerTest {
     @Test fun coverKeys_holdNoTokens() {
         val model = io.wolftown.lauschig.ui.common.coverModel("https://abs.example/".toHttpUrlOrNull(), "item1", null, 5)
         assertEquals("https://abs.example/api/items/item1/cover?ts=5", model)
+    }
+
+    // --- 3.7 ---
+
+    private val removed = mutableListOf<String>()
+    private fun cleanerWithProtection() = AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, removeProtection = { removed += it })
+
+    @Test fun aSignOut_takesTheProtectionOfThatAccount() = runBlocking {
+        cleanerWithProtection().clear(a)
+        assertEquals(listOf(a), removed)
+    }
+
+    @Test fun aRemovedProfile_takesItsProtection() = runBlocking {
+        cleanerWithProtection().forget(b)
+        assertEquals(listOf(b), removed)
+    }
+
+    @Test fun aSwitch_keepsTheProtection() = runBlocking {
+        cleanerWithProtection().setAside(a)
+        assertTrue(removed.isEmpty())
+    }
+
+    @Test fun aProtectionThatDoesNotGo_stopsNothingElse() = runBlocking {
+        seed()
+        AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, removeProtection = { error("disk") }).clear(a)
+        assertNull(rmab.config.first())
     }
 }

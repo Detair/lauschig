@@ -44,6 +44,8 @@ import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.net.TwoUsersServer.Companion.BEARER_A
 import io.wolftown.lauschig.ui.AppViewModel
 import io.wolftown.lauschig.ui.nav.Start
+import io.wolftown.lauschig.ui.profiles.GatePrompt
+import io.wolftown.lauschig.ui.profiles.ProfileGate
 import io.wolftown.lauschig.ui.profiles.ProfileOperations
 import io.wolftown.lauschig.ui.profiles.ProfileOutcome
 import io.wolftown.lauschig.ui.profiles.ProfileWork
@@ -181,8 +183,10 @@ class ProfileSwitchFlowTest {
             rmab, OidcLogin(oidcStore, cipher, OkHttpClient()), searches, prompts,
             clearImageCaches = { diskCovers++ }, cancelNotifications = {}, clearDiagnostics = { logs++ },
             clearMemoryCovers = { memoryCovers++ }, clearMoments = { jumps.clear() }, adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
+            removeProtection = locks::remove,
         )
     }
+    private val locks by lazy { DataStoreProfileLocks(prefs("locks"), cipher, { 1_000L }, 1_000) }
 
     private val facade = FakeFacade()
     private val streams = mutableListOf<String>()
@@ -810,6 +814,80 @@ class ProfileSwitchFlowTest {
         assertNull(lastPlayed.get(a))
         assertEquals("b-book", lastPlayed.get(b)!!.itemId)
         assertNull(db.itemDao().get(a, "a-book"))
+    }
+
+    // --- Task 3: the protection through the real sign-out flow ---
+
+    @Test fun aSwitch_keepsTheProtectionOfBoth_theWayBackAsksAgain(): Unit = runBlocking {
+        signedIn()
+        locks.setPin(a, "1111")
+        locks.setPin(b, "2222")
+        assertTrue(signOut.switchProfile(b))
+        assertEquals(ProfileLockKind.PIN, locks.kind(a))
+        assertEquals(ProfileLockKind.PIN, locks.kind(b))
+        assertEquals(PinCheck.Correct, locks.verifyPin(a, "1111"))
+    }
+
+    @Test fun aRemovedProfile_takesItsProtection_andASignInStartsWithout(): Unit = runBlocking {
+        signedIn()
+        locks.setPin(a, "1111")
+        locks.setPin(b, "2222")
+        assertTrue(signOut.removeProfile(b))
+        assertEquals(ProfileLockKind.NONE, locks.kind(b))
+        assertEquals("not the other's", ProfileLockKind.PIN, locks.kind(a))
+        signOut.addProfile(web.b, TOKEN_B, "b-refresh")
+        assertEquals(ProfileLockKind.NONE, locks.kind(b))
+    }
+
+    @Test fun aSignOut_takesTheProtection_alsoWhenTheDownloadsStay(): Unit = runBlocking {
+        for (keep in listOf(true, false)) {
+            signedIn()
+            locks.setPin(a, "1111")
+            locks.setPin(b, "2222")
+            signOut.execute(keepDownloads = keep)
+            assertEquals(ProfileLockKind.NONE, locks.kind(a))
+            assertEquals(ProfileLockKind.PIN, locks.kind(b))
+        }
+    }
+
+    /** Review focus 3, on the real flow: before the gate nothing of the account stops; after it the switch goes through. */
+    @Test fun theGate_comesBeforeAnythingOfTheSwitch(): Unit = runBlocking {
+        signedIn()
+        locks.setPin(b, "2222")
+        val viewModels = TestViewModels()
+        try {
+            val profiles = viewModels.own(ProfilesViewModel(store, ProfileOperations(signOut, scope), ProfileGate(locks) { true }) { RemovalFacts(0, 0, false) })
+            suspend fun <T> soon(what: suspend () -> T): T = kotlinx.coroutines.withTimeout(10_000) { what() }
+            val row = soon { profiles.profiles.first { it?.size == 2 } }!!.single { it.serverId == b }
+            cancelled.clear()
+            profiles.switchTo(row)
+            soon { profiles.gatePrompt.first { it is GatePrompt.Pin } }
+            assertEquals(a, store.account.first()!!.serverId)
+            assertTrue("no work of A was cancelled", cancelled.isEmpty())
+            assertEquals(0, memoryCovers)
+
+            profiles.submitPin("2222")
+            assertEquals(ProfileOutcome.Kind.SWITCHED, soon { profiles.outcome.first { it != null } }!!.kind)
+            assertEquals(b, store.account.first()!!.serverId)
+            assertEquals(listOf(a), cancelled)
+        } finally {
+            viewModels.clear()
+        }
+    }
+
+    /** 3.6 on the real flow: the signed-in account comes in with its new tokens, the protection goes, the one before stays signed in. */
+    @Test fun aForgottenPin_comesInAndTakesTheProtectionOff_theOtherStays(): Unit = runBlocking {
+        signedIn()
+        locks.setPin(a, "1111")
+        locks.setPin(b, "2222")
+        val operations = ProfileOperations(signOut, scope, locks::remove)
+        operations.unlock(web.b, "fresh-access", "fresh-refresh")
+        assertEquals(b, store.account.first()!!.serverId)
+        assertEquals("fresh-access", store.accessToken())
+        assertEquals(ProfileLockKind.NONE, locks.kind(b))
+        assertEquals(a, store.saved.first().single().serverId)
+        assertEquals("the one left keeps its own", ProfileLockKind.PIN, locks.kind(a))
+        assertEquals(ProfileOutcome.Kind.UNLOCKED, operations.outcome.value!!.kind)
     }
 
     private companion object {

@@ -139,4 +139,36 @@ class AccountDataJanitorTest {
         // Only the directories nobody owns go.
         assertEquals(listOf(failed, orphan), deletedDirs)
     }
+
+    // --- 3.7: a process that died between the account and its protection ---
+
+    private val protections = mutableSetOf<String>()
+    private fun janitorWithLocks(store: AccountStore = accounts) = AccountDataJanitor(
+        store, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true },
+        protectedIds = { protections.toSet() }, removeProtection = { protections -= it },
+    )
+
+    @Test fun aProtectionWithoutAnAccount_goes_theOthersStay() = runTest {
+        accounts.aside.value = listOf(FakeAccountStore.Aside(Account(withRows, "u", "n", false, ServerAddresses(null, null), emptySet()), "a", "r", false))
+        protections += setOf(current, withRows, orphan)
+        janitorWithLocks().run()
+        assertEquals(setOf(current, withRows), protections)
+    }
+
+    @Test fun anUnreadableAccountStore_touchesNoProtection() = runTest {
+        protections += orphan
+        val broken = object : AccountStore by accounts {
+            override val saved: kotlinx.coroutines.flow.Flow<List<Account>> = kotlinx.coroutines.flow.flow { throw java.io.IOException("corrupt") }
+        }
+        janitorWithLocks(broken).run()
+        assertEquals(setOf(orphan), protections)
+    }
+
+    @Test fun protectionsThatCannotBeRead_stopNothingElse() = runTest {
+        AccountDataJanitor(
+            accounts, kept, data, { dirs.toList() }, { sid -> deletedDirs += sid; true },
+            protectedIds = { throw java.io.IOException("disk") },
+        ).run()
+        assertTrue(orphan in deletedDirs)
+    }
 }
