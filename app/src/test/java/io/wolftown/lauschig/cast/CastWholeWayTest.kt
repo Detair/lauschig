@@ -9,10 +9,14 @@ import androidx.media3.common.util.UnstableApi
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.MediaItemFactory
 import io.wolftown.lauschig.playback.PlayerControllerImpl
 import io.wolftown.lauschig.playback.PlayerFacade
 import io.wolftown.lauschig.playback.PlayerSnapshot
+import io.wolftown.lauschig.playback.ShakeSource
+import io.wolftown.lauschig.playback.SleepMode
+import io.wolftown.lauschig.playback.SleepTimer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,12 +47,20 @@ class CastWholeWayTest {
     private val device = FakeDevice()
     private val receiver = FakeReceiver()
     private val link = FakeLink()
-    private val output = CastOutputPlayer(device, link, FakeSessions(listOf(public.toHttpUrl())), scope, {}, { false })
+    private val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    private val activity = MutableStateFlow(CastActivity.CONNECTED)
+    private val output = CastOutputPlayer(device, link, FakeSessions(listOf(public.toHttpUrl())), scope, { said.tryEmit(it) }, { false }, publish = { activity.value = it })
+    private val volume = ReceiverVolume({ output }, scope, minGapMs = 0)
     private val cast = FakeCastPlayer(device, receiver, output)
     private val online = MutableStateFlow<HttpUrl?>(home.toHttpUrl())
     private val book = ItemWithDetails(
         ItemEntity(s, "it", "lib", "Title", author = "Author", durationSec = 200.0), emptyList(),
         listOf(AudioFileEntity(s, "it", 0, "a", 100.0, 1, "mp3", null), AudioFileEntity(s, "it", 1, "b", 100.0, 1, "mp3", null)), null, null,
+    )
+
+    private fun titled(id: String) = if (id == "it") book else ItemWithDetails(
+        ItemEntity(s, id, "lib", "Other", author = "Author", durationSec = 200.0), emptyList(),
+        listOf(AudioFileEntity(s, id, 0, "a", 100.0, 1, "mp3", null), AudioFileEntity(s, id, 1, "b", 100.0, 1, "mp3", null)), null, null,
     )
 
     /** What `MediaControllerFacade` does, on the player itself. */
@@ -68,6 +80,7 @@ class CastWholeWayTest {
         override fun pause() = output.pause()
         override fun seekTo(mediaIndex: Int, positionMs: Long) = output.seekTo(mediaIndex, positionMs)
         override fun setSpeed(speed: Float) = output.setPlaybackSpeed(speed)
+        override fun setVolume(volume: Float) = this@CastWholeWayTest.volume.set(volume)
         override fun snapshot() = PlayerSnapshot(
             output.isPlaying, output.currentMediaItemIndex, output.currentPosition.coerceAtLeast(0), output.playbackParameters.speed,
             isBuffering = output.playWhenReady && output.playbackState == Player.STATE_BUFFERING,
@@ -82,8 +95,9 @@ class CastWholeWayTest {
 
     private val controller by lazy {
         PlayerControllerImpl(
-            scope = scope, facade = Direct(), factory = MediaItemFactory({ true }) { _, _ -> null }, loadItem = { _, _ -> book },
+            scope = scope, facade = Direct(), factory = MediaItemFactory({ true }) { _, _ -> null }, loadItem = { _, id -> titled(id) },
             onlineBaseUrl = { online.value }, coverFile = { _, _ -> null }, io = Dispatchers.Main.immediate, onlineBase = online,
+            outputMessages = said, outputActivity = activity,
         )
     }
 
@@ -95,6 +109,70 @@ class CastWholeWayTest {
     private fun idle() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10))
 
     private fun uris() = device.items.map { it.localConfiguration!!.uri.toString() }
+
+    private fun endingLikeTheFramework() {
+        link.onEnd = {
+            cast.sessionAvailable(false)
+            output.onCastSessionEnded()
+        }
+    }
+
+    /** Minor 3: another title while suspended, the way the app starts it: no spinner beside "it waits here", and the first press plays. */
+    @Test fun anotherTitleWhileSuspended_noSpinner_andTheFirstPressPlays() {
+        endingLikeTheFramework()
+        output.attach(cast)
+        controller.play(s, "it", startSec = 105.0)
+        idle()
+        cast.sessionAvailable(true)
+        idle()
+        receiver.loaded()
+        idle()
+        link.suspended = true
+        output.onCastSuspended()
+        cast.sessionAvailable(false)
+        idle()
+        controller.play(s, "other", startSec = 0.0)
+        idle()
+        idle()
+        assertFalse(device.pwr)
+        assertEquals(R.string.cast_suspended_title_here, controller.state.value.error)
+        assertFalse("no spinner", controller.state.value.isLoading)
+        assertEquals("other", controller.state.value.itemId)
+        controller.togglePlayPause()
+        idle()
+        idle()
+        assertTrue("the first press plays", device.pwr)
+    }
+
+    /** Minor 2 the whole way: a person's timer, through the real controller, while the TV plays in a hold. */
+    @Test fun aSleepTimer_inAHold_getsItsFadeAndItsPauseToTheTv() {
+        endingLikeTheFramework()
+        output.attach(cast)
+        controller.play(s, "it", startSec = 160.0)
+        idle()
+        cast.sessionAvailable(true)
+        idle()
+        link.content = receiver.sent.last().items[0].mediaId
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        repeat(65) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1)) }
+        assertEquals(CastActivity.PLAYING_UNSEEN, controller.state.value.outputActivity)
+        assertFalse(controller.state.value.isPlaying)
+        assertTrue(controller.state.value.isLoading)
+        val timer = SleepTimer(controller, object : ShakeSource {
+            override fun start(onShake: () -> Unit) = Unit
+            override fun stop() = Unit
+        }, scope, clock = { 0L }, tickMs = Long.MAX_VALUE / 4)
+        timer.start(SleepMode.Minutes(1))
+        timer.step(55_000)
+        idle()
+        assertTrue(receiver.volumes.toString(), receiver.volumes.any { it < 1f })
+        assertTrue(receiver.pwr)
+        timer.step(6_000)
+        idle()
+        assertFalse("paused on the TV", receiver.pwr)
+        assertEquals(1f, receiver.volumes.last())
+        timer.cancel()
+    }
 
     /** I2: an address that changes during a cast is not lost. Back on this device the title streams from the new one. */
     @Test fun anAddressChangeDuringACast_thenPlayingHere_usesTheNewAddress() {

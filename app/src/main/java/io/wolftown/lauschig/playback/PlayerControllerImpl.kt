@@ -174,6 +174,8 @@ class PlayerControllerImpl(
     private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
     private var output: String? = null
     private var activity = CastActivity.CONNECTED
+    /** [CAST_LOST]'s text stood while nothing wanted to play: a wish to play from now on is a press, from the notification or a key too. */
+    private var lostReasonSettled = false
 
     /** A fresh state for a new or no title; the settings it shows are kept. */
     private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =
@@ -186,7 +188,8 @@ class PlayerControllerImpl(
         facade.setOnChange { refresh() }
         facade.setOnError { code ->
             starting = false
-            // A phone that lost its network also loses its stream once a dropped cast's title is back here: why it stopped is the reason it has.
+            // A phone that lost its network also loses its stream once a dropped cast's title is back here: why it stopped is the reason it has,
+            // until the next press.
             _state.update { it.copy(isPlaying = false, isLoading = false, error = it.error?.takeIf(CAST_LOST::contains) ?: R.string.error_playback_failed) }
             // A stream that ran dry at an old address (home LAN, now in the car): move to the new one. It plays on only
             // because ExoPlayer still wants to (playWhenReady survives the error); nothing here ever starts playback.
@@ -203,7 +206,17 @@ class PlayerControllerImpl(
         }
         scope.launch { outputName.distinctUntilChanged().collect { name -> output = name; _state.update { it.copy(outputName = name) } } }
         scope.launch { outputActivity.distinctUntilChanged().collect { a -> activity = a; _state.update { it.copy(outputActivity = a) } } }
-        scope.launch { outputMessages.collect { message -> _state.update { it.copy(error = message) } } }
+        scope.launch {
+            outputMessages.collect { message ->
+                lostReasonSettled = false
+                _state.update { it.copy(error = message) }
+                // It waits here, paused, whatever the play of this start asked: nothing is starting any more.
+                if (message == R.string.cast_suspended_title_here) {
+                    starting = false
+                    refresh()
+                }
+            }
+        }
         // Only what the UI shows: a playing stream's stats change constantly but map to null.
         scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
         scope.launch { downloadThrottled.collect { t -> throttled = t; _state.update { it.copy(downloadThrottled = t) } } }
@@ -449,6 +462,8 @@ class PlayerControllerImpl(
             starting = false
             facade.pause(); refresh()
         } else {
+            // A failure from here on is this press's own.
+            _state.update { if (it.error in CAST_LOST) it.copy(error = null) else it }
             playJob?.cancel()
             playJob = scope.launch { resumeLoaded(c) }
         }
@@ -608,10 +623,18 @@ class PlayerControllerImpl(
                 isStreaming = c.streaming,
                 isLoading = loading,
                 streamLoad = if (loading && c.streaming) load else null,
-                error = if (snap.isPlaying) null else it.error,
+                error = errorAfter(snap, it.error),
             )
         }
         if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
+    }
+
+    private fun errorAfter(snap: PlayerSnapshot, error: Int?): Int? {
+        if (snap.isPlaying) return null
+        if (error !in CAST_LOST) return error
+        // The state may still be behind the message (a masked player that looks as if it wanted to play), so it has to have stood first.
+        if (!snap.isBuffering) lostReasonSettled = true
+        return if (snap.isBuffering && lostReasonSettled) null else error
     }
 
     /**

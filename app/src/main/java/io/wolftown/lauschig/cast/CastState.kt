@@ -16,6 +16,9 @@ enum class CastActivity {
     /** The device plays or loads the title: "Wird auf … abgespielt". */
     PLAYING,
 
+    /** It plays the title, but the player cannot show that yet (no proof of where): buffering here, nothing counts. The same line; the sleep timer goes by it. */
+    PLAYING_UNSEEN,
+
     /** Connected, but it holds no title of ours (stopped from elsewhere, played to the end, nothing started yet). */
     CONNECTED,
 

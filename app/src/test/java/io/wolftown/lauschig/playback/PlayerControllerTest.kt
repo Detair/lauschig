@@ -53,7 +53,9 @@ internal class FakeFacade : PlayerFacade {
     var stopBlock: suspend () -> Unit = {}
     /** What the service's tracker does on a pause: it saves the title's position, a moment later. */
     var onPause: (title: Pair<String, String>?) -> Unit = {}
-    override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
+    /** A press whose stream fails at once: no moment of playing. */
+    var playFails = false
+    override fun play() { if (!playFails) snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
     override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false; onPause(currentKey()) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
@@ -482,6 +484,51 @@ class PlayerControllerTest {
         f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
         testScheduler.runCurrent()
         assertEquals(R.string.cast_suspended_title_here, c.state.value.error)
+    }
+
+    /** Minor 4: the reason belongs to the moment of the drop. A press after it that fails reads as what it is. */
+    @Test fun theKeptReason_goesAtTheNextPress() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        f.playFails = true
+        c.togglePlayPause()
+        testScheduler.advanceUntilIdle()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+    }
+
+    /** The notification or a key: the app hears only that the player wants to play now, after it had not. */
+    @Test fun theKeptReason_goesAtAPressFromOutside() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        // The message can overtake the state: the masked player still looks as if it wanted to play.
+        f.snap = f.snap.copy(isPlaying = false, isBuffering = true)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        c.refreshNow()
+        assertEquals("not a press", R.string.cast_dropped, c.state.value.error)
+        f.snap = f.snap.copy(isBuffering = false)
+        c.refreshNow()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        f.snap = f.snap.copy(isBuffering = true)
+        c.refreshNow()
+        assertEquals("a press", null, c.state.value.error)
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
     }
 
     @Test fun aStreamThatFails_withNoCastBehindIt_saysSo() = runTest {

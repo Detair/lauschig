@@ -127,7 +127,7 @@ class CastOutputPlayer(
                     Phase.NONE, Phase.LEAVING -> CastActivity.NONE
                 },
             )
-            if (value != Phase.LOADING) holding = false
+            playsUnseen = false
         }
 
     /** The title that went to the device with the Cast session not over yet: a suspend may come back for it. */
@@ -154,8 +154,12 @@ class CastOutputPlayer(
     private var failureAnswered = false
     /** The same for a status that says finished: it may be what the title did the last time. */
     private var finishedAnswered = false
-    /** The receiver plays the title, the limit has passed and it has not said a plausible place: see [limitReached]. */
-    private var holding = false
+    /** The limit has passed with the receiver playing the title and no plausible place said. Only a proof, or a new load, undoes it: see [limitReached]. */
+    private var unproven = false
+    /** A hold: what happens while [unproven], on the receiver and without a stop. */
+    private val holding: Boolean get() = unproven && phase == Phase.LOADING
+    /** The receiver plays and the player cannot show it, see [CastActivity.PLAYING_UNSEEN]. */
+    private var playsUnseen = false
     private var pendingSeek = false
     /** A person pressed play or pause while the resume could not tell the receiver. */
     private var pressedWhileResuming = false
@@ -390,6 +394,8 @@ class CastOutputPlayer(
             Phase.STOPPED -> return toStopped(c)
             else -> Unit
         }
+        // What it plays after the gap was not proven before it either.
+        if (unproven) return backToHold(c)
         phase = Phase.RESUMING
         loadSent = false
         pendingSeek = false
@@ -434,7 +440,7 @@ class CastOutputPlayer(
         pendingSeek = false
         failureAnswered = false
         receiverError = null
-        holding = false
+        unproven = false
         doubtSince = null
         boundaryAt = null
         baseIndex = 0
@@ -490,7 +496,7 @@ class CastOutputPlayer(
         sentAt = clock()
         sentIds = items.map { it.mediaId }
         statusAskedAt = null
-        holding = false
+        unproven = false
         doubtSince = null
         active.playWhenReady = c.playWhenReady
         active.setMediaItems(items, start, c.positionMs)
@@ -524,25 +530,36 @@ class CastOutputPlayer(
      * about reaching it. If all that is missing is a plausible place, the TV plays on, since stopping what a person asked for over a
      * doubt about bookkeeping is the worst of the answers, and taking its position as it is would overwrite the listening position
      * here and on the server. So nothing reaches the progress, it is said once, and it stays so until a status says a plausible place,
-     * a person's seek gives it one, a person ends the cast, or the receiver stops.
+     * a person's seek gives it one, a person ends the cast, or the receiver really stops: a moment of buffering at a look is none, and
+     * a look that finds nothing there is, and costs nothing if it was wrong ([backToHold]).
      */
     private fun limitReached(c: CastTitle) {
         val active = attached
         when {
+            holding -> if (active != null && holdsPlaying(active)) watch(c, loadLimitMs) else toStopped(c)
             active != null && active.playbackState == Player.STATE_READY && playsOurs(c, active) -> {
-                if (!holding) {
-                    Log.w(TAG, "the receiver plays but does not prove its position")
-                    holding = true
-                    say(R.string.cast_position_unknown)
-                }
+                Log.w(TAG, "the receiver plays but does not prove its position")
+                unproven = true
+                say(R.string.cast_position_unknown)
                 watch(c, loadLimitMs)
             }
-            holding -> toStopped(c)
             else -> {
                 Log.w(TAG, "the receiver did not load the title in time")
                 receiverFailed(c)
             }
         }
+    }
+
+    /** A hold that a stop or a suspend interrupted goes on where it was: whatever the receiver says now still has to pass [startProven]. */
+    private fun backToHold(c: CastTitle) {
+        stopJobs()
+        phase = Phase.LOADING
+        loadSent = true
+        failureAnswered = false
+        statusAskedAt = null
+        invalidateState()
+        watch(c, loadLimitMs)
+        startTicker()
     }
 
     /** The cast ends, for a reason the person gets to read; the title waits paused on this device. */
@@ -620,6 +637,8 @@ class CastOutputPlayer(
         return if (named >= 0) named else active.currentMediaItemIndex
     }
 
+    private fun holdsOther(c: CastTitle, active: Player) = holdsPlaying(active) && link.contentId()?.startsWith("${c.key}#") == false
+
     private fun ownInQueue(c: CastTitle, active: Player) =
         (0 until active.mediaItemCount).any { c.owns(active.getMediaItemAt(it)) } || link.contentId()?.startsWith("${c.key}#") == true
 
@@ -641,7 +660,7 @@ class CastOutputPlayer(
                 !loadSent -> Unit
                 failure -> receiverFailed(c)
                 activity == ReceiverActivity.FINISHED && !finishedAnswered && link.contentId()?.startsWith("${c.key}#") != false -> finishedAtOnce(c)
-                holding && activity == ReceiverActivity.STOPPED -> toStopped(c)
+                holding && (activity == ReceiverActivity.STOPPED || holdsOther(c, active)) -> toStopped(c)
                 else -> {
                     doubtSince = null
                     if (active.playbackState == Player.STATE_READY) {
@@ -655,7 +674,7 @@ class CastOutputPlayer(
                 activity == ReceiverActivity.STOPPED -> toStopped(c)
                 activity == ReceiverActivity.FINISHED -> if (atTheEnd(c)) ended(c) else toStopped(c)
                 // Another sender's title is no silence.
-                holdsPlaying(active) && link.contentId()?.startsWith("${c.key}#") == false -> toStopped(c)
+                holdsOther(c, active) -> toStopped(c)
                 holdsPlaying(active) && holdsOwn(c, active) && resumeProven(active) -> becomeActive(c, active, fromReceiver = true)
             }
             Phase.ACTIVE -> when {
@@ -667,12 +686,30 @@ class CastOutputPlayer(
                 else -> {
                     doubtSince = null
                     remember(c, active)
+                    // Proven by the content id with Media3 behind: a steady receiver sends nothing until a pause or a file's end, and an answer is what moves Media3.
+                    if (!trusted(c)) askForStatus()
                 }
             }
-            // It plays its own title after all: an interruption that was none, or the TV's remote.
-            Phase.STOPPED -> if (active.playbackState == Player.STATE_READY && playsOurs(c, active)) becomeActive(c, active, fromReceiver = true)
+            // It plays its own title after all: an interruption that was none, or the TV's remote. What was never proven still has to be.
+            Phase.STOPPED -> if (active.playbackState == Player.STATE_READY && playsOurs(c, active)) {
+                if (unproven) {
+                    c.playWhenReady = active.playWhenReady
+                    backToHold(c)
+                } else {
+                    becomeActive(c, active, fromReceiver = true)
+                }
+            }
             else -> Unit
         }
+        if (cast === c && (phase == Phase.LOADING || phase == Phase.ACTIVE)) publishUnseen(c, active)
+    }
+
+    /** Masked as buffering while the TV plays: the sleep timer must not take that for a load, or the TV plays past it. */
+    private fun publishUnseen(c: CastTitle, active: Player) {
+        val unseen = c.playWhenReady && active.playbackState == Player.STATE_READY && holdsOwn(c, active) && (holding || (phase == Phase.ACTIVE && !trusted(c)))
+        if (unseen == playsUnseen) return
+        playsUnseen = unseen
+        publish(if (unseen) CastActivity.PLAYING_UNSEEN else CastActivity.PLAYING)
     }
 
     /**
@@ -710,9 +747,12 @@ class CastOutputPlayer(
      * finished title, ended and paused, and a press starts the last file over (the session's play) or the library the title from the
      * start. Anywhere else it says so plainly, which is no address's fault and no reason to wait for the limit. A moment of it, between
      * two files of a load that started at a file's end, ends nothing.
+     *
+     * In a hold it has played on for who knows how long, from who knows where: not "straight away", and nothing proves that it was the
+     * title's end. It waits paused at the last proven place, not finished.
      */
     private fun finishedAtOnce(c: CastTitle) {
-        if (atTheEnd(c)) {
+        if (!holding && atTheEnd(c)) {
             ended(c)
             return
         }
@@ -720,12 +760,13 @@ class CastOutputPlayer(
             doubtSince = it
             link.requestStatus()
         }
-        if (clock() - since >= FINISHED_AT_ONCE_MS) failed(R.string.cast_finished_at_once)
+        if (clock() - since >= FINISHED_AT_ONCE_MS) failed(if (holding) R.string.cast_played_out_unseen else R.string.cast_finished_at_once)
     }
 
     private fun becomeActive(c: CastTitle, active: Player, fromReceiver: Boolean) {
         stopJobs()
         phase = Phase.ACTIVE
+        unproven = false
         doubtSince = null
         boundaryAt = null
         otherFileSince = null

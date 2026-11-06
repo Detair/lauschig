@@ -100,7 +100,7 @@ fun CastOutputLine(deviceName: String, activity: CastActivity, modifier: Modifie
     val named = deviceName.isNotBlank()
     val text = when (activity) {
         CastActivity.NONE -> return
-        CastActivity.PLAYING -> if (named) stringResource(R.string.cast_playing_on, deviceName) else stringResource(R.string.cast_playing_elsewhere)
+        CastActivity.PLAYING, CastActivity.PLAYING_UNSEEN -> if (named) stringResource(R.string.cast_playing_on, deviceName) else stringResource(R.string.cast_playing_elsewhere)
         CastActivity.CONNECTED -> if (named) stringResource(R.string.cast_connected_to, deviceName) else stringResource(R.string.cast_connected_elsewhere)
         CastActivity.SUSPENDED -> stringResource(R.string.cast_suspended_line)
     }

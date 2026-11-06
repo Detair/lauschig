@@ -3,6 +3,7 @@ package io.wolftown.lauschig.cast
 import android.app.Application
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.room.Room
@@ -242,6 +243,76 @@ class CastProgressTest {
         output.pause()
         settle()
         assertEquals(100.8, progress()!!.currentTimeSec, 0.01)
+    }
+
+    /** T2 through the real tracker: what a hold rejected never reaches the progress, by a moment of buffering at its watch, a stop, or a suspend. */
+    @Test fun whatAHoldRejected_neverReachesTheProgress() {
+        output.setMediaItems(book, 1, 60_000)
+        output.prepare()
+        output.play()
+        settle()
+        cast.sessionAvailable(true)
+        settle()
+        link.content = receiver.sent.last().items[0].mediaId
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        settle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(65))
+        settle()
+        assertEquals(160.0, progress()!!.currentTimeSec, 0.01)
+
+        receiver.status(Player.STATE_BUFFERING, index = 0, position = 300)
+        settle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(61))
+        settle()
+        receiver.status(Player.STATE_READY, index = 0, position = 400, paused = false)
+        settle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
+        settle()
+        assertEquals("a look during buffering", 160.0, progress()!!.currentTimeSec, 0.01)
+
+        link.now = ReceiverActivity.STOPPED
+        output.onReceiverStatus()
+        settle()
+        link.now = ReceiverActivity.BUSY
+        receiver.status(Player.STATE_READY, index = 0, position = 500, paused = false)
+        settle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
+        settle()
+        assertEquals("a stop and back", 160.0, progress()!!.currentTimeSec, 0.01)
+
+        link.suspended = true
+        output.onCastSuspended()
+        cast.sessionAvailable(false)
+        settle()
+        link.suspended = false
+        cast.sessionAvailable(true)
+        settle()
+        receiver.status(Player.STATE_READY, index = 0, position = 600, paused = false)
+        settle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(12))
+        settle()
+        assertEquals("a suspend and back", 160.0, progress()!!.currentTimeSec, 0.01)
+        assertTrue(!progress()!!.isFinished)
+    }
+
+    /** T1 through the real tracker: the one answer starts the counting. */
+    @Test fun provenWithMedia3Behind_theAnswerStartsTheProgress() {
+        playingHere(5_000)
+        cast.sessionAvailable(true)
+        settle()
+        val sent = receiver.sent.last().items
+        receiver.items = listOf(MediaItem.EMPTY) + sent.drop(1)
+        link.content = sent[0].mediaId
+        receiver.status(Player.STATE_READY, index = 1, position = 5_000, paused = false)
+        settle()
+        assertTrue(!output.isPlaying)
+        receiver.items = sent
+        receiver.status(Player.STATE_READY, index = 0, position = 8_000, paused = false)
+        settle()
+        assertTrue(output.isPlaying)
+        output.pause()
+        settle()
+        assertEquals(8.0, progress()!!.currentTimeSec, 0.01)
     }
 
     @Test fun aNewTitleOnTheReceiver_savesTheOldOneWhereItWas() {

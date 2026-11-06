@@ -324,7 +324,6 @@ class CastOutputPlayerTest {
         receiver.items = listOf(MediaItem.EMPTY) + sent.drop(1)
         link.content = sent[1].mediaId
         told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
-        assertEquals("a proven cast", CastActivity.PLAYING, activities.last())
         // Media3 has not placed it: the player stays at the title's own file, and nothing wrong reaches the progress.
         assertEquals(1, output.currentMediaItemIndex)
         assertFalse(output.isPlaying)
@@ -339,6 +338,227 @@ class CastOutputPlayerTest {
         told(Player.STATE_READY, index = 1, position = 76_000)
         assertTrue(output.isPlaying)
         assertEquals(76_000, output.currentPosition)
+    }
+
+    // ---- T1: proven, but Media3 is behind: nothing else would ever ask, and a steady receiver sends nothing until a pause or a file's end.
+
+    @Test fun provenByContentId_withMedia3Behind_asksUntilOneStatusEndsIt() {
+        playingHere()
+        connect()
+        val sent = receiver.sent.last().items
+        receiver.items = listOf(MediaItem.EMPTY) + sent.drop(1)
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        assertFalse(output.isPlaying)
+        val asked = link.statusRequests
+        assertEquals("at once", 1, asked)
+        pass(6)
+        assertEquals("every few seconds", asked + 1, link.statusRequests)
+        pass(5)
+        assertEquals(asked + 2, link.statusRequests)
+        // One answer: Media3 has it.
+        receiver.items = sent
+        told(Player.STATE_READY, index = 1)
+        assertTrue(output.isPlaying)
+        assertEquals(1, output.currentMediaItemIndex)
+        val after = link.statusRequests
+        pass(20)
+        assertEquals("then nothing asks", after, link.statusRequests)
+    }
+
+    @Test fun provenByContentId_withOurOwnItemAtAStaleIndex_asksToo() {
+        playingHere()
+        connect()
+        val sent = receiver.sent.last().items
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        assertFalse(output.isPlaying)
+        val asked = link.statusRequests
+        pass(11)
+        assertTrue(link.statusRequests >= asked + 2)
+        told(Player.STATE_READY, index = 1)
+        assertTrue(output.isPlaying)
+    }
+
+    // ---- T2: a hold ends only on a real stop or failure, and nothing but the proof leads out of it.
+
+    private fun inAHold(index: Int = 1, positionMs: Long = 60_000): List<MediaItem> {
+        playingHere(index = index, positionMs = positionMs)
+        connect()
+        val sent = receiver.sent.last().items
+        link.content = sent[0].mediaId
+        told(Player.STATE_READY, index = 0, position = 0, paused = false)
+        pass(65)
+        assertEquals(listOf(R.string.cast_position_unknown), said)
+        return sent
+    }
+
+    @Test fun aHold_thatBuffersWhenItsWatchLooks_goesOn() {
+        inAHold()
+        told(Player.STATE_BUFFERING, index = 0, position = 300)
+        pass(61)
+        assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        assertTrue("not paused here while the TV plays", output.playWhenReady)
+        told(Player.STATE_READY, index = 0, position = 400)
+        pass(11)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals("the rejected position stays rejected", 60_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        assertEquals(1, said.size)
+    }
+
+    @Test fun aWayBackFromAStopInAHold_goesThroughTheProof() {
+        val sent = inAHold()
+        status(ReceiverActivity.STOPPED)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertFalse(output.playWhenReady)
+        // It plays again, at a place that proves nothing.
+        link.now = ReceiverActivity.BUSY
+        told(Player.STATE_READY, index = 0, position = 400, paused = false)
+        pass(11)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals("the rejected position stays rejected", 60_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        assertTrue(output.playWhenReady)
+        assertEquals("nothing new to say", 1, said.size)
+        assertEquals(1, receiver.sent.size)
+        // Now a plausible place.
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 1, position = 90_000)
+        assertTrue(output.isPlaying)
+        assertEquals(90_000, output.currentPosition)
+    }
+
+    /** Any other stop still has its plain way back: a position that was proven once may go on. */
+    @Test fun aWayBackFromAStopAfterAProof_needsNoNewProof() {
+        onReceiverNow()
+        playedTo(20_000)
+        status(ReceiverActivity.STOPPED)
+        link.now = ReceiverActivity.BUSY
+        told(Player.STATE_READY, index = 1, position = 40_000, paused = false)
+        assertTrue(output.isPlaying)
+        assertEquals(40_000, output.currentPosition)
+    }
+
+    @Test fun aSuspendInAHold_comesBackToTheHold_andTheProofStillDecides() {
+        val sent = inAHold()
+        suspendSession()
+        resumeSession()
+        told(Player.STATE_READY, index = 0, position = 400, paused = false)
+        pass(12)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals("the rejected position stays rejected", 60_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        assertEquals("no load", 1, receiver.sent.size)
+        assertEquals(1, said.size)
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 1, position = 90_000)
+        assertTrue(output.isPlaying)
+    }
+
+    /** Nothing there at the look: that is a stop. It costs nothing if it was wrong, the way back is the proof. */
+    @Test fun aHold_withNothingThereWhenItsWatchLooks_isStopped() {
+        inAHold()
+        told(Player.STATE_IDLE)
+        pass(61)
+        assertFalse(output.playWhenReady)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertEquals("no load", 1, receiver.sent.size)
+        assertTrue(link.ends.isEmpty())
+    }
+
+    @Test fun aHold_whereAnotherSendersTitlePlays_isStopped() {
+        inAHold()
+        link.content = "someone-elses-title"
+        told(Player.STATE_READY, position = 1_000)
+        assertFalse(output.playWhenReady)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertEquals("no load", 1, receiver.sent.size)
+    }
+
+    // ---- Minor 1: played out in a hold.
+
+    @Test fun aTitlePlayedOutInAHold_saysSoPlainly_atTheLastProvenPlace_andIsNotFinished() {
+        inAHold()
+        told(Player.STATE_IDLE, position = 100_000)
+        status(ReceiverActivity.FINISHED)
+        pass(5)
+        assertEquals(listOf(R.string.cast_position_unknown, R.string.cast_played_out_unseen), said)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(1, device.index)
+        assertEquals(60_000, device.position)
+        assertFalse(device.pwr)
+        assertFalse("nothing proves the end", Player.STATE_ENDED in states)
+    }
+
+    /** Even with a last proven place near the end: that place is only where it was sent to. */
+    @Test fun aTitlePlayedOutInAHold_isNotFinished_alsoFromNearItsEnd() {
+        inAHold(index = 1, positionMs = 90_000)
+        told(Player.STATE_IDLE, position = 100_000)
+        status(ReceiverActivity.FINISHED)
+        pass(5)
+        assertEquals(listOf(R.string.cast_position_unknown, R.string.cast_played_out_unseen), said)
+        assertEquals(90_000, device.position)
+        assertFalse(Player.STATE_ENDED in states)
+    }
+
+    // ---- Minor 2: what the sleep timer goes by, and that its fade and its pause get to the TV.
+
+    @Test fun aHold_saysTheTvPlaysUnseen_whilePlaying_andNotWhenPaused() {
+        val sent = inAHold()
+        assertEquals(CastActivity.PLAYING_UNSEEN, activities.last())
+        output.pause()
+        idle()
+        pass(1)
+        assertEquals(CastActivity.PLAYING, activities.last())
+        assertFalse(receiver.pwr)
+        output.play()
+        idle()
+        pass(1)
+        assertEquals(CastActivity.PLAYING_UNSEEN, activities.last())
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 1, position = 90_000)
+        assertEquals(CastActivity.PLAYING, activities.last())
+    }
+
+    @Test fun theMaskedStateOfAProvenTitle_saysTheTvPlaysUnseen() {
+        playingHere()
+        connect()
+        val sent = receiver.sent.last().items
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        pass(1)
+        assertEquals(CastActivity.PLAYING_UNSEEN, activities.last())
+        told(Player.STATE_READY, index = 1)
+        assertEquals(CastActivity.PLAYING, activities.last())
+    }
+
+    @Test fun theFadeAndThePause_reachTheTv_inAHold_andInTheMaskedState() {
+        inAHold()
+        val volume = ReceiverVolume({ output }, scope, minGapMs = 0, clock = { now })
+        volume.set(0.25f)
+        idle()
+        assertEquals(0.25f, receiver.volumes.last())
+        output.pause()
+        idle()
+        assertFalse(receiver.pwr)
+        volume.set(1f)
+        idle()
+        assertEquals(1f, receiver.volumes.last())
+    }
+
+    @Test fun theFadeAndThePause_reachTheTv_inTheMaskedState() {
+        playingHere()
+        connect()
+        link.content = receiver.sent.last().items[1].mediaId
+        told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        val volume = ReceiverVolume({ output }, scope, minGapMs = 0, clock = { now })
+        volume.set(0.25f)
+        idle()
+        assertEquals(0.25f, receiver.volumes.last())
+        output.pause()
+        idle()
+        assertFalse(receiver.pwr)
     }
 
     /** It plays the title, and through the whole limit nothing says a plausible place. The TV stays on, nothing else moves, and it is said once. */
@@ -358,7 +578,7 @@ class CastOutputPlayerTest {
         assertEquals("nothing reaches the progress", 60_000, output.currentPosition)
         assertEquals(1, output.currentMediaItemIndex)
         assertFalse(output.isPlaying)
-        assertEquals(CastActivity.PLAYING, activities.last())
+        assertEquals(CastActivity.PLAYING_UNSEEN, activities.last())
         pass(200)
         assertEquals("once", listOf(R.string.cast_position_unknown), said)
         assertTrue(link.ends.isEmpty())

@@ -823,6 +823,7 @@
     <string name="media_route_button_disconnected">Cast: Gerät wählen</string>
     <string name="cast_dropped">Die Verbindung zum Cast-Gerät ist abgebrochen. Die Wiedergabe wartet hier, an der letzten bekannten Stelle.</string>
     <string name="cast_position_unknown">Das Cast-Gerät spielt diesen Titel, sagt aber nicht, wo es ist, deshalb wird der Fortschritt nicht gespeichert. Ein Sprung im Titel stellt das richtig, und wer das Casten beendet, findet den Titel hier an der letzten bekannten Stelle.</string>
+    <string name="cast_played_out_unseen">Das Cast-Gerät hat aufgehört: Es hat bis zu einem Ende gespielt, ohne je zu sagen, wo es war. Der Titel wartet hier an der letzten bekannten Stelle und gilt nicht als fertig.</string>
     <string name="cast_finished_at_once">Das Cast-Gerät hat diesen Titel sofort beendet. Die Wiedergabe wartet hier, an derselben Stelle.</string>
     <string name="cast_too_many_files">Dieser Titel hat zu viele Dateien für Cast. Die Wiedergabe wartet hier, an derselben Stelle.</string>
     <string name="cast_files_differ">Dieser Titel lässt sich nicht casten: Der Server nennt andere Dateien als dieses Gerät. Das kann an ausgeschlossenen Dateien liegen, dann hilft nichts, oder an einem veralteten Stand, dann hilft ein Sync.</string>
