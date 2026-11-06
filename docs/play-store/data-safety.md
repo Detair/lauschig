@@ -13,7 +13,8 @@ Basis: the app talks to the Audiobookshelf server the user enters, and to two se
 
 ## Stored on device (informational)
 
-- Access and refresh tokens (encrypted with Tink / Android Keystore-backed key where available)
+- Access and refresh tokens, per profile (encrypted with Tink / Android Keystore-backed key where available)
+- The app PIN of a protected profile, only if the user sets one: a salted hash, encrypted with the same key; it never leaves the device
 - Library metadata, covers, listening progress, downloaded audio files, settings
 - Home Wi-Fi names (SSIDs) for the optional local-address binding — stored on device only
 - A masked diagnostic log; it leaves the device only if the user shares it (user-initiated action)
@@ -23,6 +24,7 @@ Basis: the app talks to the Audiobookshelf server the user enters, and to two se
 - INTERNET, ACCESS_NETWORK_STATE: talk to the user's server
 - ACCESS_WIFI_STATE, ACCESS_FINE/COARSE_LOCATION, NEARBY_WIFI_DEVICES: read the Wi-Fi SSID only when home-network behavior is configured (the location permission is required by Android for this); the SSID is processed on-device only and is never stored on a server or transmitted; location itself is not used
 - FOREGROUND_SERVICE (+ MEDIA_PLAYBACK, DATA_SYNC), POST_NOTIFICATIONS: playback and download notifications
+- USE_BIOMETRIC: the system's lock prompt, only when a profile is protected by the device lock; the app learns only whether it was passed and sees no fingerprint or lock code
 
 ## Other declarations
 

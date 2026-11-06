@@ -915,6 +915,12 @@ class SetupViewModelTest {
         assertTrue(ssoFrom(unlockVm()))
     }
 
+    /** Nobody else on the device: its own PIN, forgotten at „Profil schützen“. The way still takes a protection off. */
+    @Test fun sso_aForgottenPin_ofTheOnlyProfile_asksForAFreshLogin() {
+        store.acc.value = kindAtHome
+        assertTrue(ssoFrom(unlockVm()))
+    }
+
     @Test fun sso_aReauth_withOtherProfilesOnTheDevice_asksForAFreshLogin() {
         kindIsSaved()
         assertTrue(ssoFrom(vm()))
