@@ -431,9 +431,9 @@ class PlaybackService : MediaLibraryService() {
             onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
             onResumption = { ok, message ->
                 scope.launch {
-                    // A play key that cannot start anything says why (Bluetooth, car, widget); the guard then lets go.
-                    if (!ok && startGuard?.armed == true && message != null) Toast.makeText(this@PlaybackService, message, Toast.LENGTH_LONG).show()
-                    startGuard?.resumption(ok)
+                    // A play key that cannot start anything says why (Bluetooth, car, widget), once the guard lets go.
+                    val failed = startGuard?.resumption(ok) == true
+                    if (failed && message != null) Toast.makeText(this@PlaybackService, message, Toast.LENGTH_LONG).show()
                 }
             },
         )

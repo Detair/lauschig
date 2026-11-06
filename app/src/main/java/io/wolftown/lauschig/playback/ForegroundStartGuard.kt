@@ -18,13 +18,13 @@ import kotlinx.coroutines.launch
  *
  * [arm] on every play key while nothing plays ([shouldArm]); something playing ([onEngaged]) ends the arming for good
  * (Media3 owns the foreground then, also after a quick pause). Otherwise, at the deadline (the first press counts) or
- * at once when the resumption fails, the guard settles, never by reading Android's foreground type (API 29–33 keep it
+ * at once when the last resumption fails, the guard settles, never by reading Android's foreground type (API 29–33 keep it
  * after `stopForeground`, so it says nothing):
  * - a loaded title whose Media3 notification is posted: go foreground with that very notification (same id, nothing
  *   is swapped or cancelled, the service keeps running) – [Host.adoptMediaNotification];
  * - otherwise go foreground with a placeholder ([Host.showPlaceholder]); if a resumption is still running, keep it and
- *   wait for the answer, at most [capMs]; else (failed, answered without playing, or no resumption involved) leave the
- *   foreground again and stop an empty service ([Host.leavePlaceholder]).
+ *   wait for the answers, at most [capMs]; else (all failed, answered without playing, or no resumption involved) leave
+ *   the foreground again and stop an empty service ([Host.leavePlaceholder]).
  *
  * From API 35 the same step comes first, at [arm], before Media3 handles the key ([foregroundFirstFor]); what is left for
  * the deadline is leaving a placeholder if nothing plays. While armed, Media3 must not take that foreground away again
@@ -58,10 +58,10 @@ class ForegroundStartGuard(
 
     private var job: Job? = null
     private var isArmed = false
-    /** null: the resumption has not answered (yet). */
-    private var answer: Boolean? = null
-    /** The player was empty when armed, so Media3 asks the resumption for a title. */
-    private var expectResumption = false
+    /** Play keys that found the player empty, so Media3 asked the resumption for a title, and have no answer yet. */
+    private var openResumptions = 0
+    /** A resumption answered with a title: what is left is waiting for it to play. */
+    private var resumed = false
     private var placeholderUp = false
     /** Media3 wanted to update its notification while armed ([holdsNotificationUpdate]). */
     private var updateHeld = false
@@ -99,6 +99,7 @@ class ForegroundStartGuard(
      */
     fun arm() {
         if (isArmed) {
+            if (!host.hasItems()) openResumptions++
             if (foregroundFirst) {
                 val placeholder = placeholderUp
                 placeholderUp = false
@@ -107,9 +108,9 @@ class ForegroundStartGuard(
             return
         }
         isArmed = true
-        answer = null
+        resumed = false
         placeholderUp = false
-        expectResumption = !host.hasItems()
+        openResumptions = if (host.hasItems()) 0 else 1
         if (foregroundFirst && goForeground()) return adopted(placeholder = false)
         job = scope.launch {
             delay(timeoutMs)
@@ -129,11 +130,19 @@ class ForegroundStartGuard(
         if (foregroundFirst && placeholder) tidyLater(placeholder = true)
     }
 
-    /** The playback resumption answered: a success waits for playback (or the deadline), a failure settles at once. */
-    fun resumption(ok: Boolean) {
-        if (!isArmed) return
-        answer = ok
-        if (!ok) settle()
+    /**
+     * A playback resumption answered. A success waits for playback (or the deadline). A failure settles once the last open
+     * one has answered, also if another press is still waiting for its title: stopping the service now would destroy
+     * that title on arrival. A key that never gets an answer leaves the end to the deadline and the cap.
+     * True if this failure ended the arming, so the caller says why.
+     */
+    fun resumption(ok: Boolean): Boolean {
+        if (!isArmed) return false
+        if (openResumptions > 0) openResumptions--
+        if (ok) resumed = true
+        if (resumed || openResumptions > 0) return false
+        settle()
+        return true
     }
 
     fun release() {
@@ -147,7 +156,7 @@ class ForegroundStartGuard(
         if (!isArmed) return
         if (host.engaged()) return onEngaged()
         if (goForeground()) return adopted(placeholder = false)
-        if (expectResumption && answer == null) {
+        if (openResumptions > 0 && !resumed) {
             // A slow resumption (server, details fetch): stay in the foreground meanwhile, but not forever.
             job?.cancel()
             job = scope.launch {

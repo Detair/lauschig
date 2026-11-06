@@ -109,7 +109,99 @@ class ForegroundStartGuardTest {
         assertEquals(listOf("placeholder", "placeholder"), host.calls)
         assertTrue(g.armed)
         g.resumption(ok = false)
+        g.resumption(ok = false)
         assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_oneResumptionFails_theOtherStillPlays() = runTest {
+        // Each press on an empty player asks for a title. A failed answer must not stop the service under the other one:
+        // its title would arrive just to be destroyed.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertFalse(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertTrue(g.armed)
+        assertFalse(g.resumption(ok = true))
+        host.hasItems = true
+        host.engaged = true
+        g.onEngaged()
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_bothResumptionsFail_leavesAtTheLastAnswer_andSaysSoOnce() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertFalse(g.resumption(ok = false))
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_successThenFailure_doesNotLeave_untilTheDeadline() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertFalse(g.resumption(ok = true))
+        assertFalse(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertTrue(g.armed)
+        host.hasItems = true
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_theOtherAnswerNeverComes_theCapEndsIt() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertFalse(g.resumption(ok = false))
+        advanceTimeBy(timeout + cap - 10)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        advanceTimeBy(20)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_onALoadedTitle_opensNoResumption() = runTest {
+        // Only an empty player asks for a title: the failure of the first press still decides.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.hasItems = true
+        g.arm()
+        host.hasItems = false
+        assertTrue(g.resumption(ok = false))
+        assertFalse(g.armed)
+    }
+
+    @Test fun onePress_failingResumption_saysSo() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertTrue(g.resumption(ok = false))
+    }
+
+    @Test fun onePress_succeedingResumption_saysNothing() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertFalse(g.resumption(ok = true))
+    }
+
+    @Test fun beforeApi35_secondPress_oneResumptionFails_waitsForTheOther() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertFalse(g.resumption(ok = false))
+        assertEquals(emptyList<String>(), host.calls)
+        assertTrue(g.armed)
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "leave"), host.calls)
         assertFalse(g.armed)
     }
 
