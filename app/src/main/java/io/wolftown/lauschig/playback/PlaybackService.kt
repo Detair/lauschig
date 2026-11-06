@@ -47,6 +47,11 @@ import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
 import io.wolftown.lauschig.auto.carLibraryChanges
+import io.wolftown.lauschig.cast.CastOutput
+import io.wolftown.lauschig.cast.CastRuntime
+import io.wolftown.lauschig.cast.CastSessions
+import io.wolftown.lauschig.cast.CastState
+import io.wolftown.lauschig.cast.playbackOutput
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
@@ -130,13 +135,16 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var coverStore: CoverStore
     @Inject lateinit var widgetStore: WidgetStore
     @Inject lateinit var widgetSource: WidgetSource
+    @Inject lateinit var castRuntime: CastRuntime
+    @Inject lateinit var castSessions: CastSessions
+    @Inject lateinit var castState: CastState
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Library requests of cars and browsers; never the main thread (see [LibraryCallback]). */
     private val carScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: MediaLibrarySession? = null
-    private var output: PlaybackOutput? = null
+    @VisibleForTesting internal var output: PlaybackOutput? = null
     /** What plays ([PlaybackOutput.player]); the session and everything that follows the playback use it. */
     private val player: Player? get() = output?.player
     private var bridge: PlaybackProgressBridge? = null
@@ -224,17 +232,21 @@ class PlaybackService : MediaLibraryService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) streamMonitor.onSeekOrPrepare()
             }
         })
-        // Today on this device only; a Cast output (Phase 7) would put its player on top of [exo] here, and what is
-        // built on `p` below follows it. The device's own parts (stream monitor above, volume and effects) stay on [exo].
-        val out: PlaybackOutput = DeviceOutput(exo).also { output = it }
+        // With Play Services the player can also play on a Cast receiver, and what is built on `p` below follows it. The device's
+        // own parts (stream monitor above, effects) stay on [exo]. Without them this is the ExoPlayer itself, as it always was.
+        val out = playbackOutput(exo, castRuntime, castSessions, castState, scope).also { output = it }
         val p = out.player
         // The only writer of the player's volume: the sleep fade (through the session player) times the compressor's switch.
-        val volume = PlayerVolume { out.device.volume = it }
-        comfort = PlaybackComfort(out.device, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
+        val volume = PlayerVolume { out.setVolume(it) }
+        comfort = PlaybackComfort(p, out.device, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
             val at = System.currentTimeMillis()
             val account = signedInAccount
             appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at), account ?: accountStore.account.first()?.serverId) }
         }).also { it.start() }
+        (out as? CastOutput)?.apply {
+            onSpeedRequested { speed -> comfort?.speedRequested(speed) }
+            onOutputChanged { volume.push() }
+        }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
         bridge = PlaybackProgressBridge(p, tracker, { serverId, itemId -> loadPlayable(itemDao, episodeDao, serverId, itemId) }, scope)
@@ -271,7 +283,7 @@ class PlaybackService : MediaLibraryService() {
             // own starts are left alone there.
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 // What the player holds is never deleted by the automatic clean-up, also before the app adopts it.
-                TitleHandover.serviceHolds(currentKey(exo)?.second)
+                TitleHandover.serviceHolds(currentKey(p)?.second)
                 playerController.adoptFromService()
                 scope.launch { accountGuard.titleChanged() }
             }
@@ -441,6 +453,7 @@ class PlaybackService : MediaLibraryService() {
             onPlayLoaded = { scope.launch { player?.play() } },
             onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
             onResumptionAsked = { startGuard?.resumptionAsked() },
+            onCarConnection = ::carConnectionChanged,
             onResumption = { ok, message ->
                 scope.launch {
                     // A play key that cannot start anything says why (Bluetooth, car, widget), once the guard lets go.
@@ -449,6 +462,16 @@ class PlaybackService : MediaLibraryService() {
                 }
             },
         )
+    }
+
+    /**
+     * A car is connected or left. With a car, playback stays on this device: no Cast button, a session that was on ends (a car
+     * has no way to reach a receiver in any case, and it should not go on at home).
+     */
+    @VisibleForTesting
+    internal fun carConnectionChanged(connected: Int) {
+        castState.update { it.copy(carConnected = connected > 0) }
+        if (connected > 0 && output?.isLocal == false) castRuntime.endSession(stopReceiver = true)
     }
 
     /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
@@ -682,6 +705,7 @@ class PlaybackService : MediaLibraryService() {
         streamMonitor.update(active = false, playing = false, buffering = false, bufferedAheadMs = 0)
         // Capture the position and detach the listener before release; the final save outlives the service scope.
         val final = bridge?.currentGlobalSec()
+        castState.update { it.copy(carConnected = false) }
         bridge?.let { player?.removeListener(it) }
         comfort?.release()
         comfort = null

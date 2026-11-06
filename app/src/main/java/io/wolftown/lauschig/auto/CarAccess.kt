@@ -26,6 +26,11 @@ object CarAccess {
      */
     val COVER_READERS = FULL_ACCESS + setOf("com.android.bluetooth", "com.google.android.bluetooth")
 
+    /** The car itself: while one of these is connected, the sound belongs in the car. */
+    private val CAR_HOSTS = setOf("com.google.android.projection.gearhead", "com.android.car.media", "com.android.car.carlauncher")
+
+    fun isCar(packageName: String): Boolean = packageName in CAR_HOSTS
+
     fun levelFor(packageName: String, ownPackage: String, trusted: Boolean): Level =
         if (trusted || packageName == ownPackage || packageName in FULL_ACCESS) Level.FULL else Level.CONTROL
 

@@ -57,6 +57,8 @@ import io.wolftown.lauschig.net.TwoUsersServer.Companion.TOKEN_B
 import io.wolftown.lauschig.playback.DataStoreLastPlayedStore
 import io.wolftown.lauschig.playback.FakeFacade
 import io.wolftown.lauschig.playback.LastPlayed
+import io.wolftown.lauschig.cast.CastSessions
+import io.wolftown.lauschig.cast.FakeCastSessionStore
 import io.wolftown.lauschig.playback.LastPlayedMigration
 import io.wolftown.lauschig.playback.LastTitleStarter
 import io.wolftown.lauschig.playback.MediaItemFactory
@@ -265,8 +267,12 @@ class ProfileSwitchFlowTest {
             object : SyncTrigger { override fun syncNow() { syncs++ } },
             starter,
             locks,
+            castSessions,
         )
     }
+
+    private val castNotes = FakeCastSessionStore()
+    private val castSessions by lazy { CastSessions(api::playbackSessionApi, { DeviceInfoDto(deviceId = "tablet") }, castNotes, store, scope) }
 
     private suspend fun bothAnswered() {
         appSettings.setMissingVolumesEnabled(a, true)
@@ -622,6 +628,20 @@ class ProfileSwitchFlowTest {
                 awaitPlaying("a-book")
             }
         }
+    }
+
+    /** The stop ended the cast; its session on the server goes while the account that opened it still has its token. */
+    @Test fun aCastsSession_isClosedWithTheTokenOfTheAccountThatIsLeft_beforeTheSwitch(): Unit = runBlocking {
+        signedIn()
+        castNotes.add(a, "cast-of-a")
+        castNotes.add(b, "cast-of-b")
+
+        assertTrue(signOut.switchProfile(b))
+
+        val closes = web.seen.filter { it.path.startsWith("/api/session/") }
+        assertEquals(listOf("/api/session/cast-of-a/close"), closes.map { it.path })
+        assertEquals(BEARER_A, closes.single().auth)
+        assertEquals(listOf(b to "cast-of-b"), castNotes.open.toList())
     }
 
     @Test fun aTitleStartedWhileTheAccountIsLeft_doesNotSurviveTheSwitch(): Unit = runBlocking {

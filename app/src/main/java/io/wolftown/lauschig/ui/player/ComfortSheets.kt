@@ -55,6 +55,7 @@ fun boostLabel(db: Int): String = if (db <= 0) stringResource(R.string.audio_boo
 fun soundValue(state: ComfortUiState): String {
     val boost = state.titleBoostDb ?: state.defaultBoostDb
     return when {
+        state.casting -> stringResource(R.string.player_tile_off)
         boost > 0 -> boostLabel(boost)
         state.compressor -> stringResource(R.string.player_tile_night)
         state.skipSilence -> stringResource(R.string.player_tile_no_silence)
@@ -65,6 +66,7 @@ fun soundValue(state: ComfortUiState): String {
 /** Everything the Klang tile has on, for TalkBack ("Klang: +3 dB, Sprachfokus & Nacht-Kompression"). */
 @Composable
 fun soundDescription(state: ComfortUiState): String {
+    if (state.casting) return stringResource(R.string.cast_sound_unavailable_description)
     val boost = state.titleBoostDb ?: state.defaultBoostDb
     val parts = listOfNotNull(
         boostLabel(boost).takeIf { boost > 0 },
@@ -106,7 +108,7 @@ fun RowScope.ComfortButtons(
         stringResource(R.string.player_tile_sound),
         soundValue(state),
         onClick = { showAudio = true },
-        active = state.skipSilence || state.compressor || boost > 0,
+        active = !state.casting && (state.skipSilence || state.compressor || boost > 0),
         modifier = Modifier.testTag("audioButton").semantics { contentDescription = soundLabel },
     )
     if (showSleep) {
@@ -183,18 +185,28 @@ private fun SleepSheet(sleep: SleepTimerUi?, chime: Boolean, onStart: (SleepMode
 private fun AudioSheet(state: ComfortUiState, onSkipSilence: (Boolean) -> Unit, onBoost: (Int?) -> Unit, onCompressor: (Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp).testTag("audioSheet")) {
         Text(stringResource(R.string.player_tile_sound), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
+        // The settings stay what they are, for when the sound is back here; nothing pretends to reach the receiver.
+        val enabled = !state.casting
+        if (state.casting) {
+            Text(
+                stringResource(R.string.cast_effects_unavailable),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp).testTag("soundUnavailable"),
+            )
+        }
         ListItem(
             headlineContent = { Text(stringResource(R.string.audio_compressor)) },
             supportingContent = { Text(stringResource(R.string.audio_compressor_hint)) },
-            trailingContent = { Switch(checked = state.compressor, onCheckedChange = null) },
-            modifier = Modifier.fillMaxWidth().selectable(selected = state.compressor, role = Role.Switch) { onCompressor(!state.compressor) }
+            trailingContent = { Switch(checked = state.compressor && enabled, onCheckedChange = null, enabled = enabled) },
+            modifier = Modifier.fillMaxWidth().selectable(selected = state.compressor, role = Role.Switch, enabled = enabled) { onCompressor(!state.compressor) }
                 .testTag("compressor"),
         )
         ListItem(
             headlineContent = { Text(stringResource(R.string.audio_skip_silence)) },
             supportingContent = { Text(stringResource(R.string.audio_skip_silence_hint)) },
-            trailingContent = { Switch(checked = state.skipSilence, onCheckedChange = null) },
-            modifier = Modifier.fillMaxWidth().selectable(selected = state.skipSilence, role = Role.Switch) { onSkipSilence(!state.skipSilence) }
+            trailingContent = { Switch(checked = state.skipSilence && enabled, onCheckedChange = null, enabled = enabled) },
+            modifier = Modifier.fillMaxWidth().selectable(selected = state.skipSilence, role = Role.Switch, enabled = enabled) { onSkipSilence(!state.skipSilence) }
                 .testTag("skipSilence"),
         )
         ListItem(
@@ -203,14 +215,16 @@ private fun AudioSheet(state: ComfortUiState, onSkipSilence: (Boolean) -> Unit, 
         )
         FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
-                selected = state.titleBoostDb == null,
+                selected = enabled && state.titleBoostDb == null,
+                enabled = enabled,
                 onClick = { onBoost(null) },
                 label = { Text(stringResource(R.string.audio_boost_default, boostLabel(state.defaultBoostDb))) },
                 modifier = Modifier.testTag("boost:default"),
             )
             PlaybackSettings.BOOST_CHOICES.forEach { db ->
                 FilterChip(
-                    selected = state.titleBoostDb == db,
+                    selected = enabled && state.titleBoostDb == db,
+                    enabled = enabled,
                     onClick = { onBoost(db) },
                     label = { Text(boostLabel(db)) },
                     modifier = Modifier.testTag("boost:$db"),

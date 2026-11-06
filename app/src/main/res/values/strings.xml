@@ -816,6 +816,36 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string name="cast_refused_device_title">This title is only on this device, a Cast device cannot play it. It is waiting for you here.</string>
+    <!-- The labels of Media3's Cast button; its own are English only. -->
+    <string name="media_route_button_connected">Cast: connected</string>
+    <string name="media_route_button_connecting">Cast: connecting</string>
+    <string name="media_route_button_disconnected">Cast: choose a device</string>
+    <string name="cast_dropped">The connection to the Cast device was lost. Playback is waiting here, at the last known spot.</string>
+    <string name="cast_position_unknown">The Cast device is playing this title but does not say where it is, so progress is not being saved. A jump in the title sets that right, and stopping the cast brings the title back here, at the last known spot.</string>
+    <string name="cast_played_out_unseen">The Cast device has stopped: it played to an end without ever saying where it was. This title is waiting here, at the last known spot, and is not marked as finished.</string>
+    <string name="cast_finished_at_once">The Cast device ended this title straight away. Playback is waiting here, at the same spot.</string>
+    <string name="cast_too_many_files">This title has too many files for Cast. Playback is waiting here, at the same spot.</string>
+    <string name="cast_files_differ">This title cannot be cast: the server names other files than this device. Excluded files would be the reason, then nothing helps, or an outdated state, then a sync helps.</string>
+    <string name="cast_suspended_title_here">The connection to the Cast device is interrupted, so this title is waiting here.</string>
+    <string name="cast_connected_to">Connected to %1$s</string>
+    <string name="cast_connected_elsewhere">Connected to the Cast device</string>
+    <string name="cast_suspended_line">Connection to the Cast device interrupted. It may play on, and it cannot be controlled from here right now.</string>
+    <string name="cast_connect_failed">Could not connect to the Cast device. Is it switched on and on the same Wi-Fi?</string>
+    <string name="cast_server_offline">Your server is not answering right now, so this title cannot be cast.</string>
+    <string name="cast_open_failed">The server did not make this title available to the Cast device.</string>
+    <string name="cast_unreachable">The Cast device cannot reach your server. It was connected, but it cannot load the server address, which has to work without a VPN and without your home DNS. Playback is waiting here, at the same spot.</string>
+    <string name="cast_unreachable_http">The Cast device cannot reach your server. It was connected, but it cannot load the server address: it uses http, which it may not load. Playback is waiting here, at the same spot.</string>
+    <string name="cast_format_failed">The Cast device cannot play the audio format of this title. Playback is waiting here, at the same spot.</string>
+    <string name="cast_playing_on">Playing on %1$s</string>
+    <string name="cast_playing_elsewhere">Playing on the Cast device</string>
+    <string name="cast_device_title_button">Play on a Cast device: not possible for this title</string>
+    <string name="cast_device_title_heading">Only on this device</string>
+    <string name="cast_device_title_text">This title is in a folder on this device. A Cast device only plays what it can load from the server.</string>
+    <string name="cast_effects_unavailable">Not available while casting: the Cast device makes the sound, not this device.</string>
+    <string name="cast_sound_unavailable_description">Sound: not available while casting</string>
+    <string name="cast_speed_limit">Cast devices play at 2× at most.</string>
+    <string name="cast_understood">Got it</string>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
         <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
@@ -824,6 +854,7 @@
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
         <item>The downloads page shows how much space the other profiles take</item>
         <item>Protect a profile if you like: before a switch the app asks for the device lock or a PIN of its own</item>
+        <item>Chromecast and Google TV: send a server title from the player to a Cast device, control it from here and take it back</item>
     </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>

@@ -460,3 +460,152 @@ Das Gesamtreview empfiehlt den Merge, mit vier kleinen Befunden; alle übernomme
 
 **Nicht auf dem Gerät:** die Übernahme des alten Werts (der Emulator hatte keinen, nur der Test zeigt sie; dass `LauschigApp` sie aufruft, hat wie bei `migrateAutoDelete` keinen Test), eine Serienseite mit Audible.
 
+
+## Umsetzung Task 4 (2026-11-06)
+
+Branch `p7-cast`, von `origin/p7-profiles`. Paket `io.wolftown.lauschig.cast`. Kein echter Empfänger im Spiel: Die Tests laufen
+gegen Fakes, die `CastPlayerImpl.updateActivePlayer` und das Verhalten von `RemoteCastPlayer` 1.11.1 nachbilden (aus den Quellen des
+Artefakts), plus ein Test mit dem echten `CastPlayer` ohne Framework. Der Gerätedurchlauf am Chromecast steht aus (Fabians OK).
+
+### Was gebaut ist
+
+- **`:abs-api`:** `PlaybackSessionApi` (`POST api/items/<id>/play`, `…/play/<episodeId>`, `POST api/session/<id>/close`),
+  `sessionTrackUrl`. `forceDirectPlay` wird immer gesendet.
+- **`CastSessions`:** öffnet und schließt, merkt sich offene Sitzungen in einem DataStore; `closeOpen` vor dem Abmelden und vor dem
+  Wechsel, `closeLeftovers` beim App-Start.
+- **`ReceiverItems`:** die Warteschlange des Empfängers, nur aus der Sitzung gebaut. `MediaItemFactory` bleibt unberührt.
+- **`CastOutputPlayer`** (`ForwardingSimpleBasePlayer`): der Player der Service-Kette, siehe „Claudes Wahl“.
+- **`CastRuntime`/`GmsCastRuntime`:** die einzige Stelle mit Play-Services-Aufrufen außer dem `MediaError`-Code. `CastState` verbindet
+  Framework, Service und Oberfläche.
+- **`CastOutput`, `ReceiverVolume`:** `PlaybackOutput` mit Lautstärke; der Sleep-Fade geht an die Stream-Lautstärke, sonst an die
+  Gerätelautstärke, höchstens alle 500 ms, das Ende (1,0) sofort.
+- **`PlaybackComfort` geteilt:** Tempo je Titel, Rückspulen, letzte Aktivität auf `player`; Boost, Kompressor, Stille überspringen auf
+  `device`. Was ein Empfänger an Tempo meldet, wird nicht gespeichert; was eine Person wählt, kommt über `speedRequested`.
+- **Oberfläche:** Media3s Compose-`MediaRouteButton` (gibt es in 1.11.1), nur mit `CastUi.showButton`. Bei einem Gerätetitel ein
+  eigener Knopf mit Erklärung. Zeile „Wird auf … abgespielt“ unter dem Titel, Klang-Blatt „nicht verfügbar“, Tempo-Blatt nennt 2×.
+- **Dokumente:** Datenschutz DE und EN, `data-safety.md`, README, `NOTICE` (Entwurf).
+
+### Was ABS tut (Quellen v2.26.0, v2.37.1; 2.37.1 auch lokal geprüft)
+
+- **Route:** `/public/session/:id/track/:index` steht in `server/routers/PublicRouter.js` seit **v2.22.0** (v2.21.0 nicht), also auch in
+  v2.26.0. Kein Fallback und keine Sperre nötig. Lokal: 206 mit Range ohne Token, nach dem Schließen 404. `index` beginnt bei 1; 0 gibt
+  bei einem Buch 404. Das Cover antwortet ohne Token mit 200.
+- **Podcast-Folgen:** `POST /api/items/:id/play/:episodeId` füllt dieselben `audioTracks`, `getTrack` liest nur diese: Die Route bedient
+  sie auch. Nur aus den Quellen, der lokale Testserver hat keine Podcasts. Lücke: Alte Folgen ohne `index` findet v2.26 nicht (404, der
+  Player meldet es), ab v2.37 greift dort ein Fallback.
+- **Ablauf:** `closeStaleOpenSessions` jede Nacht um 00:30, alles ohne Update seit 36 Stunden. Eine neue Sitzung desselben Benutzers auf
+  demselben Gerät schließt die alte. Ein zweites Close gibt 404.
+- **Statistik:** `saveSession` speichert keine Sitzung ohne `timeListening`. Die Cast-Sitzung bekommt nie welche; lokal geprüft: 258
+  Sitzungen vor und nach Öffnen und Schließen. Gezählt wird über den bestehenden Weg (`ProgressTracker`, lokale Sitzung,
+  `local-all`), mit der Position aus `output.player`. Hin und zurück innerhalb von 10 Minuten bleibt es **eine** Sitzung; die
+  Ladezeit zählt nicht. Test `CastProgressTest`.
+
+### Was dokumentiert ist und was nicht
+
+- **`http://` am Default Media Receiver:** Google dokumentiert es nicht. `web_receiver/basic` sagt nur, veröffentlichte Empfänger liegen auf
+  TLS-Servern; `cast/docs/media` verlangt CORS nur für adaptive Streams und Untertitel. Der Empfänger läuft also vermutlich auf einer https-Seite. Ob
+  http-Audio dort geladen wird, klärt erst der Gerätetest. Deshalb ein eigener Text für http.
+- **Suche:** „Device discovery is completely managed by the `CastContext`“; gelegentlich beim Wechsel in den Vordergrund, solange der
+  Dialog offen ist, beim Wiederaufnehmen einer Sitzung; Ende im Hintergrund (`android_sender/integrate`).
+- **Android 17:** Lokale Netzzugriffe sind ab `targetSdk` 37 ohne `ACCESS_LOCAL_NETWORK` gesperrt. Für Cast nennt Android den Output
+  Switcher als Weg ohne die Berechtigung. Media3 öffnet ihn ab API 37 von selbst, wenn `Cast.initialize` genutzt wird und
+  `MediaTransferReceiver` im Manifest steht: beides der Fall. **Keine neue Laufzeitberechtigung.**
+- **Google-Logs:** Das Cast-SDK protokolliert laut `android_sender/data_disclosure` seine Nutzung (Suche, Sitzungen, Telefon, App) und
+  sendet sie an Google; kein Abschalten. Datenschutz und `data-safety.md` sagen das.
+
+### Claudes Wahl
+
+1. **`PlaybackOutput.player` ist `CastOutputPlayer`, nicht `CastPlayer` direkt.** `CastPlayer.Builder(context).setLocalPlayer(exo)` liegt
+   darunter. Ohne diese Schicht wäre der Player sekundenlang leer (Timeline erst nach dem ersten Status; Bildschirm, Benachrichtigung und
+   Widget würden den Titel verlieren), `RemoteCastPlayer` kennt kein `STATE_ENDED` und keinen `playerError`, und jede Stelle mit
+   `setMediaItems`, `replaceMediaItem` (Kapitel-Untertitel, neue Cover, fertiger Download) müsste selbst wissen, wohin sie sendet. Der
+   Transfer läuft trotzdem nur über `CastPlayer.TransferCallback`. Der Rest der App bleibt fast unverändert.
+2. **Framework erst beim Öffnen des großen Players.** Nicht beim App-Start, nicht fürs Auto, nicht für den Mini-Player: Erst dann gehen Suche
+   und Google-Logs los. Dafür beginnt der Player auf dem Gerät und nimmt den `CastPlayer` später dazu (`setPlayer`). Weil die Suche des
+   Frameworks am Activity-Lebenszyklus hängt, fordert der offene Player sie selbst an (`CALLBACK_FLAG_REQUEST_DISCOVERY`).
+3. **Default Media Receiver `CC1AD845`** statt Media3s Vorgabe `A12D4273` (die DRM-Variante): Wir brauchen kein DRM, und `CC1AD845` ist der
+   für alle Cast-Geräte dokumentierte, auch reine Audiogeräte.
+4. **Adresse:** erst die öffentliche, dann die lokale, bei einem Ladefehler automatisch die nächste. Fabians öffentliche Adresse geht nur
+   über NetBird; ohne diesen Schritt könnte Cast bei ihm nie laufen.
+5. **Ladefehler:** Die Sitzung endet, der Titel wartet pausiert hier an derselben Stelle, der Player sagt warum. Ein offener Cast mit einem
+   Knopf, der wieder scheitert, wäre schlechter. Zeitlimit 45 s. Getrennte Texte: Gerät nicht erreichbar (`cast_connect_failed`), Gerät
+   erreicht den Server nicht (`cast_unreachable`, `_http`), Format (`cast_format_failed`).
+6. **Zurückholen:** immer pausiert, Position bleibt. Ton springt nie von selbst in einen anderen Raum, auch nicht nach einem WLAN-Ausfall. Nur
+   wer im System-Ausgabeumschalter „dieses Telefon“ wählt (`onTransferred`), hört weiter, wenn es gerade lief.
+7. **Gerätetitel beim Casten gestartet, auch als nächster in der Warteschlange:** Cast endet, der Titel wartet pausiert hier. Über den
+   System-Umschalter auf einen Gerätetitel: ebenso, mit Grund. Der Knopf im Player erklärt es vorher.
+8. **Hinweiston:** beim Casten aus. Die Lautstärketasten steuern den Empfänger, die Medienlautstärke des Telefons ist also außer Reichweite, und
+   der Ton käme in einem stillen Raum in unbekannter Lautstärke. Das Ausblenden am Empfänger sagt dasselbe; Schütteln geht weiter.
+9. **Auto:** kein Grund gefunden, davon abzuweichen. Ein verbundener Car-Host (`CarAccess.isCar`, per Controller im Service gezählt)
+   versteckt den Knopf und beendet eine laufende Sitzung; ein Cast-Versuch über das System lässt den Ton, wo er ist.
+10. **Tempo:** Empfänger können 0,5–2×. Der Titel behält sein Tempo auch darüber (2,5×), das Tempo-Blatt nennt die Grenze.
+11. **Stop oder leerer Player am Empfänger** beendet die Sitzung: So laufen Abmelden und Wechsel ohne eigenen Weg. Beide warten zusätzlich auf
+    `closeOpen`, damit das Close noch den Token hat (`ProfileSwitchFlowTest`).
+12. **Während des Castens kein Download-on-Play und kein Auto-Resume durch Kopfhörer:** Beide gehören zu diesem Gerät.
+
+### Bekannte Grenzen
+
+- Im Cast zeigt die Benachrichtigung Titel und Autor, nicht das Kapitel: Ein `replaceMediaItem` würde den Empfänger unterbrechen.
+- Die Fehlererkennung liest `MediaStatus.idleReason`, `onMediaError` und ein Zeitlimit. Ob der Default Media Receiver sie so meldet, zeigt erst
+  der Gerätetest.
+
+### Was der Gerätetest und der Review wissen müssen
+
+Prüfliste steht im Bericht. Zuerst dort klären: `http`, `onTransferred`-Reihenfolge, Ende einer Warteschlange, Sitzung bei Netzverlust.
+
+### Fix-Runde 1 nach Review (2026-11-06)
+
+Vier wichtige Befunde, acht kleine, dazu die Wächter aus den Vorgaben. Der Review lief ohne Empfänger, die Fakes liefern jetzt die Reihenfolgen, die `RemoteCastPlayer` laut Bytecode erlaubt.
+
+- **I1, Suspend:** Eine unterbrochene Cast-Sitzung (WLAN des Telefons) fasst den Empfänger nicht mehr an. Neue Phasen `SUSPENDED` und `RESUMING`. Beim Resume fragt der Player nach einem frischen Status und wird `ACTIVE` ohne Load, mit der Position des Empfängers. Hat der Empfänger den Titel verloren, geht dieselbe Sitzung noch einmal hin, mit dem, was der Cast gerade tat; ohne jede Antwort nach 10 s ebenso.
+- **I2, Adresse:** `onOnlineBase` merkt sich die neueste Adresse, solange `streamBase()` null ist. `refresh` zieht die Dateien um, sobald die eigenen zurück sind (`CastWholeWayTest`).
+- **I3, STOPPED:** `READY` mit dem eigenen Titel führt zurück nach `ACTIVE`. `INTERRUPTED` zählt als beschäftigt, solange der eigene Titel in der Warteschlange ist. Fremd ist ein Eintrag erst, wenn er auch per `contentId` nicht unserer ist.
+- **I4:** `onSessionEnded` mit Fehler und ein gescheitertes Resume sagen `cast_dropped`. Das eigene „Casten beenden“ bleibt still (Fehler 0).
+- **Wächter Position:** Nach einem Load erreicht keine Position den Tracker, bis der Empfänger die Startdatei an einer plausiblen Stelle meldet (`startProven`). Bis dahin steht die Position des Titels. Wie es endet: sofort einmal `requestStatus`, jede Sekunde ein Blick auf den letzten Progress-Bericht, und nach dem Limit `cast_no_position`. Ebenso an einer Dateigrenze: Die neue Datei wird nie mit der alten Position gepaart.
+- **Wächter Ende:** Fertig ist ein Titel nur bis 15 s vor dem echten Ende der letzten Datei.
+- **Große Titel:** Passt ein Titel nicht in eine Nachricht, sendet `ReceiverConverter` kompakt; passt er auch so nicht, kommt sofort `cast_too_many_files`. Grenze bei typischem Titel und langer Adresse: 174 Dateien.
+- **Klein:** M1 `leave` erhöht die Generation. M2 „dieses Telefon“ in beiden Reihenfolgen. M3 der Rückweg nimmt die gemerkte Position, nie `source.currentPosition`. M4 `cast_files_differ` ohne falschen Rat. M5 kein Wiederverwenden nach `STOPPED` oder `ENDED`, immer nur ein Öffnen zur selben Zeit. M6 `closeOpen` höchstens 2 s, die Notiz bleibt. M7 60 s über alle Adressen. M8 `CastActivity` für die Zeile unter dem Titel.
+
+**Claudes Wahl**
+
+1. **Während eines Suspends zeigt der Player „lädt“, auf dem Empfänger, mit einer Zeile: unterbrochen, es spielt vielleicht weiter, von hier nicht steuerbar.** Weder „spielt“ noch „pausiert“ wäre wahr. Play, Pause, Vorspulen und Tempo tun nichts: Eine Taste hier wäre vorgetäuscht, und Play gäbe Ton auf beiden Geräten. Wer zurück will, nimmt den Cast-Knopf („Casten beenden“). Ein anderer Titel in dieser Zeit beendet den Cast und wartet hier pausiert.
+2. **Fünf Minuten Suspend, dann gibt das Telefon auf:** Google nennt keine Frist, und mit abgeschaltetem Reconnection-Service ist nicht sicher, dass das Framework je ein Ende meldet. Das Schließen der Sitzung hält einen unerreichbaren Empfänger beim nächsten Lesen an. In dieser Zeit zählt keine Hörzeit, die Position bleibt die vom Abbruch.
+3. **Toleranz am Ende: 15 s.** Ein Bericht ist bis zu eine Sekunde alt, bei 2× also zwei Sekunden Buch; die Dauer einer Datei weicht bei VBR um einige Sekunden ab. Wer wirklich fertig ist, liegt darin, der Anfang einer letzten Datei nie. Pech hat nur eine Datei, deren Angabe um mehr als 15 s falsch ist: Sie endet nicht als „fertig“, sondern wartet nach 10 s pausiert. Das kostet nichts.
+4. **Zweifel dauert 10 s:** Ein fremder Eintrag, ein „fertig“ an falscher Stelle, „idle“ ohne Grund. Ein Moment davon beendet nichts. Danach gilt der Empfänger als leer, der Titel wartet pausiert, Play lädt neu.
+5. **Kompakt heißt mehr als Cover und Autor:** Beide weg bringt nur 781 → 626 Bytes je Datei. Media3s `customData` mit der Kopie des Eintrags kostet mehr, und `toMediaItem` kommt ohne sie aus: zusammen 364 Bytes. Also weg mit allen dreien, nur für Titel, die sonst nicht passen. Erste Datei und Startdatei behalten alles. Auf dem Fernseher fehlt danach das Cover, im Telefon nicht.
+
+### Fix-Runde 2 nach Re-Review (2026-11-06)
+
+Vier wichtige Befunde und die kleinen 1 bis 7, fast alle rund um einen Suspend und ein abruptes Ende. Keine neue Phase: R1 nutzt `LEAVING`, das Warten aus R3 ist ein Merker innerhalb von `LOADING`. Kein Cast-Schalter, keine gefensterte Warteschlange, `NOTICE` unberührt.
+
+- **R1, anderer Titel im Suspend:** Der Text stimmt jetzt. Der Titel wartet hier pausiert, und das `play()` derselben Anfrage startet nichts. `otherTitleHere` bleibt in `LEAVING`, bis das Framework das Ende meldet oder 5 s um sind. In dieser Zeit wird nur ein Play geschluckt, alles andere gehört schon dem Gerät. Ein Druck danach spielt.
+- **R2, Resume:** Nur ein Fehler oder Schweigen sendet noch einmal. `STOPPED` führt zu `toStopped`, `FINISHED` am Ende zu `ended`, sonst zu `toStopped`. Ein fremder Titel im Status ist kein Schweigen. Ein Titel, der vor dem Suspend nicht `ACTIVE` oder `LOADING` war, geht ohne Load dorthin zurück (`CastTitle.left`). Getestet mit einem Client, der seinen Status behält, und einem, der es nicht tut.
+- **R3, Beweis:** `READY` im `LOADING` ist immer ein Grund, nach einem frischen Status zu fragen, alle 5 s bis zum Limit. Die `contentId` des Status zählt vor Media3s Index (`receiverIndex`, `playsOurs`). Nennt sie die Startdatei an einer plausiblen Stelle, ist das der Beweis, auch bei Index 0 und `MediaItem.EMPTY`. Solange die `contentId` unseren Titel nennt und `READY` gilt, gibt es keine andere Adresse und kein „nicht erreichbar“. Der Fake kennt kein `report` mehr und rechnet wie `getApproximateStreamPosition`.
+- **R4, abruptes Ende:** `onCastSessionEnded` merkt sich das Ende (`sessionOver`), und `toDevice` behält den Titel dann nicht. In beiden Reihenfolgen startet ein neuer Cast von hier, im Zustand von hier.
+- **Klein:** M1 Im Suspend wartet der Titel ungeprepart auf dem Gerät, `prepare` erst, wenn er wirklich zurück ist. Weil Media3 das Gerät nach `transferState` selbst prepart, wenn die Quelle nicht idle ist, ruft der Zweig vorher `source.stop()` (Media3 tut das zwei Zeilen später ohnehin). Scheitert danach der Stream, behält `PlayerControllerImpl` den Grund (`cast_dropped`, `cast_suspended_title_here`). M2 Nur `index == c.index + 1` ist eine Dateigrenze; jeder andere Index und ein später Status nach einem Sprung über Dateien behalten 10 s lang das Bekannte. M3 siehe unten. M4 „Dieses Telefon“ im Suspend macht keinen Ton und geht mit dem Titel. M5 Die Zeile sagt „Verbunden mit …“, bis der Player sagt, dass etwas spielt. M6 Das Limit schreibt `baseIndex` nicht mehr. M7 Die erste Adresse bekommt 40 s, der Rest 20 s.
+- **Gefunden beim Testen:** Ein Wechsel von live auf maskiert ist für `SimpleBasePlayer` ein `REMOVE`, und `PlaybackProgressBridge` speichert dann die alte Position. Die wird erst in diesem Moment gelesen: alte Datei, neue Position. Darum fragt die Position des Live-Zustands jetzt `trusted` (`guarded`), und `onReceiverStatus` wertet erst nach Media3 aus, dessen Callback hinter unserem läuft.
+- **Minor 8 bleibt:** Zwei Dateien vor dem ersten Status, nur bei Dateien, die kürzer sind als ein Load dauert. Das endet jetzt nicht mehr, sondern wird zum Warten aus Wahl 1: klare Meldung, kein Fortschritt, bis zu einem Sprung oder dem Ende des Casts.
+
+**Claudes Wahl**
+
+1. **Spielt der Empfänger den Titel und nennt bis zum Limit keine plausible Stelle, spielt der Fernseher weiter, und der Fortschritt steht.** Der Player sagt es einmal (`cast_position_unknown`), zeigt weiter „lädt“ an der letzten bewiesenen Stelle und fragt alle 30 s. Es endet mit einem plausiblen Status, einem Sprung der Person (der geht zum Fernseher, sein Ziel ist der neue Beweis), dem Ende des Casts oder einem Stopp am Empfänger. Warum: Den Fernseher anzuhalten nimmt der Person weg, worum sie gebeten hat, wegen eines Zweifels an der Buchführung. Die Position einfach zu übernehmen überschriebe die Hörposition hier und per Sync auf dem Server, und genau das soll der Beweis verhindern. Eine andere Adresse ist keine Antwort auf einen Empfänger, der spielt. Es kostet nicht gezählte Hörzeit, und eine Tempoänderung wartet auf den Beweis. Beim Default Media Receiver sollte es selten sein.
+2. **Ein fertiger Titel, noch einmal gecastet (M3).** Hier steht `ExoPlayer` am Ende, `STATE_ENDED`; das Play der Sitzung springt an den Anfang der letzten Datei, aus der Bibliothek startet `play` bei 0. Der Cast tut dasselbe: `FINISHED` im `LOADING` nahe am Ende ist sofort das Ende, ohne Meldung. Anderswo kommt `cast_finished_at_once`, ohne Netz-Vorwurf und ohne Limit. Nach 3 s, nicht sofort: Bei einem Load am Ende einer Datei wäre ein Moment `FINISHED` zwischen zwei Dateien sonst das Ende eines gesunden Casts.
+3. **„Dieses Telefon“ im Suspend spielt, sobald die Sitzung endet,** und wird vergessen, wenn sie zurückkommt. Das ist die eine Zeile aus den Vorgaben, und sie behält, was die Person wollte.
+
+Mutationen und Prüfliste (Datenrisiken zuerst) stehen im Bericht von Task 4.
+
+### Fix-Runde 3 nach Re-Review 2 (2026-11-06)
+
+Zwei wichtige Befunde und vier kleine, alle in Code der Runde davor. Danach kommt der Gerätetest. Keine neue Phase.
+
+- **T1:** Ist ein Titel per `contentId` bewiesen und Media3 noch nicht so weit, bleibt der Zustand maskiert, und ein ruhiger Empfänger meldet sich bis zur nächsten Pause oder Dateigrenze nicht. Solange der Empfänger unseren Titel hält und der Zustand nicht `trusted` ist, fragt `ACTIVE` jetzt alle 5 s nach einem frischen Status. Eine Antwort beendet das.
+- **T2:** Ein Halten ist jetzt eine Tatsache, die die Phase überlebt: `unproven` gilt ab dem Limit bis zu einem neuen Load oder einem Beweis. An der Wache zählt `BUFFERING` wie `READY`. Ein echter Stopp, ein fremder Titel oder ein Fehler beenden das Halten. Der Weg zurück führt immer durch `startProven` (`backToHold`), nie über `becomeActive(fromReceiver = true)`. Das gilt auch nach einem Suspend, denn dort war dieselbe Lücke.
+- **Klein:** 1 Ein Titel, der im Halten zu Ende spielt, sagt `cast_played_out_unseen`, wartet pausiert an der letzten bewiesenen Stelle und gilt nicht als fertig. 2 siehe unten. 3 Bei `cast_suspended_title_here` löscht der Controller `starting`: kein Spinner, und der erste Druck spielt. 4 Der behaltene Grund geht beim nächsten Druck, auch von der Benachrichtigung oder einer Taste. Dort erst, wenn er einmal gestanden hat, weil die Meldung den Zustand des `MediaController` überholen kann.
+- **Debug-Zeilen:** Status, Sitzungsereignisse und Phasen stehen in Logcat auf Stufe Debug, also nicht im Diagnose-Log. Die Prüfliste liest sie.
+
+**Claudes Wahl**
+
+1. **Der Sleep-Timer läuft weiter, wenn der Fernseher spielt und der Player es nicht zeigen kann.** Der maskierte Zustand muss „lädt“ bleiben, sonst speichert der Tracker. Darum meldet der Player `CastActivity.PLAYING_UNSEEN`, und die Zeile unter dem Titel liest sich wie bei `PLAYING`. `SleepTimer` zählt dann selbst: Minuten als Hörzeit, das Kapitelende von der letzten bekannten Stelle aus im Tempo des Titels. Eine echte Position übernimmt sofort. Blende und Pause erreichen den Fernseher, getestet durch den echten Controller; der Schritt über `MediaController` und `CarSafePlayer` steht auf der Prüfliste. Ein normaler Load hält den Timer wie bisher an.
+2. **Findet die Wache nichts vor, gilt das als Stopp,** obwohl nur ein echter Stopp das Halten beenden soll. Sonst bliebe ein Empfänger, der den Titel verloren hat und schweigt, für immer „lädt“. Falls das falsch war, kostet es nichts: Das nächste `READY` führt zurück ins Halten.
+
+Die endgültige Prüfliste für den Gerätetest steht als ein Abschnitt im Bericht von Task 4, Datenrisiken zuerst.

@@ -7,6 +7,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.wolftown.lauschig.cast.CastActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,6 +96,9 @@ class SleepTimer(
     private var listening = false
     /** The title the timer last ticked for; another one re-arms chapter mode. */
     private var itemId: String? = null
+    /** Where a TV playing unseen was last known to be, and how long it has played since: its position does not move here. */
+    private var unseenFromSec: Double? = null
+    private var unseenMs = 0L
     private var chimeOn = true
 
     init {
@@ -126,8 +130,18 @@ class SleepTimer(
     /** One timer step; public for tests that drive the clock themselves. */
     internal fun step(deltaMs: Long) {
         val s = player.state.value
-        // While a title loads, the state is reset (no duration, no chapters): no tick may read it as "at the end".
-        if (s.itemId == null || s.isLoading || s.durationSec <= 0) return
+        val unseen = s.outputActivity == CastActivity.PLAYING_UNSEEN
+        // While a title loads, the state is reset (no duration, no chapters): no tick may read it as "at the end". A TV that plays only looks like that.
+        if (s.itemId == null || (s.isLoading && !unseen) || s.durationSec <= 0) return
+        if (unseen) {
+            if (unseenFromSec == null) {
+                unseenFromSec = s.positionSec
+                unseenMs = 0
+            }
+            unseenMs += deltaMs
+        } else {
+            unseenFromSec = null
+        }
         if (s.itemId != itemId) {
             itemId = s.itemId
             machine.rearm(input())
@@ -135,7 +149,9 @@ class SleepTimer(
         // Near the end the poll of the controller is too coarse: read the player now.
         if ((machine.remainingMs(input()) ?: Long.MAX_VALUE) <= machine.fadeMs + 2 * tickMs) player.refreshNow()
         val effect = machine.tick(input(), deltaMs)
-        if (effect.playChime && chimeOn) chime.play()
+        // Not while casting: the sound is in another place, and this phone's media volume is out of reach of the keys (they steer the
+        // receiver), so a tone could come at any loudness in a quiet room. The receiver's fade says the same.
+        if (effect.playChime && chimeOn && s.outputName == null) chime.play()
         if (effect.pause) {
             player.pause()
             finish()
@@ -183,7 +199,9 @@ class SleepTimer(
     }
 
     private fun input(): SleepInput = player.state.value.let {
-        SleepInput(it.isPlaying, it.positionSec, it.speed, it.chapterIndex, it.chapterEndsSec, it.durationSec)
+        val unseen = it.outputActivity == CastActivity.PLAYING_UNSEEN
+        val counted = unseenFromSec?.takeIf { unseen }?.let { from -> from + unseenMs / 1000.0 * it.speed }
+        SleepInput(it.isPlaying || unseen, maxOf(it.positionSec, counted ?: 0.0), it.speed, it.chapterIndex, it.chapterEndsSec, it.durationSec)
     }
 
     private companion object {
