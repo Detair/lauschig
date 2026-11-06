@@ -1,7 +1,9 @@
 package io.wolftown.lauschig.ui.setup
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.LoginResponse
@@ -9,26 +11,35 @@ import io.wolftown.lauschig.absapi.auth.StatusResponse
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.AccountSignOut
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.account.ServerLogout
 import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.ui.nav.Setup
+import io.wolftown.lauschig.ui.nav.SetupMode
+import io.wolftown.lauschig.ui.profiles.ProfileOperations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 import javax.inject.Inject
 
-enum class SetupError { INVALID_ADDRESS, UNREACHABLE, WRONG_LOGIN, SERVER_TOO_OLD, SAVE_FAILED, SSO_REDIRECT_NOT_ALLOWED, SSO_FAILED }
+enum class SetupError { INVALID_ADDRESS, UNREACHABLE, WRONG_LOGIN, SERVER_TOO_OLD, SAVE_FAILED, SSO_REDIRECT_NOT_ALLOWED, SSO_FAILED, UNLOCK_OTHER_ACCOUNT }
 
 data class SetupUiState(
     val local: String = "",
@@ -52,13 +63,31 @@ data class SetupUiState(
     val ssoButtonText: String? = null,
     /** One-shot: the screen opens this in a Custom Tab and reports back with [SetupViewModel.onSsoLaunched]. */
     val ssoLaunchUrl: String? = null,
+    /** One more profile ([SetupMode.ADD_PROFILE]): the active account is set aside instead of replaced. */
+    val addProfile: Boolean = false,
+    /** Adding a profile from the picker: nobody is signed in who could stay signed in. Null: not read yet, the form says neither. */
+    val nobodyActive: Boolean? = null,
+    /** A forgotten PIN ([SetupMode.UNLOCK]): only this account counts. */
+    val unlockServerId: String? = null,
+    /** Its name, once read. */
+    val unlockName: String? = null,
 ) {
+    /** The way of a forgotten PIN asks the account's own server: another address could answer anything. */
+    val addressesFixed: Boolean
+        get() = unlockServerId != null
+
     val canLogin: Boolean
         get() = !loading && (local.isNotBlank() || public.isNotBlank()) && username.isNotBlank() && password.isNotEmpty()
 }
 
+/** The form's mode, from its route: it survives a rotation, a process death and the browser of an SSO sign-in. */
+fun setupMode(savedState: SavedStateHandle): SetupMode = savedState.toRoute<Setup>().mode
+
+/** Whose form it is in [SetupMode.UNLOCK], from the same route. */
+fun setupUnlockTarget(savedState: SavedStateHandle): String? = savedState.toRoute<Setup>().takeIf { it.mode == SetupMode.UNLOCK }?.serverId
+
 @HiltViewModel
-class SetupViewModel @Inject constructor(
+class SetupViewModel(
     private val accounts: AccountStore,
     private val loginClient: LoginClient,
     private val network: NetworkInfo,
@@ -66,8 +95,23 @@ class SetupViewModel @Inject constructor(
     private val oidc: OidcSignIn,
     private val callbacks: OidcCallbackBus,
     private val signOut: AccountSignOut,
+    private val addProfile: suspend (Account, accessToken: String, refreshToken: String) -> Unit = { _, _, _ -> },
+    mode: SetupMode = SetupMode.SIGN_IN,
+    unlockTarget: String? = null,
+    /** The account of a forgotten PIN has signed in: it comes in, and its protection goes. */
+    private val unlock: suspend (Account, accessToken: String, refreshToken: String) -> Unit = { _, _, _ -> },
+    /** Another account signed in on the way of a forgotten PIN: nothing changes, and the session it just got is ended. */
+    private val endSession: suspend (Account, refreshToken: String) -> Unit = { _, _ -> },
 ) : ViewModel() {
-    private val _state = MutableStateFlow(SetupUiState())
+    @Inject constructor(
+        savedState: SavedStateHandle, accounts: AccountStore, loginClient: LoginClient, network: NetworkInfo, sync: SyncTrigger,
+        oidc: OidcSignIn, callbacks: OidcCallbackBus, signOut: AccountSignOut, operations: ProfileOperations, logout: ServerLogout,
+    ) : this(
+        accounts, loginClient, network, sync, oidc, callbacks, signOut, operations::add, setupMode(savedState),
+        setupUnlockTarget(savedState), operations::unlock, { account, refresh -> logout.logoutProfile(account, refresh) },
+    )
+
+    private val _state = MutableStateFlow(SetupUiState(addProfile = mode == SetupMode.ADD_PROFILE, unlockServerId = unlockTarget))
     val state: StateFlow<SetupUiState> = _state.asStateFlow()
 
     private val confirmed = mutableSetOf<String>()
@@ -80,9 +124,18 @@ class SetupViewModel @Inject constructor(
     private var awaitingCallback = false
 
     init {
-        // Re-auth: pre-fill everything but the password from the current account (read locally, no network).
+        // Re-auth: pre-fill everything but the password from the current account (read locally, no network). Read once: the
+        // form belongs to that account's pages and goes with them. Another profile: only where the server is (the family's
+        // server, usually); without an active account, the addresses of a saved one.
         viewModelScope.launch {
-            val a = accounts.account.first() ?: return@launch
+            _state.value.unlockServerId?.let {
+                prefillUnlock(it)
+                return@launch
+            }
+            val adding = mode == SetupMode.ADD_PROFILE
+            val active = accounts.account.first()
+            if (adding) _state.update { it.copy(nobodyActive = active == null) }
+            val a = active ?: (if (adding) accounts.saved.first().firstOrNull() else null) ?: return@launch
             confirmed += a.allowCleartext
             val ssids = a.addresses.homeSsids
             _state.update {
@@ -90,7 +143,7 @@ class SetupViewModel @Inject constructor(
                 else it.copy(
                     local = a.addresses.local?.toString()?.trimEnd('/').orEmpty(),
                     public = a.addresses.public?.toString()?.trimEnd('/').orEmpty(),
-                    username = a.username,
+                    username = if (adding) "" else a.username,
                     ssidBinding = ssids.isNotEmpty(),
                     currentSsid = ssids.firstOrNull(),
                     keptSsids = ssids,
@@ -106,8 +159,39 @@ class SetupViewModel @Inject constructor(
         }
     }
 
-    fun onLocalChanged(v: String) { _state.update { it.copy(local = v, error = null) }; checkStatus() }
-    fun onPublicChanged(v: String) { _state.update { it.copy(public = v, error = null) }; checkStatus() }
+    /** The form of a forgotten PIN: everything as the account has it, but the password. Without such an account it stays empty, and nothing can be sent. */
+    private suspend fun prefillUnlock(serverId: String) {
+        val a = accounts.account.first()?.takeIf { it.serverId == serverId } ?: accounts.saved.first().firstOrNull { it.serverId == serverId }
+        _state.update { it.copy(unlockServerId = serverId, addProfile = false) }
+        if (a == null) return
+        confirmed += a.allowCleartext
+        val ssids = a.addresses.homeSsids
+        _state.update {
+            it.copy(
+                local = a.addresses.local?.toString()?.trimEnd('/').orEmpty(),
+                public = a.addresses.public?.toString()?.trimEnd('/').orEmpty(),
+                username = a.username,
+                unlockName = a.username,
+                ssidBinding = ssids.isNotEmpty(),
+                currentSsid = ssids.firstOrNull(),
+                keptSsids = ssids,
+            )
+        }
+        checkStatus()
+    }
+
+    fun onLocalChanged(v: String) {
+        if (_state.value.addressesFixed) return
+        _state.update { it.copy(local = v, error = null) }
+        checkStatus()
+    }
+
+    fun onPublicChanged(v: String) {
+        if (_state.value.addressesFixed) return
+        _state.update { it.copy(public = v, error = null) }
+        checkStatus()
+    }
+
     fun onUsernameChanged(v: String) = _state.update { it.copy(username = v, error = null) }
     fun onPasswordChanged(v: String) = _state.update { it.copy(password = v, error = null) }
 
@@ -208,11 +292,14 @@ class SetupViewModel @Inject constructor(
         }
         if (needsCleartextConfirmation(listOfNotNull(local, public), ::loginWithSso)) return
         _state.update { it.copy(loading = true, error = null) }
-        val flow = OidcFlowContext(
-            local = local?.toString(), public = public?.toString(),
-            ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
-        )
         viewModelScope.launch {
+            val flow = OidcFlowContext(
+                local = local?.toString(), public = public?.toString(),
+                ssidBinding = s.ssidBinding, currentSsid = s.currentSsid, keptSsids = s.keptSsids,
+                addProfile = s.addProfile,
+                unlockServerId = s.unlockServerId,
+                freshLogin = needsFreshLogin(s),
+            )
             var failure = SetupError.UNREACHABLE
             for (url in listOfNotNull(public, local)) {
                 when (val r = oidc.start(url, flow)) {
@@ -226,6 +313,20 @@ class SetupViewModel @Inject constructor(
             }
             fail(failure)
         }
+    }
+
+    /**
+     * The browser may still have a session at the provider, of whoever signed in here last, and it would answer without a word.
+     * That walks past the protection of a profile, and it signs the wrong person in. So: on the way of a forgotten PIN, for one more
+     * profile, and whenever other profiles are on the device. A single account's sign-in and re-auth stay as they were. Who else
+     * is on the device cannot be read: the stricter way.
+     */
+    private suspend fun needsFreshLogin(s: SetupUiState): Boolean = s.addProfile || s.unlockServerId != null || try {
+        accounts.saved.first().isNotEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        true
     }
 
     /** The screen has handed the URL to the Custom Tab. */
@@ -265,7 +366,12 @@ class SetupViewModel @Inject constructor(
                 if (!oidc.matchesPending(cb)) return@launch
                 awaitingCallback = false
                 resumeJob?.cancel()
-                _state.update { it.copy(loading = true, error = null) }
+                // What it started as counts from here on: should it fail, a second try on this form adds too. Read now,
+                // since a refused attempt is gone afterwards; a form that adds stays one.
+                val adding = oidc.pendingAddsProfile()
+                val unlocking = oidc.pendingUnlock()
+                _state.update { it.copy(loading = true, error = null, addProfile = it.addProfile || adding) }
+                if (unlocking != null && unlocking != _state.value.unlockServerId) prefillUnlock(unlocking)
                 val result = try {
                     oidc.finish(cb)
                 } catch (e: CancellationException) {
@@ -282,7 +388,10 @@ class SetupViewModel @Inject constructor(
                 val (l, p) =
                     if (local == null && public == null) (if (result.baseUrl.isHttps) null to result.baseUrl else result.baseUrl to null)
                     else local to public
-                val s = _state.value.copy(ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids)
+                // So is what it started as: the form may have come back another way, the old account must not be signed out.
+                val s = _state.value.copy(
+                    ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids, addProfile = f.addProfile, unlockServerId = f.unlockServerId,
+                )
                 complete(s, l, p, result.response)
             } finally {
                 ssoFinishing = false
@@ -327,18 +436,33 @@ class SetupViewModel @Inject constructor(
             addresses = addresses,
             allowCleartext = listOfNotNull(local, public).filter { !it.isHttps }.map { it.cleartextKey() }.toSet(),
         )
-        try {
-            // A re-auth with another account or another public address is another server id: the old one is signed
-            // out keeping its data (it then shows under „Downloads früherer Konten“), so none of its work keeps running
-            // and nothing of it is left unreachable – and replaced in the same step, so the app never shows "no account".
-            // One account operation, after any other one still running (a sign-out, a profile switch).
-            signOut.signIn(account, access, refresh)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return fail(SetupError.SAVE_FAILED)
+        // The way of a forgotten PIN: exactly this account, on the addresses it has. Anyone else changes nothing.
+        if (s.unlockServerId != null && account.serverId != s.unlockServerId) {
+            withContext(NonCancellable) { endSession(account, refresh) }
+            return fail(SetupError.UNLOCK_OTHER_ACCOUNT)
         }
-        sync.syncNow() // not awaited; runs in WorkManager
+        // The form is one of the pages of the account before: when the account changes it goes, this view model with it. The
+        // sign-in has happened by then and goes through to the end.
+        val saved = withContext(NonCancellable) {
+            val stored = try {
+                // One more profile: the active account is set aside and stays signed in. A re-auth with another account or
+                // another public address is another server id: the old one is signed out keeping its data (it then shows
+                // under „Downloads früherer Konten“), so none of its work keeps running and nothing of it is left
+                // unreachable – and replaced in the same step, so the app never shows "no account".
+                // One account operation, after any other one still running (a sign-out, a profile switch).
+                when {
+                    s.unlockServerId != null -> unlock(account, access, refresh)
+                    s.addProfile -> addProfile(account, access, refresh)
+                    else -> signOut.signIn(account, access, refresh)
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+            if (stored) sync.syncNow() // not awaited; runs in WorkManager
+            stored
+        }
+        if (!saved) return fail(SetupError.SAVE_FAILED)
         _state.update { it.copy(loading = false, password = "", done = true) }
     }
 
@@ -356,4 +480,24 @@ class SetupViewModel @Inject constructor(
         const val STATUS_DEBOUNCE_MS = 500L
         const val RESUME_GRACE_MS = 1_000L
     }
+}
+
+/**
+ * An SSO sign-in came back from the browser: its answer waits ([OidcCallbackBus]) and no form is there to take it, when the
+ * process died and no page was saved. Only the answer to the attempt we started counts; a foreign link opens nothing.
+ */
+@HiltViewModel
+class SsoReturnViewModel @Inject constructor(callbacks: OidcCallbackBus, oidc: OidcSignIn) : ViewModel() {
+    /** The answer waits, for this form: what the attempt was started as. */
+    val waiting: StateFlow<Setup?> = callbacks.pending
+        .map { entry ->
+            if (entry == null || !oidc.matchesPending(entry.callback)) return@map null
+            val unlocking = oidc.pendingUnlock()
+            when {
+                unlocking != null -> Setup.unlock(unlocking)
+                oidc.pendingAddsProfile() -> Setup(SetupMode.ADD_PROFILE)
+                else -> Setup()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 }

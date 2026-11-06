@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.playback
 
+import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
@@ -79,6 +80,8 @@ class PlayerControllerImpl(
     private val onlineBase: Flow<HttpUrl?> = emptyFlow(),
     /** The seek steps of the settings (back, forward seconds); shown as [PlayerUiState.seekBackSec] / `seekForwardSec`. */
     private val seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
+    /** Whether [serverId] is the signed-in account. */
+    private val isSignedIn: suspend (serverId: String) -> Boolean = { true },
 ) : PlayerController {
 
     @Inject constructor(
@@ -93,6 +96,7 @@ class PlayerControllerImpl(
         starter: PlayDownloadStarter,
         monitor: StreamMonitor,
         playbackSettings: PlaybackSettings,
+        accounts: AccountStore,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -113,6 +117,7 @@ class PlayerControllerImpl(
         rewindAfterPause = { pause -> rewindMs(pause, playbackSettings.rewindOnResumeSec.first()) },
         onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
         seekSteps = combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair),
+        isSignedIn = { sid -> accounts.account.first()?.serverId == sid },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -201,6 +206,8 @@ class PlayerControllerImpl(
             if (cur != null && cur.item.item.id == itemId && cur.item.item.serverId == serverId && startSec == null && facade.hasMedia()) {
                 resumeLoaded(cur); return@launch
             }
+            // A page that outlived a profile switch: its title would stream with the next account's token. A device title is anyone's.
+            if (!DeviceLibrary.isLocal(serverId, itemId) && !isSignedIn(serverId)) return@launch
             var item = loadItem(serverId, itemId) ?: return@launch
             // Feedback right away: details, connection and buffering can take a few seconds when streaming.
             val previous = current
@@ -481,6 +488,24 @@ class PlayerControllerImpl(
         }
     }
 
+    override fun showPaused(serverId: String, itemId: String) {
+        if (current != null || starting || facade.currentKey() != null) return
+        playJob?.cancel()
+        playJob = scope.launch {
+            val item = loadItem(serverId, itemId) ?: return@launch
+            val coverPath = withContext(io) { coverFile(serverId, itemId)?.takeIf { it.isFile }?.path }
+            if (current != null || starting) return@launch
+            // As after a stopped service: nothing is loaded, the play button starts [last] at its saved position.
+            last = serverId to itemId
+            val progress = item.progress
+            _state.value = freshState(itemId, item.item.title).copy(
+                coverPath = coverPath,
+                positionSec = progress?.currentTimeSec ?: 0.0,
+                durationSec = progress?.durationSec?.takeIf { it > 0 } ?: item.item.durationSec,
+            )
+        }
+    }
+
     override suspend fun stop() = withContext(mainContext) {
         playJob?.cancel(); playJob = null
         adoptJob?.cancel(); adoptJob = null; adopting = null
@@ -497,8 +522,12 @@ class PlayerControllerImpl(
         starting = false
         pendingBase = null
         wasPlaying = false
-        facade.stop()
-        _state.value = freshState()
+        try {
+            facade.stop()
+        } finally {
+            // Also if the connection to the service hangs or fails: nothing of the title stays in the mini player.
+            _state.value = freshState()
+        }
     }
 
     private fun seekGlobal(c: Current, globalSec: Double) {
@@ -562,6 +591,8 @@ class PlayerControllerImpl(
         if (adoptJob?.isActive == true && adopting == itemId) return
         adopting = itemId
         adoptJob = scope.launch {
+            // What the service still holds of an account that was left is on its way out; the mini player does not take it over.
+            if (!DeviceLibrary.isLocal(serverId, itemId) && !isSignedIn(serverId)) return@launch
             val item = loadItem(serverId, itemId) ?: return@launch
             if (facade.currentKey()?.second != itemId) return@launch
             localJob?.cancel(); localJob = null

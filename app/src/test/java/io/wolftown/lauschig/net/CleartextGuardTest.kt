@@ -43,6 +43,31 @@ class CleartextGuardTest {
         assertEquals(0, server.requestCount)
     }
 
+    /** The logout of a removed profile on another http:// server: confirmed for that account, whoever is signed in by then. */
+    @Test
+    fun aClientForOneAccount_goesToTheServersConfirmedForIt_notToOthers() {
+        store.acc.value = account(emptySet()) // the signed-in account never confirmed this server
+        val confirmed = account(setOf(server.url("/").cleartextKey()))
+        val api = ApiProvider(kotlinx.coroutines.flow.flowOf(), OkHttpClient(), store, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined))
+        api.unauthenticatedClient(confirmed).newCall(Request.Builder().url(server.url("/logout")).build()).execute().use {
+            assertEquals(200, it.code)
+        }
+        val e = runCatching {
+            api.unauthenticatedClient(account(emptySet())).newCall(Request.Builder().url(server.url("/logout")).build()).execute()
+        }.exceptionOrNull()
+        assertTrue("expected IOException, got $e", e is IOException)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun theSignedInAccountsClient_doesNotGoToAServerConfirmedOnlyForASavedProfile() {
+        store.acc.value = account(emptySet())
+        store.aside.value = listOf(FakeAccountStore.Aside(account(setOf(server.url("/").cleartextKey())).copy(serverId = "bbbbbbbbbbbbbbbb"), "a", "r", false))
+        val e = runCatching { client().newCall(Request.Builder().url(server.url("/ping")).build()).execute() }.exceptionOrNull()
+        assertTrue("expected IOException, got $e", e is IOException)
+        assertEquals(0, server.requestCount)
+    }
+
     @Test
     fun cleartextToConfirmedHost_passes() {
         store.acc.value = account(setOf(server.url("/").cleartextKey()))

@@ -30,6 +30,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -48,6 +49,8 @@ class AutoDeleteConfirmViewModelTest {
     private lateinit var root: File
     private lateinit var download: DownloadSettings
     private lateinit var vm: SettingsViewModel
+    private lateinit var app: AppSettings
+    private lateinit var accounts: FakeAccountStore
 
     @Before fun setUp(): Unit = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -56,8 +59,8 @@ class AutoDeleteConfirmViewModelTest {
         root = File(ctx.cacheDir, "adc-${System.nanoTime()}/downloads").apply { mkdirs() }
         val files = DownloadFiles(root, db.audioFileDao())
         download = DownloadSettings(ctx)
-        val app = AppSettings(ctx)
-        val accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
+        app = AppSettings(ctx)
+        accounts = FakeAccountStore().apply { acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet()) }
         val seen = FinishedDownloadCleanerTest.InMemorySeen()
         val cleaner = FinishedDownloadCleaner(
             accounts, db.downloadDao(), db.progressDao()::observeFinishedKeys, download, app,
@@ -104,4 +107,37 @@ class AutoDeleteConfirmViewModelTest {
     }
 
     private fun SettingsUiState.autoDeleteMode() = autoDelete
+
+    // --- The final review's Minor 1: the switch shows, and sets, the active account's answer ---
+
+    private val other = "bbbbbbbbbbbbbbbb"
+
+    @Test fun theAudibleSwitch_isTheActiveAccounts(): Unit = runBlocking {
+        // The DataStore outlives a test within the JVM.
+        app.clearMissingVolumes(s)
+        app.clearMissingVolumes(other)
+        await { !it.missingVolumes }
+        vm.setMissingVolumes(true)
+        await { it.missingVolumes }
+        assertEquals(true, app.missingVolumesEnabled(s).first())
+        assertEquals(true, app.missingVolumesUndecided(other).first())
+
+        accounts.acc.value = accounts.acc.value!!.copy(serverId = other)
+        assertFalse("the next account has not answered", await { !it.missingVolumes }.missingVolumes)
+        vm.setMissingVolumes(true)
+        await { it.missingVolumes }
+        vm.setMissingVolumes(false)
+        await { !it.missingVolumes }
+        assertEquals(false, app.missingVolumesEnabled(other).first())
+        assertEquals("its answer is its own", true, app.missingVolumesEnabled(s).first())
+    }
+
+    /** The region below the switch stays one for the device. */
+    @Test fun theAudibleRegion_doesNotFollowTheAccount(): Unit = runBlocking {
+        vm.setAudibleRegion("uk")
+        await { it.audibleRegion == "uk" }
+        accounts.acc.value = accounts.acc.value!!.copy(serverId = other)
+        assertEquals("uk", await { it.audibleRegion == "uk" }.audibleRegion)
+        app.setAudibleRegion("de")
+    }
 }

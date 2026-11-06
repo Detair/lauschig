@@ -1,10 +1,8 @@
 package io.wolftown.lauschig.ui.nav
 
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
@@ -16,7 +14,6 @@ import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import io.wolftown.lauschig.admin.ServerAdminRoute
@@ -37,39 +34,39 @@ import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
 import io.wolftown.lauschig.ui.podcast.ItemDetailEntry
+import io.wolftown.lauschig.ui.profiles.ProfilePickerRoute
 import io.wolftown.lauschig.ui.review.YearReviewRoute
 import io.wolftown.lauschig.ui.search.SearchRoute
 import io.wolftown.lauschig.ui.setup.SetupRoute
 import io.wolftown.lauschig.ui.start.StartRoute
 import io.wolftown.lauschig.ui.stats.StatsRoute
+import io.wolftown.lauschig.ui.welcome.WelcomeRoute
 
 /**
  * [startDestination] is [Setup] when there is no account and the chosen start tab otherwise (decided from the local
- * stores, never from the network); the first sign-in then leads to [homeRoute] (see [finishSetup]). After a successful login [Setup] is removed from the back stack.
+ * stores, never from the network). The host lives as long as its account's pages ([AccountPages]): the first sign-in leads to new
+ * ones. After a successful login [Setup] is removed from the back stack.
  * [Setup] is also opened on top of the app from the "sign in again" hint; it is then pre-filled from the account.
  */
 @Composable
 fun AppNavHost(
-    navController: NavHostController,
+    pages: AccountNavigation,
     startDestination: Any,
     modifier: Modifier = Modifier,
     /** The user's start screen (route of the chosen start tab), where the first sign-in leads. */
     homeRoute: Any = Start,
     /** The app's snackbars (Start tells of a new achievement there). */
     snackbarHost: SnackbarHostState? = null,
+    /** Opens the profile sheet (Settings). */
+    onOpenProfiles: () -> Unit = {},
+    /** In the start page's header, beside the gear: the way to the profiles, if there are several. */
+    startHeader: @Composable () -> Unit = {},
 ) {
+    val navController = pages.controller
     // With two panes, a title that sits on the outer stack above the library or search moves into their detail pane.
     AdoptOuterPageIntoPane(navController)
-    NavHost(
-        navController, startDestination = startDestination, modifier = modifier,
-        // The navigation library's own fades everywhere, except that the page under the player stays put while the
-        // player (PlayerOverlay) slides over it and is there at once when the player slides away.
-        enterTransition = { fadeIn(tween(DEFAULT_FADE_MS)) },
-        exitTransition = { if (targetState.destination.hasRoute<Player>()) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(DEFAULT_FADE_MS)) },
-        popEnterTransition = { if (initialState.destination.hasRoute<Player>()) EnterTransition.None else fadeIn(tween(DEFAULT_FADE_MS)) },
-        popExitTransition = { fadeOut(tween(DEFAULT_FADE_MS)) },
-    ) {
-        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }) }
+    AccountNavHost(pages, startDestination, modifier) {
+        composable<Start> { StartRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }, onOpenSettings = { navController.navigate(Settings) }, onOpenLibrary = { navController.navigateToTab(TopLevelTab.Library) }, onOpenDiscover = { navController.navigateToTab(TopLevelTab.Discover) }, onOpenStats = { navController.navigate(Stats) }, snackbarHost = snackbarHost, onOpenAchievements = { navController.navigate(AchievementsPage) { launchSingleTop = true } }, onOpenReview = { navController.navigate(YearReviewPage(it)) { launchSingleTop = true } }, headerAction = startHeader) }
         composable<Settings> {
             ReadableWidth {
                 SettingsRoute(
@@ -80,6 +77,7 @@ fun AppNavHost(
                     onOpenAdmin = { navController.navigate(ServerAdmin) },
                     onOpenNavigation = { navController.navigate(NavigationSettings) },
                     onOpenStats = { navController.navigate(Stats) },
+                    onOpenProfiles = onOpenProfiles,
                 )
             }
         }
@@ -152,14 +150,24 @@ fun AppNavHost(
         }
         composable<Setup> {
             ReadableWidth {
-                SetupRoute(onDone = { navController.finishSetup(homeRoute) })
+                SetupRoute(onDone = { navController.finishSetup(homeRoute) }, onBack = { navController.popBackStack() })
+            }
+        }
+        composable<Welcome> {
+            WelcomeRoute(onDone = { navController.navigate(Setup()) { popUpTo<Welcome> { inclusive = true } } })
+        }
+        composable<ProfilePicker> {
+            ReadableWidth {
+                ProfilePickerRoute(
+                    onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
+                    // The last one was removed here: only the sign-in is left.
+                    onNoneLeft = { navController.navigate(Setup()) { popUpTo<ProfilePicker> { inclusive = true } } },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
+                )
             }
         }
     }
 }
-
-/** The navigation library's default cross-fade, kept for every page but the player. */
-private const val DEFAULT_FADE_MS = 700
 
 /** The player's own actions, used by [PlayerOverlay]: close, and details that replace the player. */
 fun NavHostController.closePlayer() {
@@ -185,18 +193,10 @@ fun NavHostController.finishSetup(home: Any) {
     navigate(home) { popUpTo<Setup> { inclusive = true } }
 }
 
-/**
- * Signed out while the app runs: only [Setup] is left, so "back" never returns to the old account's pages. Already
- * the only page (a start without an account): nothing changes. The next sign-in leads to the start tab ([finishSetup]).
- */
-fun NavHostController.showSignIn() {
-    if (currentDestination?.hasRoute<Setup>() == true && previousBackStackEntry == null) return
-    navigate(Setup) { popUpTo(graph.id) { inclusive = true } }
-}
-
+/** Outside the app's frame: the welcome, the sign-in or the question which profile, without tabs, mini player and hints over them. */
 @Composable
 fun NavHostController.isOnSetup(): Boolean =
-    currentBackStackEntryAsState().value?.destination?.hasRoute<Setup>() == true
+    currentBackStackEntryAsState().value?.destination?.let { it.hasRoute<Setup>() || it.hasRoute<ProfilePicker>() || it.hasRoute<Welcome>() } == true
 
 /** The year in review is shown: a story over the whole window, without the frame's tabs and mini player. */
 @Composable

@@ -21,11 +21,12 @@ import javax.inject.Singleton
  */
 @Singleton
 class AuthorInfoCache(
-    private val apis: Flow<LibraryApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.libraryApi]). */
+    private val apis: (serverId: String) -> Flow<LibraryApi?>,
     private val libraryIds: suspend (serverId: String) -> List<String>,
 ) {
     @Inject constructor(api: ApiProvider, libraries: LibraryDao) :
-        this(api.libraryApi, { sid -> libraries.observeAll(sid).first().map { it.id } })
+        this(api::libraryApi, { sid -> libraries.observeAll(sid).first().map { it.id } })
 
     private val byKey = MutableStateFlow<Map<String, AuthorDto>>(emptyMap())
     private val started = ConcurrentHashMap.newKeySet<String>()
@@ -38,7 +39,7 @@ class AuthorInfoCache(
         try {
             val ids = libraryIds(serverId).filter { "$serverId/$it" !in started }
             if (ids.isEmpty()) return
-            val api = apis.filterNotNull().first()
+            val api = apis(serverId).filterNotNull().first()
             for (id in ids) {
                 val marker = "$serverId/$id"
                 if (!started.add(marker)) continue

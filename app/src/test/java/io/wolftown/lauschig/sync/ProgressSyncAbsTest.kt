@@ -122,7 +122,7 @@ class ProgressSyncAbsTest {
         db.close()
     }
 
-    private fun sync() = ProgressSync(flowOf(api), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") })
+    private fun sync() = ProgressSync({ flowOf(api) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") })
 
     /** The tracker's last save of a title played to its end: progress and session share one timestamp. */
     private suspend fun playedToTheEnd(at: Long) {

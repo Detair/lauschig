@@ -61,22 +61,25 @@ class AccountBoundClientTest {
     /** The provider as the app has it; its state says "online at X" (also stale, right after a switch). */
     private val api = ApiProvider(flowOf(ConnectionState.Online(x.url("/"), ConnectionState.Via.LOCAL)), OkHttpClient(), store, CoroutineScope(Dispatchers.Unconfined))
 
+    /** The client of whoever is signed in right now. */
+    private fun signedInClient(base: okhttp3.HttpUrl) = api.clientFor(store.acc.value?.serverId, base)
+
     private fun get(client: OkHttpClient, server: MockWebServer) = client.newCall(Request.Builder().url(server.url("/api/me")).build()).execute()
 
     @Test fun aClient_carriesTheTokenOfItsAccount() {
-        get(api.clientFor(x.url("/")), x).close()
+        get(signedInClient(x.url("/")), x).close()
         assertEquals(listOf<String?>("Bearer a-access"), seenX)
     }
 
     @Test fun differentServers_aRequestOfTheOldAccount_neverCarriesTheNewAccountsToken_andTheNewOneIsNotFlagged() {
-        val made = api.clientFor(x.url("/")) // made for A, e.g. queued behind a cover grid
+        val made = signedInClient(x.url("/")) // made for A, e.g. a sync that is still queued
         runBlocking { store.add(bOnY, "b-access", "b-refresh") }
 
         // It is not sent at all.
         val failed = runCatching { get(made, x) }.exceptionOrNull()
         assertTrue(failed is AccountChangedException)
         // And a client built now – while the shared state still says X – does not hand B's token to X either.
-        val stale = api.clientFor(x.url("/"))
+        val stale = signedInClient(x.url("/"))
         assertNotSame(made, stale)
         assertTrue(runCatching { get(stale, x) }.exceptionOrNull() is AccountChangedException)
 
@@ -88,18 +91,29 @@ class AccountBoundClientTest {
     }
 
     @Test fun sameServer_aRequestMadeForTheOldAccount_doesNotRunAsTheNewOne() {
-        val made = api.clientFor(x.url("/"))
+        val made = signedInClient(x.url("/"))
         runBlocking { store.add(bOnX, "b-access", "b-refresh") }
         assertTrue(runCatching { get(made, x) }.exceptionOrNull() is AccountChangedException)
         assertEquals(0, x.requestCount)
         // The new account's own client works as before.
-        get(api.clientFor(x.url("/")), x).close()
+        get(signedInClient(x.url("/")), x).close()
         assertEquals(listOf<String?>("Bearer b-access"), seenX)
         assertFalse(store.reauth.value)
     }
 
+    @Test fun theClientOfANamedAccount_sendsOnlyWhileItIsTheSignedInOne_withItsOwnToken() {
+        // Asked for B while A is signed in: it does not run as A, and B's turn has not come.
+        assertTrue(runCatching { get(api.clientFor(bOnX.serverId, x.url("/")), x) }.exceptionOrNull() is AccountChangedException)
+        assertEquals(0, x.requestCount)
+        runBlocking { store.add(bOnX, "b-access", "b-refresh") }
+        // A's client stays A's; B's is B's, with the state and the signed-in account not asked at all.
+        assertTrue(runCatching { get(api.clientFor(a.serverId, x.url("/")), x) }.exceptionOrNull() is AccountChangedException)
+        get(api.clientFor(bOnX.serverId, x.url("/")), x).close()
+        assertEquals(listOf<String?>("Bearer b-access"), seenX)
+    }
+
     @Test fun afterASignOut_aRequestOfTheAccount_isNotSent() {
-        val made = api.clientFor(x.url("/"))
+        val made = signedInClient(x.url("/"))
         runBlocking { store.clear(keepDownloads = false) }
         assertTrue(runCatching { get(made, x) }.exceptionOrNull() is IOException)
         assertEquals(0, x.requestCount)
@@ -107,7 +121,7 @@ class AccountBoundClientTest {
 
     @Test fun anAddressTheAccountDoesNotHave_getsNoToken() {
         // Y is not one of A's addresses: a client for it (a stale state of another server) sends nothing.
-        assertTrue(runCatching { get(api.clientFor(y.url("/")), y) }.exceptionOrNull() is AccountChangedException)
+        assertTrue(runCatching { get(signedInClient(y.url("/")), y) }.exceptionOrNull() is AccountChangedException)
         assertEquals(0, y.requestCount)
     }
 
@@ -121,9 +135,9 @@ class AccountBoundClientTest {
 
     @Test fun anAccountWithALocalAndAPublicAddress_getsItsTokenOnBoth_whicheverIsUsed() {
         runBlocking { store.save(both, "a-access", "a-refresh") }
-        get(api.clientFor(x.url("/")), x).close()
-        get(api.clientFor(y.url("/")), y).close() // the address changes (left the home Wi-Fi) …
-        get(api.clientFor(x.url("/")), x).close() // … and back
+        get(signedInClient(x.url("/")), x).close()
+        get(signedInClient(y.url("/")), y).close() // the address changes (left the home Wi-Fi) …
+        get(signedInClient(x.url("/")), x).close() // … and back
         assertEquals(listOf<String?>("Bearer a-access", "Bearer a-access"), seenX)
         assertEquals(listOf<String?>("Bearer a-access"), seenY)
     }
@@ -146,7 +160,7 @@ class AccountBoundClientTest {
         x.dispatcher = answer
         y.dispatcher = answer
         val codes = CopyOnWriteArrayList<Int>()
-        val threads = listOf(x, y).map { server -> Thread { get(api.clientFor(server.url("/")), server).use { codes += it.code } } }
+        val threads = listOf(x, y).map { server -> Thread { get(signedInClient(server.url("/")), server).use { codes += it.code } } }
         threads.forEach { it.start() }
         threads.forEach { it.join(10_000) }
         assertEquals(listOf(200, 200), codes.toList())
@@ -156,7 +170,7 @@ class AccountBoundClientTest {
     }
 
     @Test fun theRetrofitApis_carryTheAccountsToken() = runBlocking {
-        val libraries = api.libraryApi.filterNotNull().first()
+        val libraries = api.libraryApi(a.serverId).filterNotNull().first()
         libraries.libraries()
         assertEquals(listOf<String?>("Bearer a-access"), seenX)
     }

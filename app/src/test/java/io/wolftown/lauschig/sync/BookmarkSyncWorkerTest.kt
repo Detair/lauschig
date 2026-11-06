@@ -57,7 +57,7 @@ class BookmarkSyncWorkerTest {
         store.acc.value = Account(s, "u", "n", false, ServerAddresses(null, null), emptySet())
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) =
-                BookmarkSyncWorker(c, p, store, gate, BookmarkSync(flowOf(me), db.bookmarkDao()))
+                BookmarkSyncWorker(c, p, store, gate, BookmarkSync({ flowOf(me) }, db.bookmarkDao()))
         }
         return TestListenableWorkerBuilder<BookmarkSyncWorker>(ctx).setWorkerFactory(factory).build().doWork()
     }

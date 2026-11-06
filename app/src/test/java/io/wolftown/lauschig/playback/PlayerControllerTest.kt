@@ -34,7 +34,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
-private class FakeFacade : PlayerFacade {
+internal class FakeFacade : PlayerFacade {
     var items: List<MediaItem> = emptyList()
     var snap = PlayerSnapshot(false, 0, 0, 1f)
     var started: Pair<Int, Long>? = null
@@ -49,8 +49,12 @@ private class FakeFacade : PlayerFacade {
     /** ExoPlayer's intent to play; kept across errors and queue swaps, so a rebuilt queue plays on only if it was true. */
     var playWhenReady = false
     var playCalls = 0
+    /** What [stop] does before it empties the queue (a hanging or failing connection to the service). */
+    var stopBlock: suspend () -> Unit = {}
+    /** What the service's tracker does on a pause: it saves the title's position, a moment later. */
+    var onPause: (title: Pair<String, String>?) -> Unit = {}
     override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
-    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false }
+    override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false; onPause(currentKey()) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
     override fun snapshot() = snap
@@ -69,7 +73,7 @@ private class FakeFacade : PlayerFacade {
     override fun streamBase() = items.firstNotNullOfOrNull { it.mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
     override fun setOnDisconnected(onDisconnected: () -> Unit) { disconnectedCb = onDisconnected }
     var stops = 0
-    override suspend fun stop() { stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
+    override suspend fun stop() { stopBlock(); stops++; items = emptyList(); key = null; snap = PlayerSnapshot(false, 0, 0, snap.speed); playWhenReady = false; cb() }
     fun change() = cb()
     fun disconnect() { items = emptyList(); snap = PlayerSnapshot(false, 0, 0, 1f); disconnectedCb() }
 }
@@ -176,7 +180,8 @@ class PlayerControllerTest {
     private val public = "https://abs.example.org/"
     private fun streamedThree() = item(listOf(file(0, 600.0, null), file(1, 300.0, null), file(2, 900.0, null)))
     private val ioError = androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
-    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString() }
+    /** Without the fragment: it names the owner and stays on the device ([MediaItemFactoryTest]). */
+    private fun FakeFacade.uris() = items.map { it.localConfiguration!!.uri.toString().substringBefore('#') }
 
     @Test fun pausedStream_movesToTheNewAddress_rightAway_atItsPosition() = runTest {
         val f = FakeFacade()
@@ -300,7 +305,7 @@ class PlayerControllerTest {
         assertEquals(900.0, c.state.value.durationSec, 0.0)
         assertEquals(files.coverFile(s, "pod").path, c.state.value.coverPath)
         val m = f.items.single()
-        assertEquals("https://abs.example/api/items/pod/file/epino/download", m.localConfiguration!!.uri.toString())
+        assertEquals("https://abs.example/api/items/pod/file/epino/download#$s", m.localConfiguration!!.uri.toString())
         assertEquals("The Podcast", m.mediaMetadata.artist)
         assertEquals("Folge 1", m.mediaMetadata.title)
         assertEquals(files.coverFile(s, "pod").toURI().path, m.mediaMetadata.artworkUri!!.path)
@@ -369,6 +374,7 @@ class PlayerControllerTest {
         clock: () -> Long = { 0 },
         onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
         seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
+        isSignedIn: suspend (String) -> Boolean = { true },
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -386,7 +392,39 @@ class PlayerControllerTest {
         clock = clock,
         onlineBase = onlineBase,
         seekSteps = seekSteps,
+        isSignedIn = isSignedIn,
     )
+
+    /** A page that outlived a switch: A's title would stream with B's token and write under A. */
+    @Test fun play_aTitleOfAnotherAccountThanTheSignedInOne_doesNotStart() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, isSignedIn = { false })
+        c.play(s, "it")
+        assertEquals(0, f.setCalls)
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    /** Review I1: the service's player holds a title of the account that was left: the mini player does not take it over. */
+    @Test fun aTitleOfAnotherAccountInTheService_isNotAdopted() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, isSignedIn = { false })
+        f.key = s to "it"
+        c.adoptFromService()
+        testScheduler.advanceUntilIdle()
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    @Test fun play_aDeviceTitle_startsWhoeverIsSignedIn() = runTest {
+        val f = FakeFacade()
+        val local = "${io.wolftown.lauschig.local.DeviceLibrary.ID_PREFIX}0123456789abcdef01234567"
+        val row = ItemWithDetails(
+            ItemEntity(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local, "lib", "Vom Gerät", durationSec = 600.0),
+            emptyList(), listOf(AudioFileEntity(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local, 0, "x", 600.0, 1, "mp3", "/d/x.mp3")), null, null,
+        )
+        val c = controller(f, { row }, isSignedIn = { false })
+        c.play(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, local)
+        assertEquals(local, c.state.value.itemId)
+    }
 
     @Test fun seekSteps_followTheSettings_andSurviveAStart() = runTest {
         val steps = MutableStateFlow(10 to 45)
@@ -803,6 +841,78 @@ class PlayerControllerTest {
         testScheduler.advanceUntilIdle()
         assertTrue(f.items.isEmpty())
         assertEquals(PlayerUiState(), c.state.value)
+    }
+
+    // Task 1.2: back on a profile its last title waits, paused, in the mini player.
+
+    @Test fun showPaused_showsTheTitleAtItsPosition_withoutTouchingThePlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.showPaused(s, "it")
+        assertEquals("it", c.state.value.itemId)
+        assertEquals(700.0, c.state.value.positionSec, 0.0)
+        assertEquals(1800.0, c.state.value.durationSec, 0.0)
+        assertFalse(c.state.value.isPlaying)
+        assertFalse(c.state.value.isLoading)
+        assertEquals("nothing is loaded into the player", 0, f.setCalls)
+        assertEquals(0, f.playCalls)
+    }
+
+    @Test fun showPaused_thenPlay_startsItAtItsPosition() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles, ProgressEntity(s, "it", 700.0, 1800.0, false, 1)))
+        c.showPaused(s, "it")
+        c.togglePlayPause()
+        assertEquals(3, f.items.size)
+        assertEquals(1 to 100_000L, f.started)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun showPaused_neverReplacesWhatIsLoaded() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        c.showPaused(s, "other")
+        assertEquals("it", c.state.value.itemId)
+        assertTrue(c.state.value.isPlaying)
+    }
+
+    @Test fun showPaused_aTitleThatIsGone_showsNothing() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, { null })
+        c.showPaused(s, "gone")
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    /** Review N2: the mini player does not keep the old account's title because the connection to the service hangs. */
+    @Test fun aStopThatHangs_stillEmptiesTheMiniPlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        assertEquals("it", c.state.value.itemId)
+        f.stopBlock = { kotlinx.coroutines.awaitCancellation() }
+        kotlinx.coroutines.withTimeoutOrNull(1_000) { c.stop() }
+        assertEquals(null, c.state.value.itemId)
+        assertFalse(c.state.value.isPlaying)
+    }
+
+    @Test fun aStopThatFails_stillEmptiesTheMiniPlayer() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.play(s, "it")
+        f.stopBlock = { throw IllegalStateException("no connection") }
+        runCatching { c.stop() }
+        assertEquals(null, c.state.value.itemId)
+    }
+
+    @Test fun stop_endsAShownTitle() = runTest {
+        val f = FakeFacade()
+        val c = controller(f, item(threeFiles))
+        c.showPaused(s, "it")
+        c.stop()
+        assertEquals(null, c.state.value.itemId)
+        c.togglePlayPause()
+        assertTrue("nothing left to start", f.items.isEmpty())
     }
 
     @Test fun togglePlayPause_withNothingEverPlayed_doesNothing() = runTest {

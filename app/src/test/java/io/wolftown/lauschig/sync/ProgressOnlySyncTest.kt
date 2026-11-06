@@ -91,7 +91,7 @@ class ProgressOnlySyncTest {
         val bus = PositionJumpBus()
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = ProgressSyncWorker(
-                c, p, store, ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") }), bus, { true },
+                c, p, store, ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") }), bus, { true },
             )
         }
         assertEquals(ListenableWorker.Result.success(), TestListenableWorkerBuilder<ProgressSyncWorker>(ctx).setWorkerFactory(factory).build().doWork())
@@ -99,7 +99,7 @@ class ProgressOnlySyncTest {
         assertFalse(db.progressDao().get(s, "li_1")!!.dirty)
         val offline = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = ProgressSyncWorker(
-                c, p, store, ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") }), bus, { false },
+                c, p, store, ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { DeviceInfoDto(deviceId = "d") }), bus, { false },
             )
         }
         assertEquals(ListenableWorker.Result.retry(), TestListenableWorkerBuilder<ProgressSyncWorker>(ctx).setWorkerFactory(offline).build().doWork())

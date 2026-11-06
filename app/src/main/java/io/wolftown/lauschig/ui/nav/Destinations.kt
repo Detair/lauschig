@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.ui.nav
 
+import androidx.annotation.Keep
 import kotlinx.serialization.Serializable
 
 @Serializable data object Start
@@ -15,7 +16,32 @@ enum class BrowseKind { AUTHOR, NARRATOR, SERIES, GENRE, TAG }
 /** A cached ABS collection or playlist (by id). */
 @Serializable data class Collection(val id: String)
 @Serializable data object Player
-@Serializable data object Setup
+/** Why the sign-in form is open. */
+@Keep
+enum class SetupMode {
+    /** The first sign-in, or a re-auth of the active account. */
+    SIGN_IN,
+
+    /** One more account: the active one is set aside and stays signed in. */
+    ADD_PROFILE,
+
+    /** A forgotten PIN: exactly the account [Setup.serverId] signs in; that takes the protection off and goes into it. */
+    UNLOCK,
+}
+
+/**
+ * The sign-in form. Its [mode], and for [SetupMode.UNLOCK] whose form it is, are in the route, so they survive a rotation, a
+ * process death and the way through the SSO browser.
+ */
+@Serializable data class Setup(val mode: SetupMode = SetupMode.SIGN_IN, val serverId: String? = null) {
+    companion object {
+        fun unlock(serverId: String) = Setup(SetupMode.UNLOCK, serverId)
+    }
+}
+/** The few pages of the very first start, before the sign-in. */
+@Serializable data object Welcome
+/** „Wer hört zu?“: nobody is active, saved profiles are there. */
+@Serializable data object ProfilePicker
 @Serializable data object Settings
 /** Tab order, visibility and start screen (Einstellungen → Darstellung → Navigation anpassen). */
 @Serializable data object NavigationSettings

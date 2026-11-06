@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- androidx.biometric also asks for this one, which only serves below Android 9. USE_BIOMETRIC stays (normal permission, no prompt). -->
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
     <!-- Short buzz when a shake extends the sleep timer (normal permission, no prompt). -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

@@ -339,6 +339,10 @@ interface DownloadDao {
     @Query("SELECT itemId FROM downloads WHERE serverId = :serverId")
     suspend fun keys(serverId: String): List<String>
 
+    /** Keys of the waiting and running downloads of [serverId]. */
+    @Query("SELECT itemId FROM downloads WHERE serverId = :serverId AND state IN ('QUEUED', 'RUNNING')")
+    suspend fun activeKeys(serverId: String): List<String>
+
     @Query("SELECT * FROM downloads WHERE serverId = :serverId AND state IN (:states)")
     suspend fun inStates(serverId: String, states: List<DownloadState>): List<DownloadEntity>
 
@@ -361,7 +365,7 @@ interface DownloadDao {
         "UPDATE downloads SET state = :to, error = :error " +
             "WHERE serverId = :serverId AND itemId = :itemId AND state = :from",
     )
-    suspend fun setStateIf(serverId: String, itemId: String, from: DownloadState, to: DownloadState, error: String?)
+    suspend fun setStateIf(serverId: String, itemId: String, from: DownloadState, to: DownloadState, error: String?): Int
 
     @Query("DELETE FROM downloads WHERE serverId = :serverId AND itemId = :itemId")
     suspend fun delete(serverId: String, itemId: String)

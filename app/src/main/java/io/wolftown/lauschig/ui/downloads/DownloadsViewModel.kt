@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.account.AccountData
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.account.KeptDownloadSizes
 import io.wolftown.lauschig.account.KeptDownloads
@@ -18,6 +19,7 @@ import io.wolftown.lauschig.download.DownloadManager
 import io.wolftown.lauschig.download.DownloadSort
 import io.wolftown.lauschig.download.DownloadWorker
 import io.wolftown.lauschig.download.VolumeDownloadRoots
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -71,10 +74,12 @@ data class DownloadsUiState(
     val entries: List<DownloadEntryUi> = emptyList(),
     /** Downloads before the search filter. */
     val total: Int = 0,
-    /** Everything the downloads occupy on the device: this account's and what earlier accounts kept ([keptBytes]). */
+    /** What the downloads of this account occupy on the device, with what earlier accounts kept ([keptBytes]). */
     val usedBytes: Long = 0,
     /** The part of [usedBytes] that belongs to earlier accounts (not listed in [entries]; see `KeptDownloadsSection`). */
     val keptBytes: Long = 0,
+    /** What the other profiles on this device hold, on top of [usedBytes]; they are managed from their own profile. */
+    val otherProfilesBytes: Long = 0,
     /** Free space of the volume new downloads go to; null until read. */
     val freeBytes: Long? = null,
     /** The chosen SD card is not there: new downloads go to the internal storage meanwhile. */
@@ -84,6 +89,24 @@ data class DownloadsUiState(
     val sort: DownloadSort = DownloadSort.ADDED,
     val query: String = "",
 )
+
+/**
+ * Bytes on disk of the profiles set aside, by server id: a walk of their directories, once per visit and per change of the
+ * list. One that cannot be read counts as nothing for now.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun otherProfilesBytes(accounts: AccountStore, bytes: suspend (serverId: String) -> Long): Flow<Long> =
+    accounts.saved.distinctUntilChanged().mapLatest { list ->
+        list.sumOf { account ->
+            try {
+                bytes(account.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                0L
+            }
+        }
+    }
 
 /** Maps a row to its status; the reasons are the worker's machine codes (see [DownloadWorker]). */
 fun entryStatus(row: DownloadEntryRow): EntryStatus = when (row.state) {
@@ -120,6 +143,8 @@ class DownloadsViewModel(
     dispatcher: CoroutineDispatcher,
     /** True while the chosen download volume is not available ([VolumeDownloadRoots.chosenMissing]); read with [freeSpace]. */
     private val cardMissing: suspend () -> Boolean = { false },
+    /** See [otherProfilesBytes]. */
+    others: Flow<Long> = flowOf(0L),
 ) : ViewModel() {
     @Inject constructor(
         accountStore: AccountStore,
@@ -128,9 +153,11 @@ class DownloadsViewModel(
         files: DownloadFiles,
         kept: KeptDownloadSizes,
         roots: VolumeDownloadRoots,
+        data: AccountData,
     ) : this(
         accountStore, dao, downloads, { withContext(Dispatchers.IO) { runCatching { files.freeSpace() }.getOrNull() } }, kept.entries, Dispatchers.Default,
         cardMissing = { withContext(Dispatchers.IO) { runCatching { roots.chosenMissing() }.getOrDefault(false) } },
+        others = otherProfilesBytes(accountStore, data::downloadBytes),
     )
 
     private val sort = MutableStateFlow(DownloadSort.ADDED)
@@ -140,11 +167,13 @@ class DownloadsViewModel(
     // The page does not wait for the directories of earlier accounts: it starts with this account's own figures and the
     // kept part joins when it is known. A failure there keeps the last figure; it never takes the page down.
     private val keptTotal: Flow<Long> = kept.map { list -> list.sumOf { it.bytes } }.onStart { emit(0L) }.catch { }
+    private val othersTotal: Flow<Long> = others.onStart { emit(0L) }.catch { }
+    private val notOwn: Flow<Pair<Long, Long>> = combine(keptTotal, othersTotal, ::Pair)
     @Volatile private var rows: List<DownloadEntryRow> = emptyList()
 
     val state: StateFlow<DownloadsUiState> = serverId.flatMapLatest { sid ->
         if (sid == null) flowOf(DownloadsUiState(loaded = true))
-        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid), keptTotal) { all, so, q, (free, missing), keptSum ->
+        else combine(dao.observeEntries(sid), sort, query, freeBytes(sid), notOwn) { all, so, q, (free, missing), (keptSum, othersSum) ->
             rows = all
             val totals = DownloadList.totals(all)
             DownloadsUiState(
@@ -153,6 +182,7 @@ class DownloadsViewModel(
                 total = all.size,
                 usedBytes = totals.usedBytes + keptSum,
                 keptBytes = keptSum,
+                otherProfilesBytes = othersSum,
                 freeBytes = free,
                 cardMissing = missing,
                 finishedCount = totals.finishedCount,

@@ -19,11 +19,18 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * Per-account state outside Room and the downloads that goes on every sign-out (also when the downloads are kept): the
- * RMAB connection (its token), a pending SSO attempt, the user's recent searches, an open download question of that
- * server, the image caches (server covers only; a kept download's cover is a file in its download directory) and the
- * cleanup reminder (it names the account's titles) and the diagnostic log. Each
- * part is cleared on its own; one failing never stops the others.
+ * Per-account state outside Room and the downloads. Each part is cleared on its own; one failing never stops the others.
+ *
+ * - [clear], every sign-out (also when the downloads are kept): the account's protection, its answer about the Audible catalog, its RMAB connection (its token) and recent
+ *   searches, a pending SSO attempt, an open download question of that server, the image caches (server covers only; a
+ *   kept download's cover is a file in its download directory), the cleanup reminder (it names the account's titles), the
+ *   diagnostic log and what this process holds in memory about the account.
+ * - [setAside], a profile switch: the same, but the account's own protection, Audible answer, RMAB connection and searches wait for its return, and
+ *   the covers on disk stay. Their keys are the cover URLs, without any token ([io.wolftown.lauschig.ui.common.coverModel]),
+ *   and the next account only asks for the titles of its own rows; back on the account its covers are there at once.
+ * - [forget], a saved profile is removed while another account is active: its protection, Audible answer, connection and searches, and like at a
+ *   sign-out the image caches (the active account fetches its own covers again; they cannot be told apart by account).
+ *   Everything else here is the active account's by now.
  */
 class AccountStateCleaner(
     private val rmab: RmabRepository,
@@ -36,6 +43,16 @@ class AccountStateCleaner(
     private val cancelNotifications: () -> Unit,
     /** The diagnostic log and its shared copy: the next account on a family device must not send these entries. */
     private val clearDiagnostics: () -> Unit = {},
+    /** Coil's memory cache only. */
+    private val clearMemoryCovers: suspend () -> Unit = {},
+    /** What this process holds about the account in memory (pending position jumps, connection checks). */
+    private val clearMoments: () -> Unit = {},
+    /** The device's own last title becomes this account's if it has none ([io.wolftown.lauschig.playback.LastPlayedStore.adoptDeviceEntry]). */
+    private val adoptDeviceTitle: suspend (account: String) -> Unit = {},
+    /** Its protection: a later sign-in starts without ([ProfileLocks]). */
+    private val removeProtection: suspend (serverId: String) -> Unit = {},
+    /** Its answer about the Audible catalog: signed in again, it is asked again. */
+    private val clearAudibleAnswer: suspend (serverId: String) -> Unit = {},
 ) {
     @Inject constructor(
         rmab: RmabRepository,
@@ -43,6 +60,11 @@ class AccountStateCleaner(
         recentSearches: RecentSearches,
         prompts: DownloadPrompts,
         @ApplicationContext context: Context,
+        jumps: io.wolftown.lauschig.sync.PositionJumpBus,
+        log: io.wolftown.lauschig.connection.ConnectionLog,
+        lastPlayed: io.wolftown.lauschig.playback.LastPlayedStore,
+        locks: ProfileLocks,
+        app: io.wolftown.lauschig.settings.AppSettings,
     ) : this(
         rmab, oidc, recentSearches, prompts,
         clearImageCaches = {
@@ -56,16 +78,61 @@ class AccountStateCleaner(
         },
         cancelNotifications = { NotificationManagerCompat.from(context).cancel(CleanupReminderWorker.NOTIFICATION_ID) },
         clearDiagnostics = { DiagnosticLog.clear(); DiagnosticReport.discardShared(context) },
+        clearMemoryCovers = { SingletonImageLoader.get(context).memoryCache?.clear() },
+        clearMoments = { jumps.clear(); log.clear() },
+        adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
+        removeProtection = locks::remove,
+        clearAudibleAnswer = app::clearMissingVolumes,
     )
 
     suspend fun clear(serverId: String) {
-        part("rmab") { rmab.disconnect() }
-        part("oidc") { oidc.clearPending() }
-        part("searches") { recentSearches.clear() }
-        part("prompts") { prompts.clearFor(serverId) }
+        part("old values") { migrateValues(serverId) }
+        part("protection") { removeProtection(serverId) }
+        part("audible answer") { clearAudibleAnswer(serverId) }
+        part("rmab") { rmab.forget(serverId) }
+        part("searches") { recentSearches.clear(serverId) }
         part("images") { clearImageCaches() }
+        leaveTheScreen(serverId)
+    }
+
+    suspend fun setAside(serverId: String) {
+        // The account being left is the one signed in: should the start-up migration not have run yet, these are its values.
+        part("old values") { migrate(serverId) }
+        part("memory covers") { clearMemoryCovers() }
+        leaveTheScreen(serverId)
+    }
+
+    suspend fun forget(serverId: String) {
+        part("protection") { removeProtection(serverId) }
+        part("audible answer") { clearAudibleAnswer(serverId) }
+        part("rmab") { rmab.forget(serverId) }
+        part("searches") { recentSearches.clear(serverId) }
+        part("images") { clearImageCaches() }
+    }
+
+    /**
+     * Before profiles the RMAB connection, the recent searches and the last device title were one per device: they belong
+     * to the account signed in at the upgrade ([activeServerId]); signed out the first two have no owner and go, the device
+     * title stays the device's. Idempotent, called at every start.
+     */
+    suspend fun migrate(activeServerId: String?) {
+        migrateValues(activeServerId)
+        if (activeServerId != null) part("device title") { adoptDeviceTitle(activeServerId) }
+    }
+
+    /** Not the device title: a sign-out has just left that for whoever signs in next. */
+    private suspend fun migrateValues(activeServerId: String?) {
+        part("rmab migration") { rmab.migrate(activeServerId) }
+        part("searches migration") { recentSearches.migrate(activeServerId) }
+    }
+
+    /** What may not stay for the next account on the device, whatever becomes of this one. */
+    private suspend fun leaveTheScreen(serverId: String) {
+        part("oidc") { oidc.clearPending() }
+        part("prompts") { prompts.clearFor(serverId) }
         part("notifications") { cancelNotifications() }
         part("diagnostics") { withContext(Dispatchers.IO) { clearDiagnostics() } }
+        part("moments") { clearMoments() }
     }
 
     private suspend fun part(name: String, block: suspend () -> Unit) {

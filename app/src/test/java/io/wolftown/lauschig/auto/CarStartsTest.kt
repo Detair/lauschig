@@ -139,4 +139,56 @@ class CarStartsTest {
             pickedWhenResolved,
         )
     }
+
+    // Phase 7, review I1: the resolve may wait seconds for a connection check; a switch in between starts nothing.
+
+    private val accountB = "bbbbbbbbbbbbbbbb"
+
+    private fun startsWhereTheAccountChangesWhileResolving(to: String?) = CarStarts(
+        resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); account = to; result },
+        searchTitle = { _, _ -> found },
+        lastTitle = { last },
+        accountServer = { account },
+        current = { loaded },
+        pick = { picked += it },
+    )
+
+    @Test fun aSwitchWhileResolving_aBrowsedTitleDoesNotStart() = runTest {
+        val out = startsWhereTheAccountChangesWhileResolving(accountB).forRequest(listOf(byId(MediaIds.of(CarNode.Title(s, "b")))), 0)
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), out)
+    }
+
+    @Test fun aSwitchWhileResolving_theResumptionDoesNotStart_notEvenADeviceTitle() = runTest {
+        last = CarNode.Title(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, "local:aaaaaaaaaaaaaaaaaaaaaaaa")
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), startsWhereTheAccountChangesWhileResolving(accountB).forResumption())
+    }
+
+    /** Review N1: the switch comes after the entry's check but before the start: what counts is the account at the entry. */
+    @Test fun aSwitchBetweenTheEntryAndTheStart_theResumptionDoesNotStart() = runTest {
+        val starts = CarStarts(
+            resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); result },
+            searchTitle = { _, _ -> found },
+            lastTitle = { account = accountB; CarNode.Title(s, "b") },
+            accountServer = { account },
+            pick = { picked += it },
+        )
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), starts.forResumption())
+    }
+
+    @Test fun aSwitchBetweenTheEntryAndTheStart_aBrowsedTitleDoesNotStart() = runTest {
+        val starts = CarStarts(
+            resolveTitle = { sid, key, rewind -> resolved += Triple(sid, key, rewind); result },
+            searchTitle = { _, _ -> found },
+            lastTitle = { last },
+            accountServer = { account },
+            current = { account = accountB; null },
+            pick = { picked += it },
+        )
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.NOT_FOUND), starts.forRequest(listOf(byId(MediaIds.of(CarNode.Title(s, "b")))), 0))
+    }
+
+    @Test fun aSignOutWhileResolving_saysSignedOut() = runTest {
+        last = CarNode.Title(s, "b")
+        assertEquals(CarStarts.Outcome.Failed(CarStarts.Reason.SIGNED_OUT), startsWhereTheAccountChangesWhileResolving(null).forResumption())
+    }
 }

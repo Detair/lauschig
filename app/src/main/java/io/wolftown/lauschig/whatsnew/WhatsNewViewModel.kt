@@ -63,7 +63,7 @@ class WhatsNewViewModel(
 }
 
 /** The package was installed over an older version at least once (a first install has both times equal). */
-private fun wasUpdated(context: Context): Boolean = try {
+internal fun wasUpdated(context: Context): Boolean = try {
     val info = context.packageManager.getPackageInfo(context.packageName, 0)
     info.lastUpdateTime > info.firstInstallTime
 } catch (e: PackageManager.NameNotFoundException) {

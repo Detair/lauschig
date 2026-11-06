@@ -127,7 +127,8 @@ class FinishedDownloadCleaner(
     private val seen: FinishedSeenStore,
     /** The title loaded in the player, playing or not (null: none). */
     private val loadedKey: Flow<String?>,
-    private val lastPlayed: suspend () -> LastPlayed?,
+    /** [serverId]'s title last played on this device. */
+    private val lastPlayed: suspend (serverId: String) -> LastPlayed?,
     private val queue: (serverId: String) -> Flow<List<String>>,
     private val localBytes: (serverId: String) -> Flow<List<ItemBytes>>,
     /** Titles whose "Download löschen?" question is not settled ([FinishedQuestions.holds]). */
@@ -289,7 +290,7 @@ class FinishedDownloadCleaner(
         val seenAt = seen.reconcile(sid, finished, clock())
         if (mode == AutoDeleteMode.NEVER || rows.isEmpty()) return PassResult(emptyList(), null)
         val now = clock()
-        val title = hold.loaded ?: lastPlayed()?.takeIf { it.serverId == sid }?.itemId
+        val title = hold.loaded ?: lastPlayed(sid)?.itemId
         val steady = hold.steady + listOfNotNull(title)
         val picks = hold.picksAt(now, pickMs).mapValues { it.value + pickMs } // key → until
         val recent = departures.recent(now) // key → until

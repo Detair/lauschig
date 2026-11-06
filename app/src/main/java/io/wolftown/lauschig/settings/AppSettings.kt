@@ -46,13 +46,17 @@ class AppSettings internal constructor(private val store: DataStore<Preferences>
     val cleanupIgnored: Flow<Set<String>> = store.data.map { it[CLEANUP_IGNORED] ?: emptySet() }
 
     /**
-     * Fill series gaps from the Audible catalog. Off until the user agrees: each lookup tells Audible the ASINs of their
-     * books and their IP address.
+     * Fill series gaps from the Audible catalog, per account: on a shared device one person's yes is nobody else's. Off until
+     * that account agrees: each lookup tells Audible the ASINs of their books and their IP address. No account: off.
      */
-    val missingVolumesEnabled: Flow<Boolean> = store.data.map { it[MISSING_VOLUMES] ?: false }
+    fun missingVolumesEnabled(serverId: String?): Flow<Boolean> = store.data.map { p ->
+        serverId?.let { p[missingVolumesKey(it)] } ?: false
+    }
 
-    /** True until the user has answered: the series page asks once; using the switch in the settings answers too. */
-    val missingVolumesUndecided: Flow<Boolean> = store.data.map { MISSING_VOLUMES !in it }
+    /** True until the account has answered: the series page asks once; using the switch in the settings answers too. */
+    fun missingVolumesUndecided(serverId: String?): Flow<Boolean> = store.data.map { p ->
+        serverId != null && missingVolumesKey(serverId) !in p
+    }
 
     /** Audible catalog region (`de`, `us`, ...). Default `de`. */
     val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: io.wolftown.lauschig.external.AudibleRegions.DEFAULT }
@@ -73,7 +77,31 @@ class AppSettings internal constructor(private val store: DataStore<Preferences>
         store.edit { it[AUTO_DOWNLOADED] = keys }
     }
 
-    suspend fun setMissingVolumesEnabled(enabled: Boolean) {
+    suspend fun setMissingVolumesEnabled(serverId: String, enabled: Boolean) {
+        store.edit { it[missingVolumesKey(serverId)] = enabled }
+    }
+
+    /** [serverId] signed out, was removed or purged: signed in again, it is asked again. */
+    suspend fun clearMissingVolumes(serverId: String) {
+        store.edit { it.remove(missingVolumesKey(serverId)) }
+    }
+
+    /**
+     * Before this answer was per account it was one for the device: it belongs to the account that is signed in now
+     * ([activeServerId]), the others are asked. No value stays undecided. Idempotent; signed out, the old value is dropped.
+     */
+    suspend fun migrateMissingVolumes(activeServerId: String?) {
+        store.edit { p ->
+            val old = p[MISSING_VOLUMES] ?: return@edit
+            if (activeServerId != null && missingVolumesKey(activeServerId) !in p) p[missingVolumesKey(activeServerId)] = old
+            p.remove(MISSING_VOLUMES)
+        }
+    }
+
+    private fun missingVolumesKey(serverId: String) = booleanPreferencesKey("missing_volumes_enabled:$serverId")
+
+    /** Tests: the device-wide value as an older version stored it. */
+    internal suspend fun putLegacyMissingVolumes(enabled: Boolean) {
         store.edit { it[MISSING_VOLUMES] = enabled }
     }
 
@@ -108,6 +136,7 @@ class AppSettings internal constructor(private val store: DataStore<Preferences>
         val AUTO_DOWNLOADED = stringSetPreferencesKey("auto_downloaded_episodes")
         val NEXT_VOLUME = stringPreferencesKey("next_volume_mode")
         val CLEANUP_REMINDER = booleanPreferencesKey("cleanup_reminder")
+        /** The device-wide answer before it became per account ([migrateMissingVolumes]). */
         val MISSING_VOLUMES = booleanPreferencesKey("missing_volumes_enabled")
         val AUDIBLE_REGION = stringPreferencesKey("audible_region")
         val CLEANUP_IGNORED = stringSetPreferencesKey("cleanup_ignored")

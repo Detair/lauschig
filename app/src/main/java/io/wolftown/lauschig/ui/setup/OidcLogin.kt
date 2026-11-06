@@ -76,6 +76,12 @@ data class OidcFlowContext(
     val ssidBinding: Boolean = false,
     val currentSsid: String? = null,
     val keptSsids: Set<String> = emptySet(),
+    /** Started as one more profile: however the form comes back, the active account is set aside, not signed out. */
+    val addProfile: Boolean = false,
+    /** Started on the way of a forgotten PIN: however the form comes back, only this account counts. */
+    val unlockServerId: String? = null,
+    /** Whoever signs in has to prove it now: a session the browser still has at the provider must not answer ([OidcLogin.start]). */
+    val freshLogin: Boolean = false,
 )
 
 /** A finished SSO login: the server's answer, the address that was used and the form values from the start. */
@@ -94,6 +100,12 @@ interface OidcSignIn {
 
     /** Forgets a pending attempt (verifier, state, session cookies); sign-out. */
     suspend fun clearPending()
+
+    /** The pending attempt was started as one more profile. False without one. */
+    suspend fun pendingAddsProfile(): Boolean = false
+
+    /** The account whose forgotten PIN the pending attempt is about. Null without one. */
+    suspend fun pendingUnlock(): String? = null
 }
 
 private val Context.oidcPendingDataStore by preferencesDataStore(
@@ -146,7 +158,7 @@ class OidcLogin(
                         if (target == null || (target.scheme != "https" && target.scheme != "http")) OidcStart.Unreachable
                         else {
                             savePending(baseUrl, verifier, state, r.headers("Set-Cookie"), flow)
-                            OidcStart.Launch(target.toString())
+                            OidcStart.Launch((if (flow.freshLogin) target.askingForAFreshLogin() else target).toString())
                         }
                     }
                     else -> OidcStart.Unreachable
@@ -158,6 +170,15 @@ class OidcLogin(
             OidcStart.Unreachable
         }
     }
+
+    /**
+     * Audiobookshelf does not pass `prompt` on (it builds this URL from its own settings), but the app opens it itself. Nothing
+     * signs it, and its callback checks state, code and verifier, which stay as they are; `max_age` is checked there only if
+     * Audiobookshelf itself set it. OIDC: with `prompt=login` the provider SHOULD ask again, with `max_age` it MUST try to. One that
+     * ignores both still answers from its session, and the app cannot tell: Audiobookshelf keeps the ID token.
+     */
+    private fun HttpUrl.askingForAFreshLogin(): HttpUrl =
+        newBuilder().setQueryParameter("prompt", "login").setQueryParameter("max_age", "0").build()
 
     override suspend fun finish(callback: OidcCallback): OidcResult {
         val p = loadPending() ?: throw OidcException(OidcException.Reason.NO_PENDING)
@@ -196,6 +217,10 @@ class OidcLogin(
         loadPending()?.let { stateMatches(callback.state, it.state) } == true
 
     override suspend fun clearPending() { store.edit { it.clear() } }
+
+    override suspend fun pendingAddsProfile(): Boolean = loadPending()?.flow?.addProfile == true
+
+    override suspend fun pendingUnlock(): String? = loadPending()?.flow?.unlockServerId
 
     private fun stateMatches(received: String?, expected: String): Boolean =
         !received.isNullOrEmpty() && MessageDigest.isEqual(received.toByteArray(), expected.toByteArray())

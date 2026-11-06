@@ -54,7 +54,7 @@ class HistoryRepositoryTest {
 
     @After fun tearDown() = db.close()
 
-    private fun repo(online: Boolean = true) = HistoryRepository(flowOf(if (online) api else null), db.historyDao(), db.sessionDao())
+    private fun repo(online: Boolean = true) = HistoryRepository({ flowOf(if (online) api else null) }, db.historyDao(), db.sessionDao())
 
     @Test fun refresh_cachesServerSessions_andMergesLocalOnes() = runTest {
         db.sessionDao().upsert(LocalSessionEntity("loc", s, "li_1", 0.0, 30.0, 30.0, 50, 60))

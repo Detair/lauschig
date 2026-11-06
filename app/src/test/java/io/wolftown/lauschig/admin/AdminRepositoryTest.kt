@@ -31,8 +31,8 @@ class AdminRepositoryTest {
         val retrofit = AbsClientFactory.retrofit(server.url("/"), OkHttpClient())
         account.value = Account(sid, "root", "root", true, ServerAddresses(null, server.url("/")), emptySet())
         repo = AdminRepository(
-            admin = flowOf(retrofit.create(AdminApi::class.java)),
-            library = flowOf(retrofit.create(LibraryApi::class.java)),
+            admin = { flowOf(retrofit.create(AdminApi::class.java)) },
+            library = { flowOf(retrofit.create(LibraryApi::class.java)) },
             account = account,
             itemLibraryId = { _, id -> if (id == "li1") "lib1" else "lib2" },
             loadDetails = { _, id -> refreshed += id },
@@ -65,7 +65,7 @@ class AdminRepositoryTest {
     }
 
     @Test fun offline_isOffline() = runBlocking {
-        val offline = AdminRepository(flowOf(null), flowOf(null), account, { _, _ -> null }, { _, _ -> }, {})
+        val offline = AdminRepository({ flowOf(null) }, { flowOf(null) }, account, { _, _ -> null }, { _, _ -> }, {})
         assertEquals(AdminResult.Offline, offline.scanItem("li1"))
     }
 

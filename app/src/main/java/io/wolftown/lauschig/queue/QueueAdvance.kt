@@ -5,7 +5,9 @@ import io.wolftown.lauschig.db.dao.DownloadDao
 import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.db.entities.DownloadState
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.playback.PlayableKey
+import kotlinx.coroutines.CancellationException
 
 /** Whether a queued title can start right now. */
 enum class QueueEntryState {
@@ -58,9 +60,13 @@ suspend fun queueEntryState(items: ItemDao, episodes: EpisodeDao, downloads: Dow
  *
  * The queue wins over the next-volume suggestion: when an entry starts, the suggestion only remains on the finished
  * title. The ended title leaves the queue if it was queued too. Entries are tried in order: a [QueueEntryState.MISSING]
- * one is dropped, one that fails to start is dropped, and the next one is tried; an [QueueEntryState.UNAVAILABLE_NOW]
- * one (offline, not downloaded) is skipped but stays for later. Nothing starts while the sleep timer waits for the end
- * of a chapter (the listener wants to stop); with nothing playable the regular end of a title applies.
+ * one is dropped, one that says it cannot start is dropped and the next one is tried; an [QueueEntryState.UNAVAILABLE_NOW]
+ * one (offline, not downloaded) is skipped but stays for later. A start that throws is dropped too, since it may have started
+ * first and must not start again at the next end, but then nothing more is tried: the exception may be about the device and
+ * not the title (a database error, a released player), and it would take the whole queue with it. So at most one entry per
+ * end goes that way; in doubt the queue stays. An entry leaves when its start is decided: if the account was left meanwhile (a
+ * switch during the start) it stays for the account's return and nothing else is tried. Nothing starts while the sleep timer
+ * waits for the end of a chapter (the listener wants to stop); with nothing playable the regular end of a title applies.
  */
 class QueueAdvancer(
     private val entries: suspend (serverId: String) -> List<String>,
@@ -90,11 +96,27 @@ class QueueAdvancer(
                 QueueEntryState.PLAYABLE -> {
                     if (!stillOwner(serverId)) return null
                     pick(serverId, key)
+                    var threw = false
+                    val started = try {
+                        start(serverId, key)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "queue: a start failed", e)
+                        threw = true
+                        false
+                    }
+                    if (!started && !stillOwner(serverId)) return null
                     remove(serverId, key)
-                    if (start(serverId, key)) return key
+                    if (started) return key
+                    if (threw) return null
                 }
             }
         }
         return null
+    }
+
+    private companion object {
+        const val TAG = "QueueAdvancer"
     }
 }

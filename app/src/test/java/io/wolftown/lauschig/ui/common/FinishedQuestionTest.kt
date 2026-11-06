@@ -134,7 +134,7 @@ class FinishedQuestionTest {
         db.audioFileDao().replaceFromServer(s, "b1", listOf(AudioFileEntity(s, "b1", 1, "i", 100.0, 3, "mp3")))
         db.audioFileDao().setLocal(s, "b1", 1, file.absolutePath, 3)
         db.downloadDao().upsert(DownloadEntity(s, "b1", DownloadState.COMPLETE, 1))
-        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(null) }, object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
         vm = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), questions))
     }
 
@@ -309,11 +309,26 @@ class FinishedQuestionTest {
 
     @Test fun neitherNoteNorKeep_theTitleIsNotMarkedFinished() = runBlocking {
         val q2 = FinishedQuestions(unwritable(), { true }, { throw java.io.IOException("disk full") }, { _, _ -> })
-        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, flowOf(null), object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
+        val actions = ProgressActions(db.progressDao(), db.itemDao(), db.episodeDao(), player, { flowOf(null) }, object : SyncTrigger { override fun syncNow() {} }, settleMs = 0)
         val vm2 = viewModels.own(ItemActionsViewModel(accounts, manager, player, actions, db.itemDao(), db.episodeDao(), db.queueDao(), q2))
         vm2.markFinished("b1")
         delay(700)
         assertFalse("not finished without a stored question", finished())
         assertTrue(q2.holds.first().isEmpty())
+    }
+
+    /** Phase 7, 1.7: the question names a title of A and answers for A's download: B never gets it, A gets it back. */
+    @Test fun aQuestion_isOnlyEverPutToItsAccount_andWaitsForItsReturn() = runBlocking {
+        val other = Account("bbbbbbbbbbbbbbbb", "u2", "m", false, ServerAddresses(null, null), emptySet())
+        val me = accounts.acc.value!!
+        val model = io.wolftown.lauschig.cleanup.FinishedQuestionViewModel(questions, settings, accounts)
+        val q = FinishedQuestion(s, "book")
+        questions.ask(q, "Titel")
+        suspend fun next(wanted: List<FinishedQuestion>) = kotlinx.coroutines.withTimeout(5_000) { model.question.first { it == wanted } }
+        assertEquals(listOf(q), next(listOf(q)))
+        accounts.acc.value = other
+        assertEquals(emptyList<FinishedQuestion>(), next(emptyList()))
+        accounts.acc.value = me
+        assertEquals(listOf(q), next(listOf(q)))
     }
 }

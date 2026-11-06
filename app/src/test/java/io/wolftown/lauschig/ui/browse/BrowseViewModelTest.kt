@@ -81,16 +81,16 @@ class BrowseViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private val authors = AuthorInfoCache(flowOf(null)) { emptyList() }
+    private val authors = AuthorInfoCache({ flowOf(null) }) { emptyList() }
 
     private fun vm(
         kind: BrowseKind, name: String,
         prefs: FilterPreferences = FilterPreferences(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("p${System.nanoTime()}.preferences_pb") }),
         info: AuthorInfoCache = authors,
-        missing: MissingVolumesSource = MissingVolumesSource(flowOf(false), flowOf(true)) { _, _, _, _ -> null },
+        missing: MissingVolumesSource = MissingVolumesSource(flowOf(false), { flowOf(true) }) { _, _, _, _ -> null },
         signedIn: Boolean = true,
+        store: FakeAccountStore = FakeAccountStore(),
     ): BrowseViewModel {
-        val store = FakeAccountStore()
         if (signedIn) store.acc.value = Account(sid, "u", "user", false, ServerAddresses(null, "https://abs.example.org".toHttpUrl()), emptySet())
         val covers = CoverPathCache(DownloadFiles(tmp.newFolder("dl${System.nanoTime()}"), db.audioFileDao())) { false }
         val factory = viewModelFactory {
@@ -145,7 +145,7 @@ class BrowseViewModelTest {
             override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
-        val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache(flowOf(api)) { listOf("lib1") }).await { it.author != null }
+        val s = vm(BrowseKind.AUTHOR, "Ann", info = AuthorInfoCache({ flowOf(api) }) { listOf("lib1") }).await { it.author != null }
         assertEquals("Bio", s.author?.description)
     }
 
@@ -157,7 +157,7 @@ class BrowseViewModelTest {
             override suspend fun recentEpisodes(id: String, limit: Int, page: Int): io.wolftown.lauschig.absapi.library.RecentEpisodesResponse = error("unused")
             override suspend fun item(id: String, expanded: Int) = error("unused")
         }
-        val cache = AuthorInfoCache(flowOf(api)) { listOf("lib1") }
+        val cache = AuthorInfoCache({ flowOf(api) }) { listOf("lib1") }
         cache.ensureLoaded(sid)
         assertEquals(emptyMap<String, AuthorDto>(), cache.authors.value)
     }
@@ -232,7 +232,7 @@ class BrowseViewModelTest {
     @Test fun series_online_mergesAudibleVolumesInOrder() = runTest {
         ownSaga()
         val calls = mutableListOf<Triple<String, String, List<String>>>()
-        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, series, owned ->
+        val source = MissingVolumesSource(flowOf(true), { flowOf(true) }) { _, lib, series, owned ->
             calls += Triple(lib, series, owned.map { it.id })
             listOf(mv("3"), mv("5"), mv("12"))
         }
@@ -248,7 +248,7 @@ class BrowseViewModelTest {
     @Test fun series_online_ignoresVolumesOwnedInAnotherLibrary() = runTest {
         ownSaga()
         db.itemDao().upsertFromList(listOf(item("h3", lib = "lib2", title = "C", series = "Saga", key = 3.0)))
-        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, _, _ -> if (lib == "lib1") listOf(mv("3"), mv("5")) else listOf(mv("5")) }
+        val source = MissingVolumesSource(flowOf(true), { flowOf(true) }) { _, lib, _, _ -> if (lib == "lib1") listOf(mv("3"), mv("5")) else listOf(mv("5")) }
         val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { s -> s.entries.any { it is BrowseEntry.Missing } }
         assertEquals(listOf("A", "B", "C", "D", "missing:5=Audible 5"), s.entries.map { it.label() })
     }
@@ -257,7 +257,7 @@ class BrowseViewModelTest {
     private suspend fun gatedRun(online: MutableStateFlow<Boolean>, enabled: MutableStateFlow<Boolean>, open: () -> Unit) {
         ownSaga()
         val calls = Collections.synchronizedList(mutableListOf<String>())
-        val source = MissingVolumesSource(online, enabled) { _, lib, _, _ -> calls += lib; listOf(mv("3")) }
+        val source = MissingVolumesSource(online, { enabled }) { _, lib, _, _ -> calls += lib; listOf(mv("3")) }
         val vm = vm(BrowseKind.SERIES, "Saga", missing = source)
         val plain = vm.await { it.loaded }
         assertEquals(listOf("A", "B", "missing:3", "D"), plain.entries.map { it.label() })
@@ -269,7 +269,7 @@ class BrowseViewModelTest {
     }
 
     private fun consent(undecided: MutableStateFlow<Boolean>, enabled: MutableStateFlow<Boolean>, calls: MutableList<String>) =
-        MissingVolumesSource(MutableStateFlow(true), enabled, undecided, { allow -> enabled.value = allow; undecided.value = false }) { _, lib, _, _ ->
+        MissingVolumesSource(MutableStateFlow(true), { enabled }, { undecided }, { _, allow -> enabled.value = allow; undecided.value = false }) { _, lib, _, _ ->
             calls += lib
             listOf(mv("3"))
         }
@@ -303,6 +303,33 @@ class BrowseViewModelTest {
         assertEquals(emptyList<String>(), calls.toList())
     }
 
+    /** The final review's Minor 1, on one page with the real settings: A's yes is not B's, and B's answer is B's. */
+    @Test fun series_aSwitch_asksTheNextAccount_andLooksNothingUpForIt() = runTest {
+        ownSagaWithAsin()
+        val b = "bbbbbbbbbbbbbbbb"
+        db.libraryDao().upsertFromServer(listOf(LibraryEntity(b, "lib1", "Books", "book", 0)))
+        db.itemDao().upsertFromList(listOf(item("v1", title = "A", author = "Ann", series = "Saga", key = 1.0).copy(serverId = b, asin = "B1")))
+        val settings = io.wolftown.lauschig.settings.AppSettings(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("app${System.nanoTime()}.preferences_pb") })
+        settings.setMissingVolumesEnabled(sid, true)
+        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val source = MissingVolumesSource(MutableStateFlow(true), settings) { server, _, _, _ -> calls += server; listOf(mv("3")) }
+        val store = FakeAccountStore()
+        val addresses = ServerAddresses(null, "https://abs.example.org".toHttpUrl())
+        val vm = vm(BrowseKind.SERIES, "Saga", missing = source, signedIn = false, store = store.apply { acc.value = Account(sid, "u", "user", false, addresses, emptySet()) })
+        vm.await { s -> s.entries.any { it is BrowseEntry.Missing && it.volume != null } }
+        assertEquals(listOf(sid), calls.toList())
+
+        store.acc.value = Account(b, "u2", "kind", false, addresses, emptySet())
+        vm.await { it.askMissingVolumes }
+        assertEquals("nothing for B", listOf(sid), calls.toList())
+
+        vm.answerMissingVolumes(false)
+        vm.await { it.loaded && !it.askMissingVolumes }
+        assertEquals(false, settings.missingVolumesEnabled(b).first())
+        assertEquals("B's no is not A's", true, settings.missingVolumesEnabled(sid).first())
+        assertEquals(listOf(sid), calls.toList())
+    }
+
     @Test fun series_withoutAnyAsin_doesNotAsk() = runTest {
         ownSaga()
         val vm = vm(BrowseKind.SERIES, "Saga", missing = consent(MutableStateFlow(true), MutableStateFlow(false), mutableListOf()))
@@ -327,7 +354,7 @@ class BrowseViewModelTest {
 
     @Test fun series_lookupReturnsNull_keepsPlainGaps() = runTest {
         ownSaga()
-        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, _, _, _ -> null }
+        val source = MissingVolumesSource(flowOf(true), { flowOf(true) }) { _, _, _, _ -> null }
         val s = vm(BrowseKind.SERIES, "Saga", missing = source).await { it.loaded }
         assertEquals(listOf("A", "B", "missing:3", "D"), s.entries.map { it.label() })
     }
@@ -336,7 +363,7 @@ class BrowseViewModelTest {
         ownSaga()
         db.itemDao().upsertFromList(listOf(item("w1", title = "W", author = "Ann")))
         val calls = Collections.synchronizedList(mutableListOf<String>())
-        val source = MissingVolumesSource(flowOf(true), flowOf(true)) { _, lib, series, _ -> calls += "$lib/$series"; listOf(mv("3")) }
+        val source = MissingVolumesSource(flowOf(true), { flowOf(true) }) { _, lib, series, _ -> calls += "$lib/$series"; listOf(mv("3")) }
         val author = vm(BrowseKind.AUTHOR, "Ann", missing = source).await { it.loaded && it.count == 1 }
         assertEquals(listOf("W"), author.entries.map { it.label() })
         // Positive control: a series page on the same source does look up, so the pipeline was live.

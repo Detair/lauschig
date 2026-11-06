@@ -34,6 +34,9 @@ class ConnectionLog @Inject constructor() {
     private val _state = MutableStateFlow(ConnectionLogState())
     val state: StateFlow<ConnectionLogState> = _state
 
+    /** Another account: the addresses and answers here were the last one's. */
+    fun clear() { _state.value = ConnectionLogState() }
+
     fun probed(record: ProbeRecord) = _state.update { it.copy(probes = it.probes + (record.url.toString() to record)) }
 
     fun resolved(state: ConnectionState, at: Long, noNetwork: Boolean = false) =

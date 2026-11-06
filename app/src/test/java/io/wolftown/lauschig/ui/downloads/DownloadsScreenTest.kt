@@ -134,6 +134,18 @@ class DownloadsScreenTest {
         rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used (2.0\u00A0MB from earlier accounts)")
     }
 
+    @Test fun header_aLineForTheOtherProfiles() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state.copy(otherProfilesBytes = 2_100_000_000), {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsOtherProfiles").assertTextEquals("Other profiles on this device: 2.1\u00A0GB")
+        // Their figure is not in the account's own, and nothing here deletes them.
+        rule.onNodeWithTag("downloadsStorage").assertTextEquals("5.0\u00A0MB used · 10\u00A0GB free")
+    }
+
+    @Test fun header_withoutOtherProfiles_noSuchLine() {
+        rule.setContent { LauschigTheme { DownloadsScreen(state, {}, {}, DownloadsActions()) } }
+        rule.onNodeWithTag("downloadsOtherProfiles").assertDoesNotExist()
+    }
+
     @Test fun aMissingCard_isSaidUnderTheStorageFigure() {
         rule.setContent { LauschigTheme { DownloadsScreen(state.copy(cardMissing = true), {}, {}, DownloadsActions()) } }
         rule.onNodeWithTag("downloadsCardMissing").assertTextEquals("SD card not found – new downloads go to the internal storage for now.")

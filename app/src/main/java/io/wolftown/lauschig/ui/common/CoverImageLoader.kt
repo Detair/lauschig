@@ -7,7 +7,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.net.ApiProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,9 +23,11 @@ import okhttp3.Request
 import okio.Path.Companion.toOkioPath
 
 /**
- * Routes Coil's network requests through [ApiProvider]'s authenticated, cleartext-guarded client for the
- * currently online server (resolved per request, never stale) (Bearer token, origin-scoped). While offline it falls back to the guarded client
- * without credentials, which cannot leak a token; the UI does not request covers while offline anyway.
+ * Coil's network requests: the guarded client without credentials, so plain HTTP still only goes to a server the signed-in
+ * account confirmed. Nothing Coil loads needs a token. The server's covers ([coverModel]) are public, like its author images,
+ * from the oldest server this app works with on: `Auth.ignorePatterns` in Audiobookshelf 2.26.0 (commit 264ae928), and checked
+ * on 2.37.1. The rest are third-party images (Audible's). So a tile cannot send anyone's token, also not the next account's in
+ * the moments around a profile switch.
  *
  * The shared connection state is kept active only while [visible] (the app is in the foreground), so the
  * probe loop does not keep running in the background just for covers.
@@ -37,17 +38,13 @@ class GuardedCallFactory(
     visible: Flow<Boolean>,
 ) : Call.Factory {
     init {
-        // Keeps the shared connection state current while visible; resolution itself is synchronous.
+        // Keeps the shared connection state current while visible: the pages build their cover addresses from it.
         scope.launch {
             visible.distinctUntilChanged().collectLatest { if (it) api.connection.collect {} }
         }
     }
 
-    override fun newCall(request: Request): Call {
-        val state = api.connectionState.value
-        val client = (state as? ConnectionState.Online)?.let { api.clientFor(it.baseUrl) } ?: api.unauthenticatedClient()
-        return client.newCall(request)
-    }
+    override fun newCall(request: Request): Call = api.unauthenticatedClient().newCall(request)
 }
 
 /** True while the app process is at least STARTED (some activity visible). */

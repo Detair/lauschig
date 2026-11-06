@@ -80,13 +80,15 @@ class DeviceAccountData(
     private val forgetSeen: suspend (serverId: String) -> Unit = {},
     /** The automatic clean-up's setting, open questions and keep entries of the server ([AutoDeleteAccountState.forget]). */
     private val forgetAutoDelete: suspend (serverId: String) -> Unit = {},
+    /** The server's answer about the Audible catalog. */
+    private val forgetAudibleAnswer: suspend (serverId: String) -> Unit = {},
 ) : AccountData {
     @Inject constructor(
         db: LauschigDatabase, files: DownloadFiles, stamps: SyncStamps, covers: CoverStore, volumePurges: DataStoreVolumePurges, seen: FinishedSeenStore,
-        autoDelete: AutoDeleteAccountState,
+        autoDelete: AutoDeleteAccountState, app: io.wolftown.lauschig.settings.AppSettings,
     ) : this(
         db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), files, stamps, covers::forgetServer, Dispatchers.IO, volumePurges,
-        seen::forget, autoDelete::forget,
+        seen::forget, autoDelete::forget, app::clearMissingVolumes,
     )
 
     override suspend fun unsynced(serverId: String): Int {
@@ -103,7 +105,8 @@ class DeviceAccountData(
 
     /**
      * The sync stamps first (a kill afterwards costs at most an extra fetch, never a stamp that hides missing rows),
-     * then the automatic clean-up's setting, questions and keep entries (a purge cut short leaves the clean-up off), then
+     * then the automatic clean-up's setting, questions and keep entries (a purge cut short leaves the clean-up off) and the
+     * answer about the Audible catalog, then
      * the rows (nothing then points at the files), then the files and caches. Downloads on a card that is out are
      * noted first (the rows say where they are): the purge fails until the card was back and they are gone, so the
      * caller keeps it pending and the janitor finishes it.
@@ -114,6 +117,7 @@ class DeviceAccountData(
         volumePurges.add(serverId, away)
         stamps.removeServer(serverId)
         forgetAutoDelete(serverId)
+        forgetAudibleAnswer(serverId)
         dao.deleteServer(serverId)
         forgetSeen(serverId)
         withContext(io) {

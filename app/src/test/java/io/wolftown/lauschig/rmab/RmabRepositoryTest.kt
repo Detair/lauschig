@@ -43,6 +43,10 @@ class RmabRepositoryTest {
     private val bodies = CopyOnWriteArrayList<String>()
     private var handler: (RecordedRequest) -> MockResponse = { MockResponse().setResponseCode(404) }
     private var now = 1_000_000L
+    private val a = "aaaaaaaaaaaaaaaa"
+    private val b = "bbbbbbbbbbbbbbbb"
+    /** The signed-in account. */
+    private val active = kotlinx.coroutines.flow.MutableStateFlow<String?>(a)
 
     private val cipher = object : TokenCipher {
         override fun encrypt(plain: String) = "enc:$plain"
@@ -67,7 +71,7 @@ class RmabRepositoryTest {
 
     private fun newRepo(): RmabRepository {
         store = PreferenceDataStoreFactory.create(scope = scope) { storeFile }
-        return RmabRepository(store, cipher, { "Pixel 9" }, nowMs = { now })
+        return RmabRepository(store, cipher, { "Pixel 9" }, active, nowMs = { now })
     }
 
     @After fun tearDown() {
@@ -250,9 +254,9 @@ class RmabRepositoryTest {
     /** A stored http:// config whose host was never confirmed (or was edited) must not be spoken to. */
     private suspend fun storeUnconfirmedHttpConfig() {
         store.edit {
-            it[stringPreferencesKey("url")] = server.url("/").toString()
-            it[stringPreferencesKey("username")] = "fabi"
-            it[stringPreferencesKey("token")] = "enc:rmab_abc"
+            it[stringPreferencesKey("url:$a")] = server.url("/").toString()
+            it[stringPreferencesKey("username:$a")] = "fabi"
+            it[stringPreferencesKey("token:$a")] = "enc:rmab_abc"
         }
     }
 
@@ -266,7 +270,7 @@ class RmabRepositoryTest {
 
     @Test fun storedHttpConfig_confirmedForOtherHost_refuses() = runBlocking {
         storeUnconfirmedHttpConfig()
-        store.edit { it[stringPreferencesKey("allow_cleartext")] = "http://other.example:80" }
+        store.edit { it[stringPreferencesKey("allow_cleartext:$a")] = "http://other.example:80" }
         assertEquals(RmabRequestResult.Unreachable, repo.request(volume))
         assertEquals(0, server.requestCount)
     }
@@ -307,5 +311,163 @@ class RmabRepositoryTest {
             viewModels.clear()
             kotlinx.coroutines.Dispatchers.resetMain()
         }
+    }
+
+    // Per account (Phase 7, Task 1.1): the connection of a profile waits for it, with its token.
+
+    private fun rmabLogin(token: String): (RecordedRequest) -> MockResponse = { r ->
+        when (r.path) {
+            "/api/auth/local/login" -> json(200, """{"success":true,"user":{"id":"1"},"accessToken":"JWT","refreshToken":"R"}""")
+            "/api/user/api-tokens" -> json(201, """{"token":{"id":"t1"},"fullToken":"$token"}""")
+            else -> json(201, """{"success":true,"request":{"id":"r1"}}""")
+        }
+    }
+
+    @Test fun eachAccount_hasItsOwnConnection_andItWaitsForItsReturn() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        seen.clear()
+
+        active.value = b
+        assertNull("B sees nothing of A's connection", repo.config.first())
+        assertEquals(RmabRequestResult.NotConnected, repo.request(volume))
+        assertEquals(emptyMap<String, RmabStatus>(), repo.statusByAsin())
+        assertEquals(0, seen.size)
+
+        handler = rmabLogin("rmab_b")
+        repo.connect(url, "matthias", "pw", allowCleartext = true)
+        assertEquals("matthias", repo.config.first()!!.username)
+        seen.clear()
+        repo.request(volume)
+        assertEquals("Bearer rmab_b", seen.single().getHeader("Authorization"))
+
+        active.value = a
+        assertEquals("fabi", repo.config.first()!!.username)
+        seen.clear()
+        repo.request(volume)
+        assertEquals("Bearer rmab_a", seen.single().getHeader("Authorization"))
+    }
+
+    @Test fun theStatusCache_isOneAccounts() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        handler = { json(200, """{"requests":[{"id":"1","status":"available","audiobook":{"audibleAsin":"A"}}],"nextCursor":null}""") }
+        assertEquals(mapOf("A" to RmabStatus.DONE), repo.statusByAsin())
+        active.value = b
+        handler = rmabLogin("rmab_b")
+        repo.connect(url, "matthias", "pw", allowCleartext = true)
+        handler = { json(200, """{"requests":[],"nextCursor":null}""") }
+        assertEquals("not A's cached answer", emptyMap<String, RmabStatus>(), repo.statusByAsin())
+    }
+
+    @Test fun aRejectedToken_marksOnlyItsAccount() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        active.value = b
+        handler = rmabLogin("rmab_b")
+        repo.connect(url, "matthias", "pw", allowCleartext = true)
+        handler = { json(401, """{"error":"Unauthorized"}""") }
+        repo.request(volume)
+        assertTrue(repo.config.first()!!.needsReconnect)
+        active.value = a
+        assertFalse(repo.config.first()!!.needsReconnect)
+    }
+
+    @Test fun aSignInThatLandsAfterTheSwitch_storesForTheAccountThatStartedIt() = runBlocking {
+        handler = { r ->
+            if (r.path == "/api/user/api-tokens") active.value = b // the switch comes while the connect runs
+            rmabLogin("rmab_a")(r)
+        }
+        assertEquals(RmabConnectResult.Ok, repo.connect(url, "fabi", "pw", allowCleartext = true))
+        assertNull("not B's", repo.config.first())
+        active.value = a
+        assertEquals("fabi", repo.config.first()!!.username)
+    }
+
+    @Test fun forget_goesOnlyForThatAccount_disconnect_isTheActiveOne() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        active.value = b
+        handler = rmabLogin("rmab_b")
+        repo.connect(url, "matthias", "pw", allowCleartext = true)
+        repo.forget(a)
+        assertEquals("matthias", repo.config.first()!!.username)
+        active.value = a
+        assertNull(repo.config.first())
+        active.value = b
+        repo.disconnect()
+        assertNull(repo.config.first())
+        val raw = storeFile.readBytes().toString(Charsets.ISO_8859_1)
+        assertFalse("no token stays behind", raw.contains("rmab_"))
+    }
+
+    @Test fun signedOut_thereIsNoConnection() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        active.value = null
+        assertNull(repo.config.first())
+        assertEquals(RmabRequestResult.NotConnected, repo.request(volume))
+    }
+
+    /** What 0.4.0 stored: one connection for the device. */
+    private suspend fun oldVersionStored() = store.edit {
+        it[stringPreferencesKey("url")] = server.url("/").toString()
+        it[stringPreferencesKey("username")] = "fabi"
+        it[stringPreferencesKey("token")] = "enc:rmab_old"
+        it[stringPreferencesKey("allow_cleartext")] = server.url("/").let { u -> "${u.scheme}://${u.host}:${u.port}" }
+        it[androidx.datastore.preferences.core.booleanPreferencesKey("needs_reconnect")] = true
+    }
+
+    @Test fun upgrade_theOldConnectionIsTheActiveAccounts() = runBlocking {
+        oldVersionStored()
+        repo.migrate(a)
+        assertEquals(RmabConfig(server.url("/").toString(), "fabi", needsReconnect = true), repo.config.first())
+        store.edit { it.remove(androidx.datastore.preferences.core.booleanPreferencesKey("needs_reconnect:$a")) }
+        handler = { json(201, """{"success":true,"request":{"id":"r1"}}""") }
+        assertEquals("token and confirmed cleartext moved with it", RmabRequestResult.Created, repo.request(volume))
+        assertEquals("Bearer rmab_old", seen.single().getHeader("Authorization"))
+        active.value = b
+        assertNull(repo.config.first())
+    }
+
+    @Test fun upgrade_signedOut_theOldConnectionHasNoOwner_andGoes() = runBlocking {
+        oldVersionStored()
+        repo.migrate(null)
+        repo.migrate(a)
+        assertNull(repo.config.first())
+        val raw = storeFile.readBytes().toString(Charsets.ISO_8859_1)
+        assertFalse(raw.contains("rmab_old"))
+    }
+
+    @Test fun upgrade_runsOnce_andKeepsAnAccountsOwnConnection() = runBlocking {
+        handler = rmabLogin("rmab_a")
+        repo.connect(url, "fabi", "pw", allowCleartext = true)
+        oldVersionStored()
+        repo.migrate(a)
+        repo.migrate(b)
+        assertEquals("fabi", repo.config.first()!!.username)
+        assertFalse(repo.config.first()!!.needsReconnect)
+        active.value = b
+        assertNull(repo.config.first())
+    }
+
+    /** For the masker: the connection of an account that is set aside is still this device's. */
+    @Test fun allConfigs_everyAccounts_notOnlyTheActiveOnes() = runBlocking {
+        store.edit {
+            it[stringPreferencesKey("url:$a")] = "https://rmab.a.example/"
+            it[stringPreferencesKey("username:$a")] = "fabi"
+            it[stringPreferencesKey("url:$b")] = "http://rmab.lan:3030/"
+            it[stringPreferencesKey("username:$b")] = "kind"
+        }
+        active.value = b
+        assertEquals(setOf("fabi", "kind"), repo.allConfigs.first().map { it.username }.toSet())
+        assertEquals(setOf("https://rmab.a.example/", "http://rmab.lan:3030/"), repo.allConfigs.first().map { it.url }.toSet())
+        assertEquals("the active one's stays what it was", "kind", repo.config.first()!!.username)
+        active.value = null
+        assertEquals(2, repo.allConfigs.first().size)
+    }
+
+    @Test fun allConfigs_noneAtAll() = runBlocking {
+        assertEquals(emptyList<RmabConfig>(), repo.allConfigs.first())
     }
 }

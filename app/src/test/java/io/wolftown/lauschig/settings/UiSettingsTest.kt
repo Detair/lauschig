@@ -82,4 +82,10 @@ class UiSettingsTest {
         store.edit { it[stringPreferencesKey("player_remaining_time")] = "WEEK" }
         assertEquals(RemainingTime.CHAPTER, settings.playerRemainingTime.first())
     }
+
+    @Test fun theWelcome_notSeen_untilSaidSo() = runTest {
+        assertEquals(false, settings.welcomeSeen.first())
+        settings.setWelcomeSeen()
+        assertEquals(true, settings.welcomeSeen.first())
+    }
 }

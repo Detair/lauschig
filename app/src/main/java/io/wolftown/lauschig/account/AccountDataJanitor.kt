@@ -17,7 +17,7 @@ import javax.inject.Inject
  * covered (internal storage and SD card); a card that was out at sign-out is cleaned at the first start it is back. The
  * device library has no download directory, and the folders of "Auf dem Gerät" are the user's own documents: neither is
  * ever touched.
- * Saved accounts (profile switch, [AccountStore.saved]) count as signed in.
+ * Saved accounts (profile switch, [AccountStore.saved]) count as signed in. A protection whose account is gone goes too.
  */
 class AccountDataJanitor(
     private val accounts: AccountStore,
@@ -27,17 +27,23 @@ class AccountDataJanitor(
     private val deleteDir: suspend (serverId: String) -> Boolean,
     /** Tidies one owned account's title directories; returns how many titles were tidied. */
     private val tidyItems: suspend (serverId: String) -> Int = { 0 },
+    /** The server ids with a protection ([ProfileLocks]). */
+    private val protectedIds: suspend () -> Set<String> = { emptySet() },
+    private val removeProtection: suspend (serverId: String) -> Unit = {},
 ) {
-    @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, files: DownloadFiles, tidy: DownloadTidy) : this(
+    @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, data: AccountData, files: DownloadFiles, tidy: DownloadTidy, locks: ProfileLocks) : this(
         accounts, kept, data,
         serverDirs = { withContext(Dispatchers.IO) { files.serverIds() } },
         deleteDir = { sid -> withContext(Dispatchers.IO) { files.deleteServer(sid) } },
         tidyItems = tidy::tidy,
+        protectedIds = { locks.kinds.first().keys },
+        removeProtection = locks::remove,
     )
 
     suspend fun run() {
         // An unreadable account store is never taken for "signed out": then nothing is purged or deleted.
         val current = signedIn() ?: return
+        dropProtectionsWithoutAnAccount()
         val keptIds = kept.accounts.first().map { it.serverId }.toSet()
         for (sid in kept.pendingPurges.first()) {
             // Signed in again (read anew before each purge), or kept by a later sign-out: the data is wanted, the old
@@ -76,6 +82,26 @@ class AccountDataJanitor(
             } catch (e: Exception) {
                 Log.w(TAG, "tidying the downloads failed; retried at the next start", e)
             }
+        }
+    }
+
+    /**
+     * A sign-out or a removal takes the account's protection along. A process that died in between leaves one without an account,
+     * and a later sign-in must start without. Read anew before each: it may just have been signed in.
+     */
+    private suspend fun dropProtectionsWithoutAnAccount() {
+        try {
+            for (sid in protectedIds()) {
+                val now = signedIn() ?: return
+                if (sid != now.id && sid !in now.saved) {
+                    removeProtection(sid)
+                    Log.i(TAG, "removed a protection without an account")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            Log.w(TAG, "tidying the protections failed; retried at the next start")
         }
     }
 

@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -32,23 +34,23 @@ class AccountSectionTest {
     private fun show(step: SignOutStep?, info: AccountInfo? = account) = rule.setContent {
         LauschigTheme {
             Column {
-                AccountSectionContent(info, step, { calls += "signOut" }, { calls += "keep:$it" }, { calls += "confirm" }, { calls += "cancel" })
+                AccountSectionContent(info, step, { calls += "signOut" }, { calls += "keep:$it" }, { calls += "confirm" }, { calls += "cancel" }, onOpenProfiles = { calls += "profiles" })
             }
         }
     }
 
-    @Test fun accountRow_userHostAdmin_andSignOut() {
+    @Test fun theProfileRow_nameServerAdmin_opensTheSheet_andSignOut() {
         show(null)
         rule.onNodeWithText("Account").assertExists()
-        rule.onNodeWithText("fabian").assertExists()
-        rule.onNodeWithText("abs.example.org · Admin").assertExists()
+        rule.onNodeWithText("Profile: fabian · abs.example.org").performClick()
+        rule.onNodeWithText("Admin · Switch or add").assertExists()
         rule.onNodeWithTag("signOut").performClick()
-        assertEquals(listOf<Any>("signOut"), calls)
+        assertEquals(listOf<Any>("profiles", "signOut"), calls)
     }
 
-    @Test fun noAdmin_justTheHost() {
+    @Test fun noAdmin_justTheHint() {
         show(null, account.copy(isAdmin = false))
-        rule.onNodeWithText("abs.example.org").assertExists()
+        rule.onNodeWithText("Switch or add").assertExists()
     }
 
     @Test fun checking_showsTheUpload_andCanOnlyBeCancelled() {
@@ -133,5 +135,13 @@ class AccountSectionTest {
     @Test fun aCardThatIsOut_keeping_saysTheyStay() {
         show(SignOutStep.Confirm(unsynced = 0, downloadBytes = 10_000_000, keepDownloads = true, onMissingCard = true))
         rule.onNodeWithTag("cardMissingNote").assertTextEquals("Some downloads are on the SD card, which is out right now; they stay as well.")
+    }
+
+    /** Task 2's re-review: as the removal dialog. A short window, large text, and its last line can be the warning. */
+    @Test
+    @Config(sdk = [35], application = android.app.Application::class, qualifiers = "w640dp-h300dp")
+    fun theDialog_scrollsToItsLastLine() {
+        show(SignOutStep.Confirm(unsynced = 3, downloadBytes = 1_500_000_000, onMissingCard = true, keepDownloads = false))
+        rule.onNodeWithTag("signOutText").assert(hasScrollAction())
     }
 }

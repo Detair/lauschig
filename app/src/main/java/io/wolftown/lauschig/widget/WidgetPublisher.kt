@@ -55,6 +55,12 @@ class WidgetPublisher(
         ) changed()
     }
 
+    /** Another account is active: the title kept for the empty player was the last one's, and must not be written back. */
+    fun forgetTitle() {
+        last = null
+        publish()
+    }
+
     /** The player changed (main thread). */
     fun changed() = publish()
 

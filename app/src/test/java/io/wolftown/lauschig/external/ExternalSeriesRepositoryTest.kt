@@ -85,7 +85,7 @@ class ExternalSeriesRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(context, LauschigDatabase::class.java).allowMainThreadQueries().build()
         settings = AppSettings(context)
         // The DataStore outlives a test within the JVM; start from the defaults.
-        runBlocking { settings.setMissingVolumesEnabled(true); settings.setAudibleRegion("de") }
+        runBlocking { settings.setMissingVolumesEnabled("srv", true); settings.setAudibleRegion("de") }
         repo = repository()
     }
 
@@ -161,20 +161,20 @@ class ExternalSeriesRepositoryTest {
 
     @Test fun neverAnswered_noRequest_andStillUndecided() = runTest {
         val fresh = freshSettings("fresh")
-        assertEquals(true, fresh.missingVolumesUndecided.first())
-        assertEquals(false, fresh.missingVolumesEnabled.first())
+        assertEquals(true, fresh.missingVolumesUndecided("srv").first())
+        assertEquals(false, fresh.missingVolumesEnabled("srv").first())
         assertNull(repository(settingsToUse = fresh).missingFor("srv", "lib", "Die Serie", owned))
         assertEquals(0, paths.size)
     }
 
     @Test fun anAnswer_isNoLongerUndecided_andKeepsItsValue() = runTest {
         val fresh = freshSettings("fresh2")
-        fresh.setMissingVolumesEnabled(false)
-        assertEquals(false, fresh.missingVolumesUndecided.first())
-        assertEquals(false, fresh.missingVolumesEnabled.first())
-        fresh.setMissingVolumesEnabled(true)
-        assertEquals(false, fresh.missingVolumesUndecided.first())
-        assertEquals(true, fresh.missingVolumesEnabled.first())
+        fresh.setMissingVolumesEnabled("srv", false)
+        assertEquals(false, fresh.missingVolumesUndecided("srv").first())
+        assertEquals(false, fresh.missingVolumesEnabled("srv").first())
+        fresh.setMissingVolumesEnabled("srv", true)
+        assertEquals(false, fresh.missingVolumesUndecided("srv").first())
+        assertEquals(true, fresh.missingVolumesEnabled("srv").first())
     }
 
     /** The real consent wiring: real settings, source and repository, no fake between them. */
@@ -184,21 +184,152 @@ class ExternalSeriesRepositoryTest {
         val source = MissingVolumesSource(flowOf(true), fresh, repo::missingFor)
         val byLibrary = mapOf("lib" to owned)
 
-        assertEquals(true, source.undecided.first())
+        assertEquals(true, source.undecided("srv").first())
         assertNull(source.forSeries("srv", byLibrary).first())
         assertEquals("nothing may leave before an answer", 0, paths.size)
 
-        source.answer(false)
-        assertEquals(false, source.undecided.first())
+        source.answer("srv", false)
+        assertEquals(false, source.undecided("srv").first())
         assertNull(source.forSeries("srv", byLibrary).first())
         assertEquals("nothing may leave after a no", 0, paths.size)
 
-        source.answer(true)
+        source.answer("srv", true)
         assertNotNull(source.forSeries("srv", byLibrary).first())
         assertTrue("a yes looks up", paths.isNotEmpty())
 
         // A new page (a new source on the same store) does not ask again.
-        assertEquals(false, MissingVolumesSource(flowOf(true), fresh, repo::missingFor).undecided.first())
+        assertEquals(false, MissingVolumesSource(flowOf(true), fresh, repo::missingFor).undecided("srv").first())
+    }
+
+    // --- The final review's Minor 1: one person's yes is nobody else's ---
+
+    private val ownedOfB get() = owned.map { it.copy(serverId = "b", id = "b-${it.id}", asin = "ASIN-OF-B") }
+
+    private fun assertNothingOfB() = assertTrue(paths.toString(), paths.none { "ASIN-OF-B" in it })
+
+    /** Through the real settings, source and repository. */
+    @Test fun consent_oneAccountsYes_sendsNothingForAnother() = runTest {
+        val fresh = freshSettings("two")
+        val repo = repository(settingsToUse = fresh)
+        val source = MissingVolumesSource(flowOf(true), fresh, repo::missingFor)
+        source.answer("a", true)
+        assertNotNull(source.forSeries("a", mapOf("lib" to owned)).first())
+        assertTrue(paths.isNotEmpty())
+        paths.clear()
+
+        assertEquals("B is asked itself", true, source.undecided("b").first())
+        assertEquals(false, source.undecided("a").first())
+        assertNull(source.forSeries("b", mapOf("lib" to ownedOfB)).first())
+        assertNull(repo.missingFor("b", "lib", "Die Serie", ownedOfB))
+        assertEquals("right after a switch: nothing for B", 0, paths.size)
+
+        source.answer("b", false)
+        assertNull(source.forSeries("b", mapOf("lib" to ownedOfB)).first())
+        assertEquals(0, paths.size)
+        assertEquals("B's no is B's", true, fresh.missingVolumesEnabled("a").first())
+
+        source.answer("b", true)
+        source.answer("a", false)
+        source.forSeries("b", mapOf("lib" to ownedOfB)).first()
+        assertTrue("B's own yes looks up", paths.any { "ASIN-OF-B" in it })
+        paths.clear()
+        assertNull(source.forSeries("a", mapOf("lib" to owned)).first())
+        assertEquals("and A's no holds", 0, paths.size)
+    }
+
+    /** A's lookup is still on its way when the device goes over to B. */
+    @Test fun consent_aRunningLookupOfOneAccount_sendsNothingForAnother() = runBlocking {
+        val fresh = AppSettings(PreferenceDataStoreFactory.create(scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)) { tmp.newFile("running.preferences_pb") })
+        val repo = repository(settingsToUse = fresh)
+        val source = MissingVolumesSource(flowOf(true), fresh, repo::missingFor)
+        fresh.setMissingVolumesEnabled("a", true)
+        val hold = java.util.concurrent.CountDownLatch(1)
+        val inFlight = java.util.concurrent.CountDownLatch(1)
+        val answers = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                inFlight.countDown()
+                hold.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                return answers.dispatch(request)
+            }
+        }
+        val running = async(kotlinx.coroutines.Dispatchers.IO) { source.forSeries("a", mapOf("lib" to owned)).first() }
+        assertTrue("A's lookup is on the wire", inFlight.await(10, java.util.concurrent.TimeUnit.SECONDS))
+
+        assertEquals(true, source.undecided("b").first())
+        assertNull(source.forSeries("b", mapOf("lib" to ownedOfB)).first())
+        assertNull(repo.missingFor("b", "lib", "Die Serie", ownedOfB))
+        hold.countDown()
+        assertNotNull(running.await())
+        assertNothingOfB()
+    }
+
+    @Test fun consent_theDeviceWideAnswer_goesToTheAccountActiveAtTheUpgrade() = runTest {
+        val old = freshSettings("upgrade")
+        old.putLegacyMissingVolumes(true)
+        old.migrateMissingVolumes("a")
+        assertEquals(true, old.missingVolumesEnabled("a").first())
+        assertEquals(false, old.missingVolumesUndecided("a").first())
+        assertEquals("the others are asked", true, old.missingVolumesUndecided("b").first())
+        assertEquals(false, old.missingVolumesEnabled("b").first())
+        old.migrateMissingVolumes("b")
+        assertEquals("once, whoever comes later", true, old.missingVolumesUndecided("b").first())
+    }
+
+    @Test fun consent_aDeviceWideNo_goesThatWayToo() = runTest {
+        val old = freshSettings("upgradeNo")
+        old.putLegacyMissingVolumes(false)
+        old.migrateMissingVolumes("a")
+        assertEquals(false, old.missingVolumesUndecided("a").first())
+        assertEquals(false, old.missingVolumesEnabled("a").first())
+    }
+
+    @Test fun consent_noDeviceWideAnswer_staysUndecided() = runTest {
+        val fresh = freshSettings("upgradeNothing")
+        fresh.migrateMissingVolumes("a")
+        assertEquals(true, fresh.missingVolumesUndecided("a").first())
+    }
+
+    /** Signed out at the upgrade: nobody it could belong to, as with the auto-delete. */
+    @Test fun consent_aDeviceWideAnswer_withNobodySignedIn_isGone() = runTest {
+        val old = freshSettings("upgradeNobody")
+        old.putLegacyMissingVolumes(true)
+        old.migrateMissingVolumes(null)
+        old.migrateMissingVolumes("a")
+        assertEquals(true, old.missingVolumesUndecided("a").first())
+    }
+
+    /** The answer of an account that already has one is not overwritten by what is left of the old value. */
+    @Test fun consent_theOldValue_doesNotOverwriteAnAnswer() = runTest {
+        val old = freshSettings("upgradeOver")
+        old.setMissingVolumesEnabled("a", false)
+        old.putLegacyMissingVolumes(true)
+        old.migrateMissingVolumes("a")
+        assertEquals(false, old.missingVolumesEnabled("a").first())
+    }
+
+    @Test fun consent_clearing_takesOnlyThatAccounts_andItIsAskedAgain() = runTest {
+        val fresh = freshSettings("clear")
+        fresh.setMissingVolumesEnabled("a", true)
+        fresh.setMissingVolumesEnabled("b", true)
+        fresh.clearMissingVolumes("a")
+        assertEquals(true, fresh.missingVolumesUndecided("a").first())
+        assertEquals(false, fresh.missingVolumesEnabled("a").first())
+        assertEquals(true, fresh.missingVolumesEnabled("b").first())
+    }
+
+    @Test fun consent_noAccount_nothingToAskAndNothingAllowed() = runTest {
+        val fresh = freshSettings("nobody")
+        assertEquals(false, fresh.missingVolumesUndecided(null).first())
+        assertEquals(false, fresh.missingVolumesEnabled(null).first())
+    }
+
+    /** The region stays one for the device. */
+    @Test fun consent_theRegionIsTheDevices() = runTest {
+        val fresh = freshSettings("region")
+        fresh.setAudibleRegion("uk")
+        fresh.setMissingVolumesEnabled("a", true)
+        assertEquals("uk", fresh.audibleRegion.first())
     }
 
     @Test fun aCover_isOnlyLoadedOverHttps() {
@@ -208,7 +339,7 @@ class ExternalSeriesRepositoryTest {
     }
 
     @Test fun disabled_noRequest() = runTest {
-        settings.setMissingVolumesEnabled(false)
+        settings.setMissingVolumesEnabled("srv", false)
         assertNull(repo.missingFor("srv", "lib", "Die Serie", owned))
         assertEquals(0, paths.size)
     }

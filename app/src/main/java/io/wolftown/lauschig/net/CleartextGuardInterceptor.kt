@@ -16,13 +16,13 @@ class CleartextNotConfirmedException(host: String) : IOException("Cleartext HTTP
  * enforces that only servers in `Account.allowCleartext` (confirmed in the setup dialog) get plain HTTP.
  * Register with addNetworkInterceptor so redirect hops are checked too. Reads the local account store (no network); runs on OkHttp's I/O threads.
  */
-class CleartextGuardInterceptor(private val store: AccountStore) : Interceptor {
+class CleartextGuardInterceptor(private val allowed: () -> Set<String>) : Interceptor {
+    /** The servers confirmed for the signed-in account (whoever that is by the time of the request). */
+    constructor(store: AccountStore) : this({ runBlocking { store.account.first()?.allowCleartext }.orEmpty() })
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val url = chain.request().url
-        if (!url.isHttps) {
-            val allowed = runBlocking { store.account.first()?.allowCleartext }.orEmpty()
-            if (url.cleartextKey() !in allowed) throw CleartextNotConfirmedException(url.host)
-        }
+        if (!url.isHttps && url.cleartextKey() !in allowed()) throw CleartextNotConfirmedException(url.host)
         return chain.proceed(chain.request())
     }
 }

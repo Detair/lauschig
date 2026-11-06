@@ -124,6 +124,14 @@ fun DownloadsScreen(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsStorage"),
         )
+        if (state.otherProfilesBytes > 0) {
+            Text(
+                stringResource(R.string.downloads_other_profiles, size(state.otherProfilesBytes).noBreakSpaces()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("downloadsOtherProfiles"),
+            )
+        }
         if (state.cardMissing) {
             Text(
                 stringResource(R.string.settings_storage_missing),

@@ -121,11 +121,15 @@ class BrowseViewModel(
         .flatMapLatest { sid -> if (sid == null) flowOf(BrowseUiState(kind, name, loaded = true)) else stateFor(sid) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BrowseUiState(kind, name))
 
-    /** The user's answer on a series page; the catalog is asked from now on only after a yes. */
+    /** The account this page was last built for: the question was asked of it, so the answer is its own. */
+    @Volatile private var pageAccount: String? = null
+
+    /** The user's answer on a series page; the catalog is asked for this account from now on only after a yes. */
     fun answerMissingVolumes(allow: Boolean) {
+        val sid = pageAccount ?: return
         viewModelScope.launch {
             try {
-                missingVolumes.answer(allow)
+                missingVolumes.answer(sid, allow)
             } catch (e: IOException) {
                 // The question stays and can be answered again; nothing is sent meanwhile.
                 Log.w(TAG, "could not store the answer", e)
@@ -138,6 +142,7 @@ class BrowseViewModel(
     }
 
     private fun stateFor(sid: String): Flow<BrowseUiState> {
+        pageAccount = sid
         val filter = kindFilterState(libraryDao, prefs, sid, SCREEN)
 
         val author = authorInfo.authors.map { it[AuthorInfoCache.key(sid, name)] }.distinctUntilChanged()
@@ -156,7 +161,7 @@ class BrowseViewModel(
         // Only where a lookup would really send something: a title of this series with an ASIN.
         val ask: Flow<Boolean> =
             if (kind != BrowseKind.SERIES) flowOf(false)
-            else combine(catalogRows, filter, missingVolumes.undecided) { all, f, undecided ->
+            else combine(catalogRows, filter, missingVolumes.undecided(sid)) { all, f, undecided ->
                 undecided && ownedByLibrary(all.filter { it.libraryId in f.libraryIds }).values.flatten().any { !it.asin.isNullOrBlank() }
             }.distinctUntilChanged()
 

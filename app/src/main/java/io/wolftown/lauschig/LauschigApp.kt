@@ -42,16 +42,19 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var localFolders: LocalFolders
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
+    @Inject lateinit var appSettings: io.wolftown.lauschig.settings.AppSettings
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
     @Inject lateinit var finishedQuestions: FinishedQuestions
     @Inject lateinit var downloadSettings: io.wolftown.lauschig.download.DownloadSettings
     @Inject lateinit var accountStore: io.wolftown.lauschig.account.AccountStore
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
+    @Inject lateinit var accountState: io.wolftown.lauschig.account.AccountStateCleaner
+    @Inject lateinit var switchedDownloads: io.wolftown.lauschig.download.SwitchedDownloads
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
 
-    /** The only image loader: cover requests go through the authenticated, cleartext-guarded client. */
+    /** The only image loader: cover requests go through the cleartext-guarded client, without a token. */
     override fun newImageLoader(context: PlatformContext): ImageLoader = newCoverImageLoader(this, apiProvider)
 
     override fun onCreate() {
@@ -97,6 +100,30 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
                 throw e
             } catch (e: Exception) {
                 io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "auto-delete setting not moved to the account", e)
+            }
+            // The answer about the Audible catalog as well: one person's yes is nobody else's.
+            try {
+                appSettings.migrateMissingVolumes(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "Audible answer not moved to the account", e)
+            }
+            // The same for the RMAB connection and the recent searches, one per device before profiles.
+            try {
+                accountState.migrate(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "account state not moved to the account", e)
+            }
+            // A process that died in the middle of a profile switch: the downloads it paused go on.
+            try {
+                accountStore.account.first()?.serverId?.let { switchedDownloads.resume(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "downloads paused by a switch did not go on", e)
             }
             // A "Download löschen?" question a killed process left open counts as "Behalten" – settled before the
             // clean-up looks at anything.

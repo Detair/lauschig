@@ -24,7 +24,8 @@ import javax.inject.Inject
  * the device does not know yet are added (row + audio file), so they can be played without opening the podcast.
  */
 class CollectionSync(
-    private val api: Flow<LibraryApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.libraryApi]). */
+    private val api: (serverId: String) -> Flow<LibraryApi?>,
     private val libraries: LibraryDao,
     private val collections: CollectionDao,
     private val episodes: EpisodeDao,
@@ -41,7 +42,7 @@ class CollectionSync(
         audioFiles: AudioFileDao,
         stamps: SyncStamps,
         db: LauschigDatabase,
-    ) : this(apiProvider.libraryApi, libraries, collections, episodes, audioFiles, stamps, System::currentTimeMillis, { block -> db.withTransaction { block() } })
+    ) : this(apiProvider::libraryApi, libraries, collections, episodes, audioFiles, stamps, System::currentTimeMillis, { block -> db.withTransaction { block() } })
 
     /**
      * Background variant: the server sends every collection with fully expanded books, so the periodic sync refreshes
@@ -56,7 +57,7 @@ class CollectionSync(
 
     /** Fetches now (unthrottled); a fully successful run is recorded for [syncIfDue]. */
     suspend fun sync(serverId: String) {
-        val api = api.first() ?: return
+        val api = api(serverId).first() ?: return
         var failure: Exception? = null
         fun fail(e: Exception) { if (failure == null) failure = e else failure!!.addSuppressed(e) }
         for (lib in libraries.getAll(serverId).filter { it.mediaType.equals("book", ignoreCase = true) }) {

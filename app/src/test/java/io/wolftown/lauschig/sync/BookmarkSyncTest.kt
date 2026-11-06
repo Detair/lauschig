@@ -80,7 +80,7 @@ class BookmarkSyncTest {
     private lateinit var db: LauschigDatabase
     private val s = "srv"
     private val server = BookmarkServer()
-    private val sync by lazy { BookmarkSync(flowOf(server), db.bookmarkDao()) }
+    private val sync by lazy { BookmarkSync({ flowOf(server) }, db.bookmarkDao()) }
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), LauschigDatabase::class.java)
@@ -146,7 +146,7 @@ class BookmarkSyncTest {
         db.bookmarkDao().save(s, "li_1", 7.0, null, now = 1)
         val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
         server.createGate = gate
-        val other = BookmarkSync(flowOf(server), db.bookmarkDao())
+        val other = BookmarkSync({ flowOf(server) }, db.bookmarkDao())
         val a = launch(Dispatchers.IO) { sync.sync(s) }
         while (server.calls.none { it.startsWith("POST") }) delay(5)
         val b = launch(Dispatchers.IO) { other.sync(s) }
@@ -181,7 +181,7 @@ class BookmarkSyncTest {
 
     @Test fun offline_isNoop() = runTest {
         db.bookmarkDao().save(s, "li_1", 3.0, null, now = 1)
-        BookmarkSync(flowOf(null), db.bookmarkDao()).sync(s)
+        BookmarkSync({ flowOf(null) }, db.bookmarkDao()).sync(s)
         assertEquals(BookmarkPending.UPSERT, db.bookmarkDao().get(s, "li_1", 3.0)!!.pending)
     }
 }

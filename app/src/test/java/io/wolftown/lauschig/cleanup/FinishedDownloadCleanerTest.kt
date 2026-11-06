@@ -107,7 +107,7 @@ class FinishedDownloadCleanerTest {
         queueOf: (String) -> kotlinx.coroutines.flow.Flow<List<String>> = { queue }, clock: () -> Long = System::currentTimeMillis,
     ) = FinishedDownloadCleaner(
         accounts, db.downloadDao(), db.progressDao()::observeFinishedKeys, settings, app, manager, files::completedAt, store,
-        loaded, { last }, queueOf, db.audioFileDao()::observeLocalBytes, questions, TitleHandover.state,
+        loaded, { sid -> last?.takeIf { it.serverId == sid } }, queueOf, db.audioFileDao()::observeLocalBytes, questions, TitleHandover.state,
         clock = clock, recheckMs = recheckMs, graceMs = graceMs,
     )
 
@@ -464,7 +464,11 @@ class FinishedDownloadCleanerTest {
         assertTrue(db.queueDao().entries(s).isEmpty())
     }
 
-    /** The same start without the hand-over (no pick, no grace) loses the title: the test above is not vacuous. */
+    /**
+     * The same start without the hand-over (no pick, no grace) loses a title that left the queue before the player holds it:
+     * the test above is not vacuous. Since an entry leaves only after its start, the queue itself holds it that far; here the
+     * start takes it out first, the moment the hand-over is there for.
+     */
     @Test fun withoutTheHandover_theQueuedTitleWouldBeLostDuringItsStart() = runBlocking {
         settings.setAutoDeleteFinished(s, AutoDeleteMode.IMMEDIATELY)
         val c = downloaded("C", completedAt = now - 2 * day, seenAt = now - day)
@@ -478,7 +482,11 @@ class FinishedDownloadCleanerTest {
             remove = db.queueDao()::remove,
             check = { _, _ -> io.wolftown.lauschig.queue.QueueEntryState.PLAYABLE },
             sleepEndOfChapter = { false },
-            start = { _, _ -> withTimeout(5_000) { while (c.single().exists()) delay(20) }; true },
+            start = { sid, key ->
+                db.queueDao().remove(sid, key)
+                withTimeout(5_000) { while (c.single().exists()) delay(20) }
+                true
+            },
         )
         advancer.onEnded(s, "A")
         assertFalse(c.single().exists())

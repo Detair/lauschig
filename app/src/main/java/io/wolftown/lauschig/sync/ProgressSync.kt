@@ -39,7 +39,8 @@ import kotlin.math.abs
  * the progress carries the server's clock and ABS keeps it.
  */
 class ProgressSync(
-    private val api: Flow<MeApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.meApi]). */
+    private val api: (serverId: String) -> Flow<MeApi?>,
     private val progress: ProgressDao,
     private val sessions: SessionDao,
     private val items: ItemDao,
@@ -58,12 +59,12 @@ class ProgressSync(
         episodes: EpisodeDao,
         device: DeviceInfoProvider,
         stamps: SyncStamps,
-    ) : this(apiProvider.meApi, progress, sessions, items, episodes, device::get, stamps = stamps)
+    ) : this(apiProvider::meApi, progress, sessions, items, episodes, device::get, stamps = stamps)
 
     suspend fun sync(serverId: String): List<PositionJump> = lock.withLock {
         // The device library never syncs; a local key under a real server (should not exist) is never sent either.
         if (DeviceLibrary.isLocal(serverId)) return@withLock emptyList()
-        val api = api.first() ?: return@withLock emptyList()
+        val api = api(serverId).first() ?: return@withLock emptyList()
 
         var server = fetchProgress(api)
         var pushed = false

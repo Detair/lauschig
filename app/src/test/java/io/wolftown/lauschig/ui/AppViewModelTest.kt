@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -48,7 +49,7 @@ class AppViewModelTest {
     @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm(player: PlayerController): AppViewModel {
+    private fun vm(player: PlayerController, accounts: FakeAccountStore = FakeAccountStore()): AppViewModel {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val manager = object : DownloadManager {
             override suspend fun enqueue(serverId: String, itemId: String, network: NetworkType?) { enqueued += itemId }
@@ -59,10 +60,42 @@ class AppViewModelTest {
             flowOf(true), flowOf(MeteredDownload.ASK), {}, { false }, { _, _ -> null }, { _, _ -> null }, manager, prompts, scope,
         )
         val api = ApiProvider(flowOf(ConnectionState.Offline), OkHttpClient(), FakeAccountStore(), scope)
-        return AppViewModel(api, FakeAccountStore(), PositionJumpBus(), player, prompts, starter)
+        return AppViewModel(api, accounts, PositionJumpBus(), player, prompts, starter)
     }
 
     private fun contention(itemId: String) = DownloadPrompt.Contention("s", itemId, "T", 60, NetworkType.CONNECTED)
+
+    /** Review focus 5: the "sign in again" of the frame follows the profile it belongs to, there and back. */
+    @Test fun anExpiredSavedAccount_isAskedForOnItsReturn_theOtherOneNot() = kotlinx.coroutines.runBlocking {
+        val account = { id: String -> io.wolftown.lauschig.account.Account(id, "u", id, false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()) }
+        val accounts = FakeAccountStore().apply {
+            acc.value = account("a")
+            aside.value = listOf(FakeAccountStore.Aside(account("b"), "acc", "ref", reauth = true))
+        }
+        val vm = vm(PausePlayer("x"), accounts)
+        val seen = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val watch = launch(Dispatchers.Unconfined) { vm.needsReauth.collect { seen.value = it } }
+        assertEquals(false, seen.value)
+        accounts.activate("b")
+        assertEquals(true, seen.value)
+        accounts.activate("a")
+        assertEquals(false, seen.value)
+        watch.cancel()
+    }
+
+    /** Phase 7, 1.7: a question that lands after the switch (a late worker, a late stream start) is not put to the next account. */
+    @Test fun anOpenQuestion_isOnlyEverPutToTheAccountItIsAbout() {
+        val account = { id: String -> io.wolftown.lauschig.account.Account(id, "u", "n", false, io.wolftown.lauschig.connection.ServerAddresses(null, null), emptySet()) }
+        val accounts = FakeAccountStore().apply { acc.value = account("s") }
+        val model = vm(PausePlayer("it"), accounts)
+        val prompt = contention("it")
+        prompts.show(prompt)
+        assertEquals(prompt, model.downloadPrompt.value)
+        accounts.acc.value = account("other")
+        assertEquals(null, model.downloadPrompt.value)
+        accounts.acc.value = account("s")
+        assertEquals(prompt, model.downloadPrompt.value)
+    }
 
     @Test fun download_forThePlayingTitle_pausesPlayback() {
         val player = PausePlayer("it")

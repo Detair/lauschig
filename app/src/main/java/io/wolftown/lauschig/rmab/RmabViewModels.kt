@@ -47,7 +47,11 @@ class RmabViewModel @Inject constructor(private val repo: RmabRepository) : View
 
     init {
         viewModelScope.launch {
-            connected.collect { on -> if (on) refresh() else statuses.value = emptyMap() }
+            // By the connection, not just "connected": another account's connection asks anew.
+            repo.config.map { c -> c?.takeUnless { it.needsReconnect } }.distinctUntilChanged().collect { on ->
+                statuses.value = emptyMap()
+                if (on != null) refresh()
+            }
         }
     }
 

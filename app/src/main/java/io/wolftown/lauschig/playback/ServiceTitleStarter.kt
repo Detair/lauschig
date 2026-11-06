@@ -83,10 +83,15 @@ class ServiceTitleStarter(
         return Resolved.Ready(items, index, offsetMs, streaming = !allLocal)
     }
 
-    /** Resolves [key] and plays it on the service's player (queue advance); false if it cannot play. */
-    suspend fun start(serverId: String, key: String): Boolean {
+    /**
+     * Resolves [key] and plays it on the service's player (queue advance); false if it cannot play. The resolve can wait a
+     * round trip for the details: [stillAllowed] is asked after it, and if the account it was for has been left meanwhile
+     * nothing plays and nothing else starts for it (no download either).
+     */
+    suspend fun start(serverId: String, key: String, stillAllowed: suspend () -> Boolean = { true }): Boolean {
         TitleHandover.pick(key) // a queue start: held for the automatic clean-up while it loads (car starts: CarStarts)
         val r = resolve(serverId, key) as? Resolved.Ready ?: return false
+        if (!stillAllowed()) return false
         setQueue(r.items, r.index, r.offsetMs)
         if (r.streaming) onStreamStarted(serverId, key)
         return true

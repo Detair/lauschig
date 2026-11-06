@@ -23,9 +23,9 @@ import javax.inject.Singleton
 
 /**
  * "The last title": the one last played on this device ([LastPlayedStore], written by the service on every pause
- * and stop), not the newest progress row (that may come from another device or from a progress action). Skipped
- * when it belongs to another (or no signed-in) account, is gone or orphaned, finished, or hidden from "continue
- * listening". A device title resumes whatever the account, also signed out.
+ * and stop), not the newest progress row (that may come from another device or from a progress action), and the signed-in
+ * account's ([forAccount]). Skipped when nobody is signed in, or it is gone or orphaned, finished, or hidden from "continue
+ * listening".
  * Local DB only, no network.
  */
 @Singleton
@@ -39,11 +39,11 @@ class LastTitleStarter @Inject constructor(
 ) {
     data class Last(val serverId: String, val itemId: String, val pausedAt: Long)
 
-    suspend fun last(): Last? {
-        // Signed out nothing resumes (play keys, the car, headphones): only Setup is on the phone. Signed in, a device
-        // title is this device's whatever the account; anything else must belong to the signed-in server.
+    /** [ownOnly]: only what the account itself played, not the device's own entry (what the mini player shows on a return). */
+    suspend fun last(ownOnly: Boolean = false): Last? {
+        // Signed out nothing resumes (play keys, the car, headphones): only Setup is on the phone.
         val account = accounts.account.first()?.serverId ?: return null
-        val stored = store.get()?.takeIf { DeviceLibrary.isLocal(it.serverId) || it.serverId == account } ?: return null
+        val stored = (if (ownOnly) store.ownOf(account) else store.forAccount(account)) ?: return null
         val serverId = stored.serverId
         val key = PlayableKey.parse(stored.itemId)
         val item = items.get(serverId, key.libraryItemId)

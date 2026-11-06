@@ -4,13 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,6 +23,8 @@ import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.FontScaleBoot
 import io.wolftown.lauschig.ui.AppRoot
 import io.wolftown.lauschig.ui.isDarkTheme
+import io.wolftown.lauschig.ui.profiles.AndroidDeviceLockPrompter
+import io.wolftown.lauschig.ui.profiles.LocalDeviceLockPrompter
 import io.wolftown.lauschig.ui.setup.OidcCallback
 import io.wolftown.lauschig.ui.setup.OidcCallbackBus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +35,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel: MainViewModel by viewModels()
     @Inject lateinit var oidcCallbacks: OidcCallbackBus
     @Inject lateinit var voicePlayer: VoicePlayer
@@ -49,6 +53,8 @@ class MainActivity : ComponentActivity() {
         // Held only until the local account and appearance reads finish; these are the only things the start waits for.
         installSplashScreen().setKeepOnScreenCondition { viewModel.startDestination.value == null || viewModel.appearance.value == null }
         super.onCreate(savedInstanceState)
+        // Here and not later: the prompt's answer can come right after a recreation (see the class).
+        val deviceLock = AndroidDeviceLockPrompter(this)
         enableEdgeToEdge()
         // A new text size in the settings: remember it for attachBaseContext and rebuild the activity with it.
         lifecycleScope.launch {
@@ -72,16 +78,19 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose {}
             }
-            val start by viewModel.startDestination.collectAsStateWithLifecycle()
+            // Not with the lifecycle: the first frame after a pause must already belong to the account that is active now.
+            val pages by viewModel.pages.collectAsState()
             val tabs by viewModel.tabLayout.collectAsStateWithLifecycle()
             val open by openRequest.collectAsStateWithLifecycle()
             val link by linkRequest.collectAsStateWithLifecycle()
             val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
-            start?.let {
-                AppRoot(
-                    startDestination = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
-                    linkRequest = link, onLinkHandled = { linkRequest.value = null }, signedIn = signedIn,
-                )
+            CompositionLocalProvider(LocalDeviceLockPrompter provides deviceLock) {
+                pages?.let {
+                    AppRoot(
+                        pages = it, appearance = appearance, tabs = tabs.visible, startTab = tabs.start, openRequest = open, onOpenHandled = { openRequest.value = null },
+                        linkRequest = link, onLinkHandled = { linkRequest.value = null }, signedIn = signedIn,
+                    )
+                }
             }
         }
         keepContentRootEdgeToEdge()

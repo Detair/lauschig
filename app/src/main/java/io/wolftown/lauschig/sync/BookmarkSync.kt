@@ -23,15 +23,16 @@ import javax.inject.Inject
  * propagates and leaves the outbox as it was, so the next run retries.
  */
 class BookmarkSync(
-    private val api: Flow<MeApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.meApi]). */
+    private val api: (serverId: String) -> Flow<MeApi?>,
     private val dao: BookmarkDao,
 ) {
-    @Inject constructor(apiProvider: ApiProvider, dao: BookmarkDao) : this(apiProvider.meApi, dao)
+    @Inject constructor(apiProvider: ApiProvider, dao: BookmarkDao) : this(apiProvider::meApi, dao)
 
     /** One sync at a time per process (the worker and the bookmark-only work may overlap). */
     suspend fun sync(serverId: String) = lock.withLock {
         if (DeviceLibrary.isLocal(serverId)) return@withLock // device bookmarks never leave the device
-        val api = api.first() ?: return@withLock
+        val api = api(serverId).first() ?: return@withLock
         for (row in dao.pending(serverId)) {
             if (!BookmarkRules.isSyncable(row.itemKey)) continue
             try {

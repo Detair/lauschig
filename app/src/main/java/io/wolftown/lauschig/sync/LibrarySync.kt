@@ -29,7 +29,8 @@ import javax.inject.Inject
 
 /** Pulls libraries and items into Room. Local-only data (downloads, progress) is never touched. */
 class LibrarySync(
-    private val api: Flow<LibraryApi?>,
+    /** The API of that account: null while offline and whenever it is not the signed-in one ([ApiProvider.libraryApi]). */
+    private val api: (serverId: String) -> Flow<LibraryApi?>,
     private val libraries: LibraryDao,
     private val items: ItemDao,
     private val chapters: ChapterDao,
@@ -50,7 +51,7 @@ class LibrarySync(
         downloads: DownloadDao,
         episodes: EpisodeDao,
         db: LauschigDatabase,
-    ) : this(apiProvider.libraryApi, libraries, items, chapters, audioFiles, progress, downloads, episodes, { block -> db.withTransaction { block() } })
+    ) : this(apiProvider::libraryApi, libraries, items, chapters, audioFiles, progress, downloads, episodes, { block -> db.withTransaction { block() } })
 
     /**
      * Syncs every library. Offline (no API) is a no-op. A failing library does not stop the others, but
@@ -59,7 +60,7 @@ class LibrarySync(
      */
     suspend fun syncAll(serverId: String) {
         if (DeviceLibrary.isLocal(serverId)) return
-        val api = api.first() ?: return
+        val api = api(serverId).first() ?: return
         val remote = api.libraries().libraries
         libraries.upsertFromServer(
             remote.map { LibraryEntity(serverId, it.id, it.name, it.mediaType, it.displayOrder) },
@@ -139,7 +140,7 @@ class LibrarySync(
     suspend fun loadDetails(serverId: String, itemId: String) {
         // A device title has no server details (the scan wrote everything); never ask the server for its id.
         if (DeviceLibrary.isLocal(serverId, itemId)) return
-        val api = api.first() ?: return
+        val api = api(serverId).first() ?: return
         val dto = api.item(itemId, 1)
         val meta = dto.media.metadata
         val ref = meta.series.firstOrNull()

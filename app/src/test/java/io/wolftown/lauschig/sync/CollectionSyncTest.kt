@@ -68,7 +68,7 @@ class CollectionSyncTest {
         listOf(LibraryEntity(s, "books", "Bücher", "book", 0), LibraryEntity(s, "more", "Hörspiele", "book", 1), LibraryEntity(s, "pods", "Podcasts", "podcast", 2)),
     )
 
-    private fun sync() = CollectionSync(flowOf(api), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() }
+    private fun sync() = CollectionSync({ flowOf(api) }, db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() }
 
     @Test fun collections_onlyForBookLibraries_inServerOrder_failureKeepsThatLibrary() = runTest {
         libs()
@@ -122,7 +122,7 @@ class CollectionSyncTest {
         libs()
         var now = 1_000_000L
         val stamps = InMemorySyncStamps()
-        fun throttled() = CollectionSync(flowOf(api), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao(), stamps, { now }) { it() }
+        fun throttled() = CollectionSync({ flowOf(api) }, db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao(), stamps, { now }) { it() }
         throttled().syncIfDue(s)
         assertEquals(2, asked.size)
         now += CollectionSync.MIN_INTERVAL_MS - 1
@@ -140,7 +140,7 @@ class CollectionSyncTest {
     }
 
     @Test fun offline_isNoop() = runTest {
-        CollectionSync(flowOf(null), db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() }.sync(s)
+        CollectionSync({ flowOf(null) }, db.libraryDao(), db.collectionDao(), db.episodeDao(), db.audioFileDao()) { it() }.sync(s)
         assertTrue(asked.isEmpty())
     }
 }

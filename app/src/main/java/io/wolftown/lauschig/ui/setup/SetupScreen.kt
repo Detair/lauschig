@@ -9,19 +9,25 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,9 +52,10 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.AnnouncedLine
 
 @Composable
-fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: SetupViewModel = hiltViewModel()) {
+fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> Unit = {}, viewModel: SetupViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.done) { if (state.done) onDone() }
     val context = LocalContext.current
@@ -90,6 +97,7 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, viewModel: Set
         onConfirmCleartext = viewModel::confirmCleartext,
         onDismissCleartext = viewModel::dismissCleartext,
         modifier = modifier,
+        onBack = onBack,
     )
 }
 
@@ -106,22 +114,38 @@ fun SetupScreen(
     onConfirmCleartext: () -> Unit,
     onDismissCleartext: () -> Unit,
     modifier: Modifier = Modifier,
+    /** „Profil hinzufügen“ only: back to the active account's pages. */
+    onBack: () -> Unit = {},
 ) {
     Column(
         modifier.verticalScroll(rememberScrollState()).imePadding().padding(16.dp).testTag("setupScreen"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+        if (state.addProfile || state.unlockServerId != null) {
+            // The arrow's own inset makes it line up with the text below.
+            Row(Modifier.offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
+                Text(stringResource(if (state.unlockServerId != null) R.string.setup_unlock_title else R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
+            }
+            when {
+                state.unlockServerId != null -> stringResource(R.string.setup_unlock_intro, state.unlockName ?: state.username)
+                state.nobodyActive == true -> stringResource(R.string.setup_add_intro_nobody)
+                state.nobodyActive == false -> stringResource(R.string.setup_add_intro)
+                else -> null
+            }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        } else {
+            Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+        }
 
         OutlinedTextField(
-            state.local, onLocal, Modifier.fillMaxWidth(), singleLine = true,
+            state.local, onLocal, Modifier.fillMaxWidth().testTag("setupLocal"), enabled = !state.addressesFixed, singleLine = true,
             label = { Text(stringResource(R.string.setup_local_address)) },
             placeholder = { Text(stringResource(R.string.setup_local_placeholder)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
         OutlinedTextField(
-            state.public, onPublic, Modifier.fillMaxWidth(), singleLine = true,
+            state.public, onPublic, Modifier.fillMaxWidth().testTag("setupPublic"), enabled = !state.addressesFixed, singleLine = true,
             label = { Text(stringResource(R.string.setup_public_address)) },
             placeholder = { Text(stringResource(R.string.setup_public_placeholder)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -131,7 +155,7 @@ fun SetupScreen(
             Checkbox(
                 checked = state.ssidBinding,
                 onCheckedChange = onSsidBinding,
-                enabled = state.local.isNotBlank(),
+                enabled = state.local.isNotBlank() && !state.addressesFixed,
                 modifier = Modifier.testTag("ssidCheckbox"),
             )
             Text(stringResource(R.string.setup_ssid_binding), style = MaterialTheme.typography.bodyMedium)
@@ -154,18 +178,19 @@ fun SetupScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         )
 
-        state.error?.let {
-            Text(
-                stringResource(it.message()),
-                color = MaterialTheme.colorScheme.error,
+        // One group: no gap for an error that is not there.
+        Column {
+            AnnouncedLine(
+                state.error?.let { stringResource(it.message()) },
+                tag = "setupError",
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.testTag("setupError"),
+                color = MaterialTheme.colorScheme.error,
+                padding = PaddingValues(bottom = 12.dp),
             )
-        }
-
-        Button(onClick = onLogin, enabled = state.canLogin, modifier = Modifier.fillMaxWidth().testTag("loginButton")) {
-            if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Text(stringResource(R.string.setup_login))
+            Button(onClick = onLogin, enabled = state.canLogin, modifier = Modifier.fillMaxWidth().testTag("loginButton")) {
+                if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Text(stringResource(R.string.setup_login))
+            }
         }
         if (state.ssoAvailable) {
             OutlinedButton(
@@ -197,4 +222,5 @@ private fun SetupError.message(): Int = when (this) {
     SetupError.SAVE_FAILED -> R.string.setup_error_save_failed
     SetupError.SSO_REDIRECT_NOT_ALLOWED -> R.string.setup_error_sso_redirect
     SetupError.SSO_FAILED -> R.string.setup_error_sso_failed
+    SetupError.UNLOCK_OTHER_ACCOUNT -> R.string.setup_error_unlock_other
 }

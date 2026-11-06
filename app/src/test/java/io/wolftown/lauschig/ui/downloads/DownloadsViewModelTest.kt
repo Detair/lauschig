@@ -111,6 +111,65 @@ class DownloadsViewModelTest {
     private val other = KeptAccount("dddddddddddddddd", "fabian", "abs")
     private val third = KeptAccount("eeeeeeeeeeeeeeee", "gast", "abs")
 
+    private fun vmWithOthers(others: Flow<Long>, scope: kotlinx.coroutines.CoroutineScope): DownloadsViewModel {
+        val accounts = FakeAccountStore().apply { acc.value = signedIn }
+        val vm = viewModels.get(
+            viewModelFactory { initializer { DownloadsViewModel(accounts, db.downloadDao(), NoOp, { 1L }, flowOf(emptyList()), Dispatchers.Default, others = others) } },
+            DownloadsViewModel::class,
+        )
+        scope.launch(UnconfinedTestDispatcher()) { vm.state.collect {} }
+        return vm
+    }
+
+    @Test fun theOtherProfiles_haveTheirOwnFigure_outsideTheAccountsOwn() = runTest {
+        val vm = vmWithOthers(flowOf(2_100_000_000L), backgroundScope)
+        val st = vm.await { it.loaded && it.otherProfilesBytes > 0 }
+        assertEquals(2_100_000_000L, st.otherProfilesBytes)
+        assertEquals(0L, st.usedBytes)
+    }
+
+    @Test fun theOtherProfiles_unreadable_doNotTakeThePageDown() = runTest {
+        val vm = vmWithOthers(kotlinx.coroutines.flow.flow { throw java.io.IOException("gone") }, backgroundScope)
+        assertEquals(0L, vm.await { it.loaded }.otherProfilesBytes)
+    }
+
+    @Test fun otherProfilesOf_addsUpTheSavedAccounts_withoutTheActive() = runTest {
+        val a = Account("a", "u", "n", false, ServerAddresses(null, null), emptySet())
+        val store = FakeAccountStore().apply {
+            acc.value = a
+            aside.value = listOf(FakeAccountStore.Aside(a.copy(serverId = "b"), null, null, false), FakeAccountStore.Aside(a.copy(serverId = "c"), null, null, false))
+        }
+        val sizes = mapOf("a" to 1L, "b" to 20L, "c" to 300L)
+        assertEquals(320L, otherProfilesBytes(store) { sizes.getValue(it) }.first())
+    }
+
+    /** Review M8: any write to the account store comes through `saved`, also the active account's token refresh. */
+    @Test fun otherProfilesOf_walksOncePerChangeOfTheList_notPerWriteToTheStore() = runTest {
+        val a = Account("a", "u", "n", false, ServerAddresses(null, null), emptySet())
+        val store = FakeAccountStore().apply {
+            acc.value = a
+            aside.value = listOf(FakeAccountStore.Aside(a.copy(serverId = "b"), "t1", null, false))
+        }
+        val walks = AtomicInteger()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { otherProfilesBytes(store) { walks.incrementAndGet(); 1L }.collect {} }
+        assertEquals(1, walks.get())
+        store.updateTokens("b", "t2", "r2")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, walks.get())
+        store.aside.value += FakeAccountStore.Aside(a.copy(serverId = "c"), "t3", null, false)
+        testScheduler.advanceUntilIdle()
+        assertEquals(3, walks.get()) // both of the new list
+    }
+
+    @Test fun otherProfilesOf_aDirectoryThatCannotBeRead_countsAsNothing() = runTest {
+        val a = Account("a", "u", "n", false, ServerAddresses(null, null), emptySet())
+        val store = FakeAccountStore().apply {
+            acc.value = a
+            aside.value = listOf(FakeAccountStore.Aside(a.copy(serverId = "b"), null, null, false), FakeAccountStore.Aside(a.copy(serverId = "c"), null, null, false))
+        }
+        assertEquals(300L, otherProfilesBytes(store) { if (it == "b") throw java.io.IOException("gone") else 300L }.first())
+    }
+
     private fun vmWithKept(kept: FakeKeptAccounts, bytes: suspend (String) -> Long, scope: kotlinx.coroutines.CoroutineScope): DownloadsViewModel {
         val accounts = FakeAccountStore().apply { acc.value = signedIn }
         val vm = viewModels.get(

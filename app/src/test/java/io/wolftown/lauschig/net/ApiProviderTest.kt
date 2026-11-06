@@ -1,8 +1,12 @@
 package io.wolftown.lauschig.net
 
+import io.wolftown.lauschig.absapi.admin.AdminApi
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
+import io.wolftown.lauschig.absapi.me.MeApi
+import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.connection.ServerAddresses
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
@@ -15,6 +19,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -27,11 +33,11 @@ class ApiProviderTest {
             emit(ConnectionState.Online("http://abs.test/".toHttpUrl(), ConnectionState.Via.PUBLIC))
             awaitCancellation()
         }
-        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore().apply { acc.value = a }, backgroundScope)
         var auth: AuthApi? = null
         var lib: LibraryApi? = null
         backgroundScope.launch { provider.authApi.collect { auth = it } }
-        backgroundScope.launch { provider.libraryApi.collect { lib = it } }
+        backgroundScope.launch { provider.libraryApi(a.serverId).collect { lib = it } }
         assertEquals(1, subscriptions)
         assertNotNull(auth)
         assertNotNull(lib)
@@ -95,6 +101,52 @@ class ApiProviderTest {
         advanceTimeBy(6_000)
         runCurrent()
         assertEquals(true, provider.checking.value)
+    }
+
+    private val a = Account("aaaaaaaaaaaaaaaa", "u1", "fabian", false, ServerAddresses("http://abs.test/".toHttpUrl(), null), emptySet())
+    private val b = a.copy(serverId = "bbbbbbbbbbbbbbbb", userId = "u2", username = "lukas")
+
+    /** Family case: one server, so the connection does not change at a switch, or the shared state skips its reset. */
+    @Test
+    fun aCollectorThatStays_getsTheNewAccountsClient_withoutAConnectionReset() = runTest(UnconfinedTestDispatcher()) {
+        val upstream = flow {
+            emit(ConnectionState.Online("http://abs.test/".toHttpUrl(), ConnectionState.Via.LOCAL))
+            awaitCancellation()
+        }
+        val store = FakeAccountStore().apply { acc.value = a }
+        val provider = ApiProvider(upstream, OkHttpClient(), store, backgroundScope)
+        val clients = mutableListOf<AuthApi>()
+        backgroundScope.launch { provider.authApi.collect { if (it != null) clients += it } }
+        assertEquals(1, clients.size)
+        store.acc.value = b
+        assertEquals(2, clients.size)
+        assertNotSame(clients[0], clients[1])
+    }
+
+    @Test
+    fun theApiOfAnAccount_isThereOnlyWhileItIsTheSignedInOne() = runTest(UnconfinedTestDispatcher()) {
+        val upstream = flow {
+            emit(ConnectionState.Online("http://abs.test/".toHttpUrl(), ConnectionState.Via.LOCAL))
+            awaitCancellation()
+        }
+        val store = FakeAccountStore().apply { acc.value = a }
+        val provider = ApiProvider(upstream, OkHttpClient(), store, backgroundScope)
+        var ofA: MeApi? = null
+        var ofB: LibraryApi? = null
+        var admin: AdminApi? = null
+        backgroundScope.launch { provider.meApi(a.serverId).collect { ofA = it } }
+        backgroundScope.launch { provider.libraryApi(b.serverId).collect { ofB = it } }
+        backgroundScope.launch { provider.adminApi(a.serverId).collect { admin = it } }
+        assertNotNull(ofA)
+        assertNull(ofB)
+        assertNotNull(admin)
+        store.acc.value = b
+        assertNull(ofA)
+        assertNotNull(ofB)
+        assertNull(admin)
+        store.acc.value = null
+        assertNull(ofA)
+        assertNull(ofB)
     }
 
     @Test

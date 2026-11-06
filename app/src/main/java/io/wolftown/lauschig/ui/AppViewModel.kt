@@ -28,8 +28,14 @@ class AppViewModel @Inject constructor(
     prompts: DownloadPrompts,
     private val starter: PlayDownloadStarter,
 ) : ViewModel() {
-    /** The open download question (download on play over mobile data, stream vs. download). */
-    val downloadPrompt: StateFlow<DownloadPrompt?> = prompts.prompt
+    /**
+     * The open download question (download on play over mobile data, stream vs. download), if it is about the signed-in
+     * account. A switch closes the old account's; one that lands afterwards (a late worker or stream start) is not put to
+     * the next account.
+     */
+    val downloadPrompt: StateFlow<DownloadPrompt?> =
+        combine(prompts.prompt, accountStore.account.map { it?.serverId }) { prompt, sid -> prompt?.takeIf { it.serverId == sid } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun answerMetered(prompt: DownloadPrompt.Metered, now: Boolean, remember: Boolean) {
         viewModelScope.launch { starter.answerMetered(prompt, now, remember) }

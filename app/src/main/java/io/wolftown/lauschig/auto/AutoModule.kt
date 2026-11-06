@@ -62,7 +62,7 @@ object AutoModule {
     private fun fetchCover(api: ApiProvider, accounts: AccountStore, serverId: String, itemId: String): CoverStore.Fetch {
         val online = api.connectionState.value as? ConnectionState.Online ?: return CoverStore.Fetch.Unavailable
         if (runBlocking { accounts.account.first()?.serverId } != serverId) return CoverStore.Fetch.Unavailable
-        val client = api.clientFor(online.baseUrl).newBuilder().callTimeout(15, TimeUnit.SECONDS).build()
+        val client = api.clientFor(serverId, online.baseUrl).newBuilder().callTimeout(15, TimeUnit.SECONDS).build()
         val raw = coverUrl(online.baseUrl, itemId)
         val resized = raw.newBuilder()
             .addQueryParameter("width", CoverStore.WIDTH_PX.toString())

@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
+import androidx.work.NetworkType
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -122,14 +123,15 @@ class DownloadWorkerTest {
     private suspend fun run(
         attempt: Int = 0, itemId: String = item, gate: OnlineGate = OnlineGate { true }, api: Boolean = false,
         library: LibraryApi? = null, monitor: StreamMonitor = StreamMonitor { 0L },
+        signedIn: String? = s, signedInNow: () -> String? = { signedIn }, client: OkHttpClient = OkHttpClient(),
     ): ListenableWorker.Result {
         val base = server.url("/")
-        val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC))) { OkHttpClient() }
-        val sync = LibrarySync(flowOf(library), db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() })
+        val env = DownloadEnvironment(flowOf(ConnectionState.Online(base, ConnectionState.Via.PUBLIC)), { signedInNow() }) { sid, _ -> clients += sid; client }
+        val sync = LibrarySync({ flowOf(library) }, db.libraryDao(), db.itemDao(), db.chapterDao(), db.audioFileDao(), db.progressDao(), db.downloadDao(), db.episodeDao(), { it() })
         val factory = object : WorkerFactory() {
             override fun createWorker(c: Context, name: String, p: WorkerParameters) = DownloadWorker(
                 c, p, env, gate, sync, db.itemDao(), db.episodeDao(), db.audioFileDao(), db.downloadDao(), files, DownloadNotifier(c),
-                monitor, prompts,
+                monitor, prompts, switched,
             )
         }
         return TestListenableWorkerBuilder<DownloadWorker>(ctx, workDataOf(DownloadWorker.KEY_SERVER to s, DownloadWorker.KEY_ITEM to itemId))
@@ -137,6 +139,73 @@ class DownloadWorkerTest {
     }
 
     private fun itemDir() = File(root, "$s/$item")
+
+    /** The accounts [DownloadEnvironment.client] was asked for. */
+    private val clients = mutableListOf<String>()
+    private val switchedScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    private val switched by lazy {
+        SwitchedDownloads(
+            androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = switchedScope) { File(root, "switched-${System.nanoTime()}.preferences_pb") },
+            db.downloadDao(),
+            object : DownloadManager {
+                override suspend fun enqueue(serverId: String, itemId: String, network: NetworkType?) {
+                    resumed += itemId
+                }
+                override suspend fun cancel(serverId: String, itemId: String, deleteFiles: Boolean) {}
+                override fun observe(serverId: String, itemId: String) = flowOf<DownloadProgress?>(null)
+            },
+        )
+    }
+    private val resumed = mutableListOf<String>()
+
+    @Test fun aWorkerOfAnAccountThatIsNotSignedIn_sendsNothing_waitsPaused_andGoesOnWhenItIsBack() = runBlocking {
+        val result = run(signedIn = "bbbbbbbbbbbbbbbb")
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals("nothing goes out for it", 0, server.requestCount)
+        assertEquals(emptyList<String>(), clients)
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(s, item)!!.state)
+        // Its way back: the next time the account is active.
+        switched.resume(s)
+        assertEquals(listOf(item), resumed)
+    }
+
+    /** A client that refuses, as [AuthInterceptor] does; [then] is what changed in that moment. */
+    private fun refusing(then: suspend () -> Unit = {}) = OkHttpClient.Builder().addInterceptor {
+        runBlocking { then() }
+        throw io.wolftown.lauschig.net.AccountChangedException("made for another account")
+    }.build()
+
+    @Test fun aSwitchInTheMiddleOfADownload_keepsItsPart_waitsPaused_andGoesOnWhenItIsBack() = runBlocking {
+        var signedIn: String? = s
+        assertEquals("no retry, no failure count: the download is fine", ListenableWorker.Result.success(), run(signedInNow = { signedIn }, client = refusing { signedIn = "bbbbbbbbbbbbbbbb" }))
+        assertEquals(listOf(s), clients.distinct())
+        val row = db.downloadDao().get(s, item)!!
+        assertEquals(DownloadState.PAUSED, row.state)
+        assertEquals(null, row.error)
+        switched.resume(s)
+        assertEquals(listOf(item), resumed)
+    }
+
+    /** Review M2: the refusal also means "not a server of this account" (a re-auth changed an address): the account is still here, it retries. */
+    @Test fun aRefusalWhileTheAccountIsStillSignedIn_retriesAsBefore() = runBlocking {
+        assertEquals(ListenableWorker.Result.retry(), run(client = refusing()))
+        assertEquals(DownloadState.QUEUED, db.downloadDao().get(s, item)!!.state)
+        switched.resume(s)
+        assertEquals("nothing noted", emptyList<String>(), resumed)
+    }
+
+    /** Review M2: the user paused it in that moment: that stays a pause by the user, the way back does not resume it. */
+    @Test fun aRowTheUserPausedInThatMoment_isNotNoted() = runBlocking {
+        var signedIn: String? = s
+        val client = refusing {
+            db.downloadDao().setState(s, item, DownloadState.PAUSED, null)
+            signedIn = "bbbbbbbbbbbbbbbb"
+        }
+        assertEquals(ListenableWorker.Result.success(), run(signedInNow = { signedIn }, client = client))
+        assertEquals(DownloadState.PAUSED, db.downloadDao().get(s, item)!!.state)
+        switched.resume(s)
+        assertEquals(emptyList<String>(), resumed)
+    }
 
     @Test fun episode_downloadUsesParentItemIdInUrl() = runBlocking {
         val key = "$item~ep1"

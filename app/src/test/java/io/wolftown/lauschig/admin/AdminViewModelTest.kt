@@ -43,7 +43,7 @@ class AdminViewModelTest {
         override suspend fun matchItem(itemId: String, body: MatchRequest) = MatchResult(updated = true)
         override suspend fun onlineUsers() = OnlineUsers(listOf(OnlineUser("u1", "matthias"))).also { calls += "online" }
     }
-    private val repo = AdminRepository(flowOf(api), flowOf(null), account, { _, _ -> null }, { _, _ -> }, {})
+    private val repo = AdminRepository({ flowOf(api) }, { flowOf(null) }, account, { _, _ -> null }, { _, _ -> }, {})
     private val libs = listOf(LibraryEntity(sid, "lib2", "Hörspiele", "book", 2), LibraryEntity(sid, "lib1", "Hörbücher", "book", 1))
 
     @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }

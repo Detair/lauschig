@@ -66,6 +66,9 @@ class DataStoreAccountStore(
 
     override val saved: Flow<List<Account>> = store.data.map { p -> p.savedList().map { it.account.toAccount() } }
 
+    override val savedNeedingReauth: Flow<Set<String>> =
+        store.data.map { p -> p.savedList().filter { it.needsReauth }.mapTo(HashSet()) { it.account.serverId } }
+
     override suspend fun save(a: Account, accessToken: String, refreshToken: String) {
         store.edit {
             it.putActive(Saved(a.toDto(), cipher.encrypt(accessToken), cipher.encrypt(refreshToken)))

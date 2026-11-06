@@ -75,7 +75,7 @@ class ProgressSyncTest {
 
     @After fun tearDown() = db.close()
 
-    private fun sync() = ProgressSync(flowOf(me), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device })
+    private fun sync() = ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device })
 
     private fun srv(id: String, t: Double, last: Long, fin: Boolean = false, ep: String? = null) =
         MediaProgressDto(id, ep, t, 100.0, t / 100.0, fin, last)
@@ -215,7 +215,7 @@ class ProgressSyncTest {
 
     @Test fun offline_isNoOp() = runTest {
         db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
-        val r = ProgressSync(flowOf(null), db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device }).sync(s)
+        val r = ProgressSync({ flowOf(null) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device }).sync(s)
         assertTrue(r.isEmpty())
         assertTrue(db.progressDao().get(s, "a")!!.dirty)
     }

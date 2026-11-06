@@ -23,22 +23,56 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GuardedCallFactoryTest {
-    private fun setup(server: MockWebServer, online: Boolean): GuardedCallFactory {
+    private val store = FakeAccountStore()
+
+    private fun setup(server: MockWebServer, online: Boolean, confirmed: Boolean = true): GuardedCallFactory {
         val base = server.url("/")
-        val store = FakeAccountStore()
-        store.acc.value = Account("s", "u", "n", false, ServerAddresses(base, null), setOf(base.cleartextKey()))
+        store.acc.value = Account("s", "u", "n", false, ServerAddresses(base, null), if (confirmed) setOf(base.cleartextKey()) else emptySet())
         store.access = "tok"
         val state = if (online) ConnectionState.Online(base, ConnectionState.Via.LOCAL) else ConnectionState.Offline
         val api = ApiProvider(flowOf(state), OkHttpClient(), store, CoroutineScope(Dispatchers.Unconfined))
         return GuardedCallFactory(api, CoroutineScope(Dispatchers.Unconfined), visible = flowOf(true))
     }
 
-    @Test fun requestRightAfterConstruction_whenOnline_isAuthenticated() {
+    /** The cover route is public (server 2.26 and later), so a page never needs a token, and none can be the wrong one. */
+    @Test fun aCover_goesOutWithoutAnyToken() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("x"))
             val factory = setup(server, online = true)
             factory.newCall(Request.Builder().url(server.url("/api/items/i/cover")).build()).execute().close()
-            assertEquals("Bearer tok", server.takeRequest().getHeader("Authorization"))
+            assertNull(server.takeRequest().getHeader("Authorization"))
+        }
+    }
+
+    /** Review I2: a tile of A's page on the same server, requested after the switch. */
+    @Test fun aCoverOfTheAccountBefore_doesNotCarryTheNextAccountsToken() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("x"))
+            val factory = setup(server, online = true)
+            store.acc.value = store.acc.value!!.copy(serverId = "b", userId = "u2")
+            store.access = "token-of-b"
+            factory.newCall(Request.Builder().url(server.url("/api/items/of-a/cover?ts=1")).build()).execute().close()
+            assertNull(server.takeRequest().getHeader("Authorization"))
+        }
+    }
+
+    @Test fun aCover_isNotRefusedForAnAccountThatChanged() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("x"))
+            val factory = setup(server, online = true)
+            // Made for "s" it would throw AccountChangedException; a cover belongs to nobody.
+            store.acc.value = store.acc.value!!.copy(serverId = "b")
+            factory.newCall(Request.Builder().url(server.url("/api/items/i/cover")).build()).execute().use { assertEquals(200, it.code) }
+        }
+    }
+
+    @Test fun plainHttp_stillOnlyToAConfirmedServer() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("x"))
+            val factory = setup(server, online = true, confirmed = false)
+            val failure = runCatching { factory.newCall(Request.Builder().url(server.url("/api/items/i/cover")).build()).execute().close() }.exceptionOrNull()
+            assertEquals(CleartextNotConfirmedException::class, failure?.let { it::class })
+            assertEquals(0, server.requestCount)
         }
     }
 

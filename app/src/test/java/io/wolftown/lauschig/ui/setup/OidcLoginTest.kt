@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -177,6 +178,24 @@ class OidcLoginTest {
         assertEquals(OidcStart.Launch(base.resolve("/realms/x/auth").toString()), oidc().start(base))
     }
 
+    @Test fun theModeOfThePendingAttempt_canBeAsked_beforeItIsFinished() = runBlocking {
+        assertEquals("nothing pending", false, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", addProfile = true))
+        assertEquals(true, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/"))
+        assertEquals(false, oidc().pendingAddsProfile())
+    }
+
+    @Test fun flowContext_theAddMode_survivesInPending() = runBlocking {
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", addProfile = true))
+        val state = server.takeRequest().requestUrl!!.queryParameter("state")!!
+        server.enqueue(MockResponse().setBody(loginJson))
+        assertEquals(true, oidc().finish(OidcCallback("c", state, null)).flow.addProfile)
+    }
+
     @Test fun flowContext_survivesInPending() = runBlocking {
         enqueueStart()
         val flow = OidcFlowContext("http://nas.lan:13378/", "https://abs.example.org/", true, "HomeNet", setOf("Old"))
@@ -204,5 +223,85 @@ class OidcLoginTest {
         val res = oidc().finish(OidcCallback("c", state, null))
         assertEquals("acc", res.response.user.accessToken)
         assertTrue(server.takeRequest().getHeader("Cookie")!!.contains("connect.sid=sess123"))
+    }
+
+    /** Task 3.6: whose attempt it is survives with the attempt, also in a new process; a later plain attempt has no one. */
+    @Test fun whoseForgottenPinItIs_isInTheAttempt() = runBlocking {
+        assertEquals("nothing pending", null, oidc().pendingUnlock())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", unlockServerId = "aaaaaaaaaaaaaaaa"))
+        assertEquals("aaaaaaaaaaaaaaaa", oidc().pendingUnlock())
+        assertEquals(false, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/"))
+        assertEquals(null, oidc().pendingUnlock())
+    }
+
+    // --- Task 3, C1: a session the browser still has at the provider is no proof ---
+
+    private fun redirectTo(location: String) = server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", location))
+
+    private suspend fun opened(flow: OidcFlowContext) = (oidc().start(base, flow) as OidcStart.Launch).url
+
+    @Test fun aFreshLogin_isAskedOfTheProvider_onTheUrlThatIsOpened() = runBlocking {
+        redirectTo("https://idp.example/auth?x=1")
+        val url = opened(OidcFlowContext(freshLogin = true)).toHttpUrl()
+        assertEquals("login", url.queryParameter("prompt"))
+        assertEquals("0", url.queryParameter("max_age"))
+        assertEquals("the provider's own stay", "1", url.queryParameter("x"))
+        assertEquals("idp.example", url.host)
+    }
+
+    /** A single account's sign-in stays exactly as it was. */
+    @Test fun aPlainSignIn_opensTheUrlAsTheServerGaveIt() = runBlocking {
+        redirectTo("https://idp.example/auth?x=1")
+        assertEquals("https://idp.example/auth?x=1", opened(OidcFlowContext()))
+    }
+
+    /** What the callback will check is the provider's URL as the server made it: to the byte, whatever is added. */
+    @Test fun aFreshLogin_leavesWhatTheCallbackChecksToTheByte() = runBlocking {
+        val query = "client_id=abs&redirect_uri=lauschig%3A%2F%2Foauth&response_type=code&scope=openid%20profile&state=a%2Bb&code_challenge=x-y_z&code_challenge_method=S256"
+        redirectTo("https://idp.example/application/o/authorize/?$query")
+        val url = opened(OidcFlowContext(freshLogin = true))
+        assertTrue(url, url.startsWith("https://idp.example/application/o/authorize/?$query"))
+        assertEquals("$query&prompt=login&max_age=0", url.substringAfter('?'))
+    }
+
+    @Test fun aFreshLogin_replacesWhatTheServerAskedOfTheProvider() = runBlocking {
+        redirectTo("https://idp.example/auth?prompt=none&max_age=3600&x=1")
+        val url = opened(OidcFlowContext(freshLogin = true)).toHttpUrl()
+        assertEquals(listOf("login"), url.queryParameterValues("prompt"))
+        assertEquals(listOf("0"), url.queryParameterValues("max_age"))
+        assertEquals("1", url.queryParameter("x"))
+    }
+
+    /** The added parameters are for the provider's page. The way back is the same: state, code and verifier, and nothing else. */
+    @Test fun aFreshLogin_theCallbackIsTheSame() = runBlocking {
+        redirectTo("https://idp.example/auth?x=1")
+        opened(OidcFlowContext(null, "https://abs.example.org/", freshLogin = true))
+        val first = server.takeRequest()
+        val state = first.requestUrl!!.queryParameter("state")!!
+        assertEquals("the server is not told", null, first.requestUrl!!.queryParameter("prompt"))
+        server.enqueue(MockResponse().setBody(loginJson))
+        val result = oidc().finish(OidcCallback("the-code", state, null))
+        assertEquals("u1", result.response.user.id)
+        val callback = server.takeRequest().requestUrl!!
+        assertEquals(setOf("state", "code", "code_verifier"), callback.queryParameterNames)
+        assertEquals(state, callback.queryParameter("state"))
+        assertEquals("the-code", callback.queryParameter("code"))
+    }
+
+    /** A provider that answers with an error to the fresh login (OIDC: `login_required`): a failed attempt, nobody comes in. */
+    @Test fun aRefusedFreshLogin_isARejection() = runBlocking {
+        redirectTo("https://idp.example/auth?x=1")
+        opened(OidcFlowContext(freshLogin = true))
+        val state = server.takeRequest().requestUrl!!.queryParameter("state")!!
+        try {
+            oidc().finish(OidcCallback(null, state, "login_required"))
+            org.junit.Assert.fail("nobody comes in")
+        } catch (e: OidcException) {
+            assertEquals(OidcException.Reason.REJECTED, e.reason)
+        }
+        assertEquals("only the start reached the server", 1, server.requestCount)
     }
 }

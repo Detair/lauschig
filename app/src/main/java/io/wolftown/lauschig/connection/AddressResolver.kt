@@ -65,15 +65,25 @@ class AddressResolver(
             log?.resolved(ConnectionState.Offline, clock(), noNetwork = true)
             return ConnectionState.Offline
         }
-
-        val tryLocal = a.local != null && (a.homeSsids.isEmpty() || networkInfo.currentSsid() in a.homeSsids)
-        val state = when {
-            tryLocal && probeLogged(a.local!!) -> ConnectionState.Online(a.local, Via.LOCAL)
-            a.public != null && probeLogged(a.public) -> ConnectionState.Online(a.public, Via.PUBLIC)
-            else -> ConnectionState.Offline
-        }
+        val state = choose(a, ::probeLogged)
         log?.resolved(state, clock())
         return state
+    }
+
+    /**
+     * Like [resolve] for addresses that are not the signed-in account's (the server of a saved profile): the same decision,
+     * but nothing goes to the [log], which shows the signed-in account's connection.
+     */
+    suspend fun resolveElsewhere(a: ServerAddresses): ConnectionState =
+        if (networkInfo.isConnected.first()) choose(a) { probe.check(it).ok } else ConnectionState.Offline
+
+    private suspend fun choose(a: ServerAddresses, answers: suspend (HttpUrl) -> Boolean): ConnectionState {
+        val tryLocal = a.local != null && (a.homeSsids.isEmpty() || networkInfo.currentSsid() in a.homeSsids)
+        return when {
+            tryLocal && answers(a.local!!) -> ConnectionState.Online(a.local, Via.LOCAL)
+            a.public != null && answers(a.public) -> ConnectionState.Online(a.public, Via.PUBLIC)
+            else -> ConnectionState.Offline
+        }
     }
 
     /** Probes [url] and writes the result to the [log]. */

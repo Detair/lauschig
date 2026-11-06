@@ -78,7 +78,7 @@ class DiscoverViewModelTest {
             initializer {
                 DiscoverViewModel(
                     accounts, db.catalogDao(), db.itemDao(), db.libraryDao(), db.progressDao(), db.downloadDao(), covers,
-                    FilterPreferences(filterStore), DiscoverPreferences(discoverStore), AuthorInfoCache(flowOf(null)) { emptyList() },
+                    FilterPreferences(filterStore), DiscoverPreferences(discoverStore), AuthorInfoCache({ flowOf(null) }) { emptyList() },
                     Catalog(), UnconfinedTestDispatcher(), requestSync, syncRunning,
                 )
             }

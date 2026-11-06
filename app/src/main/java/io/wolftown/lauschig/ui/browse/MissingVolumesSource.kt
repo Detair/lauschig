@@ -19,36 +19,36 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 /**
- * Audible volumes for a series page. Only asks while online and with the setting on; otherwise (and on any failure)
- * the result is null and the page keeps its plain gap placeholders. The setting stays off until the user agreed
- * ([undecided], [answer]).
+ * Audible volumes for a series page. Only asks while online and with the account's setting on; otherwise (and on any failure)
+ * the result is null and the page keeps its plain gap placeholders. The setting is per account and stays off until that
+ * account agreed ([undecided], [answer]): on a shared device one person's yes is nobody else's.
  */
 class MissingVolumesSource(
     private val online: Flow<Boolean>,
-    private val enabled: Flow<Boolean>,
-    /** True until the user has answered whether Audible may be asked. */
-    val undecided: Flow<Boolean> = flowOf(false),
-    private val decide: suspend (Boolean) -> Unit = {},
+    private val enabled: (serverId: String) -> Flow<Boolean>,
+    /** True until the account has answered whether Audible may be asked. */
+    val undecided: (serverId: String) -> Flow<Boolean> = { flowOf(false) },
+    private val decide: suspend (serverId: String, allow: Boolean) -> Unit = { _, _ -> },
     private val lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
 ) {
     @Inject constructor(api: ApiProvider, settings: AppSettings, repository: ExternalSeriesRepository) : this(
         api.connection.map { it is ConnectionState.Online }.distinctUntilChanged(), settings, repository::missingFor,
     )
 
-    /** The consent wiring, one place: both flags are `Flow<Boolean>`, so names keep them from being swapped. */
+    /** The consent wiring, one place: both flags are a `Flow<Boolean>` per account, so names keep them from being swapped. */
     internal constructor(
         online: Flow<Boolean>,
         settings: AppSettings,
         lookup: suspend (serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>) -> List<MissingVolume>?,
     ) : this(
         online = online,
-        enabled = settings.missingVolumesEnabled,
-        undecided = settings.missingVolumesUndecided,
+        enabled = settings::missingVolumesEnabled,
+        undecided = settings::missingVolumesUndecided,
         decide = settings::setMissingVolumesEnabled,
         lookup = lookup,
     )
 
-    suspend fun answer(allow: Boolean) = decide(allow)
+    suspend fun answer(serverId: String, allow: Boolean) = decide(serverId, allow)
 
     /**
      * Looks up each library's part of the series (the cache is per library) and merges the answers by volume number.
@@ -56,7 +56,7 @@ class MissingVolumesSource(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun forSeries(serverId: String, ownedByLibrary: Map<String, List<ItemEntity>>): Flow<List<MissingVolume>?> =
-        combine(online, enabled) { on, set -> on && set }.distinctUntilChanged().flatMapLatest { go ->
+        combine(online, enabled(serverId)) { on, set -> on && set }.distinctUntilChanged().flatMapLatest { go ->
             if (!go || ownedByLibrary.isEmpty()) flowOf(null)
             else flow {
                 val results = ownedByLibrary.map { (libraryId, owned) ->

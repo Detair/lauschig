@@ -46,6 +46,7 @@ import io.wolftown.lauschig.auto.CoverStore
 import io.wolftown.lauschig.auto.CoverUris
 import io.wolftown.lauschig.auto.LibraryCallback
 import io.wolftown.lauschig.auto.MediaIds
+import io.wolftown.lauschig.auto.carLibraryChanges
 import io.wolftown.lauschig.db.dao.CatalogDao
 import io.wolftown.lauschig.db.dao.LibraryDao
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
@@ -74,19 +75,16 @@ import io.wolftown.lauschig.db.dao.TitleAudioDao
 import io.wolftown.lauschig.settings.PlaybackSettings
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.net.ApiProvider
-import io.wolftown.lauschig.net.sameOrigin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -95,7 +93,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.Call
 import okhttp3.HttpUrl
 import javax.inject.Inject
 
@@ -162,26 +159,30 @@ class PlaybackService : MediaLibraryService() {
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
     private val subscribed = LinkedHashSet<String>()
 
-    /** The last server seen online; kept while the state flips to offline (see [onCreate]). */
+    /** The last server seen online; kept while the state flips to offline (see [StreamCalls]). */
     @Volatile private var lastOnline: ConnectionState.Online? = null
-    private val fallbackClient by lazy { api.unauthenticatedClient() } // cleartext-guarded base client
+    private lateinit var accountGuard: AccountPlaybackGuard
+    /** Who is signed in as far as the service knows; a stopping title's last write still goes to the account it played for. */
+    @Volatile private var signedInAccount: String? = null
 
     @OptIn(UnstableApi::class) // transfer listener, load control
     override fun onCreate() {
         super.onCreate()
         running = true
-        // Requests to the last online server keep its authenticated client (token refresh included) even after the state
-        // flipped to offline: a failed probe on a busy link must not turn the next stream request into a 401 that stops
-        // playback. Other origins get the plain client (no credentials).
-        val callFactory = Call.Factory { request ->
-            val base = lastOnline?.baseUrl?.takeIf { request.url.sameOrigin(it) }
-            (base?.let(api::clientFor) ?: fallbackClient).newCall(request)
-        }
+        val callFactory = StreamCalls({ lastOnline?.baseUrl }, api)
+        accountGuard = AccountPlaybackGuard(
+            title = { player?.let(::currentKey) },
+            stop = { player?.let { it.stop(); it.clearMediaItems() } },
+            forgetShownTitle = { widgets?.forgetTitle() },
+            signedIn = { accountStore.account.first()?.serverId },
+        )
         connectionJob = scope.launch {
             // Another account (sign-out, new server) forgets the server, so its token never reaches an old queue's origin.
             // Only a state of this account's addresses counts: right after a switch the shared state may still replay the
             // previous server's Online before the reset arrives.
             accountStore.account.map { it?.let { a -> Triple(a.serverId, a.userId, a.addresses) } }.distinctUntilChanged().collectLatest { who ->
+                accountGuard.accountChanged(who?.first)
+                signedInAccount = who?.first
                 lastOnline = null
                 if (who != null) api.connection.collect {
                     Log.i(TAG, "connection: $it")
@@ -231,7 +232,8 @@ class PlaybackService : MediaLibraryService() {
         val volume = PlayerVolume { out.device.volume = it }
         comfort = PlaybackComfort(out.device, titleAudioDao, playbackSettings, scope, appScope, volume = volume, onTitleActivity = { serverId, itemId ->
             val at = System.currentTimeMillis()
-            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at)) }
+            val account = signedInAccount
+            appScope.launch { lastPlayed.set(LastPlayed(serverId, itemId, at), account ?: accountStore.account.first()?.serverId) }
         }).also { it.start() }
 
         val tracker = ProgressTracker(progressDao, sessionDao, clock = System::currentTimeMillis, scope = scope)
@@ -271,6 +273,7 @@ class PlaybackService : MediaLibraryService() {
                 // What the player holds is never deleted by the automatic clean-up, also before the app adopts it.
                 TitleHandover.serviceHolds(currentKey(exo)?.second)
                 playerController.adoptFromService()
+                scope.launch { accountGuard.titleChanged() }
             }
 
             // Once something plays, Media3 owns the foreground: a pending play-key guard lets go for good.
@@ -543,31 +546,34 @@ class PlaybackService : MediaLibraryService() {
 
     /**
      * Browsers (Android Auto) cache what they showed: when the connection comes or goes, or the catalog, the downloads,
-     * the device titles or the set of titles in progress change, the subscribed folders are told to reload.
+     * the device titles or the set of titles in progress change, or another account is active (a profile switch while the
+     * car is connected), the subscribed folders are told to reload ([carLibraryChanges]).
      */
-    @OptIn(FlowPreview::class)
     private fun watchLibrary(session: MediaLibrarySession) {
         scope.launch {
-            accountStore.account.map { it?.serverId }.distinctUntilChanged().collectLatest { sid ->
-                val dev = DeviceLibrary.SERVER_ID
-                val parts: List<Flow<Any>> = listOf(
-                    api.connection.map { it is ConnectionState.Online },
-                    coverArrivals,
-                    catalogDao.observeVersion(dev),
-                    itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
-                ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
-                    libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
-                    catalogDao.observeVersion(sid),
-                    downloadDao.observeCompleteIds(sid),
-                    itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
-                )
-                combine(parts) { it.toList() }.distinctUntilChanged().debounce(LIBRARY_DEBOUNCE_MS).collect {
-                    val ids = LinkedHashSet<String>()
-                    ids += MediaIds.of(CarNode.Root)
-                    listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach { ids += MediaIds.of(it) }
-                    ids += subscribed
-                    ids.forEach { session.notifyChildrenChanged(it, Int.MAX_VALUE, null) }
-                }
+            val dev = DeviceLibrary.SERVER_ID
+            carLibraryChanges(
+                accountStore.account.map { it?.serverId },
+                { sid ->
+                    listOf<Flow<Any>>(
+                        api.connection.map { it is ConnectionState.Online },
+                        coverArrivals,
+                        catalogDao.observeVersion(dev),
+                        itemDao.observeInProgress(dev).map { list -> list.map { it.id } },
+                    ) + if (sid == null) listOf(flowOf(Unit)) else listOf(
+                        libraryDao.observeAll(sid).map { list -> list.map { it.id to it.name } },
+                        catalogDao.observeVersion(sid),
+                        downloadDao.observeCompleteIds(sid),
+                        itemDao.observeInProgress(sid).map { list -> list.map { it.id } },
+                    )
+                },
+                LIBRARY_DEBOUNCE_MS,
+            ).collect {
+                val ids = LinkedHashSet<String>()
+                ids += MediaIds.of(CarNode.Root)
+                listOf(CarNode.Continue, CarNode.Downloads, CarNode.SeriesList, CarNode.Libraries).forEach { ids += MediaIds.of(it) }
+                ids += subscribed
+                ids.forEach { session.notifyChildrenChanged(it, Int.MAX_VALUE, null) }
             }
         }
     }
@@ -598,7 +604,9 @@ class PlaybackService : MediaLibraryService() {
             check = { serverId, key -> queueEntryState(itemDao, episodeDao, downloadDao, api.connectionState.value is ConnectionState.Online, serverId, key) },
             sleepEndOfChapter = { sleepTimer.state.value?.mode == SleepMode.EndOfChapter },
             // The queue lives in the account's namespace with mixed keys; a device key starts the device title.
-            start = { owner, key -> starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) },
+            start = { owner, key ->
+                starter.start(DeviceLibrary.serverFor(owner, key) ?: owner, key) { accountStore.account.first()?.serverId == owner }
+            },
             // Checked again right before a start: a sign-out may have come in between.
             stillOwner = { owner -> accountStore.account.first()?.serverId == owner },
             pick = { _, key -> TitleHandover.pick(key) },
