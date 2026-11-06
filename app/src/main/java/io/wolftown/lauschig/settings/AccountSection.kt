@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -213,7 +215,8 @@ fun SignOutDialog(step: SignOutStep, host: String, onKeepDownloads: (Boolean) ->
             when (step) {
                 SignOutStep.Checking -> Busy(stringResource(R.string.sign_out_syncing))
                 SignOutStep.SigningOut -> Busy(null)
-                is SignOutStep.Confirm -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // A short window, large text: its last line can be the warning, and the buttons stay reachable anyway.
+                is SignOutStep.Confirm -> Column(Modifier.verticalScroll(rememberScrollState()).testTag("signOutText"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.sign_out_message, host))
                     if (step.canKeep) {
                         // "22 MB" never breaks between number and unit. Keeping keeps the downloads and the changes.

@@ -674,10 +674,10 @@ class SetupViewModelTest {
     /** From the device pass: opened from „Wer hört zu?“ nobody is active, so nobody "stays signed in". */
     @Test fun addProfile_knowsWhetherSomeoneIsActive() {
         signedInAsFabian()
-        assertFalse(addVm().state.value.nobodyActive)
+        assertEquals(false, addVm().state.value.nobodyActive)
         store.acc.value = null
         store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a0", "r0", false))
-        assertTrue(addVm().state.value.nobodyActive)
+        assertEquals(true, addVm().state.value.nobodyActive)
     }
 
     // --- 3.6, a forgotten PIN ---
@@ -935,5 +935,17 @@ class SetupViewModelTest {
         val v = viewModels.own(SetupViewModel(broken, login, net, sync, oidc, bus, signOut))
         v.onPublicChanged("https://abs.example.org")
         assertTrue(ssoFrom(v))
+    }
+
+    /** Task 2's re-review: until it is read, the form does not claim that someone stays signed in. */
+    @Test fun addProfile_whoIsActive_isNotKnownBeforeItIsRead() {
+        val read = CompletableDeferred<Account?>()
+        val slow = object : io.wolftown.lauschig.account.AccountStore by store {
+            override val account: Flow<Account?> = kotlinx.coroutines.flow.flow { emit(read.await()) }
+        }
+        val v = viewModels.own(SetupViewModel(slow, login, net, sync, oidc, bus, signOut, mode = SetupMode.ADD_PROFILE))
+        assertEquals(null, v.state.value.nobodyActive)
+        read.complete(null)
+        assertEquals(true, v.state.value.nobodyActive)
     }
 }

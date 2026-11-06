@@ -21,6 +21,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -114,6 +117,36 @@ class WelcomeScreenTest {
             assertEquals(label, 1, layouts.single().lineCount)
             rule.onNodeWithText(label).assertIsDisplayed()
         }
+    }
+
+    /** Task 2's re-review: on the next line the buttons stay at the end, where the next step always is. */
+    @Test
+    @Config(sdk = [35], application = android.app.Application::class, qualifiers = "de-w360dp-h640dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE) // real text widths
+    fun buttonsOnANewLine_stayAtTheEnd() {
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                LauschigTheme { WelcomeScreen(0, onNext = {}, onSkip = {}) }
+            }
+        }
+        val screen = rule.onRoot().fetchSemanticsNode().boundsInRoot
+        val next = rule.onNodeWithTag("welcomeNext").fetchSemanticsNode().boundsInRoot
+        val dots = rule.onNodeWithContentDescription("Seite 1 von 3").fetchSemanticsNode().boundsInRoot
+        assertTrue("wrapped: $next below $dots", next.top >= dots.bottom)
+        val gutter = with(rule.density) { 17.dp.toPx() }
+        assertTrue("at the end: $next in $screen", screen.right - next.right <= gutter)
+    }
+
+    /** With room for both on one line: the place left, the buttons right, as before. */
+    @Test
+    @Config(sdk = [35], application = android.app.Application::class, qualifiers = "w640dp-h900dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun buttonsWithRoom_shareTheLine() {
+        rule.setContent { LauschigTheme { WelcomeScreen(0, onNext = {}, onSkip = {}) } }
+        val next = rule.onNodeWithTag("welcomeNext").fetchSemanticsNode().boundsInRoot
+        val dots = rule.onNodeWithContentDescription("Page 1 of 3").fetchSemanticsNode().boundsInRoot
+        assertTrue("$next beside $dots", next.top < dots.bottom && dots.top < next.bottom && dots.right < next.left)
     }
 
     /** Through the real route: what a process death leaves, the entry's saved state. */

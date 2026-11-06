@@ -65,8 +65,8 @@ data class SetupUiState(
     val ssoLaunchUrl: String? = null,
     /** One more profile ([SetupMode.ADD_PROFILE]): the active account is set aside instead of replaced. */
     val addProfile: Boolean = false,
-    /** Adding a profile from the picker: nobody is signed in who could stay signed in. */
-    val nobodyActive: Boolean = false,
+    /** Adding a profile from the picker: nobody is signed in who could stay signed in. Null: not read yet, the form says neither. */
+    val nobodyActive: Boolean? = null,
     /** A forgotten PIN ([SetupMode.UNLOCK]): only this account counts. */
     val unlockServerId: String? = null,
     /** Its name, once read. */
@@ -134,7 +134,7 @@ class SetupViewModel(
             }
             val adding = mode == SetupMode.ADD_PROFILE
             val active = accounts.account.first()
-            if (adding && active == null) _state.update { it.copy(nobodyActive = true) }
+            if (adding) _state.update { it.copy(nobodyActive = active == null) }
             val a = active ?: (if (adding) accounts.saved.first().firstOrNull() else null) ?: return@launch
             confirmed += a.allowCleartext
             val ssids = a.addresses.homeSsids

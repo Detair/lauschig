@@ -49,8 +49,16 @@ class SetupScreenTest {
     }
 
     @Test fun addingWhileSomeoneIsActive_saysThatOneStays() {
-        show(SetupUiState(addProfile = true))
+        show(SetupUiState(addProfile = true, nobodyActive = false))
         rule.onNodeWithText("The current one stays signed in", substring = true).assertExists()
+    }
+
+    /** Task 2's re-review: the form from the picker must not flash that someone stays signed in. */
+    @Test fun addingBeforeItIsKnownWhoIsActive_saysNeither() {
+        show(SetupUiState(addProfile = true))
+        rule.onNodeWithText("The current one", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("Sign in with another account", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("Add profile").assertExists()
     }
 
     /** From „Wer hört zu?“: nobody is active. */

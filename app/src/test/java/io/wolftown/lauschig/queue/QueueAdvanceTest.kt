@@ -147,14 +147,42 @@ class QueueAdvanceTest {
         )
     }
 
-    @Test fun aStartThatThrows_doesNotBlockTheQueue_theNextOneStarts() = runTest {
+    /**
+     * An exception can be about the device, not the title (a database error, a released player), and it may come after the title has
+     * started: at most one entry per end goes that way, the rest stays.
+     */
+    @Test fun aStartThatThrows_takesOnlyItself_andNothingElseStarts() = runTest {
         val r = Throwing(mutableListOf("a", "bad", "c"))
-        assertEquals("c", r.advancer.onEnded(s, "a"))
-        assertEquals(listOf("bad", "c"), r.started)
+        assertEquals(null, r.advancer.onEnded(s, "a"))
+        assertEquals(listOf("c"), r.queue)
+        assertEquals(listOf("bad"), r.started)
+    }
+
+    /** The whole queue hits the same wall: one per end, not all of it. */
+    @Test fun aSystemicFailure_doesNotEmptyTheQueue() = runTest {
+        val queue = mutableListOf("x", "y", "z")
+        val started = mutableListOf<String>()
+        val advancer = QueueAdvancer(
+            entries = { queue.toList() }, remove = { _, k -> queue -= k }, check = { _, _ -> PLAYABLE }, sleepEndOfChapter = { false },
+            start = { _, k ->
+                started += k
+                throw IllegalStateException("the player is released")
+            },
+        )
+        assertEquals(null, advancer.onEnded(s, "ended"))
+        assertEquals(listOf("y", "z"), queue)
+        assertEquals(null, advancer.onEnded(s, "ended"))
+        assertEquals(listOf("z"), queue)
+        assertEquals(listOf("x", "y"), started)
+    }
+
+    /** A plain „could not be started“ is about that title: the next one is tried, as always. */
+    @Test fun aStartThatSaysNo_stillTriesTheNext() = runTest {
+        val r = Run(mutableListOf("broken", "ok"), emptyMap(), failing = setOf("broken"))
+        assertEquals("ok", r.advancer.onEnded(s, "ended"))
         assertEquals(emptyList<String>(), r.queue)
     }
 
-    /** It may have started before it threw: it must not start a second time at the next end. */
     @Test fun aStartThatThrows_isNotTriedAgain() = runTest {
         val r = Throwing(mutableListOf("bad"))
         assertNull(r.advancer.onEnded(s, "a"))

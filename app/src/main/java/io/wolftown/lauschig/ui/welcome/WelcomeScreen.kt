@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -176,25 +177,51 @@ fun WelcomeScreen(page: Int, onNext: () -> Unit, onSkip: () -> Unit, modifier: M
                 }
             }
         }
-        // On one line where they fit. Large text on a narrow phone: they move to the next line, none breaks inside its word.
-        FlowRow(
+        PlaceAndButtons(
             Modifier.fillMaxWidth().padding(horizontal = Spacing.l, vertical = Spacing.m),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(Spacing.s),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            PlaceDots(page)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(Spacing.s),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!last) {
-                    TextButton(onClick = onSkip, modifier = Modifier.testTag("welcomeSkip")) { Text(stringResource(R.string.welcome_skip)) }
+            place = { PlaceDots(page) },
+            buttons = {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.s),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!last) {
+                        TextButton(onClick = onSkip, modifier = Modifier.testTag("welcomeSkip")) { Text(stringResource(R.string.welcome_skip)) }
+                    }
+                    Button(onClick = onNext, modifier = Modifier.testTag("welcomeNext")) {
+                        Text(stringResource(if (last) R.string.welcome_sign_in else R.string.welcome_next))
+                    }
                 }
-                Button(onClick = onNext, modifier = Modifier.testTag("welcomeNext")) {
-                    Text(stringResource(if (last) R.string.welcome_sign_in else R.string.welcome_next))
-                }
+            },
+        )
+    }
+}
+
+/**
+ * On one line where they fit: the place at the start, the buttons at the end. Large text on a narrow phone: the buttons move to the
+ * next line, none breaks inside its word, and they stay at the end, where the next step always is.
+ */
+@Composable
+private fun PlaceAndButtons(modifier: Modifier, place: @Composable () -> Unit, buttons: @Composable () -> Unit) {
+    Layout(content = {
+        place()
+        buttons()
+    }, modifier = modifier) { (placeItem, buttonsItem), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val left = placeItem.measure(loose)
+        val right = buttonsItem.measure(loose)
+        val width = constraints.maxWidth
+        val oneLine = left.width + right.width <= width
+        val gap = Spacing.s.roundToPx()
+        val height = if (oneLine) maxOf(left.height, right.height) else left.height + gap + right.height
+        layout(width, height) {
+            if (oneLine) {
+                left.placeRelative(0, (height - left.height) / 2)
+                right.placeRelative(width - right.width, (height - right.height) / 2)
+            } else {
+                left.placeRelative(0, 0)
+                right.placeRelative(width - right.width, left.height + gap)
             }
         }
     }

@@ -127,14 +127,12 @@ fun SetupScreen(
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
                 Text(stringResource(if (state.unlockServerId != null) R.string.setup_unlock_title else R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
             }
-            Text(
-                when {
-                    state.unlockServerId != null -> stringResource(R.string.setup_unlock_intro, state.unlockName ?: state.username)
-                    state.nobodyActive -> stringResource(R.string.setup_add_intro_nobody)
-                    else -> stringResource(R.string.setup_add_intro)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            when {
+                state.unlockServerId != null -> stringResource(R.string.setup_unlock_intro, state.unlockName ?: state.username)
+                state.nobodyActive == true -> stringResource(R.string.setup_add_intro_nobody)
+                state.nobodyActive == false -> stringResource(R.string.setup_add_intro)
+                else -> null
+            }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         } else {
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
