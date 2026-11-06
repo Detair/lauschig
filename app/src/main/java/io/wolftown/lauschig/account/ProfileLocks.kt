@@ -2,6 +2,7 @@ package io.wolftown.lauschig.account
 
 import android.content.Context
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.MutablePreferences
@@ -57,10 +58,11 @@ sealed interface PinCheck {
 }
 
 /**
- * The rounds for a new hash (3.1: at least 120 000, under 500 ms on the slow tablet). May change any time: each hash keeps
- * the count it was made with, so nobody's PIN stops working.
+ * The rounds for a new hash: about 425 ms on the slowest test device, a Galaxy Tab A7 Lite (120 000 took 2.5 s there). A PIN has few
+ * digits and rounds do not change that; what stands before guessing is the Keystore key the entry is wrapped by and the waits. May
+ * change any time: each hash keeps the count it was made with, so nobody's PIN stops working.
  */
-const val PIN_ITERATIONS = 120_000
+const val PIN_ITERATIONS = 20_000
 
 /** The digits of an app PIN. */
 val PIN_LENGTHS = 4..8
@@ -112,7 +114,20 @@ interface ProfileLocks {
     suspend fun verifyPin(serverId: String, pin: String): PinCheck
 
     suspend fun waitRemainingMs(serverId: String): Long
+
+    /**
+     * [serverId] has just signed in. Normally that says nothing here; a damaged file's mark (`damagedLocksHandler`) no longer counts
+     * for it, though: 3.7, a new sign-in starts without.
+     */
+    suspend fun accountSignedIn(serverId: String)
 }
+
+/** The device could not say how often it has booted. */
+const val NO_BOOT_COUNT = -1
+
+/** How often this device has booted: a time since boot only compares within one. */
+internal fun deviceBootCount(context: Context): Int =
+    Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, NO_BOOT_COUNT)
 
 private val DAMAGED = booleanPreferencesKey("damaged")
 
@@ -122,8 +137,8 @@ internal val damagedLocksHandler = ReplaceFileCorruptionHandler { preferencesOf(
 private val Context.profileLocksDataStore by preferencesDataStore(name = "profile_locks", corruptionHandler = damagedLocksHandler)
 
 /**
- * The wait runs on [elapsedMs], the time since boot, which no setting of the clock changes. After a reboot it starts again
- * and is no longer comparable: then only what has certainly passed counts ([remaining]). So a wait can get longer, never
+ * The wait runs on [elapsedMs], the time since boot, which no setting of the clock changes. After a reboot ([bootCount]) it starts
+ * again and is no longer comparable: then only what has certainly passed counts ([remaining]). So a wait can get longer, never
  * shorter.
  */
 @Singleton
@@ -133,8 +148,10 @@ class DataStoreProfileLocks(
     private val elapsedMs: () -> Long = SystemClock::elapsedRealtime,
     private val iterations: Int = PIN_ITERATIONS,
     private val derive: (CharArray, ByteArray, Int) -> ByteArray = ::pbkdf2,
+    private val bootCount: () -> Int = { NO_BOOT_COUNT },
 ) : ProfileLocks {
-    @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher) : this(context.profileLocksDataStore, cipher)
+    @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher) :
+        this(context.profileLocksDataStore, cipher, bootCount = { deviceBootCount(context) })
 
     /** An encrypted entry's contents; its text never shows them. */
     @Serializable
@@ -145,6 +162,7 @@ class DataStoreProfileLocks(
         val iterations: Int = 0,
         val failures: Int = 0,
         val waitStartedAt: Long = 0,
+        val waitBoot: Int = NO_BOOT_COUNT,
         val waitMs: Long = 0,
     ) {
         override fun toString() = "Entry($kind)"
@@ -218,9 +236,9 @@ class DataStoreProfileLocks(
             if (left > 0) return@withLock PinCheck.Wait(left, started = false)
             val failures = entry.failures + 1
             val waitMs = pinWaitMs(failures)
-            store.edit { it.put(serverId, entry.copy(failures = failures, waitStartedAt = elapsedMs(), waitMs = waitMs)) }
+            store.edit { it.put(serverId, entry.copy(failures = failures, waitStartedAt = elapsedMs(), waitBoot = bootCount(), waitMs = waitMs)) }
             if (MessageDigest.isEqual(hash(pin, decoded(entry.salt!!), entry.iterations), decoded(entry.hash!!))) {
-                store.edit { it.put(serverId, entry.copy(failures = 0, waitStartedAt = 0, waitMs = 0)) }
+                store.edit { it.put(serverId, entry.copy(failures = 0, waitStartedAt = 0, waitBoot = NO_BOOT_COUNT, waitMs = 0)) }
                 PinCheck.Correct
             } else if (waitMs > 0) {
                 PinCheck.Wait(waitMs, started = true)
@@ -230,19 +248,28 @@ class DataStoreProfileLocks(
         }
     }
 
+    override suspend fun accountSignedIn(serverId: String) {
+        checks.withLock {
+            store.edit { if (it[DAMAGED] == true && it[key(serverId)] == null) it.put(serverId, Entry(KIND_NONE)) }
+        }
+    }
+
     override suspend fun waitRemainingMs(serverId: String): Long {
         val p = store.data.first()
         return withContext(Dispatchers.Default) { p[key(serverId)]?.let(::entryOf)?.takeIf { it.isPin() }?.let(::remaining) ?: 0 }
     }
 
     /**
-     * What is left of the wait. A time since boot below the start means a reboot, and at least that time has passed since. A
-     * reboot that is not recognised (long up by now) makes the difference smaller than what has really passed.
+     * What is left of the wait. Within one boot, the time since it began. After a reboot only what has certainly passed counts: the
+     * time since that boot. Without a boot count a reboot shows only as a time since boot below the start; one that is not recognised
+     * (long up by now) makes the difference smaller than what has really passed. So never shorter than it should be.
      */
     private fun remaining(e: Entry): Long {
         if (e.waitMs <= 0) return 0
         val now = elapsedMs()
-        val passed = if (now >= e.waitStartedAt) now - e.waitStartedAt else now
+        val boot = bootCount()
+        val sameBoot = if (e.waitBoot != NO_BOOT_COUNT && boot != NO_BOOT_COUNT) e.waitBoot == boot else now >= e.waitStartedAt
+        val passed = if (sameBoot) now - e.waitStartedAt else now
         return (e.waitMs - passed).coerceAtLeast(0)
     }
 

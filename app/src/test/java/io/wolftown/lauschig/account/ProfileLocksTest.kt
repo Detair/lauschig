@@ -28,7 +28,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 import org.robolectric.shadows.ShadowSystemClock
 import java.time.Duration
-import java.util.Base64
 
 /** The store of Task 3 (3.1, 3.5): what is kept, how it is kept, and what the wrong entries cost. */
 @RunWith(RobolectricTestRunner::class)
@@ -39,20 +38,26 @@ class ProfileLocksTest {
     private val a = "aaaaaaaaaaaaaaaa"
     private val b = "bbbbbbbbbbbbbbbb"
     private var clock = 1_000_000L
+    private var boot = 7
 
-    /** Readable for the test (the plain text is what the cipher was given), but never the plain text itself in the file. */
+    /**
+     * Readable for the test (the plain text is what the cipher was given), but never the plain text itself in the file. Its output
+     * has no digits and none of the letters of what `onDisk_everythingIsEncrypted` looks for: a random salt cannot spell them.
+     */
     private inner class TestCipher : TokenCipher {
         val given = mutableListOf<String>()
         var broken = false
         var throwing = false
+        private val alphabet = "bcfgjkmnopquvwxy"
         override fun encrypt(plain: String): String {
             given += plain
-            return "enc:" + Base64.getEncoder().encodeToString(plain.toByteArray())
+            return "enc:" + plain.toByteArray().joinToString("") { b -> "${alphabet[(b.toInt() shr 4) and 15]}${alphabet[b.toInt() and 15]}" }
         }
         override fun decrypt(encrypted: String): String? {
             if (throwing) throw IllegalStateException("provider")
             if (broken) return null
-            return String(Base64.getDecoder().decode(encrypted.removePrefix("enc:")))
+            val pairs = encrypted.removePrefix("enc:").chunked(2)
+            return String(ByteArray(pairs.size) { i -> (alphabet.indexOf(pairs[i][0]) shl 4 or alphabet.indexOf(pairs[i][1])).toByte() })
         }
     }
 
@@ -61,8 +66,8 @@ class ProfileLocksTest {
     private val data by lazy { PreferenceDataStoreFactory.create(corruptionHandler = damagedLocksHandler, scope = scope) { file } }
 
     private fun locks(iterations: Int = 1_000, derive: ((CharArray, ByteArray, Int) -> ByteArray)? = null) =
-        if (derive == null) DataStoreProfileLocks(data, cipher, { clock }, iterations)
-        else DataStoreProfileLocks(data, cipher, { clock }, iterations, derive)
+        if (derive == null) DataStoreProfileLocks(data, cipher, { clock }, iterations, bootCount = { boot })
+        else DataStoreProfileLocks(data, cipher, { clock }, iterations, derive, bootCount = { boot })
 
     private val realRecorder = Log.recorder
 
@@ -121,17 +126,23 @@ class ProfileLocksTest {
         for (secret in listOf("1234", "PIN", "DEVICE", "salt", "hash")) assertFalse(secret, secret in raw)
     }
 
-    /** 3.1: the count is at least what the plan says; each hash keeps its own, so a later change locks nobody out. */
+    /**
+     * 3.1, the controller's ruling on the review's M8: 20 000 rounds for a new hash (the tablet took 2.5 s at 120 000). Each hash
+     * keeps its own count, so an entry made with 120 000 still verifies, with the rounds it was made with.
+     */
     @Test fun theCountStaysWithTheHash() = runBlocking {
-        assertTrue(PIN_ITERATIONS >= 120_000)
-        locks(iterations = 2_000).setPin(a, "1234")
+        assertEquals(20_000, PIN_ITERATIONS)
+        locks(iterations = 120_000).setPin(a, "1234")
         val seen = mutableListOf<Int>()
-        val later = locks(iterations = 1_000, derive = { pin, salt, rounds ->
+        val later = locks(iterations = PIN_ITERATIONS, derive = { pin, salt, rounds ->
             seen += rounds
             javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(javax.crypto.spec.PBEKeySpec(pin, salt, rounds, 256)).encoded
         })
         assertEquals(PinCheck.Correct, later.verifyPin(a, "1234"))
-        assertEquals(listOf(2_000), seen)
+        assertEquals(PinCheck.Wrong(4), later.verifyPin(a, "4321"))
+        assertEquals(listOf(120_000, 120_000), seen)
+        later.setPin(a, "5678")
+        assertEquals("a new PIN gets the new count", 20_000, seen.let { it.clear(); later.verifyPin(a, "5678"); it.single() })
     }
 
     @Test fun theHashLogsItsCountAndTime_andNothingSecretGoesAnywhere() = runBlocking {
@@ -254,11 +265,46 @@ class ProfileLocksTest {
         val locks = locks()
         locks.setPin(a, "1234")
         wrongTimes(locks, 5)
+        boot++
         clock = 2_000 // the device restarted two seconds ago
         assertEquals(28_000L, locks().waitRemainingMs(a))
         assertEquals(PinCheck.Wait(28_000, started = false), locks().verifyPin(a, "1234"))
+        boot++
+        clock = 1_000 // and again
+        assertEquals(29_000L, locks().waitRemainingMs(a))
+    }
+
+    /** The review's M1: up for as long as when the wait began says nothing any more, once the boot count tells. */
+    @Test fun aWaitThatRanOut_doesNotComeBack_whenTheUptimeReachesItsStartAgain() = runBlocking {
+        clock = 2 * 86_400_000L
+        val locks = locks()
+        locks.setPin(a, "1234")
+        wrongTimes(locks, 5)
+        assertEquals(30_000L, locks.waitRemainingMs(a))
+        boot++
+        clock = 40_000
+        assertEquals(0L, locks().waitRemainingMs(a))
+        clock = 2 * 86_400_000L + 1
+        assertEquals(0L, locks().waitRemainingMs(a))
+        assertEquals(PinCheck.Correct, locks().verifyPin(a, "1234"))
+    }
+
+    /** Where the count cannot be read: as before, it can get longer, never shorter. */
+    @Test fun withoutABootCount_aRebootStillDoesNotShortenTheWait() = runBlocking {
+        boot = NO_BOOT_COUNT
+        val locks = locks()
+        locks.setPin(a, "1234")
+        wrongTimes(locks, 5)
+        clock = 2_000
+        assertEquals(28_000L, locks().waitRemainingMs(a))
         clock = 1_000_000 + 5_000 // a long time up: what it says about the wait is less than has really passed
         assertEquals(25_000L, locks().waitRemainingMs(a))
+    }
+
+    @Test fun theBootCount_isTheDevicesOwn() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        android.provider.Settings.Global.putInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, 42)
+        assertEquals(42, deviceBootCount(context))
     }
 
     /** Two taps in one moment are two tries. */
@@ -304,6 +350,34 @@ class ProfileLocksTest {
         assertEquals(ProfileLockKind.UNREADABLE, locks.kind(b))
         locks.setPin(b, "1234")
         assertEquals(PinCheck.Correct, locks.verifyPin(b, "1234"))
+    }
+
+    /** The review's M5: the mark does not catch who has just proved itself, and that alone. */
+    @Test fun aDamagedFile_doesNotCatchWhoSignedInSince() = runBlocking {
+        file.writeBytes(ByteArray(64) { 0x7f })
+        val locks = locks()
+        locks.accountSignedIn(a)
+        assertEquals(ProfileLockKind.NONE, locks.kind(a))
+        assertEquals(ProfileLockKind.UNREADABLE, locks.kind(b))
+    }
+
+    @Test fun aSignIn_leavesAnyOtherProtectionAlone() = runBlocking {
+        val locks = locks()
+        locks.setPin(a, "1234")
+        locks.accountSignedIn(a)
+        locks.accountSignedIn(b)
+        assertEquals(ProfileLockKind.PIN, locks.kind(a))
+        assertEquals(PinCheck.Correct, locks.verifyPin(a, "1234"))
+        assertEquals("nothing written without the mark", setOf("lock_$a"), data.data.first().asMap().keys.map { it.name }.toSet())
+    }
+
+    /** With the mark, what is there stays what it is: a PIN set after the damage. */
+    @Test fun aSignIn_afterADamagedFile_leavesANewPinAlone() = runBlocking {
+        file.writeBytes(ByteArray(64) { 0x7f })
+        val locks = locks()
+        locks.setPin(a, "1234")
+        locks.accountSignedIn(a)
+        assertEquals(ProfileLockKind.PIN, locks.kind(a))
     }
 
     @Test fun removing_takesEverythingAlong_alsoTheCount() = runBlocking {

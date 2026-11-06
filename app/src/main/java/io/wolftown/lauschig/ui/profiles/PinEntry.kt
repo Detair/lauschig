@@ -200,6 +200,8 @@ fun NewPinDialog(step: ProtectionStep.NewPin, onDone: (String) -> Unit, onCancel
     var first by remember { mutableStateOf<String?>(null) }
     var digits by remember { mutableStateOf("") }
     var differed by remember { mutableStateOf(false) }
+    // While it is saved it is decided: a dialog that closes as cancelled would say otherwise.
+    val cancel = { if (!step.saving) onCancel() }
     val submit = {
         val entered = digits
         val earlier = first
@@ -219,7 +221,7 @@ fun NewPinDialog(step: ProtectionStep.NewPin, onDone: (String) -> Unit, onCancel
         }
     }
     LocalPinDialogFrame.current.Show(
-        onCancel,
+        cancel,
         "newPin",
         title = { Text(stringResource(R.string.pin_new_title)) },
         text = {
@@ -244,6 +246,6 @@ fun NewPinDialog(step: ProtectionStep.NewPin, onDone: (String) -> Unit, onCancel
                 else Text(stringResource(if (first == null) R.string.pin_next else R.string.pin_ok))
             }
         },
-        dismiss = { TextButton(onClick = onCancel) { Text(stringResource(R.string.setup_cancel)) } },
+        dismiss = { TextButton(onClick = cancel, enabled = !step.saving) { Text(stringResource(R.string.setup_cancel)) } },
     )
 }

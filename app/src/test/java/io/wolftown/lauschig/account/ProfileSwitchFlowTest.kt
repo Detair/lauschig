@@ -186,7 +186,8 @@ class ProfileSwitchFlowTest {
             removeProtection = locks::remove,
         )
     }
-    private val locks by lazy { DataStoreProfileLocks(prefs("locks"), cipher, { 1_000L }, 1_000) }
+    private val locksStore by lazy { prefs("locks") }
+    private val locks by lazy { DataStoreProfileLocks(locksStore, cipher, { 1_000L }, 1_000) }
 
     private val facade = FakeFacade()
     private val streams = mutableListOf<String>()
@@ -261,6 +262,7 @@ class ProfileSwitchFlowTest {
             lastPlayed, player, sleepTimer, progressSync, bookmarkSync, api, serverLogout, cleaner, switched,
             object : SyncTrigger { override fun syncNow() { syncs++ } },
             starter,
+            locks,
         )
     }
 
@@ -876,10 +878,10 @@ class ProfileSwitchFlowTest {
     }
 
     /**
-     * Review focus 3, the sign-in page: the password is the stronger proof (3.3), so it comes in without the gate. Only the way of a
-     * forgotten PIN takes the protection off; with a plain sign-in it stays, for the way back.
+     * Review focus 3, the sign-in page: a sign-in comes in without the gate (3.3; that it has to be a real one is `OidcLoginTest`'s
+     * fresh login). Only the way of a forgotten PIN takes the protection off; with a plain sign-in it stays, for the way back.
      */
-    @Test fun aSignInOfAProtectedProfile_needsItsPassword_andTheProtectionStays(): Unit = runBlocking {
+    @Test fun aSignInOfAProtectedProfile_comesIn_andTheProtectionStays(): Unit = runBlocking {
         signedIn()
         locks.setPin(b, "2222")
         signOut.addProfile(web.b, "fresh-access", "fresh-refresh")
@@ -888,6 +890,18 @@ class ProfileSwitchFlowTest {
         assertEquals(PinCheck.Correct, locks.verifyPin(b, "2222"))
         signOut.signIn(web.b, "fresher-access", "fresher-refresh")
         assertEquals("a re-auth of the active account", ProfileLockKind.PIN, locks.kind(b))
+    }
+
+    /** The review's M5, on the real flow: both ways of signing in. */
+    @Test fun aDamagedProtectionFile_doesNotCatchWhoSignsIn(): Unit = runBlocking {
+        signedIn()
+        locksStore.edit { it[androidx.datastore.preferences.core.booleanPreferencesKey("damaged")] = true }
+        assertEquals(ProfileLockKind.UNREADABLE, locks.kind(a))
+        signOut.signIn(web.a, "fresh-access", "fresh-refresh")
+        assertEquals(ProfileLockKind.NONE, locks.kind(a))
+        assertEquals("nobody asked it", ProfileLockKind.UNREADABLE, locks.kind(b))
+        signOut.addProfile(web.b, "fresh-access", "fresh-refresh")
+        assertEquals(ProfileLockKind.NONE, locks.kind(b))
     }
 
     /** 3.6 on the real flow: the signed-in account comes in with its new tokens, the protection goes, the one before stays signed in. */

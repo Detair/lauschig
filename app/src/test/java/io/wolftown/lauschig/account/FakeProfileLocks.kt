@@ -47,6 +47,12 @@ class FakeProfileLocks : ProfileLocks {
         all.value -= serverId
     }
 
+    val signedIn = mutableListOf<String>()
+
+    override suspend fun accountSignedIn(serverId: String) {
+        signedIn += serverId
+    }
+
     override suspend fun verifyPin(serverId: String, pin: String): PinCheck {
         hold?.await()
         if (failChecking) throw IOException("disk full")

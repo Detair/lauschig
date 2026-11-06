@@ -360,7 +360,6 @@ class ProfileGateTest {
         val vm = vm()
         vm.switchTo(vm.row("kind"))
         assertEquals(20_000L, (vm.gatePrompt.value as GatePrompt.Pin).waitMs)
-        assertEquals(PinNotice.Wait(20_000), (vm.gatePrompt.value as GatePrompt.Pin).notice)
         vm.cancelGate()
         vm.switchTo(vm.row("kind"))
         assertEquals(20_000L, (vm.gatePrompt.value as GatePrompt.Pin).waitMs)
@@ -368,6 +367,26 @@ class ProfileGateTest {
         locks.waits[kind.serverId] = 0
         main.scheduler.advanceTimeBy(5_000)
         assertNull("the cancelled prompt's clock has ended with it", vm.gatePrompt.value)
+    }
+
+    /**
+     * The review's M9: a prompt that opens during a wait starts without words, and they come one step later: only a node that was
+     * there before and changes is read out (Task 2's I1).
+     */
+    @Test fun aPromptOpenedDuringAWait_saysSoOneStepLater() {
+        locks.pin(kind.serverId)
+        locks.waits[kind.serverId] = 20_000
+        val vm = vm()
+        vm.switchTo(vm.row("kind"))
+        val opened = vm.gatePrompt.value as GatePrompt.Pin
+        assertEquals(20_000L, opened.waitMs)
+        assertNull(opened.notice)
+        locks.waits[kind.serverId] = 19_000
+        main.scheduler.advanceTimeBy(1_100)
+        assertEquals(PinNotice.Wait(19_000), (vm.gatePrompt.value as GatePrompt.Pin).notice)
+        locks.waits[kind.serverId] = 18_000
+        main.scheduler.advanceTimeBy(1_100)
+        assertEquals("then they stay", PinNotice.Wait(19_000), (vm.gatePrompt.value as GatePrompt.Pin).notice)
     }
 
     // --- Review focus 3, process death ---

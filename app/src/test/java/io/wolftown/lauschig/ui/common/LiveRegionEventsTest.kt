@@ -175,6 +175,20 @@ class LiveRegionEventsTest {
         }
     }
 
+    /** The review's M9: a prompt that opens during a wait gets its words on a node that was there, not with the node. */
+    @Test fun aWaitThatWasAlreadyOn_isSentFromTheSameNode() {
+        val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)
+        var prompt by mutableStateOf(GatePrompt.Pin(row, waitMs = 20_000))
+        show { LauschigTheme { PinPromptBody(prompt, "", {}, {}, {}) } }
+        settle()
+        val id = rule.onNodeWithTag("pinNotice").fetchSemanticsNode().id
+        events.clear()
+        prompt = prompt.copy(notice = PinNotice.Wait(19_000), waitMs = 19_000)
+        rule.waitForIdle()
+        settle()
+        assertTrue("events: $events", spokenFrom(id).isNotEmpty())
+    }
+
     /** The countdown changes every second, for the eye: it must not talk. */
     @Test fun theCountdown_saysNothingByItself() {
         val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)

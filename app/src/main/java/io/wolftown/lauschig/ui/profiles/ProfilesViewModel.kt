@@ -183,7 +183,8 @@ class ProfilesViewModel(
                     GateStep.Open -> action()
                     is GateStep.Pin -> {
                         passed = action
-                        _gate.value = GatePrompt.Pin(row, notice = PinNotice.Wait(step.waitMs).takeIf { step.waitMs > 0 }, waitMs = step.waitMs)
+                        // During a wait its words come one step later: only a line that was there before is read out.
+                        _gate.value = GatePrompt.Pin(row, waitMs = step.waitMs)
                         if (step.waitMs > 0) followWait(row)
                     }
                     GateStep.DeviceLock -> {
@@ -250,7 +251,7 @@ class ProfilesViewModel(
                 } catch (_: Exception) {
                     continue
                 }
-                _gate.update { p -> (p as? GatePrompt.Pin)?.copy(waitMs = left, notice = if (left > 0) p.notice else PinNotice.Ready) ?: p }
+                _gate.update { p -> (p as? GatePrompt.Pin)?.copy(waitMs = left, notice = if (left > 0) p.notice ?: PinNotice.Wait(left) else PinNotice.Ready) ?: p }
                 if (left <= 0) break
             }
         }

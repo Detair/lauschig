@@ -172,6 +172,8 @@ class SignOut(
     private val logoutProfile: suspend (Account, refreshToken: String) -> Boolean = logout,
     /** Once the account has changed: stops what started since [stopPlayback] (a headset key, the car, a tap on the old page). */
     private val stopAgain: suspend () -> Unit = {},
+    /** An account has just signed in. */
+    private val onSignedIn: suspend (serverId: String) -> Unit = {},
 ) : AccountSignOut, ProfileSwitch {
     @Inject constructor(
         accounts: AccountStore,
@@ -189,6 +191,7 @@ class SignOut(
         switched: SwitchedDownloads,
         sync: SyncTrigger,
         lastTitle: LastTitleStarter,
+        locks: ProfileLocks,
     ) : this(
         accounts, data, kept, work, lastPlayed,
         pausePlayback = {
@@ -219,6 +222,7 @@ class SignOut(
         },
         logoutProfile = serverLogout::logoutProfile,
         stopAgain = stopping(player, sleepTimer),
+        onSignedIn = locks::accountSignedIn,
     )
 
     override suspend fun check(): SignOutCheck? {
@@ -259,6 +263,7 @@ class SignOut(
     override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
         if (accounts.account.first()?.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
         else replaceWith(next, accessToken, refreshToken)
+        step("signed in") { onSignedIn(next.serverId) }
     }
 
     /** [switchTo] itself (callers hold [operations]). [next] may be a profile that was set aside: what waits for it goes on. */
@@ -302,6 +307,7 @@ class SignOut(
                 arrive(next.serverId)
             }
         }
+        step("signed in") { onSignedIn(next.serverId) }
     }
 
     /**

@@ -2,6 +2,7 @@ package io.wolftown.lauschig.ui.profiles
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -80,5 +81,12 @@ class DeviceLockTest {
         for (code in listOf(BiometricPrompt.ERROR_HW_UNAVAILABLE, BiometricPrompt.ERROR_LOCKOUT, BiometricPrompt.ERROR_LOCKOUT_PERMANENT, BiometricPrompt.ERROR_VENDOR, 999)) {
             assertEquals("$code", DeviceLockAnswer.FAILED, deviceLockAnswer(code))
         }
+    }
+
+    /** The review's M4: `USE_BIOMETRIC` is what the prompt needs from Android 9 on. `USE_FINGERPRINT` serves only below, and minSdk is 28. */
+    @Test fun thePermissions_onlyTheOneThatIsNeeded() {
+        val requested = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions!!.toList()
+        assertTrue("android.permission.USE_BIOMETRIC" in requested)
+        assertFalse("android.permission.USE_FINGERPRINT" in requested)
     }
 }

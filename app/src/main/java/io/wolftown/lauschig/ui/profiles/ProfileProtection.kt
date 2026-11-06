@@ -1,5 +1,7 @@
 package io.wolftown.lauschig.ui.profiles
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,8 +66,11 @@ fun ProfileGateDialogs(viewModel: ProfilesViewModel, onSignIn: (serverId: String
 }
 
 /**
- * The system's prompt. It is shown at every resume while the question stands (the library shows nothing twice), so also after a
- * recreation or when the app was away in the moment it was due. An answer from before this question does not count.
+ * The system's prompt. It is shown at every resume while the question stands, so also after a recreation or when the app was away in
+ * the moment it was due. From Android 10 on the library shows nothing that is already up. On Android 9 it opens the system's lock page
+ * again each time, with no such check; and back from that page, its result and the resume come in one message, while the library
+ * posts its answer. So the show is posted too, behind that answer, and looks once more. An answer from before this question does not
+ * count.
  */
 @Composable
 internal fun DeviceLockStep(prompt: GatePrompt.Device, onAnswer: (DeviceLockAnswer) -> Unit) {
@@ -80,8 +85,10 @@ internal fun DeviceLockStep(prompt: GatePrompt.Device, onAnswer: (DeviceLockAnsw
     val answer = result?.takeIf { it.at > prompt.asked }
     LaunchedEffect(answer) { answer?.let { onAnswer(it.answer) } }
     LifecycleResumeEffect(prompt, answer == null) {
-        if (answer == null) prompter.show(title, subtitle)
-        onPauseOrDispose {}
+        val main = Handler(Looper.getMainLooper())
+        val ask = Runnable { if ((prompter.result.value?.at ?: 0) <= prompt.asked) prompter.show(title, subtitle) }
+        if (answer == null) main.post(ask)
+        onPauseOrDispose { main.removeCallbacks(ask) }
     }
 }
 

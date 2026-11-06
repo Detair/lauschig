@@ -1,6 +1,10 @@
 package io.wolftown.lauschig.ui.profiles
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -8,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -23,6 +28,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.FakeProfileLocks
@@ -59,12 +67,14 @@ class ProfileGateScreensTest {
     private val field get() = rule.onNodeWithTag("pinField")
 
     /** The PIN dialogs in the page: see [LocalPinDialogFrame]. Everything else is as it is in the app. */
-    private val inPage = PinDialogFrame { _, tag, title, text, confirm, dismiss ->
+    private val inPage = PinDialogFrame { onDismiss, tag, title, text, confirm, dismiss ->
         Column(Modifier.testTag(tag)) {
             title()
             text()
             confirm()
             dismiss()
+            // What a tap outside and the back key do to a dialog.
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("outsideTheDialog")) { Text("outside") }
         }
     }
 
@@ -238,6 +248,21 @@ class ProfileGateScreensTest {
         rule.onNodeWithTag("pinOk").assertIsNotEnabled()
     }
 
+    /** The review's M2: a hash takes seconds on a slow tablet. A dialog that closes as cancelled while the PIN goes in would lie. */
+    @Test fun aNewPin_whileItIsSaved_cannotBeCancelled() {
+        showNewPin(saving = true)
+        rule.onNodeWithText("Cancel").assertIsNotEnabled()
+        rule.onNodeWithTag("outsideTheDialog").performClick()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test fun aNewPin_otherwiseCanBeCancelled() {
+        showNewPin()
+        rule.onNodeWithTag("outsideTheDialog").performClick()
+        rule.onNodeWithText("Cancel").performClick()
+        assertEquals(listOf("cancel", "cancel"), calls)
+    }
+
     // --- The choice ---
 
     private fun showChoice(current: ProfileLockKind = ProfileLockKind.NONE, device: Boolean = true) = rule.setContent {
@@ -342,6 +367,65 @@ class ProfileGateScreensTest {
         showStep(prompter, prompt)
         rule.waitForIdle()
         assertEquals(listOf("PASSED"), calls)
+        assertTrue(prompter.shown.isEmpty())
+    }
+
+    private class Host : LifecycleOwner {
+        val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
+        override val lifecycle: Lifecycle = registry
+    }
+
+    private fun showStepIn(host: Host, prompter: DeviceLockPrompter, prompt: GatePrompt.Device) = rule.setContent {
+        CompositionLocalProvider(LocalDeviceLockPrompter provides prompter, LocalLifecycleOwner provides host) {
+            Themed { DeviceLockStep(prompt) { calls += "$it" } }
+        }
+    }
+
+    /**
+     * The review's I1, Android 9: back from the system's lock page, the page's result and the resume come in one message, and the
+     * library posts its answer. The resume must not open a second page for a question that has just been answered.
+     */
+    @Test fun aResume_whoseAnswerIsOnItsWay_doesNotAskAgain() {
+        val prompter = FakePrompter()
+        val host = Host()
+        showStepIn(host, prompter, GatePrompt.Device(row))
+        rule.waitForIdle()
+        assertEquals(1, prompter.shown.size)
+        rule.runOnUiThread { host.registry.currentState = Lifecycle.State.CREATED }
+        rule.runOnUiThread {
+            Handler(Looper.getMainLooper()).post { prompter.answers.value = DeviceLockResult(DeviceLockAnswer.PASSED) }
+            host.registry.currentState = Lifecycle.State.RESUMED
+        }
+        rule.waitForIdle()
+        assertEquals("no second page", 1, prompter.shown.size)
+        assertEquals(listOf("PASSED"), calls)
+    }
+
+    /** The app was away when the prompt was due, or the prompt went with it: the question still stands. */
+    @Test fun aResume_withoutAnAnswer_asksAgain() {
+        val prompter = FakePrompter()
+        val host = Host()
+        showStepIn(host, prompter, GatePrompt.Device(row))
+        rule.waitForIdle()
+        rule.runOnUiThread { host.registry.currentState = Lifecycle.State.CREATED }
+        rule.runOnUiThread { host.registry.currentState = Lifecycle.State.RESUMED }
+        rule.waitForIdle()
+        assertEquals(2, prompter.shown.size)
+        assertTrue(calls.isEmpty())
+    }
+
+    /** Paused again before it was shown: not shown into the pause. */
+    @Test fun aPauseRightAfterTheResume_showsNothing() {
+        val prompter = FakePrompter()
+        val host = Host()
+        host.registry.currentState = Lifecycle.State.CREATED
+        showStepIn(host, prompter, GatePrompt.Device(row))
+        rule.waitForIdle()
+        rule.runOnUiThread {
+            host.registry.currentState = Lifecycle.State.RESUMED
+            host.registry.currentState = Lifecycle.State.CREATED
+        }
+        rule.waitForIdle()
         assertTrue(prompter.shown.isEmpty())
     }
 
