@@ -187,6 +187,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
     implementation(libs.tink.android)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
