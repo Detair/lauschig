@@ -127,7 +127,7 @@ fun SetupScreen(
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
                 Text(stringResource(R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
             }
-            Text(stringResource(R.string.setup_add_intro), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(if (state.nobodyActive) R.string.setup_add_intro_nobody else R.string.setup_add_intro), style = MaterialTheme.typography.bodyMedium)
         } else {
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)

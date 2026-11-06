@@ -167,7 +167,8 @@ fun AppRoot(
                 // The attempt itself knows what it was started as.
                 val ssoWaiting by ssoReturn.waiting.collectAsStateWithLifecycle()
                 LaunchedEffect(ssoWaiting) {
-                    if (ssoWaiting && navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Setup()) { launchSingleTop = true }
+                    val mode = ssoWaiting ?: return@LaunchedEffect
+                    if (navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Setup(mode)) { launchSingleTop = true }
                 }
 
                 val onSetup = navController.isOnSetup()

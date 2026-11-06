@@ -177,6 +177,16 @@ class OidcLoginTest {
         assertEquals(OidcStart.Launch(base.resolve("/realms/x/auth").toString()), oidc().start(base))
     }
 
+    @Test fun theModeOfThePendingAttempt_canBeAsked_beforeItIsFinished() = runBlocking {
+        assertEquals("nothing pending", false, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", addProfile = true))
+        assertEquals(true, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/"))
+        assertEquals(false, oidc().pendingAddsProfile())
+    }
+
     @Test fun flowContext_theAddMode_survivesInPending() = runBlocking {
         enqueueStart()
         oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", addProfile = true))

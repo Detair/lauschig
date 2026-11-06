@@ -44,9 +44,12 @@ import java.io.IOException
 private class FakeLogin(var behaviour: (HttpUrl) -> LoginResponse) : LoginClient {
     val calls = mutableListOf<HttpUrl>()
     var statusResult: (HttpUrl) -> StatusResponse = { throw IOException("no status") }
+    /** A server that has not answered yet. */
+    var gate: CompletableDeferred<Unit>? = null
     override suspend fun status(baseUrl: HttpUrl): StatusResponse = statusResult(baseUrl)
     override suspend fun login(baseUrl: HttpUrl, request: LoginRequest): LoginResponse {
         calls += baseUrl
+        gate?.await()
         return behaviour(baseUrl)
     }
 }
@@ -59,6 +62,8 @@ private class FakeOidc : OidcSignIn {
     val finished = mutableListOf<OidcCallback>()
     var lastFlow = OidcFlowContext()
     var matches = true
+    var pendingAdd = false
+    override suspend fun pendingAddsProfile() = pendingAdd
     override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart { started += baseUrl; lastFlow = flow; return start }
     override suspend fun matchesPending(callback: OidcCallback) = matches
     override suspend fun finish(callback: OidcCallback): OidcResult { finished += callback; return finishResult() }
@@ -484,7 +489,7 @@ class SetupViewModelTest {
         assertEquals("", v.state.value.password)
     }
 
-    @Test fun addProfile_back_changesNothing() {
+    @Test fun addProfile_back_fromTheForm_changesNothing() {
         signedInAsFabian()
         val v = addVm()
         v.fill(public = "https://abs.example.org", user = "kind")
@@ -493,6 +498,25 @@ class SetupViewModelTest {
         assertTrue(store.aside.value.isEmpty())
         assertTrue(added.isEmpty())
         assertTrue(login.calls.isEmpty())
+    }
+
+    /** Back while the server is still answering: the answer, whatever it is, signs nobody in. */
+    @Test fun addProfile_back_duringARunningLogin_changesNothing() {
+        signedInAsFabian()
+        login.gate = CompletableDeferred()
+        login.behaviour = { LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")) }
+        val v = addVm()
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        assertTrue(v.state.value.loading)
+        assertEquals(1, login.calls.size)
+
+        viewModels.clear()
+        login.gate!!.complete(Unit)
+        assertEquals(fabian, store.acc.value)
+        assertTrue(store.aside.value.isEmpty())
+        assertTrue(added.isEmpty())
+        assertEquals(0, sync.count)
     }
 
     @Test fun addProfile_wrongPassword_saysSo_theOldAccountGoesOn() {
@@ -617,5 +641,40 @@ class SetupViewModelTest {
         assertFalse(store.reauth.value)
         assertEquals(listOf(fabian), store.aside.value.map { it.account }) // the other profile is untouched
         assertTrue(signOut.switched.isEmpty())
+    }
+
+    /** Review M1: the attempt started as one more profile and fails on a form that opened as a plain one. */
+    @Test fun addProfile_ssoFailingOnAPlainForm_theFormAddsToo_aRetryKeepsTheOldAccount() {
+        signedInAsFabian()
+        oidc.pendingAdd = true
+        oidc.finishResult = { throw OidcException(OidcException.Reason.UNREACHABLE) }
+        val v = addVm(SetupMode.SIGN_IN)
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(SetupError.UNREACHABLE, v.state.value.error)
+        assertTrue(v.state.value.addProfile)
+
+        login.behaviour = { LoginResponse(AbsUser("u9", "kind", "user", "acc", "ref")) }
+        v.fill(public = "https://abs.example.org", user = "kind")
+        v.login()
+        assertEquals(listOf("kind"), added.map { it.username })
+        assertEquals(listOf(fabian), store.aside.value.map { it.account })
+        assertTrue("the old account is not signed out", signOut.switched.isEmpty())
+    }
+
+    @Test fun signIn_aSsoAttemptThatWasNoAdd_doesNotMakeTheFormOne() {
+        signedInAsFabian()
+        oidc.finishResult = { throw OidcException(OidcException.Reason.UNREACHABLE) }
+        val v = vm()
+        bus.post(OidcCallback("c", "s", null))
+        assertFalse(v.state.value.addProfile)
+    }
+
+    /** From the device pass: opened from „Wer hört zu?“ nobody is active, so nobody "stays signed in". */
+    @Test fun addProfile_knowsWhetherSomeoneIsActive() {
+        signedInAsFabian()
+        assertFalse(addVm().state.value.nobodyActive)
+        store.acc.value = null
+        store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a0", "r0", false))
+        assertTrue(addVm().state.value.nobodyActive)
     }
 }

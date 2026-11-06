@@ -143,6 +143,24 @@ class DownloadsViewModelTest {
         assertEquals(320L, otherProfilesBytes(store) { sizes.getValue(it) }.first())
     }
 
+    /** Review M8: any write to the account store comes through `saved`, also the active account's token refresh. */
+    @Test fun otherProfilesOf_walksOncePerChangeOfTheList_notPerWriteToTheStore() = runTest {
+        val a = Account("a", "u", "n", false, ServerAddresses(null, null), emptySet())
+        val store = FakeAccountStore().apply {
+            acc.value = a
+            aside.value = listOf(FakeAccountStore.Aside(a.copy(serverId = "b"), "t1", null, false))
+        }
+        val walks = AtomicInteger()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { otherProfilesBytes(store) { walks.incrementAndGet(); 1L }.collect {} }
+        assertEquals(1, walks.get())
+        store.updateTokens("b", "t2", "r2")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, walks.get())
+        store.aside.value += FakeAccountStore.Aside(a.copy(serverId = "c"), "t3", null, false)
+        testScheduler.advanceUntilIdle()
+        assertEquals(3, walks.get()) // both of the new list
+    }
+
     @Test fun otherProfilesOf_aDirectoryThatCannotBeRead_countsAsNothing() = runTest {
         val a = Account("a", "u", "n", false, ServerAddresses(null, null), emptySet())
         val store = FakeAccountStore().apply {

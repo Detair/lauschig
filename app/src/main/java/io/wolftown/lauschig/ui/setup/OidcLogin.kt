@@ -96,6 +96,9 @@ interface OidcSignIn {
 
     /** Forgets a pending attempt (verifier, state, session cookies); sign-out. */
     suspend fun clearPending()
+
+    /** The pending attempt was started as one more profile. False without one. */
+    suspend fun pendingAddsProfile(): Boolean = false
 }
 
 private val Context.oidcPendingDataStore by preferencesDataStore(
@@ -198,6 +201,8 @@ class OidcLogin(
         loadPending()?.let { stateMatches(callback.state, it.state) } == true
 
     override suspend fun clearPending() { store.edit { it.clear() } }
+
+    override suspend fun pendingAddsProfile(): Boolean = loadPending()?.flow?.addProfile == true
 
     private fun stateMatches(received: String?, expected: String): Boolean =
         !received.isNullOrEmpty() && MessageDigest.isEqual(received.toByteArray(), expected.toByteArray())

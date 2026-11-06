@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -70,6 +73,14 @@ class ProfilesViewModel(
     private val _removal = MutableStateFlow<RemovalQuestion?>(null)
     val removal: StateFlow<RemovalQuestion?> = _removal.asStateFlow()
     private var factsJob: Job? = null
+
+    init {
+        // It lives as long as the activity, and was asked of the account before. The running operations never let this
+        // happen under the open question, a late SSO answer can.
+        viewModelScope.launch {
+            accounts.account.map { it?.serverId }.distinctUntilChanged().drop(1).collect { cancelRemove() }
+        }
+    }
 
     /**
      * Everything that goes into or removes another profile passes here, so here is where the protection of a profile

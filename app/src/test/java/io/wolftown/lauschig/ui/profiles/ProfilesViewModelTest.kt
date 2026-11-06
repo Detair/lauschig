@@ -229,6 +229,33 @@ class ProfilesViewModelTest {
         assertEquals(listOf("Fabian"), vm.profiles.value!!.map { it.name })
     }
 
+    /** Review M6: it lives in the activity's view model; nobody answers it for the next pages (a late SSO return). */
+    @Test fun theRemovalQuestion_goesWhenTheActiveAccountChanges_andWithItTheLateFacts() {
+        store.acc.value = fabian
+        aside(kind, oma)
+        val read = CompletableDeferred<RemovalFacts>()
+        facts = { read.await() }
+        val vm = vm()
+        vm.askRemove(vm.profiles.value!!.single { it.name == "Oma" })
+        assertEquals("Oma", vm.removal.value!!.row.name)
+
+        runBlocking { store.activate(kind.serverId) }
+        assertNull(vm.removal.value)
+        read.complete(RemovalFacts(1, 0, false))
+        assertNull(vm.removal.value)
+        vm.confirmRemove()
+        assertTrue(profiles.calls.isEmpty())
+    }
+
+    @Test fun theRemovalQuestion_staysWhileTheAccountStays() {
+        store.acc.value = fabian
+        aside(kind, oma)
+        val vm = vm()
+        vm.askRemove(vm.profiles.value!!.single { it.name == "Oma" })
+        runBlocking { store.updateTokens(fabian.serverId, "new", "new") }
+        assertEquals("Oma", vm.removal.value!!.row.name)
+    }
+
     @Test fun theActiveProfile_cannotBeRemovedHere() {
         store.acc.value = fabian
         val vm = vm()

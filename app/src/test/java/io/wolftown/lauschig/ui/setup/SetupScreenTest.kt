@@ -47,6 +47,18 @@ class SetupScreenTest {
         assertEquals(1, backs)
     }
 
+    @Test fun addingWhileSomeoneIsActive_saysThatOneStays() {
+        show(SetupUiState(addProfile = true))
+        rule.onNodeWithText("The current one stays signed in", substring = true).assertExists()
+    }
+
+    /** From „Wer hört zu?“: nobody is active. */
+    @Test fun addingWithNobodyActive_saysNothingAboutACurrentAccount() {
+        show(SetupUiState(addProfile = true, nobodyActive = true))
+        rule.onNodeWithText("The current one", substring = true).assertDoesNotExist()
+        rule.onNodeWithText("Sign in with another account", substring = true).assertExists()
+    }
+
     /** A live region speaks when a node it knows changes: the first wrong password must be heard too. */
     @Test fun anErrorIsAnnounced_onANodeThatWasThereBefore() {
         var state by mutableStateOf(SetupUiState(addProfile = true))

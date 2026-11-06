@@ -1058,7 +1058,7 @@
     <string name="profiles_removing">Entferne %1$s …</string>
     <string name="profiles_slow">Das dauert gerade etwas länger. Es geht gleich weiter.</string>
     <string name="profiles_switched">Profil %1$s ist aktiv</string>
-    <string name="profiles_switch_failed">Wechsel zu %1$s hat nicht geklappt. Das bisherige Profil bleibt aktiv.</string>
+    <string name="profiles_switch_failed">Wechsel zu %1$s hat nicht geklappt</string>
     <string name="profiles_removed">Profil %1$s ist entfernt</string>
     <string name="profiles_remove_failed">%1$s ließ sich nicht entfernen</string>
     <string name="profiles_remove_title">Profil entfernen?</string>
@@ -1079,4 +1079,5 @@
     <string name="welcome_skip">Überspringen</string>
     <string name="welcome_sign_in">Anmelden</string>
     <string name="welcome_place">Seite %1$d von %2$d</string>
+    <string name="setup_add_intro_nobody">Melde dich mit einem weiteren Konto an. Liegt es auf demselben Server, lass die Adressen einfach stehen.</string>
 </resources>

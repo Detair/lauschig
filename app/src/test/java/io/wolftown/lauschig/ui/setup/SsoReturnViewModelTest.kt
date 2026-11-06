@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.setup
 
 import io.wolftown.lauschig.TestViewModels
+import io.wolftown.lauschig.ui.nav.SetupMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -8,8 +9,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import okhttp3.HttpUrl
 import org.junit.After
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -18,11 +19,13 @@ import org.junit.Test
 class SsoReturnViewModelTest {
     private val bus = OidcCallbackBus()
     private var matches = true
+    private var adds = false
     private val oidc = object : OidcSignIn {
         override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart = OidcStart.Unreachable
         override suspend fun matchesPending(callback: OidcCallback) = matches
         override suspend fun finish(callback: OidcCallback): OidcResult = error("not here")
         override suspend fun clearPending() {}
+        override suspend fun pendingAddsProfile() = adds
     }
     private val viewModels = TestViewModels()
 
@@ -31,20 +34,28 @@ class SsoReturnViewModelTest {
 
     private fun vm() = viewModels.own(SsoReturnViewModel(bus, oidc))
 
-    @Test fun nothingBack_nothingWaits() = assertFalse(vm().waiting.value)
+    @Test fun nothingBack_nothingWaits() = assertNull(vm().waiting.value)
 
     @Test fun theAnswerToTheAttempt_waits_untilAFormTookIt() {
         val vm = vm()
         bus.post(OidcCallback("c", "s", null))
-        assertTrue(vm.waiting.value)
+        assertEquals(SetupMode.SIGN_IN, vm.waiting.value)
         bus.take()
-        assertFalse(vm.waiting.value)
+        assertNull(vm.waiting.value)
+    }
+
+    /** Review M1: the form that opens is what the attempt started as, also if the attempt then fails. */
+    @Test fun theAnswerToAnAddAttempt_opensAnAddForm() {
+        adds = true
+        val vm = vm()
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(SetupMode.ADD_PROFILE, vm.waiting.value)
     }
 
     @Test fun aForeignLink_opensNothing() {
         matches = false
         val vm = vm()
         bus.post(OidcCallback("c", "other", null))
-        assertFalse(vm.waiting.value)
+        assertNull(vm.waiting.value)
     }
 }

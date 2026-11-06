@@ -4,12 +4,16 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.accessibilityInfo
 import org.junit.Assert.assertEquals
@@ -157,6 +161,24 @@ class ProfilesScreensTest {
         }
         rule.onNodeWithText("Profile kind is active").assertExists()
         assertTrue(calls.isEmpty())
+    }
+
+    /** Review M7: from the picker nobody is active, so it cannot say who stays. */
+    @Test fun aFailedSwitch_saysNothingAboutWhoIsActive() {
+        rule.setContent {
+            LauschigTheme { androidx.compose.material3.Text(profileOutcomeText(ProfileOutcome(ProfileOutcome.Kind.SWITCH_FAILED, "kind", 1))) }
+        }
+        rule.onNodeWithText("Could not switch to kind").assertExists()
+    }
+
+    /** Review M4: the warning is the last line; on a short window it must not be cut off under a tappable button. */
+    @Test
+    @Config(sdk = [35], application = android.app.Application::class, qualifiers = "w640dp-h300dp")
+    fun theRemovalQuestion_scrollsToItsLastLine() {
+        showRemoval(RemovalFacts(2_100_000_000, 2, true))
+        rule.onNodeWithTag("removeText").assert(hasScrollAction())
+        rule.onNodeWithTag("removeText").performScrollToNode(hasTestTag("removeUnsynced"))
+        rule.onNodeWithTag("removeUnsynced").assertIsDisplayed()
     }
 
     @Test fun theRowIsOneTapTargetWithAClickAction() {

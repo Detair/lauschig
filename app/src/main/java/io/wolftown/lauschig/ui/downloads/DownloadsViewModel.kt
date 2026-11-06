@@ -96,7 +96,7 @@ data class DownloadsUiState(
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 fun otherProfilesBytes(accounts: AccountStore, bytes: suspend (serverId: String) -> Long): Flow<Long> =
-    accounts.saved.mapLatest { list ->
+    accounts.saved.distinctUntilChanged().mapLatest { list ->
         list.sumOf { account ->
             try {
                 bytes(account.serverId)

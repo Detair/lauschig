@@ -219,7 +219,8 @@ fun ProfileRemoveDialog(question: RemovalQuestion, onConfirm: () -> Unit, onCanc
         onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.profiles_remove_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            // A short window, large text: its last line can be the warning, and the button stays reachable anyway.
+            Column(Modifier.verticalScroll(rememberScrollState()).testTag("removeText"), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
                 Text(stringResource(R.string.profiles_remove_message, question.row.name))
                 if (facts == null) {
                     Text(stringResource(R.string.profiles_remove_checking), color = MaterialTheme.colorScheme.onSurfaceVariant)

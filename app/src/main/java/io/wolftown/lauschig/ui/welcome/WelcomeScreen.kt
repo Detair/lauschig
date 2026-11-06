@@ -7,8 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -176,17 +176,25 @@ fun WelcomeScreen(page: Int, onNext: () -> Unit, onSkip: () -> Unit, modifier: M
                 }
             }
         }
-        Row(
+        // On one line where they fit. Large text on a narrow phone: they move to the next line, none breaks inside its word.
+        FlowRow(
             Modifier.fillMaxWidth().padding(horizontal = Spacing.l, vertical = Spacing.m),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(Spacing.s),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             PlaceDots(page)
-            Spacer(Modifier.weight(1f))
-            if (!last) {
-                TextButton(onClick = onSkip, modifier = Modifier.testTag("welcomeSkip")) { Text(stringResource(R.string.welcome_skip)) }
-            }
-            Button(onClick = onNext, modifier = Modifier.padding(start = Spacing.s).testTag("welcomeNext")) {
-                Text(stringResource(if (last) R.string.welcome_sign_in else R.string.welcome_next))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!last) {
+                    TextButton(onClick = onSkip, modifier = Modifier.testTag("welcomeSkip")) { Text(stringResource(R.string.welcome_skip)) }
+                }
+                Button(onClick = onNext, modifier = Modifier.testTag("welcomeNext")) {
+                    Text(stringResource(if (last) R.string.welcome_sign_in else R.string.welcome_next))
+                }
             }
         }
     }

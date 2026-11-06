@@ -64,6 +64,8 @@ data class SetupUiState(
     val ssoLaunchUrl: String? = null,
     /** One more profile ([SetupMode.ADD_PROFILE]): the active account is set aside instead of replaced. */
     val addProfile: Boolean = false,
+    /** Adding a profile from the picker: nobody is signed in who could stay signed in. */
+    val nobodyActive: Boolean = false,
 ) {
     val canLogin: Boolean
         get() = !loading && (local.isNotBlank() || public.isNotBlank()) && username.isNotBlank() && password.isNotEmpty()
@@ -107,7 +109,9 @@ class SetupViewModel(
         // server, usually); without an active account, the addresses of a saved one.
         viewModelScope.launch {
             val adding = mode == SetupMode.ADD_PROFILE
-            val a = accounts.account.first() ?: (if (adding) accounts.saved.first().firstOrNull() else null) ?: return@launch
+            val active = accounts.account.first()
+            if (adding && active == null) _state.update { it.copy(nobodyActive = true) }
+            val a = active ?: (if (adding) accounts.saved.first().firstOrNull() else null) ?: return@launch
             confirmed += a.allowCleartext
             val ssids = a.addresses.homeSsids
             _state.update {
@@ -291,7 +295,10 @@ class SetupViewModel(
                 if (!oidc.matchesPending(cb)) return@launch
                 awaitingCallback = false
                 resumeJob?.cancel()
-                _state.update { it.copy(loading = true, error = null) }
+                // What it started as counts from here on: should it fail, a second try on this form adds too. Read now,
+                // since a refused attempt is gone afterwards; a form that adds stays one.
+                val adding = oidc.pendingAddsProfile()
+                _state.update { it.copy(loading = true, error = null, addProfile = it.addProfile || adding) }
                 val result = try {
                     oidc.finish(cb)
                 } catch (e: CancellationException) {
@@ -397,7 +404,14 @@ class SetupViewModel(
  */
 @HiltViewModel
 class SsoReturnViewModel @Inject constructor(callbacks: OidcCallbackBus, oidc: OidcSignIn) : ViewModel() {
-    val waiting: StateFlow<Boolean> = callbacks.pending
-        .map { entry -> entry != null && oidc.matchesPending(entry.callback) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** The answer waits, for a form of this mode: what the attempt was started as. */
+    val waiting: StateFlow<SetupMode?> = callbacks.pending
+        .map { entry ->
+            when {
+                entry == null || !oidc.matchesPending(entry.callback) -> null
+                oidc.pendingAddsProfile() -> SetupMode.ADD_PROFILE
+                else -> SetupMode.SIGN_IN
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 }
