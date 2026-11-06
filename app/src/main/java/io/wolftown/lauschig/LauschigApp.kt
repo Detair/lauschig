@@ -42,6 +42,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var localFolders: LocalFolders
     @Inject lateinit var widgetAccounts: WidgetAccountWatcher
     @Inject lateinit var accountDataJanitor: AccountDataJanitor
+    @Inject lateinit var appSettings: io.wolftown.lauschig.settings.AppSettings
     @Inject lateinit var finishedDownloads: FinishedDownloadCleaner
     @Inject lateinit var finishedQuestions: FinishedQuestions
     @Inject lateinit var downloadSettings: io.wolftown.lauschig.download.DownloadSettings
@@ -99,6 +100,14 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
                 throw e
             } catch (e: Exception) {
                 io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "auto-delete setting not moved to the account", e)
+            }
+            // The answer about the Audible catalog as well: one person's yes is nobody else's.
+            try {
+                appSettings.migrateMissingVolumes(accountStore.account.first()?.serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "Audible answer not moved to the account", e)
             }
             // The same for the RMAB connection and the recent searches, one per device before profiles.
             try {

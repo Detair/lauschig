@@ -29,9 +29,9 @@ class ExternalSeriesRepository @Inject constructor(
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val listSerializer = ListSerializer(AudibleVolume.serializer())
 
-    /** Null = no data (switch off, no ASIN, catalog unreachable and nothing cached). */
+    /** Null = no data ([serverId] has not agreed, no ASIN, catalog unreachable and nothing cached). */
     suspend fun missingFor(serverId: String, libraryId: String, seriesName: String, owned: List<ItemEntity>): List<MissingVolume>? {
-        if (!settings.missingVolumesEnabled.first()) return null
+        if (!settings.missingVolumesEnabled(serverId).first()) return null
         val volumes = volumesFor(serverId, libraryId, seriesName, owned) ?: return null
         return missingVolumes(owned, volumes, LocalDate.now(clock))
     }

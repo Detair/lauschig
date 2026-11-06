@@ -135,7 +135,7 @@ class SettingsViewModel @Inject constructor(
         }
 
     val state: StateFlow<SettingsUiState> = combine(
-        combine(app.nextVolumeMode, download.wifiOnly, app.cleanupReminder, app.missingVolumesEnabled, app.audibleRegion) { next, wifi, reminder, missing, region ->
+        combine(app.nextVolumeMode, download.wifiOnly, app.cleanupReminder, serverId.flatMapLatest { app.missingVolumesEnabled(it) }, app.audibleRegion) { next, wifi, reminder, missing, region ->
             SettingsUiState(next, wifi, reminder, missing, region)
         },
         app.autoDownload,
@@ -151,7 +151,8 @@ class SettingsViewModel @Inject constructor(
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
     fun setWifiOnly(on: Boolean) { viewModelScope.launch { download.setWifiOnly(on) } }
     fun setCleanupReminder(on: Boolean) { viewModelScope.launch { app.setCleanupReminder(on) } }
-    fun setMissingVolumes(on: Boolean) { viewModelScope.launch { app.setMissingVolumesEnabled(on) } }
+    /** The signed-in account's answer; the region below it stays one for the device. */
+    fun setMissingVolumes(on: Boolean) { viewModelScope.launch { serverId.first()?.let { app.setMissingVolumesEnabled(it, on) } } }
     fun setAudibleRegion(code: String) { viewModelScope.launch { app.setAudibleRegion(code) } }
     fun setAutoDownload(mode: AutoDownloadMode) { viewModelScope.launch { app.setAutoDownload(mode) } }
     fun setDownloadOnPlay(on: Boolean) { viewModelScope.launch { download.setDownloadOnPlay(on) } }

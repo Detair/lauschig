@@ -83,7 +83,7 @@ class AccountStateCleanerTest {
         nm.createNotificationChannel(android.app.NotificationChannel("t", "t", android.app.NotificationManager.IMPORTANCE_LOW))
         nm.notify(io.wolftown.lauschig.cleanup.CleanupReminderWorker.NOTIFICATION_ID, androidx.core.app.NotificationCompat.Builder(ctx, "t").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Der Anfang").build())
         assertEquals(1, nm.activeNotifications.size)
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks(), io.wolftown.lauschig.settings.AppSettings(store("app"))).clear(a)
         assertEquals(0, nm.activeNotifications.size)
     }
 
@@ -103,7 +103,7 @@ class AccountStateCleanerTest {
     @Test fun aLegacyCoilCacheOfAnEarlierInstall_isGoneAfterSignOut() = runBlocking {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks(), io.wolftown.lauschig.settings.AppSettings(store("app"))).clear(a)
         assertEquals(false, legacy.exists())
     }
 
@@ -196,10 +196,10 @@ class AccountStateCleanerTest {
         disk.openEditor("cover-key")!!.apply { disk.fileSystem.write(data) { writeUtf8("x") }; commitAndOpenSnapshot()!!.close() }
         val key = coil3.memory.MemoryCache.Key("cover-key")
         images.memoryCache!![key] = coil3.memory.MemoryCache.Value(coil3.ColorImage(0, 1, 1))
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).setAside(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks(), io.wolftown.lauschig.settings.AppSettings(store("app"))).setAside(a)
         assertNull(images.memoryCache!![key])
         assertTrue(disk.openSnapshot("cover-key")!!.use { true })
-        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks()).clear(a)
+        AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks(), io.wolftown.lauschig.settings.AppSettings(store("app"))).clear(a)
         assertNull(disk.openSnapshot("cover-key"))
     }
 
@@ -233,5 +233,25 @@ class AccountStateCleanerTest {
         seed()
         AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, removeProtection = { error("disk") }).clear(a)
         assertNull(rmab.config.first())
+    }
+
+    // --- The final review's Minor 1 ---
+
+    private val cleared = mutableListOf<String>()
+    private fun cleanerWithAudible() = AccountStateCleaner(rmab, oidc, searches, prompts, {}, {}, clearAudibleAnswer = { cleared += it })
+
+    @Test fun aSignOut_takesTheAnswerAboutAudible() = runBlocking {
+        cleanerWithAudible().clear(a)
+        assertEquals(listOf(a), cleared)
+    }
+
+    @Test fun aRemovedProfile_takesItsAnswerAboutAudible() = runBlocking {
+        cleanerWithAudible().forget(b)
+        assertEquals(listOf(b), cleared)
+    }
+
+    @Test fun aSwitch_keepsTheAnswerAboutAudible() = runBlocking {
+        cleanerWithAudible().setAside(a)
+        assertTrue(cleared.isEmpty())
     }
 }

@@ -823,12 +823,17 @@ class SignOutTest {
             val purging = DeviceAccountData(
                 db.accountDataDao(), db.progressDao(), db.sessionDao(), db.bookmarkDao(), DownloadFiles(root, db.audioFileDao()), stamps,
                 forgottenCovers::add, forgetAutoDelete = io.wolftown.lauschig.cleanup.AutoDeleteAccountState(settings, q, app)::forget,
+                forgetAudibleAnswer = app::clearMissingVolumes,
             )
+            app.setMissingVolumesEnabled(a, true)
+            app.setMissingVolumesEnabled(b, true)
 
             signOut(purgeData = purging).execute(keepDownloads = false)
             accounts.acc.value = account // signed in again to the same server
 
             assertEquals(AutoDeleteMode.NEVER, settings.autoDeleteFinished(a).first())
+            assertEquals("a purge: it is asked again", true, app.missingVolumesUndecided(a).first())
+            assertEquals("the other's stays", true, app.missingVolumesEnabled(b).first())
             assertEquals(setOf(io.wolftown.lauschig.cleanup.FinishedQuestion(b, "x")), q.holds.first())
             assertEquals(listOf(io.wolftown.lauschig.cleanup.FinishedQuestion(b, "x")), q.open.value)
             assertEquals(setOf("$b:book1"), app.cleanupIgnored.first())
