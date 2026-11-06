@@ -28,5 +28,7 @@ suspend fun awaitOnlineAnswer(connection: Flow<ConnectionState>, checking: Flow<
     withTimeoutOrNull(maxMs) {
         combine(connection, checking) { state, pending -> state to pending }
             .first { (state, pending) -> state is ConnectionState.Online || !pending }
-            .first as? ConnectionState.Online
+        // combine collects the two flows separately, so "no longer checking" can overtake the state published before it
+        // (`ApiProvider` publishes the answer first): the answer is what the state says now, not what combine last saw.
+        connection.first() as? ConnectionState.Online
     }

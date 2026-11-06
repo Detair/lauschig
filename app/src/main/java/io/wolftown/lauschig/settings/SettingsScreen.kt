@@ -68,7 +68,7 @@ data class SettingsUiState(
     val nextVolume: NextVolumeMode = NextVolumeMode.SUGGEST,
     val wifiOnly: Boolean = true,
     val cleanupReminder: Boolean = true,
-    val missingVolumes: Boolean = true,
+    val missingVolumes: Boolean = false,
     val audibleRegion: String = AudibleRegions.DEFAULT,
     val autoDownload: AutoDownloadMode = AutoDownloadMode.OFF,
     val downloadOnPlay: Boolean = true,

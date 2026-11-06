@@ -120,6 +120,21 @@ class LibraryCallbackTest {
         assertTrue(r.availablePlayerCommands.contains(Player.COMMAND_SET_MEDIA_ITEM))
     }
 
+    @Test fun playbackResumption_saysThatAnAnswerIsComing_beforeTheAnswer_onlyForPlayback() {
+        val events = mutableListOf<String>()
+        val c = LibraryCallback(
+            context = context, scope = CoroutineScope(Dispatchers.Unconfined), library = library, search = CarSearch(library), starts = starts,
+            mediaItems = CarMediaItems("$own.covers"), carContext = { CarContext(s, online = true) }, lastTitle = { null },
+            buttons = { emptyList() }, onCommand = { true }, onStart = {}, onPlayLoaded = {}, onSubscribed = {},
+            onResumption = { _, _ -> events += "answer" },
+            onResumptionAsked = { events += "asked" },
+        )
+        assertTrue(failed(c.onPlaybackResumption(session, app, false))) // SystemUI's card: no title to play, nobody waits
+        assertEquals(emptyList<String>(), events)
+        assertTrue(failed(c.onPlaybackResumption(session, app, true)))
+        assertEquals(listOf("asked", "answer"), events)
+    }
+
     @Test fun playbackResumption_reportsSuccessAndFailure() {
         val answers = mutableListOf<Pair<Boolean, String?>>()
         fun callbackWith(last: CarNode.Title?) = LibraryCallback(

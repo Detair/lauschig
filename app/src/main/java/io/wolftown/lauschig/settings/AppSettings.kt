@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.settings
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -30,8 +32,8 @@ enum class AutoDownloadMode(val count: Int) {
 
 /** App preferences that are not download-specific (those live in DownloadSettings). Device-local only. */
 @Singleton
-class AppSettings @Inject constructor(@ApplicationContext context: Context) {
-    private val store = context.appDataStore
+class AppSettings internal constructor(private val store: DataStore<Preferences>) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.appDataStore)
 
     val nextVolumeMode: Flow<NextVolumeMode> = store.data.map { prefs ->
         prefs[NEXT_VOLUME]?.let { runCatching { NextVolumeMode.valueOf(it) }.getOrNull() } ?: NextVolumeMode.SUGGEST
@@ -43,8 +45,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     /** Titles ("serverId:itemId") the user does not want to be reminded about again. */
     val cleanupIgnored: Flow<Set<String>> = store.data.map { it[CLEANUP_IGNORED] ?: emptySet() }
 
-    /** Fill series gaps from the Audible catalog (only ASINs are sent). Default on. */
-    val missingVolumesEnabled: Flow<Boolean> = store.data.map { it[MISSING_VOLUMES] ?: true }
+    /**
+     * Fill series gaps from the Audible catalog. Off until the user agrees: each lookup tells Audible the ASINs of their
+     * books and their IP address.
+     */
+    val missingVolumesEnabled: Flow<Boolean> = store.data.map { it[MISSING_VOLUMES] ?: false }
+
+    /** True until the user has answered: the series page asks once; using the switch in the settings answers too. */
+    val missingVolumesUndecided: Flow<Boolean> = store.data.map { MISSING_VOLUMES !in it }
 
     /** Audible catalog region (`de`, `us`, ...). Default `de`. */
     val audibleRegion: Flow<String> = store.data.map { it[AUDIBLE_REGION] ?: io.wolftown.lauschig.external.AudibleRegions.DEFAULT }

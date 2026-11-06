@@ -58,11 +58,14 @@ class PlayKeyGuardTest {
     private fun headsetKey() = Intent(Intent.ACTION_MEDIA_BUTTON).setClass(context, PlaybackService::class.java)
         .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HEADSETHOOK))
 
-    /** A held key: Android repeats the DOWN event; Media3 does not act on repeats, so nothing plays. */
+    /**
+     * A key that Media3 ignores, so nothing plays. Synthetic: the real MediaButtonReceiver drops repeats, so only this direct
+     * service start gets a repeat here. It stands for any play key that does not lead to playback.
+     */
     private fun heldPlayKey() = Intent(Intent.ACTION_MEDIA_BUTTON).setClass(context, PlaybackService::class.java)
         .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY, 1))
 
-    @Test fun headsetDoubleTap_onAPausedTitle_survivesTheDeadline_andKeepsTheNotification() =
+    @Test fun twoHeadsetPresses_onAPausedTitle_surviveTheDeadline_andKeepTheNotification() =
         pausedTitle_survives { listOf(headsetKey(), headsetKey()) }
 
     @Test fun heldPlayKey_onAPausedTitle_survivesTheDeadline_andKeepsTheNotification() =
@@ -82,8 +85,8 @@ class PlayKeyGuardTest {
         main { browser.pause() }
         eventually { (!browser.isPlaying).takeIf { it } }
 
-        // Two quick headset presses through the service, as MediaButtonReceiver delivers them: a double tap skips,
-        // nothing plays, and Media3 never calls startForeground for that start.
+        // Through the service, as MediaButtonReceiver delivers them. Media3 sees no double tap on this route: two presses
+        // play and pause at once, so nothing is playing at the deadline.
         keys().forEach { context.startForegroundService(it) }
         // Past Android's deadline (10 s up to API 33, 30 s on the API 35 emulator).
         Thread.sleep(if (Build.VERSION.SDK_INT >= 34) 35_000 else 15_000)
