@@ -14,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -164,7 +163,7 @@ class LiveRegionEventsTest {
     @Test fun whatThePinPromptSays_isSentFromTheSameNode() {
         val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)
         var prompt by mutableStateOf(GatePrompt.Pin(row))
-        show { LauschigTheme { PinPromptBody(prompt, "", {}, FocusRequester(), {}, {}) } }
+        show { LauschigTheme { PinPromptBody(prompt, "", {}, {}, {}) } }
         settle()
         val id = rule.onNodeWithTag("pinNotice").fetchSemanticsNode().id
         for (next in listOf(PinNotice.Wrong(4), PinNotice.Wrong(3), PinNotice.Wait(30_000), PinNotice.Ready)) {
@@ -180,7 +179,7 @@ class LiveRegionEventsTest {
     @Test fun theCountdown_saysNothingByItself() {
         val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)
         var prompt by mutableStateOf(GatePrompt.Pin(row, notice = PinNotice.Wait(30_000), waitMs = 30_000))
-        show { LauschigTheme { PinPromptBody(prompt, "", {}, FocusRequester(), {}, {}) } }
+        show { LauschigTheme { PinPromptBody(prompt, "", {}, {}, {}) } }
         settle()
         val id = rule.onNodeWithTag("pinNotice").fetchSemanticsNode().id
         events.clear()

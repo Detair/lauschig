@@ -875,6 +875,21 @@ class ProfileSwitchFlowTest {
         }
     }
 
+    /**
+     * Review focus 3, the sign-in page: the password is the stronger proof (3.3), so it comes in without the gate. Only the way of a
+     * forgotten PIN takes the protection off; with a plain sign-in it stays, for the way back.
+     */
+    @Test fun aSignInOfAProtectedProfile_needsItsPassword_andTheProtectionStays(): Unit = runBlocking {
+        signedIn()
+        locks.setPin(b, "2222")
+        signOut.addProfile(web.b, "fresh-access", "fresh-refresh")
+        assertEquals(b, store.account.first()!!.serverId)
+        assertEquals(ProfileLockKind.PIN, locks.kind(b))
+        assertEquals(PinCheck.Correct, locks.verifyPin(b, "2222"))
+        signOut.signIn(web.b, "fresher-access", "fresher-refresh")
+        assertEquals("a re-auth of the active account", ProfileLockKind.PIN, locks.kind(b))
+    }
+
     /** 3.6 on the real flow: the signed-in account comes in with its new tokens, the protection goes, the one before stays signed in. */
     @Test fun aForgottenPin_comesInAndTakesTheProtectionOff_theOtherStays(): Unit = runBlocking {
         signedIn()

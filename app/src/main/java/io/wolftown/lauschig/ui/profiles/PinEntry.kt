@@ -1,29 +1,40 @@
 package io.wolftown.lauschig.ui.profiles
 
+import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -32,6 +43,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.PIN_LENGTHS
 import io.wolftown.lauschig.account.isValidPin
@@ -45,13 +57,36 @@ internal fun interface PinDialogFrame {
 }
 
 /**
- * Normally the app's usual dialog. A test puts its contents in the page: under Robolectric a text field in a dialog window is
- * measured over and over until the heap is gone, with any text field in any `AlertDialog`.
+ * Looks like the app's other dialogs, but all of it scrolls: with the keyboard up on a phone held sideways there is room for a
+ * few lines, and an `AlertDialog` would give them to its title and buttons, not to the field. A test puts the contents in the
+ * page: under Robolectric a text field in a dialog window is measured over and over until the heap is gone, in any `AlertDialog` too.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 internal val LocalPinDialogFrame = staticCompositionLocalOf<PinDialogFrame> {
     PinDialogFrame { onDismiss, tag, title, text, confirm, dismiss ->
-        AlertDialog(onDismissRequest = onDismiss, title = title, text = text, confirmButton = confirm, dismissButton = dismiss, modifier = Modifier.testTag(tag))
+        BasicAlertDialog(onDismissRequest = onDismiss, modifier = Modifier.testTag(tag)) {
+            Surface(shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor, tonalElevation = AlertDialogDefaults.TonalElevation) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.l)) {
+                    ProvideTextStyle(MaterialTheme.typography.headlineSmall, title)
+                    text()
+                    Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                        dismiss()
+                        confirm()
+                    }
+                }
+            }
+        }
     }
+}
+
+/**
+ * A dialog window only slides up for the keyboard: on a short screen its buttons stay below it. This way the window gets smaller
+ * and its text scrolls.
+ */
+@Composable
+private fun DialogFitsAboveTheKeyboard() {
+    val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+    SideEffect { window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) }
 }
 
 /** Digits and nothing else, and no more than a PIN can have. */
@@ -62,7 +97,12 @@ internal fun pinDigits(entered: String): String = entered.filter { it in '0'..'9
  * clears it.
  */
 @Composable
-private fun PinField(value: String, onValueChange: (String) -> Unit, enabled: Boolean, focus: FocusRequester, onDone: () -> Unit) {
+private fun PinField(value: String, onValueChange: (String) -> Unit, enabled: Boolean, onDone: () -> Unit) {
+    DialogFitsAboveTheKeyboard()
+    // Ready to type as soon as this dialog's window has the focus, also after a rotation; the sheet below may have it before.
+    val focus = remember { FocusRequester() }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(enabled, windowFocused) { if (enabled && windowFocused) focus.requestFocus() }
     OutlinedTextField(
         value,
         { onValueChange(pinDigits(it)) },
@@ -106,7 +146,6 @@ internal fun pinCountdown(ms: Long): String {
 @Composable
 fun PinPromptDialog(prompt: GatePrompt.Pin, onSubmit: (String) -> Unit, onForgot: () -> Unit, onCancel: () -> Unit) {
     var digits by remember { mutableStateOf("") }
-    val focus = remember { FocusRequester() }
     val waiting = prompt.waitMs > 0
     val submit = {
         if (isValidPin(digits) && !prompt.checking && !waiting) {
@@ -115,12 +154,11 @@ fun PinPromptDialog(prompt: GatePrompt.Pin, onSubmit: (String) -> Unit, onForgot
             onSubmit(entered)
         }
     }
-    LaunchedEffect(waiting) { if (!waiting) focus.requestFocus() }
     LocalPinDialogFrame.current.Show(
         onCancel,
         "pinPrompt",
         title = { Text(stringResource(R.string.pin_title, prompt.row.name)) },
-        text = { PinPromptBody(prompt, digits, { digits = it }, focus, submit, onForgot) },
+        text = { PinPromptBody(prompt, digits, { digits = it }, submit, onForgot) },
         confirm = {
             TextButton(onClick = submit, enabled = isValidPin(digits) && !prompt.checking && !waiting, modifier = Modifier.testTag("pinOk")) {
                 if (prompt.checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -132,11 +170,10 @@ fun PinPromptDialog(prompt: GatePrompt.Pin, onSubmit: (String) -> Unit, onForgot
 }
 
 @Composable
-internal fun PinPromptBody(prompt: GatePrompt.Pin, digits: String, onDigits: (String) -> Unit, focus: FocusRequester, onDone: () -> Unit, onForgot: () -> Unit) {
+internal fun PinPromptBody(prompt: GatePrompt.Pin, digits: String, onDigits: (String) -> Unit, onDone: () -> Unit, onForgot: () -> Unit) {
     val waiting = prompt.waitMs > 0
-    // A short window and a keyboard: the buttons stay reachable.
-    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
-        PinField(digits, onDigits, enabled = !waiting, focus, onDone)
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+        PinField(digits, onDigits, enabled = !waiting, onDone)
         AnnouncedLine(
             pinNoticeText(prompt.notice),
             tag = "pinNotice",
@@ -163,8 +200,6 @@ fun NewPinDialog(step: ProtectionStep.NewPin, onDone: (String) -> Unit, onCancel
     var first by remember { mutableStateOf<String?>(null) }
     var digits by remember { mutableStateOf("") }
     var differed by remember { mutableStateOf(false) }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
     val submit = {
         val entered = digits
         val earlier = first
@@ -188,9 +223,9 @@ fun NewPinDialog(step: ProtectionStep.NewPin, onDone: (String) -> Unit, onCancel
         "newPin",
         title = { Text(stringResource(R.string.pin_new_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
                 Text(stringResource(R.string.pin_new_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                PinField(digits, { digits = it }, enabled = true, focus, onDone = submit)
+                PinField(digits, { digits = it }, enabled = true, onDone = submit)
                 AnnouncedLine(
                     when {
                         differed -> stringResource(R.string.pin_new_differs)
