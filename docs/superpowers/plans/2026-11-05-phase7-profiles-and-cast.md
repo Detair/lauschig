@@ -552,3 +552,24 @@ Artefakts), plus ein Test mit dem echten `CastPlayer` ohne Framework. Der Gerät
 ### Was der Gerätetest und der Review wissen müssen
 
 Prüfliste steht im Bericht. Zuerst dort klären: `http`, `onTransferred`-Reihenfolge, Ende einer Warteschlange, Sitzung bei Netzverlust.
+
+### Fix-Runde 1 nach Review (2026-11-06)
+
+Vier wichtige Befunde, acht kleine, dazu die Wächter aus den Vorgaben. Der Review lief ohne Empfänger, die Fakes liefern jetzt die Reihenfolgen, die `RemoteCastPlayer` laut Bytecode erlaubt.
+
+- **I1, Suspend:** Eine unterbrochene Cast-Sitzung (WLAN des Telefons) fasst den Empfänger nicht mehr an. Neue Phasen `SUSPENDED` und `RESUMING`. Beim Resume fragt der Player nach einem frischen Status und wird `ACTIVE` ohne Load, mit der Position des Empfängers. Hat der Empfänger den Titel verloren, geht dieselbe Sitzung noch einmal hin, mit dem, was der Cast gerade tat; ohne jede Antwort nach 10 s ebenso.
+- **I2, Adresse:** `onOnlineBase` merkt sich die neueste Adresse, solange `streamBase()` null ist. `refresh` zieht die Dateien um, sobald die eigenen zurück sind (`CastWholeWayTest`).
+- **I3, STOPPED:** `READY` mit dem eigenen Titel führt zurück nach `ACTIVE`. `INTERRUPTED` zählt als beschäftigt, solange der eigene Titel in der Warteschlange ist. Fremd ist ein Eintrag erst, wenn er auch per `contentId` nicht unserer ist.
+- **I4:** `onSessionEnded` mit Fehler und ein gescheitertes Resume sagen `cast_dropped`. Das eigene „Casten beenden“ bleibt still (Fehler 0).
+- **Wächter Position:** Nach einem Load erreicht keine Position den Tracker, bis der Empfänger die Startdatei an einer plausiblen Stelle meldet (`startProven`). Bis dahin steht die Position des Titels. Wie es endet: sofort einmal `requestStatus`, jede Sekunde ein Blick auf den letzten Progress-Bericht, und nach dem Limit `cast_no_position`. Ebenso an einer Dateigrenze: Die neue Datei wird nie mit der alten Position gepaart.
+- **Wächter Ende:** Fertig ist ein Titel nur bis 15 s vor dem echten Ende der letzten Datei.
+- **Große Titel:** Passt ein Titel nicht in eine Nachricht, sendet `ReceiverConverter` kompakt; passt er auch so nicht, kommt sofort `cast_too_many_files`. Grenze bei typischem Titel und langer Adresse: 174 Dateien.
+- **Klein:** M1 `leave` erhöht die Generation. M2 „dieses Telefon“ in beiden Reihenfolgen. M3 der Rückweg nimmt die gemerkte Position, nie `source.currentPosition`. M4 `cast_files_differ` ohne falschen Rat. M5 kein Wiederverwenden nach `STOPPED` oder `ENDED`, immer nur ein Öffnen zur selben Zeit. M6 `closeOpen` höchstens 2 s, die Notiz bleibt. M7 60 s über alle Adressen. M8 `CastActivity` für die Zeile unter dem Titel.
+
+**Claudes Wahl**
+
+1. **Während eines Suspends zeigt der Player „lädt“, auf dem Empfänger, mit einer Zeile: unterbrochen, es spielt vielleicht weiter, von hier nicht steuerbar.** Weder „spielt“ noch „pausiert“ wäre wahr. Play, Pause, Vorspulen und Tempo tun nichts: Eine Taste hier wäre vorgetäuscht, und Play gäbe Ton auf beiden Geräten. Wer zurück will, nimmt den Cast-Knopf („Casten beenden“). Ein anderer Titel in dieser Zeit beendet den Cast und wartet hier pausiert.
+2. **Fünf Minuten Suspend, dann gibt das Telefon auf:** Google nennt keine Frist, und mit abgeschaltetem Reconnection-Service ist nicht sicher, dass das Framework je ein Ende meldet. Das Schließen der Sitzung hält einen unerreichbaren Empfänger beim nächsten Lesen an. In dieser Zeit zählt keine Hörzeit, die Position bleibt die vom Abbruch.
+3. **Toleranz am Ende: 15 s.** Ein Bericht ist bis zu eine Sekunde alt, bei 2× also zwei Sekunden Buch; die Dauer einer Datei weicht bei VBR um einige Sekunden ab. Wer wirklich fertig ist, liegt darin, der Anfang einer letzten Datei nie. Pech hat nur eine Datei, deren Angabe um mehr als 15 s falsch ist: Sie endet nicht als „fertig“, sondern wartet nach 10 s pausiert. Das kostet nichts.
+4. **Zweifel dauert 10 s:** Ein fremder Eintrag, ein „fertig“ an falscher Stelle, „idle“ ohne Grund. Ein Moment davon beendet nichts. Danach gilt der Empfänger als leer, der Titel wartet pausiert, Play lädt neu.
+5. **Kompakt heißt mehr als Cover und Autor:** Beide weg bringt nur 781 → 626 Bytes je Datei. Media3s `customData` mit der Kopie des Eintrags kostet mehr, und `toMediaItem` kommt ohne sie aus: zusammen 364 Bytes. Also weg mit allen dreien, nur für Titel, die sonst nicht passen. Erste Datei und Startdatei behalten alles. Auf dem Fernseher fehlt danach das Cover, im Telefon nicht.
