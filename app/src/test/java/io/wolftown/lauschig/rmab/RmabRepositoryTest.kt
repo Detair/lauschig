@@ -450,4 +450,24 @@ class RmabRepositoryTest {
         active.value = b
         assertNull(repo.config.first())
     }
+
+    /** For the masker: the connection of an account that is set aside is still this device's. */
+    @Test fun allConfigs_everyAccounts_notOnlyTheActiveOnes() = runBlocking {
+        store.edit {
+            it[stringPreferencesKey("url:$a")] = "https://rmab.a.example/"
+            it[stringPreferencesKey("username:$a")] = "fabi"
+            it[stringPreferencesKey("url:$b")] = "http://rmab.lan:3030/"
+            it[stringPreferencesKey("username:$b")] = "kind"
+        }
+        active.value = b
+        assertEquals(setOf("fabi", "kind"), repo.allConfigs.first().map { it.username }.toSet())
+        assertEquals(setOf("https://rmab.a.example/", "http://rmab.lan:3030/"), repo.allConfigs.first().map { it.url }.toSet())
+        assertEquals("the active one's stays what it was", "kind", repo.config.first()!!.username)
+        active.value = null
+        assertEquals(2, repo.allConfigs.first().size)
+    }
+
+    @Test fun allConfigs_noneAtAll() = runBlocking {
+        assertEquals(emptyList<RmabConfig>(), repo.allConfigs.first())
+    }
 }

@@ -80,8 +80,9 @@ interface AccountSignOut {
 
     /**
      * A sign-in (setup, re-auth): another account than the stored one goes through [switchTo] (the old one keeps its
-     * data), the same one – or none stored – just saves the new tokens. Waits for any other account operation to finish
-     * (sign-out, switch, removing a profile), like each of those.
+     * data), the same one – or none stored – just saves the new tokens. If it is a saved profile, the stored one is set
+     * aside, as with [ProfileSwitch.addProfile]. Waits for any other account operation to finish (sign-out, switch,
+     * removing a profile), like each of those.
      */
     suspend fun signIn(next: Account, accessToken: String, refreshToken: String)
 }
@@ -261,8 +262,12 @@ class SignOut(
     override suspend fun switchTo(next: Account, accessToken: String, refreshToken: String) = exclusive { replaceWith(next, accessToken, refreshToken) }
 
     override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
-        if (accounts.account.first()?.serverId == next.serverId) accounts.save(next, accessToken, refreshToken)
-        else replaceWith(next, accessToken, refreshToken)
+        when {
+            accounts.account.first()?.serverId == next.serverId -> accounts.save(next, accessToken, refreshToken)
+            // A form about one account answered as another profile of this device: two signed-in people stay two.
+            accounts.saved.first().any { it.serverId == next.serverId } -> comeIn(next, accessToken, refreshToken)
+            else -> replaceWith(next, accessToken, refreshToken)
+        }
         step("signed in") { onSignedIn(next.serverId) }
     }
 
@@ -289,6 +294,12 @@ class SignOut(
     }
 
     override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) = exclusive<Unit> {
+        comeIn(next, accessToken, refreshToken)
+        step("signed in") { onSignedIn(next.serverId) }
+    }
+
+    /** [next] signed in and becomes the active one; an active account other than it is set aside, still signed in (callers hold [operations]). */
+    private suspend fun comeIn(next: Account, accessToken: String, refreshToken: String) {
         val current = accounts.account.first()
         when {
             current?.serverId == next.serverId -> accounts.save(next, accessToken, refreshToken)
@@ -307,7 +318,6 @@ class SignOut(
                 arrive(next.serverId)
             }
         }
-        step("signed in") { onSignedIn(next.serverId) }
     }
 
     /**

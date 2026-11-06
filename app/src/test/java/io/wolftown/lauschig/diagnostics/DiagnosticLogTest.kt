@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.datastore.preferences.core.edit
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -16,7 +17,14 @@ import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.rmab.RmabConfig
 import io.wolftown.lauschig.ui.LauschigTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -178,7 +186,7 @@ class DiagnosticLogTest {
             "aaaaaaaaaaaaaaaa", "uid", "fabian", false,
             ServerAddresses("http://192.168.178.20:13378/".toHttpUrl(), "https://abs.wolftown.io/".toHttpUrl(), setOf("FRITZ!Box 7590 XY")), emptySet(),
         )
-        val literals = DiagnosticSecrets.literals(account, listOf(KeptAccount("b", "lukas", "nas.local:13378")), RmabConfig("https://rmab.wolftown.io", "fab"))
+        val literals = DiagnosticSecrets.literals(account, listOf(KeptAccount("b", "lukas", "nas.local:13378")), listOf(RmabConfig("https://rmab.wolftown.io", "fab")))
         assertEquals(setOf("192.168.178.20", "abs.wolftown.io", "wolftown.io", "fabian", "FRITZ!Box 7590 XY", "nas.local", "lukas", "rmab.wolftown.io", "fab"), literals)
         LogMasker.setLiterals(literals)
         Log.i("Home", "lukas is on FRITZ!Box 7590 XY")
@@ -191,8 +199,38 @@ class DiagnosticLogTest {
             "bbbbbbbbbbbbbbbb", "uid2", "matthias", false,
             ServerAddresses("http://192.168.178.99:13378/".toHttpUrl(), "https://abs.familie.example/".toHttpUrl(), setOf("Heimnetz")), emptySet(),
         )
-        val literals = DiagnosticSecrets.literals(null, emptyList(), null, listOf(saved))
+        val literals = DiagnosticSecrets.literals(null, emptyList(), emptyList(), listOf(saved))
         assertEquals(setOf("192.168.178.99", "abs.familie.example", "familie.example", "matthias", "Heimnetz"), literals)
+    }
+
+    /** The final review's Minor 3: each account's connection, also of one that is set aside. */
+    @Test fun ownValues_theReadMeABookOfEveryAccount() {
+        val literals = DiagnosticSecrets.literals(null, emptyList(), listOf(RmabConfig("https://rmab.familie.example", "papa"), RmabConfig("http://rmab.lan:3030", "kind")))
+        assertEquals(setOf("rmab.familie.example", "familie.example", "papa", "rmab.lan", "kind"), literals)
+    }
+
+    /** From the connections of the store through to what is kept: A is set aside, its user name is still nothing a log may show. */
+    @Test fun aSavedProfilesReadMeABookUser_isMasked_afterASwitch() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val store = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) { File(dir, "rmab.preferences_pb") }
+            store.edit {
+                it[androidx.datastore.preferences.core.stringPreferencesKey("url:aaaaaaaaaaaaaaaa")] = "https://rmab.familie.example/"
+                it[androidx.datastore.preferences.core.stringPreferencesKey("username:aaaaaaaaaaaaaaaa")] = "papa"
+            }
+            val cipher = object : io.wolftown.lauschig.account.TokenCipher {
+                override fun encrypt(plain: String) = plain
+                override fun decrypt(encrypted: String) = encrypted
+            }
+            val active = kotlinx.coroutines.flow.MutableStateFlow<String?>("bbbbbbbbbbbbbbbb")
+            val repo = io.wolftown.lauschig.rmab.RmabRepository(store, cipher, { "Pixel" }, active)
+            DiagnosticSecrets(flowOf(null), flowOf(emptyList()), repo.allConfigs).start(scope)
+            withTimeout(5_000) { while (LogMasker.mask("papa ist da") == "papa ist da") delay(10) }
+            Log.i("Rmab", "papa ist da")
+            assertTrue(DiagnosticLog.entries().single().endsWith("I/Rmab: <private> ist da"))
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test fun preview_isTheHeadAndTheNewestEntries() {

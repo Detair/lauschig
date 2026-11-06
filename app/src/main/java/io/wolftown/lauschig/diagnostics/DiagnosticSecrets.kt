@@ -20,20 +20,20 @@ import javax.inject.Inject
 /**
  * Tells the [LogMasker] the user's own values, so they are masked wherever they turn up in a log line, also where no
  * pattern would recognise them (a bare host name, a user name in a message): the server hosts and user names of the
- * signed-in, the saved and the kept accounts, the home Wi-Fi names, the ReadMeABook host and user. Kept current while the
+ * signed-in, the saved and the kept accounts, the home Wi-Fi names, the ReadMeABook host and user of each account. Kept current while the
  * app runs.
  */
 class DiagnosticSecrets(
     private val account: Flow<Account?>,
     private val kept: Flow<List<KeptAccount>>,
-    private val rmab: Flow<RmabConfig?>,
+    private val rmab: Flow<List<RmabConfig>>,
     /** Hands the values to the masker and masks the entries kept so far once more (they predate the values). */
     private val apply: (Collection<String>) -> Unit = { LogMasker.setLiterals(it); DiagnosticLog.remask() },
     /** Profiles set aside: still this device's people and servers. */
     private val saved: Flow<List<Account>> = flowOf(emptyList()),
 ) {
     @Inject constructor(accounts: AccountStore, kept: KeptAccountStore, rmab: RmabRepository) :
-        this(accounts.account, kept.accounts, rmab.config, saved = accounts.saved)
+        this(accounts.account, kept.accounts, rmab.allConfigs, saved = accounts.saved)
 
     fun start(scope: CoroutineScope) {
         scope.launch {
@@ -41,7 +41,7 @@ class DiagnosticSecrets(
                 combine(
                     account.catch { emit(null) },
                     kept.onStart { emit(emptyList()) }.catch { emit(emptyList()) },
-                    rmab.onStart { emit(null) }.catch { emit(null) },
+                    rmab.onStart { emit(emptyList()) }.catch { emit(emptyList()) },
                     saved.onStart { emit(emptyList()) }.catch { emit(emptyList()) },
                 ) { a, k, r, s -> literals(a, k, r, s) }.collect { apply(it) }
             } catch (e: CancellationException) {
@@ -55,7 +55,7 @@ class DiagnosticSecrets(
     companion object {
         private const val TAG = "DiagnosticSecrets"
 
-        fun literals(account: Account?, kept: List<KeptAccount>, rmab: RmabConfig?, saved: List<Account> = emptyList()): Set<String> = buildSet {
+        fun literals(account: Account?, kept: List<KeptAccount>, rmab: List<RmabConfig>, saved: List<Account> = emptyList()): Set<String> = buildSet {
             fun host(h: String) { add(h); parentDomain(h)?.let(::add) }
             (listOfNotNull(account) + saved).forEach { a ->
                 listOfNotNull(a.addresses.local, a.addresses.public).forEach { host(it.host) }
@@ -63,7 +63,7 @@ class DiagnosticSecrets(
                 addAll(a.addresses.homeSsids)
             }
             kept.forEach { host(it.host.substringBefore(':')); add(it.username) }
-            rmab?.let { r ->
+            rmab.forEach { r ->
                 r.url.toHttpUrlOrNull()?.host?.let(::host)
                 add(r.username)
             }

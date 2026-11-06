@@ -6,6 +6,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -147,6 +152,34 @@ class WelcomeScreenTest {
         val next = rule.onNodeWithTag("welcomeNext").fetchSemanticsNode().boundsInRoot
         val dots = rule.onNodeWithContentDescription("Page 1 of 3").fetchSemanticsNode().boundsInRoot
         assertTrue("$next beside $dots", next.top < dots.bottom && dots.top < next.bottom && dots.right < next.left)
+    }
+
+    /** The final review's Minor 4: what would only just fit without room between them goes on the next line. */
+    @Test fun placeAndButtons_neverTouch() {
+        rule.setContent {
+            PlaceAndButtons(
+                Modifier.width(100.dp),
+                place = { Box(Modifier.size(40.dp).testTag("dots")) },
+                buttons = { Box(Modifier.size(56.dp).testTag("buttons")) },
+            )
+        }
+        val dots = rule.onNodeWithTag("dots").fetchSemanticsNode().boundsInRoot
+        val buttons = rule.onNodeWithTag("buttons").fetchSemanticsNode().boundsInRoot
+        assertTrue("$buttons below $dots", buttons.top >= dots.bottom)
+    }
+
+    @Test fun placeAndButtons_withRoomForTheGap_shareTheLine() {
+        rule.setContent {
+            PlaceAndButtons(
+                Modifier.width(104.dp),
+                place = { Box(Modifier.size(40.dp).testTag("dots")) },
+                buttons = { Box(Modifier.size(56.dp).testTag("buttons")) },
+            )
+        }
+        val dots = rule.onNodeWithTag("dots").fetchSemanticsNode().boundsInRoot
+        val buttons = rule.onNodeWithTag("buttons").fetchSemanticsNode().boundsInRoot
+        assertEquals(dots.top, buttons.top + (buttons.height - dots.height) / 2, 1f)
+        assertTrue(dots.right < buttons.left)
     }
 
     /** Through the real route: what a process death leaves, the entry's saved state. */

@@ -58,11 +58,12 @@ sealed interface PinCheck {
 }
 
 /**
- * The rounds for a new hash: about 425 ms on the slowest test device, a Galaxy Tab A7 Lite (120 000 took 2.5 s there). A PIN has few
- * digits and rounds do not change that; what stands before guessing is the Keystore key the entry is wrapped by and the waits. May
- * change any time: each hash keeps the count it was made with, so nobody's PIN stops working.
+ * The rounds for a new hash: about 420 ms in the R8 build on the slowest test device, a Galaxy Tab A7 Lite (14 µs a round; a debug
+ * build is far slower and says nothing about it). A PIN has few digits and rounds do not change that; what stands before guessing is
+ * the Keystore key the entry is wrapped by and the waits. May change any time: each hash keeps the count it was made with, so
+ * nobody's PIN stops working.
  */
-const val PIN_ITERATIONS = 20_000
+const val PIN_ITERATIONS = 30_000
 
 /** The digits of an app PIN. */
 val PIN_LENGTHS = 4..8

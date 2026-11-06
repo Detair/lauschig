@@ -203,7 +203,7 @@ fun WelcomeScreen(page: Int, onNext: () -> Unit, onSkip: () -> Unit, modifier: M
  * next line, none breaks inside its word, and they stay at the end, where the next step always is.
  */
 @Composable
-private fun PlaceAndButtons(modifier: Modifier, place: @Composable () -> Unit, buttons: @Composable () -> Unit) {
+internal fun PlaceAndButtons(modifier: Modifier, place: @Composable () -> Unit, buttons: @Composable () -> Unit) {
     Layout(content = {
         place()
         buttons()
@@ -212,8 +212,8 @@ private fun PlaceAndButtons(modifier: Modifier, place: @Composable () -> Unit, b
         val left = placeItem.measure(loose)
         val right = buttonsItem.measure(loose)
         val width = constraints.maxWidth
-        val oneLine = left.width + right.width <= width
         val gap = Spacing.s.roundToPx()
+        val oneLine = left.width + gap + right.width <= width
         val height = if (oneLine) maxOf(left.height, right.height) else left.height + gap + right.height
         layout(width, height) {
             if (oneLine) {

@@ -114,6 +114,13 @@ class RmabRepository(
         RmabConfig(url, p[username(sid)].orEmpty(), p[needsReconnect(sid)] ?: false)
     }
 
+    /** The connections of every account on this device, the saved ones too: for what the log must never show. */
+    val allConfigs: Flow<List<RmabConfig>> = store.data.map { p ->
+        p.asMap().keys.map { it.name }.filter { it.startsWith(URL_PREFIX) }.map { it.removePrefix(URL_PREFIX) }.mapNotNull { sid ->
+            p[url(sid)]?.let { RmabConfig(it, p[username(sid)].orEmpty(), p[needsReconnect(sid)] ?: false) }
+        }
+    }
+
     private class Session(val serverId: String, val url: HttpUrl, val token: String, val allowCleartext: Boolean)
 
     private class Cached(val serverId: String, val at: Long, val statuses: Map<String, RmabStatus>)
@@ -323,7 +330,9 @@ class RmabRepository(
         const val CACHE_MS = 60_000L
         const val MAX_PAGES = 50
 
-        fun url(serverId: String) = stringPreferencesKey("url:$serverId")
+        const val URL_PREFIX = "url:"
+
+        fun url(serverId: String) = stringPreferencesKey(URL_PREFIX + serverId)
         fun username(serverId: String) = stringPreferencesKey("username:$serverId")
         fun token(serverId: String) = stringPreferencesKey("token:$serverId")
         fun cleartext(serverId: String) = stringPreferencesKey("allow_cleartext:$serverId")

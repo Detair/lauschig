@@ -184,8 +184,10 @@ class ProfileSwitchFlowTest {
             clearImageCaches = { diskCovers++ }, cancelNotifications = {}, clearDiagnostics = { logs++ },
             clearMemoryCovers = { memoryCovers++ }, clearMoments = { jumps.clear() }, adoptDeviceTitle = lastPlayed::adoptDeviceEntry,
             removeProtection = locks::remove,
+            clearAudibleAnswer = appSettings::clearMissingVolumes,
         )
     }
+    private val appSettings by lazy { io.wolftown.lauschig.settings.AppSettings(prefs("app_settings")) }
     private val locksStore by lazy { prefs("locks") }
     private val locks by lazy { DataStoreProfileLocks(locksStore, cipher, { 1_000L }, 1_000) }
 
@@ -264,6 +266,11 @@ class ProfileSwitchFlowTest {
             starter,
             locks,
         )
+    }
+
+    private suspend fun bothAnswered() {
+        appSettings.setMissingVolumesEnabled(a, true)
+        appSettings.setMissingVolumesEnabled(b, true)
     }
 
     /** A family tablet: A active, B set aside, each with their tokens. */
@@ -890,6 +897,66 @@ class ProfileSwitchFlowTest {
         assertEquals(PinCheck.Correct, locks.verifyPin(b, "2222"))
         signOut.signIn(web.b, "fresher-access", "fresher-refresh")
         assertEquals("a re-auth of the active account", ProfileLockKind.PIN, locks.kind(b))
+    }
+
+    // --- The final review's Minor 1: the answer about Audible through the real flow ---
+
+    @Test fun aSwitch_keepsBothAnswersAboutAudible(): Unit = runBlocking {
+        signedIn()
+        bothAnswered()
+        assertTrue(signOut.switchProfile(b))
+        assertEquals(true, appSettings.missingVolumesEnabled(a).first())
+        assertEquals(true, appSettings.missingVolumesEnabled(b).first())
+    }
+
+    @Test fun aSignOut_takesItsAnswerAboutAudible_alsoWhenTheDownloadsStay(): Unit = runBlocking {
+        for (keep in listOf(true, false)) {
+            signedIn()
+            bothAnswered()
+            signOut.execute(keepDownloads = keep)
+            assertEquals(true, appSettings.missingVolumesUndecided(a).first())
+            assertEquals(true, appSettings.missingVolumesEnabled(b).first())
+        }
+    }
+
+    @Test fun aRemovedProfile_takesItsAnswerAboutAudible(): Unit = runBlocking {
+        signedIn()
+        bothAnswered()
+        assertTrue(signOut.removeProfile(b))
+        assertEquals(true, appSettings.missingVolumesUndecided(b).first())
+        assertEquals(true, appSettings.missingVolumesEnabled(a).first())
+    }
+
+    // --- The final review's Minor 2 ---
+
+    /** A's token has run out; on A's own form someone signs in as B, a saved profile. Two signed-in people stay two. */
+    @Test fun aSignIn_ofASavedProfile_onAnotherAccountsForm_setsTheOtherAside(): Unit = runBlocking {
+        signedIn()
+        store.markNeedsReauth(a)
+        locks.setPin(a, "1111")
+        rmabOf(a, "fabi")
+        signOut.signIn(web.b, "fresh-access", "fresh-refresh")
+
+        assertEquals(b, store.account.first()!!.serverId)
+        assertEquals("fresh-access", store.accessToken())
+        assertEquals("A is still there", a, store.saved.first().single().serverId)
+        assertEquals("a-refresh", store.savedCredentials(a)!!.refreshToken)
+        assertEquals("and says it should sign in again", setOf(a), store.savedNeedingReauth.first())
+        assertEquals("with its protection", ProfileLockKind.PIN, locks.kind(a))
+        assertEquals("with its own RMAB connection", "enc:rmab_fabi", rmabStore.data.first()[stringPreferencesKey("token:$a")])
+        assertTrue("not asked about like a kept account", kept.accounts.first().none { it.serverId == a })
+        assertTrue("not logged out at the server", web.seen.none { it.path == "/logout" })
+        assertEquals("the switch's arrival: a sync starts", true, syncs > 0)
+    }
+
+    /** Someone neither active nor saved: as before, the old account signs out keeping its data. */
+    @Test fun aSignIn_ofANewAccount_onAnotherAccountsForm_stillSignsTheOtherOut(): Unit = runBlocking {
+        store.save(web.a, TOKEN_A, "a-refresh")
+        web.keepOnline(api, keepAlive)
+        signOut.signIn(web.b, TOKEN_B, "b-refresh")
+        assertEquals(b, store.account.first()!!.serverId)
+        assertTrue(store.saved.first().isEmpty())
+        assertEquals(listOf(a), kept.accounts.first().map { it.serverId })
     }
 
     /** The review's M5, on the real flow: both ways of signing in. */

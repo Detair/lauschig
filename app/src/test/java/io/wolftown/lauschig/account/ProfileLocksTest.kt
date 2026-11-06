@@ -127,11 +127,11 @@ class ProfileLocksTest {
     }
 
     /**
-     * 3.1, the controller's ruling on the review's M8: 20 000 rounds for a new hash (the tablet took 2.5 s at 120 000). Each hash
+     * 3.1, the controller's ruling: 30 000 rounds for a new hash (the R8 build on the tablet takes 14 µs a round). Each hash
      * keeps its own count, so an entry made with 120 000 still verifies, with the rounds it was made with.
      */
     @Test fun theCountStaysWithTheHash() = runBlocking {
-        assertEquals(20_000, PIN_ITERATIONS)
+        assertEquals(30_000, PIN_ITERATIONS)
         locks(iterations = 120_000).setPin(a, "1234")
         val seen = mutableListOf<Int>()
         val later = locks(iterations = PIN_ITERATIONS, derive = { pin, salt, rounds ->
@@ -142,7 +142,7 @@ class ProfileLocksTest {
         assertEquals(PinCheck.Wrong(4), later.verifyPin(a, "4321"))
         assertEquals(listOf(120_000, 120_000), seen)
         later.setPin(a, "5678")
-        assertEquals("a new PIN gets the new count", 20_000, seen.let { it.clear(); later.verifyPin(a, "5678"); it.single() })
+        assertEquals("a new PIN gets the new count", 30_000, seen.let { it.clear(); later.verifyPin(a, "5678"); it.single() })
     }
 
     @Test fun theHashLogsItsCountAndTime_andNothingSecretGoesAnywhere() = runBlocking {
