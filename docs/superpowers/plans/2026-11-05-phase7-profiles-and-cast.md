@@ -423,7 +423,7 @@ Branch `p7-profiles`, Room bleibt v11. Neu: `androidx.biometric` 1.1.0 (die aktu
   - **Was bleibt, steht jetzt im Dialog:** Ein Anbieter kann das übergehen, und ein im Browser gespeichertes Passwort lässt sich eintragen. Die App kann es nicht erkennen, Audiobookshelf behält das ID-Token.
 - **I1 – Android 9.** Der Resume-Effekt öffnete die Sperr-Seite des Systems ein zweites Mal: Dort prüft die Bibliothek nichts, und Ergebnis und Resume kommen in einer Nachricht, ihre Antwort danach. Das Zeigen ist jetzt gepostet, hinter dieser Antwort, und schaut noch einmal nach. **Offen: die Läufe auf API 28 und 29.** Es sind keine Images installiert und auf Anweisung keine geladen; belegt ist es nur durch den Test mit dem Fake-Prompter (Mutation rot).
 - **I2 – R8.** Release-APK einmal auf Emulator 5554 gelaufen, Ergebnis im Bericht: Kaltstart, PIN setzen, durch sie wechseln, Neubau, Gerätesperre setzen und durch sie wechseln, auch nach Drehen in der Abfrage. Kein Absturz.
-- **M8, Entscheidung des Controllers:** `PIN_ITERATIONS` = 20 000 statt 120 000, gegen die Empfehlung des Reviews und gegen die Untergrenze in 3.1. Das Tablet brauchte für 120 000 Runden 2549 und 2411 ms, der Plan verlangt unter 500 ms. Der Eintrag bleibt vom Keystore-Schlüssel umhüllt, und die Versuche sind gebremst; die Runden sind bei einer PIN ohnehin nur die zweite Schicht. Gespeicherte Hashes behalten ihre Zahl (Test: ein Eintrag mit 120 000 stimmt weiter).
+- **M8, Entscheidung des Controllers:** `PIN_ITERATIONS` = 30 000 statt 120 000, gegen die Empfehlung des Reviews und gegen die Untergrenze in 3.1 (in dieser Runde zuerst 20 000, siehe „Letzte Runde“). Die 2549 und 2411 ms für 120 000 Runden auf dem Tablet waren eine Debug-Messung; mit dem R8-Build braucht es 14 µs je Runde (20 000 Runden 281 ms), 30 000 also etwa 420 ms, und der Plan verlangt unter 500 ms. Der Eintrag bleibt vom Keystore-Schlüssel umhüllt, und die Versuche sind gebremst; die Runden sind bei einer PIN ohnehin nur die zweite Schicht. Gespeicherte Hashes behalten ihre Zahl (Test: ein Eintrag mit 120 000 stimmt weiter).
 - **M1** Die Wartezeit merkt sich `Settings.Global.BOOT_COUNT`: Eine abgelaufene kommt nach einem Neustart nicht zurück, wenn die Laufzeit ihren Beginn wieder erreicht. Ohne lesbare Zahl gilt die alte Regel, nie kürzer. Einen echten Neustart hat das nicht gesehen.
 - **M2** „Abbrechen“ tut nichts, solange die neue PIN gespeichert wird. **M3** Hinweis an der Gerätesperre: „Wer das Gerät entsperren kann, kommt auch hier hinein.“ **M4** `USE_FINGERPRINT` geht per Manifest-Regel; auf Android 9 ungeprüft, siehe I1. **M5** Eine Anmeldung schreibt für ihr Konto `NONE`, solange die Marke einer beschädigten Datei gilt (`ProfileLocks.accountSignedIn`). **M9** Eine Abfrage, die während der Wartezeit öffnet, sagt das einen Schritt später, auf demselben Knoten.
 - **M6 – Sackgasse, so gewollt:** Ist die PIN vergessen und der Server umgezogen oder weg, lässt sich das Profil weder betreten noch entfernen; das Formular fragt nur die festen Adressen, eine neue Adresse wäre ein anderes Konto. Dann hilft nur, die App-Daten zu löschen.
@@ -438,4 +438,25 @@ Branch `p7-profiles`, Room bleibt v11. Neu: `androidx.biometric` 1.1.0 (die aktu
 **Tests:** App 2314 (40 mehr als nach dem Merge von main, 2274), abs-api 48, core:model 3, core:database 66, keine Fehler; Lint ohne Fehler. Das Meiste war erst an Verhalten rot, dazu 26 Mutationen, alle rot; eine blieb zuerst grün (Weg von 3.6 ohne andere Profile) und hat einen Test bekommen.
 
 **Noch offen:** API 28 und 29, ein echter SSO-Lauf, ein Neustart des Geräts mitten in einer Wartezeit, der Picker auf dem Gerät.
+
+### Letzte Runde nach dem Gesamtreview von 7A (2026-11-06)
+
+Das Gesamtreview empfiehlt den Merge, mit vier kleinen Befunden; alle übernommen, dazu eine Konstante.
+
+- **Minor 1 – die Zustimmung zu Audible gilt je Konto.** Vorher galt das Ja des Kindes für das ganze Gerät, und die ASINs der Eltern gingen ungefragt an Audible. Jetzt `missing_volumes_enabled:<serverId>`, wie beim automatischen Löschen.
+  - Ein vorhandener Wert für das ganze Gerät geht an das beim Update aktive Konto (`migrateMissingVolumes`, Vorlage `migrateAutoDelete`). Ohne Wert bleibt jedes Konto unentschieden, ohne Konto ist der Wert weg.
+  - Die Serienseite fragt je Konto, die Antwort gehört dem Konto, für das die Seite gerade gebaut ist. Der Schalter in den Einstellungen zeigt und setzt den Wert des aktiven Kontos; die Region bleibt eine für das Gerät.
+  - Abmelden und Entfernen (`AccountStateCleaner`) und ein Purge (`DeviceAccountData`) nehmen den Wert mit, ein Wechsel behält ihn.
+  - **Getestet durch die echte Quelle und das echte Repository:** keine Anfrage für ein Konto ohne Antwort, auch direkt nach einem Wechsel und während A's Abfrage noch unterwegs ist (`consent_oneAccountsYes_…`, `consent_aRunningLookupOfOneAccount_…`); auf einer Seite mit echten Einstellungen `series_aSwitch_asksTheNextAccount_…`.
+  - `docs/privacy-policy.md` und `docs/play-store/data-safety.md` sagen jetzt „je Profil“, DE und EN.
+- **Minor 2** `SignOut.signIn` mit einem gespeicherten Konto verhält sich wie `addProfile` (`comeIn`): A wird beiseitegelegt, bleibt angemeldet und behält seinen Schutz und „Neu anmelden nötig“. Das Abmelden mit Behalten bleibt für ein Konto, das weder aktiv noch gespeichert ist. Flow-Test beide Wege.
+- **Minor 3** `RmabRepository.allConfigs`: Der Masker kennt Host und Benutzer der RMAB-Verbindung jedes Kontos, auch nach einem Wechsel. Test von den Einträgen des Speichers bis zur Zeile im Log.
+- **Minor 4** Punkte und Knöpfe des Wizards teilen sich eine Zeile nur mit dem Abstand dazwischen.
+- **`PIN_ITERATIONS` = 30 000 (Controller).** Debug-Messung 2,5 s bei 120 000, R8 14 µs je Runde: 20 000 Runden 281 ms auf dem Tablet, 30 000 also etwa 420 ms, unter der Grenze von 500 ms. Der Plantext in 3.1 bleibt stehen, diese Notizen erklären die Änderung. Ein Eintrag mit anderer Zahl stimmt weiter (Test).
+
+**Tests:** App 2341 (27 mehr), abs-api 48, core:model 3, core:database 66, keine Fehler; Lint ohne Fehler. Die Zustimmung war erst an Verhalten rot (7 Tests gegen eine Fassung, die noch einen Wert fürs Gerät las), der Rest zuerst nur beim Kompilieren: dafür 17 Mutationen, alle rot.
+
+**Emulator 5554:** Endgültiger Debug-Build installiert, Kaltstart, Wechsel kind → root → kind, kein Absturz; am Ende kind aktiv, beide angemeldet, kein Schutz, keine Gerätesperre.
+
+**Nicht auf dem Gerät:** die Übernahme des alten Werts (der Emulator hatte keinen, nur der Test zeigt sie; dass `LauschigApp` sie aufruft, hat wie bei `migrateAutoDelete` keinen Test), eine Serienseite mit Audible.
 
