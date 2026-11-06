@@ -448,8 +448,8 @@ class CastOutputPlayer(
     private fun leave() {
         generation++
         stopJobs()
-        if (!onReceiver) {
-            // Suspended: the title is here already, only the session is left to end.
+        if (phase == Phase.SUSPENDED) {
+            // The title is here already, only the session is left to end.
             onCastSessionEnded()
             handler.post { link.endSession(stopReceiver = true) }
             return
