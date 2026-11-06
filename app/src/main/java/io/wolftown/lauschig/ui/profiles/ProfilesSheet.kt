@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -50,17 +51,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.theme.initialsOf
 import io.wolftown.lauschig.ui.theme.placeholderToneFor
@@ -183,9 +183,10 @@ fun ProfileBusyDialog(work: ProfileWork) {
     }
     Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
         Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.testTag("profileBusy")) {
-            Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.m)) {
+            Column(Modifier.padding(Spacing.xl)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+                    // The window is new, and TalkBack reads a new window: no live region needed here.
                     Text(
                         stringResource(
                             when (work) {
@@ -195,17 +196,16 @@ fun ProfileBusyDialog(work: ProfileWork) {
                             work.name,
                         ),
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(start = Spacing.l).semantics { liveRegion = LiveRegionMode.Polite },
+                        modifier = Modifier.padding(start = Spacing.l),
                     )
                 }
-                if (slow) {
-                    Text(
-                        stringResource(R.string.profiles_slow),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("profileBusySlow"),
-                    )
-                }
+                AnnouncedLine(
+                    if (slow) stringResource(R.string.profiles_slow) else null,
+                    tag = "profileBusySlow",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    padding = PaddingValues(top = Spacing.m),
+                )
             }
         }
     }

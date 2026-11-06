@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -44,9 +45,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -54,6 +52,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.ui.common.AnnouncedLine
 
 @Composable
 fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> Unit = {}, viewModel: SetupViewModel = hiltViewModel()) {
@@ -174,18 +173,19 @@ fun SetupScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         )
 
-        state.error?.let {
-            Text(
-                stringResource(it.message()),
-                color = MaterialTheme.colorScheme.error,
+        // One group: no gap for an error that is not there.
+        Column {
+            AnnouncedLine(
+                state.error?.let { stringResource(it.message()) },
+                tag = "setupError",
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("setupError"),
+                color = MaterialTheme.colorScheme.error,
+                padding = PaddingValues(bottom = 12.dp),
             )
-        }
-
-        Button(onClick = onLogin, enabled = state.canLogin, modifier = Modifier.fillMaxWidth().testTag("loginButton")) {
-            if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Text(stringResource(R.string.setup_login))
+            Button(onClick = onLogin, enabled = state.canLogin, modifier = Modifier.fillMaxWidth().testTag("loginButton")) {
+                if (state.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Text(stringResource(R.string.setup_login))
+            }
         }
         if (state.ssoAvailable) {
             OutlinedButton(

@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -131,14 +130,5 @@ class ApiProvider(
     @Synchronized
     private fun retrofitFor(serverId: String?, baseUrl: HttpUrl): Retrofit = cache.getOrPut(serverId to baseUrl) {
         AbsClientFactory.retrofit(baseUrl, clientFor(serverId, baseUrl))
-    }
-
-    /** The signed-in account's server id; null when signed out or unreadable (its clients then send no token). */
-    private suspend fun signedIn(): String? = try {
-        store.account.first()?.serverId
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
     }
 }

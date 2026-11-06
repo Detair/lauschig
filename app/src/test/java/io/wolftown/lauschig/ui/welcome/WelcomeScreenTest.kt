@@ -1,12 +1,15 @@
 package io.wolftown.lauschig.ui.welcome
 
+import android.view.View
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -19,8 +22,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.wolftown.lauschig.ui.LauschigTheme
+import io.wolftown.lauschig.ui.common.accessibilityInfo
 import io.wolftown.lauschig.ui.nav.Welcome
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,9 +43,12 @@ class WelcomeScreenTest {
         LauschigTheme { WelcomeScreen(page, onNext = { calls += "next" }, onSkip = { calls += "skip" }) }
     }
 
+    private fun page() = rule.onNodeWithTag("welcomePage")
+    private fun SemanticsNodeInteraction.spoken() = fetchSemanticsNode().config[SemanticsProperties.ContentDescription].single()
+
     @Test fun theFirstPage_nextAndSkip() {
         show(0)
-        rule.onNodeWithText("Welcome to Lauschig").assertExists()
+        assertTrue(page().spoken().startsWith("Welcome to Lauschig"))
         rule.onNodeWithText("Next").performClick()
         rule.onNodeWithText("Skip").performClick()
         assertEquals(listOf("next", "skip"), calls)
@@ -47,9 +56,10 @@ class WelcomeScreenTest {
 
     @Test fun aServerIsSaidToBeNeeded_plainly() {
         show(1)
-        rule.onNodeWithText("You need your own server").assertExists()
-        rule.onNode(hasText("Audiobookshelf", substring = true)).assertExists()
-        rule.onNode(hasText("you can't sign in", substring = true)).assertExists()
+        val spoken = page().spoken()
+        assertTrue(spoken, spoken.startsWith("You need your own server"))
+        assertTrue(spoken, "Audiobookshelf" in spoken)
+        assertTrue(spoken, "you can't sign in" in spoken)
     }
 
     @Test fun theLastPage_offersTheSignIn_nothingToSkip() {
@@ -59,11 +69,25 @@ class WelcomeScreenTest {
         assertEquals(listOf("next"), calls)
     }
 
-    @Test fun talkBack_theHeading_thePlace_andANewPageIsRead() {
+    @Test fun talkBack_theHeading_andThePlace() {
         show(1)
-        rule.onNodeWithText("You need your own server").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        page().assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
         rule.onNode(hasContentDescription("Page 2 of 3")).assertExists()
-        rule.onNodeWithTag("welcomePage").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
+    }
+
+    /** A live region speaks when a node it knows changes; a new node for each page would be silent. */
+    @Test fun talkBack_aNewPageIsTheSameLiveNode_withOtherWords() {
+        var shown by mutableStateOf(0)
+        rule.setContent { LauschigTheme { WelcomeScreen(shown, onNext = {}, onSkip = {}) } }
+        val before = page().fetchSemanticsNode().id
+        val firstWords = page().spoken()
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, page().accessibilityInfo()!!.liveRegion)
+
+        shown = 1
+        rule.waitForIdle()
+        assertEquals(before, page().fetchSemanticsNode().id)
+        assertNotEquals(firstWords, page().spoken())
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, page().accessibilityInfo()!!.liveRegion)
     }
 
     /** Through the real route: what a process death leaves, the entry's saved state. */

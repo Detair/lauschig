@@ -37,7 +37,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -135,29 +135,43 @@ fun WelcomeRoute(onDone: () -> Unit, viewModel: WelcomeViewModel = hiltViewModel
 fun WelcomeScreen(page: Int, onNext: () -> Unit, onSkip: () -> Unit, modifier: Modifier = Modifier) {
     val last = page == WELCOME_PAGES.lastIndex
     Column(modifier.fillMaxSize().testTag("welcome")) {
+        val shownNow = WELCOME_PAGES[page]
+        val title = stringResource(shownNow.title)
+        val text = stringResource(shownNow.text)
         StatePage(Modifier.weight(1f)) { verticalPadding ->
-            Crossfade(page, label = "welcome") { shown ->
-                val content = WELCOME_PAGES[shown]
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Column(
-                        Modifier.widthIn(max = 480.dp).padding(horizontal = Spacing.xl, vertical = verticalPadding)
-                            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }.testTag("welcomePage"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Icon(content.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(56.dp))
-                        Text(
-                            stringResource(content.title),
-                            style = MaterialTheme.typography.headlineSmall,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = Spacing.xl).semantics { heading() },
-                        )
-                        Text(
-                            stringResource(content.text),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = Spacing.m),
-                        )
+            // One node for TalkBack, the same on every page: a live region speaks when a node it knows changes, and the
+            // cross-fade's pages would each be new. They are only for the eye.
+            Box(
+                Modifier.fillMaxWidth().clearAndSetSemantics {
+                    testTag = "welcomePage"
+                    contentDescription = "$title. $text"
+                    heading()
+                    liveRegion = LiveRegionMode.Polite
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Crossfade(page, label = "welcome") { shown ->
+                    val content = WELCOME_PAGES[shown]
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Column(
+                            Modifier.widthIn(max = 480.dp).padding(horizontal = Spacing.xl, vertical = verticalPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(content.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(56.dp))
+                            Text(
+                                stringResource(content.title),
+                                style = MaterialTheme.typography.headlineSmall,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = Spacing.xl),
+                            )
+                            Text(
+                                stringResource(content.text),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = Spacing.m),
+                            )
+                        }
                     }
                 }
             }

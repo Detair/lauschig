@@ -11,7 +11,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.wolftown.lauschig.ui.LauschigTheme
+import io.wolftown.lauschig.ui.common.accessibilityInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -86,18 +88,24 @@ class ProfilesScreensTest {
         assertEquals(listOf("open"), calls)
     }
 
-    @Test fun whileItRuns_theDisplaySaysToWhom_andIsAnnounced() {
+    @Test fun whileItRuns_theDisplaySaysToWhom() {
         rule.setContent { LauschigTheme { ProfileBusyDialog(ProfileWork.Switching("kind")) } }
-        rule.onNodeWithText("Switching to kind …").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
+        rule.onNodeWithText("Switching to kind …").assertExists()
     }
 
-    @Test fun whileItTakesLong_theDisplaySaysThat() {
+    /** The first line comes with the window, which TalkBack reads; the second appears in a window that is already there. */
+    @Test fun whileItTakesLong_theDisplaySaysThat_onANodeThatWasThereBefore() {
         rule.mainClock.autoAdvance = false
         rule.setContent { LauschigTheme { ProfileBusyDialog(ProfileWork.Switching("kind")) } }
         rule.mainClock.advanceTimeBy(1_000)
-        rule.onNodeWithTag("profileBusySlow").assertDoesNotExist()
+        val line = rule.onNodeWithTag("profileBusySlow")
+        val before = line.fetchSemanticsNode().id
+        assertEquals(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE, line.accessibilityInfo()!!.liveRegion)
+        assertFalse(SemanticsProperties.ContentDescription in line.fetchSemanticsNode().config)
+
         rule.mainClock.advanceTimeBy(PROFILE_BUSY_SLOW_MS)
-        rule.onNodeWithTag("profileBusySlow").assertExists()
+        assertEquals(before, line.fetchSemanticsNode().id)
+        assertEquals(listOf("This is taking a little longer. Nearly there."), line.fetchSemanticsNode().config[SemanticsProperties.ContentDescription])
     }
 
     @Test fun removing_hasItsOwnWords() {
