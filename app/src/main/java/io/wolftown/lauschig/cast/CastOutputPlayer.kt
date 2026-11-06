@@ -42,10 +42,11 @@ import kotlin.math.abs
  * - **Only session addresses reach a receiver.** The app sets the device's items ([MediaItemFactory]); here a server session
  *   is opened and [ReceiverItems] are sent. The device's items wait for the way back, and stay up to date.
  * - **The title stays in the player unless the receiver's state is proven** ([getState]). `RemoteCastPlayer` is empty for seconds
- *   after a load, its index only moves with a status and its position only with a progress report, so a status may pair the
- *   wrong file with the wrong position. What reaches the progress is the title's own position until the receiver proves otherwise:
- *   the start file at a plausible position after a load ([startProven]), a sane position after a file boundary ([remember]).
- *   Without a proof it asks for a fresh status, and a load gives up at [loadLimitMs].
+ *   after a load, its index only moves with a status and may fall back to 0, and its position only a new status can correct, so a
+ *   status may pair the wrong file with the wrong position. What reaches the progress is the title's own position until the receiver
+ *   proves otherwise: the start file at a plausible position after a load ([startProven]), a sane position after a file boundary
+ *   ([remember]). Without a proof it asks for a fresh status, every few seconds. A load gives up at [loadLimitMs] unless the receiver
+ *   does play the title: that TV plays on, and only the proof is missing ([limitReached]).
  * - **An end is an end, only at the end.** The receiver's idle state with reason "finished" becomes [Player.STATE_ENDED], which the
  *   progress and the queue are waiting for, only near the true end of the last file ([atTheEnd]). Anywhere else it is a file
  *   boundary or a doubt: nothing ends, and a doubt that lasts [DOUBT_MS] leaves the title paused, with the play button loading it.
@@ -126,6 +127,7 @@ class CastOutputPlayer(
                     Phase.NONE, Phase.LEAVING -> CastActivity.NONE
                 },
             )
+            if (value != Phase.LOADING) holding = false
         }
 
     /** The title that went to the device with the Cast session not over yet: a suspend may come back for it. */
@@ -143,20 +145,30 @@ class CastOutputPlayer(
     private var sentIndex = 0
     private var sentPositionMs = 0L
     private var sentAt = 0L
+    /** The content ids of the queue sent last, by file: `RemoteCastPlayer` may not have placed the current one yet, the status names it anyway. */
+    private var sentIds: List<String> = emptyList()
     /** Where the receiver can reach the server, and how far down the list this load is. */
     private var bases: List<HttpUrl> = emptyList()
     private var baseIndex = 0
     /** The receiver's failure was answered: the status keeps saying so until the next load has an effect. */
     private var failureAnswered = false
+    /** The same for a status that says finished: it may be what the title did the last time. */
+    private var finishedAnswered = false
+    /** The receiver plays the title, the limit has passed and it has not said a plausible place: see [limitReached]. */
+    private var holding = false
     private var pendingSeek = false
     /** A person pressed play or pause while the resume could not tell the receiver. */
     private var pressedWhileResuming = false
     private var receiverError: Int? = null
-    private var statusAsked = false
+    private var statusAskedAt: Long? = null
     /** Since when the receiver's state makes no sense for a title it plays; see [doubt]. */
     private var doubtSince: Long? = null
     /** When the receiver last crossed a file boundary by itself; its position is the old file's until a report says otherwise. */
     private var boundaryAt: Long? = null
+    /** A seek across files went out: a status with another file soon after is the old one's, see [remember]. */
+    private var seekAt: Long? = null
+    /** Since when the receiver says a file that is neither the title's nor the next one: see [remember]. */
+    private var otherFileSince: Long? = null
     private var watchdog: Job? = null
     private var ticker: Job? = null
     /** When a playing cast came back to this device: the output switcher's "this phone" may follow it (see [onCastTakenBack]). */
@@ -390,7 +402,7 @@ class CastOutputPlayer(
             delay(RESUME_PROOF_MS)
             if (phase == Phase.RESUMING && cast === c) {
                 val active = attached
-                if (active != null && holdsPlaying(active) && c.owns(active.currentMediaItem)) becomeActive(c, active, fromReceiver = true) else sendAgain(c)
+                if (active != null && holdsPlaying(active) && holdsOwn(c, active)) becomeActive(c, active, fromReceiver = true) else sendAgain(c)
             }
         }
         startTicker()
@@ -420,7 +432,7 @@ class CastOutputPlayer(
         pendingSeek = false
         failureAnswered = false
         receiverError = null
-        statusAsked = false
+        holding = false
         doubtSince = null
         boundaryAt = null
         baseIndex = 0
@@ -474,14 +486,18 @@ class CastOutputPlayer(
         sentIndex = start
         sentPositionMs = c.positionMs
         sentAt = clock()
-        statusAsked = false
+        sentIds = items.map { it.mediaId }
+        statusAskedAt = null
+        holding = false
+        doubtSince = null
         active.playWhenReady = c.playWhenReady
         active.setMediaItems(items, start, c.positionMs)
         loadSent = true
         pendingSeek = false
         // A failure the status still shows is the previous media's: the server closes a device's old session when it opens the next.
         failureAnswered = link.activity() == ReceiverActivity.FAILED
-        watch(c, loadLimitMs / bases.size.coerceAtLeast(1))
+        finishedAnswered = link.activity() == ReceiverActivity.FINISHED
+        watch(c, shareOfTheLimit(baseIndex))
         startTicker()
         invalidateState()
     }
@@ -494,21 +510,36 @@ class CastOutputPlayer(
         }
     }
 
-    /** An address has had its share of the limit. If the receiver does play but never proves where, another address is no answer. */
+    /** The first address is the likely one and gets two thirds; a local one after it answers fast or not at all. Together about the limit. */
+    private fun shareOfTheLimit(address: Int): Long = when {
+        bases.size <= 1 -> loadLimitMs
+        address == 0 -> loadLimitMs * 2 / 3
+        else -> loadLimitMs / 3 / (bases.size - 1)
+    }
+
+    /**
+     * An address has had its share of the limit. A receiver that does play the title has been reached: no other address, and no word
+     * about reaching it. If all that is missing is a plausible place, the TV plays on, since stopping what a person asked for over a
+     * doubt about bookkeeping is the worst of the answers, and taking its position as it is would overwrite the listening position
+     * here and on the server. So nothing reaches the progress, it is said once, and it stays so until a status says a plausible place,
+     * a person's seek gives it one, a person ends the cast, or the receiver stops.
+     */
     private fun limitReached(c: CastTitle) {
         val active = attached
-        if (active == null || active.playbackState != Player.STATE_READY || !c.owns(active.currentMediaItem)) {
-            Log.w(TAG, "the receiver did not load the title in time")
-            receiverFailed(c)
-            return
-        }
-        val left = bases.size - 1 - baseIndex
-        if (left > 0) {
-            baseIndex = bases.lastIndex
-            watch(c, loadLimitMs / bases.size * left)
-        } else {
-            Log.w(TAG, "the receiver plays but does not prove its position")
-            failed(R.string.cast_no_position)
+        when {
+            active != null && active.playbackState == Player.STATE_READY && playsOurs(c, active) -> {
+                if (!holding) {
+                    Log.w(TAG, "the receiver plays but does not prove its position")
+                    holding = true
+                    say(R.string.cast_position_unknown)
+                }
+                watch(c, loadLimitMs)
+            }
+            holding -> toStopped(c)
+            else -> {
+                Log.w(TAG, "the receiver did not load the title in time")
+                receiverFailed(c)
+            }
         }
     }
 
@@ -569,6 +600,18 @@ class CastOutputPlayer(
     private fun holdsOwn(c: CastTitle, active: Player) =
         active.mediaItemCount > 0 && (c.owns(active.currentMediaItem) || link.contentId()?.startsWith("${c.key}#") == true)
 
+    /** The status's content id is the receiver's own word; Media3's item, which may be behind it, counts only when there is none. */
+    private fun playsOurs(c: CastTitle, active: Player): Boolean {
+        val content = link.contentId() ?: return c.owns(active.currentMediaItem)
+        return content.startsWith("${c.key}#")
+    }
+
+    /** The file the receiver is at: the status's content id knows it where Media3's index still is its fallback to 0. */
+    private fun receiverIndex(active: Player): Int {
+        val named = sentIds.indexOf(link.contentId())
+        return if (named >= 0) named else active.currentMediaItemIndex
+    }
+
     private fun ownInQueue(c: CastTitle, active: Player) =
         (0 until active.mediaItemCount).any { c.owns(active.getMediaItemAt(it)) } || link.contentId()?.startsWith("${c.key}#") == true
 
@@ -582,14 +625,21 @@ class CastOutputPlayer(
             if (it == ReceiverActivity.INTERRUPTED) (if (ownInQueue(c, active)) ReceiverActivity.BUSY else ReceiverActivity.STOPPED) else it
         }
         if (activity != ReceiverActivity.FAILED) failureAnswered = false
+        if (activity != ReceiverActivity.FINISHED) finishedAnswered = false
         // Another title's failure says nothing about this one: the server closes the old session when it opens the next.
         val failure = activity == ReceiverActivity.FAILED && !failureAnswered && link.contentId()?.startsWith("${c.key}#") != false
         when (phase) {
             Phase.LOADING -> when {
                 !loadSent -> Unit
                 failure -> receiverFailed(c)
-                active.playbackState == Player.STATE_READY && c.owns(active.currentMediaItem) ->
-                    if (startProven(c, active)) becomeActive(c, active, fromReceiver = false) else askForStatus()
+                activity == ReceiverActivity.FINISHED && !finishedAnswered && link.contentId()?.startsWith("${c.key}#") != false -> finishedAtOnce(c)
+                holding && activity == ReceiverActivity.STOPPED -> toStopped(c)
+                else -> {
+                    doubtSince = null
+                    if (active.playbackState == Player.STATE_READY) {
+                        if (startProven(c, active)) becomeActive(c, active, fromReceiver = false) else askForStatus()
+                    }
+                }
             }
             Phase.RESUMING -> when {
                 activity == ReceiverActivity.FAILED -> sendAgain(c)
@@ -598,7 +648,7 @@ class CastOutputPlayer(
                 activity == ReceiverActivity.FINISHED -> if (atTheEnd(c)) ended(c) else toStopped(c)
                 // Another sender's title is no silence.
                 holdsPlaying(active) && link.contentId()?.startsWith("${c.key}#") == false -> toStopped(c)
-                holdsPlaying(active) && c.owns(active.currentMediaItem) && resumeProven(active) -> becomeActive(c, active, fromReceiver = true)
+                holdsPlaying(active) && holdsOwn(c, active) && resumeProven(active) -> becomeActive(c, active, fromReceiver = true)
             }
             Phase.ACTIVE -> when {
                 failure -> receiverFailed(c)
@@ -612,20 +662,21 @@ class CastOutputPlayer(
                 }
             }
             // It plays its own title after all: an interruption that was none, or the TV's remote.
-            Phase.STOPPED -> if (active.playbackState == Player.STATE_READY && c.owns(active.currentMediaItem)) becomeActive(c, active, fromReceiver = true)
+            Phase.STOPPED -> if (active.playbackState == Player.STATE_READY && playsOurs(c, active)) becomeActive(c, active, fromReceiver = true)
             else -> Unit
         }
     }
 
     /**
      * After a load, the receiver's position may reach the progress only once it reports the start file at a plausible
-     * position: its index only moves with a status, `lastReportedPositionMs` only with a report, and a first status can say
-     * index 0 of N or position 0. No proof: it asks for a fresh status, a report may come any second, and [loadLimitMs] ends it.
+     * position: its index only moves with a status and may fall back to 0, the position is what the last status said, and a first
+     * status can say index 0 of N or position 0. Where the status has a content id, that names the file. No proof: it asks again.
      */
     private fun startProven(c: CastTitle, active: Player): Boolean {
+        if (!playsOurs(c, active)) return false
         val reach = (clock() - sentAt).coerceAtLeast(0) * MAX_SPEED + POSITION_SLACK_MS
         val position = active.currentPosition
-        val index = active.currentMediaItemIndex
+        val index = receiverIndex(active)
         if (index == sentIndex) return position in (sentPositionMs - POSITION_SLACK_MS)..(sentPositionMs + reach)
         // It started near a file's end and has crossed the boundary meanwhile.
         val fileMs = c.local.getOrNull(sentIndex)?.fileDurationMs() ?: return false
@@ -634,14 +685,34 @@ class CastOutputPlayer(
 
     /** It played on since the suspend: at or after where it was. Otherwise the fresh status may set it right, and the limit decides. */
     private fun resumeProven(active: Player): Boolean {
-        val index = active.currentMediaItemIndex
+        val index = receiverIndex(active)
         return index > sentIndex || (index == sentIndex && active.currentPosition >= sentPositionMs - POSITION_SLACK_MS)
     }
 
+    /** A wrong position only a new status can correct. A hold has told the person, and asks less often. */
     private fun askForStatus() {
-        if (statusAsked) return
-        statusAsked = true
+        val asked = statusAskedAt
+        if (asked != null && clock() - asked < if (holding) HOLD_ASK_MS else ASK_MS) return
+        statusAskedAt = clock()
         link.requestStatus()
+    }
+
+    /**
+     * The receiver says finished about the load. At the title's end that is the end: this device too just stands at the end of a
+     * finished title, ended and paused, and a press starts the last file over (the session's play) or the library the title from the
+     * start. Anywhere else it says so plainly, which is no address's fault and no reason to wait for the limit. A moment of it, between
+     * two files of a load that started at a file's end, ends nothing.
+     */
+    private fun finishedAtOnce(c: CastTitle) {
+        if (atTheEnd(c)) {
+            ended(c)
+            return
+        }
+        val since = doubtSince ?: clock().also {
+            doubtSince = it
+            link.requestStatus()
+        }
+        if (clock() - since >= FINISHED_AT_ONCE_MS) failed(R.string.cast_finished_at_once)
     }
 
     private fun becomeActive(c: CastTitle, active: Player, fromReceiver: Boolean) {
@@ -649,8 +720,10 @@ class CastOutputPlayer(
         phase = Phase.ACTIVE
         doubtSince = null
         boundaryAt = null
-        statusAsked = false
-        c.index = if (pendingSeek) c.index else active.currentMediaItemIndex
+        otherFileSince = null
+        seekAt = null
+        statusAskedAt = null
+        c.index = if (pendingSeek) c.index else receiverIndex(active)
         if (fromReceiver) {
             if (pressedWhileResuming) active.playWhenReady = c.playWhenReady else c.playWhenReady = active.playWhenReady
             if (!pendingSeek) c.positionMs = active.currentPosition.coerceAtLeast(0)
@@ -662,6 +735,7 @@ class CastOutputPlayer(
         if (abs(active.playbackParameters.speed - c.speed) > SPEED_SLACK) active.setPlaybackParameters(PlaybackParameters(c.speed))
         if (pendingSeek) {
             pendingSeek = false
+            seekAt = clock()
             active.seekTo(c.index, c.positionMs)
         }
         pressedWhileResuming = false
@@ -672,28 +746,46 @@ class CastOutputPlayer(
 
     /**
      * The receiver's position stays known, for the way back and for a status that has none any more. Only from a state that plays.
-     * When the receiver crosses into the next file by itself, its index moves with a status and its position only with the next report:
+     * When the receiver crosses into the next file by itself, its index moves with a status and its position may lag:
      * until that is a sane position in the new file the player stands at the start of it ([trusted]).
+     *
+     * Only the next file is a crossing. Any other index (the fallback to 0 of a status whose item cannot be placed), and any index
+     * but the target soon after a seek across files (a late status), keeps what is known: that may be what a cast ending right then
+     * leaves on this device. [DOUBT_MS] of it means it is true (a TV's remote can jump too).
      */
     private fun remember(c: CastTitle, active: Player) {
-        if (!holdsPlaying(active) || !c.owns(active.currentMediaItem)) return
-        val index = active.currentMediaItemIndex
-        if (index != c.index) {
-            c.index = index
-            c.positionMs = 0
-            boundaryAt = clock()
-        }
+        if (!holdsPlaying(active) || !holdsOwn(c, active)) return
+        val index = receiverIndex(active)
         c.playWhenReady = active.playWhenReady
-        val settled = boundaryAt == null || positionSane(active)
-        if (settled) {
-            if (boundaryAt != null) {
-                boundaryAt = null
-                invalidateState()
-            }
-            c.positionMs = active.currentPosition.coerceAtLeast(0)
-        } else {
-            invalidateState()
+        val seek = seekAt
+        if (seek != null) {
+            // Not "until the index is the target": `RemoteCastPlayer` shows the target until the seek's result, then the old file until the status.
+            if (clock() - seek >= DOUBT_MS) seekAt = null else if (index != c.index) return invalidateState()
         }
+        when (index) {
+            c.index -> otherFileSince = null
+            c.index + 1 -> {
+                otherFileSince = null
+                c.index = index
+                c.positionMs = 0
+                boundaryAt = clock()
+            }
+            else -> {
+                val since = otherFileSince ?: clock().also { otherFileSince = it }
+                if (clock() - since < DOUBT_MS) return invalidateState()
+                otherFileSince = null
+                c.index = index
+                c.positionMs = active.currentPosition.coerceAtLeast(0)
+                boundaryAt = null
+            }
+        }
+        if (boundaryAt == null || positionSane(active)) {
+            if (boundaryAt != null) boundaryAt = null
+            val position = active.currentPosition.coerceAtLeast(0)
+            // Media3 has not placed the item yet and only the content id says it is ours: its position may be a first status's 0.
+            if (c.owns(active.currentMediaItem) || position >= c.positionMs - POSITION_SLACK_MS) c.positionMs = position
+        }
+        invalidateState()
     }
 
     /** After a boundary: at most what can have been played since. After [DOUBT_MS] it is what the receiver says (a TV remote can jump too). */
@@ -706,7 +798,14 @@ class CastOutputPlayer(
     private fun trusted(c: CastTitle): Boolean {
         val active = player
         if (!holdsPlaying(active) || active.mediaItemCount == 0 || !c.owns(active.currentMediaItem)) return false
-        return if (active.currentMediaItemIndex != c.index) active.currentPosition <= POSITION_SLACK_MS else positionSane(active)
+        val shown = active.currentMediaItemIndex
+        return when {
+            shown != receiverIndex(active) -> false
+            shown == c.index -> positionSane(active)
+            // The moment a status moved to the next file, before [remember] saw it.
+            shown == c.index + 1 && seekAt == null -> active.currentPosition <= POSITION_SLACK_MS
+            else -> false
+        }
     }
 
     /**
@@ -759,7 +858,7 @@ class CastOutputPlayer(
         sentIndex = c.index
         sentPositionMs = c.positionMs
         sentAt = clock()
-        statusAsked = false
+        statusAskedAt = null
         invalidateState()
         watch(c, loadLimitMs)
         startTicker()
@@ -922,14 +1021,26 @@ class CastOutputPlayer(
     }
 
     private fun seek(c: CastTitle, index: Int, positionMs: Long) {
+        val across = index != c.index
         c.index = index
         c.positionMs = positionMs.coerceAtLeast(0)
         when (phase) {
             Phase.ACTIVE -> {
                 boundaryAt = null
+                otherFileSince = null
+                seekAt = if (across) clock() else null
                 attached?.seekTo(c.index, c.positionMs)
             }
-            Phase.LOADING -> pendingSeek = loadSent
+            // No proof will come by itself in a hold: the seek reaches the receiver, and its target is what the next status is measured by.
+            Phase.LOADING -> if (holding) {
+                sentIndex = c.index
+                sentPositionMs = c.positionMs
+                sentAt = clock()
+                statusAskedAt = null
+                attached?.seekTo(c.index, c.positionMs)
+            } else {
+                pendingSeek = loadSent
+            }
             Phase.RESUMING -> pendingSeek = true
             Phase.ENDED, Phase.STOPPED -> load(c)
             else -> Unit
@@ -1017,6 +1128,12 @@ class CastOutputPlayer(
         const val RESUME_PROOF_MS = 10_000L
         /** A session that stays suspended this long is given up. */
         const val SUSPEND_LIMIT_MS = 5 * 60_000L
+        /** How often a load without a proof asks for a fresh status. */
+        const val ASK_MS = 5_000L
+        /** The same once the person has been told, see [limitReached]. */
+        const val HOLD_ASK_MS = 30_000L
+        /** See [finishedAtOnce]. */
+        const val FINISHED_AT_ONCE_MS = 3_000L
         /** How long a receiver's state may make no sense before the title stops waiting for it. */
         const val DOUBT_MS = 10_000L
         const val TICK_MS = 1_000L

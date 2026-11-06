@@ -822,7 +822,8 @@
     <string name="media_route_button_connecting">Cast: connecting</string>
     <string name="media_route_button_disconnected">Cast: choose a device</string>
     <string name="cast_dropped">The connection to the Cast device was lost. Playback is waiting here, at the last known spot.</string>
-    <string name="cast_no_position">The Cast device does not reliably report where it is in the title, so casting has ended. Playback is waiting here, at the same spot.</string>
+    <string name="cast_position_unknown">The Cast device is playing this title but does not say where it is, so progress is not being saved. A jump in the title sets that right, and stopping the cast brings the title back here, at the last known spot.</string>
+    <string name="cast_finished_at_once">The Cast device ended this title straight away. Playback is waiting here, at the same spot.</string>
     <string name="cast_too_many_files">This title has too many files for Cast. Playback is waiting here, at the same spot.</string>
     <string name="cast_files_differ">This title cannot be cast: the server names other files than this device. Excluded files would be the reason, then nothing helps, or an outdated state, then a sync helps.</string>
     <string name="cast_suspended_title_here">The connection to the Cast device is interrupted, so this title is waiting here.</string>

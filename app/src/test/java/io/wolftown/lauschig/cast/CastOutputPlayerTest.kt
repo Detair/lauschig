@@ -114,6 +114,14 @@ class CastOutputPlayerTest {
         pass(2)
     }
 
+    /** A new status: the Cast player has it (its index, its queue), and the runtime's callback tells the player. */
+    private fun told(state: Int = Player.STATE_READY, index: Int? = null, position: Long? = null, paused: Boolean? = null) {
+        receiver.status(state, index, position, paused)
+        idle()
+        output.onReceiverStatus()
+        idle()
+    }
+
     private fun uris(sent: FakeReceiver.Sent) = sent.items.map { it.localConfiguration!!.uri.toString() }
 
     // ---- On the device nothing changes.
@@ -259,9 +267,7 @@ class CastOutputPlayerTest {
         assertFalse(output.isPlaying)
         assertEquals("asked for a fresh status", 1, link.statusRequests)
         // Only a new status can correct it.
-        receiver.status(position = 61_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 61_000)
         assertEquals(61_000, output.currentPosition)
         assertTrue(output.isPlaying)
     }
@@ -291,19 +297,300 @@ class CastOutputPlayerTest {
         assertTrue(output.isPlaying)
     }
 
-    /** It plays there but never proves where: the cast ends with the masked position, and says what happened. */
-    @Test fun aProofThatNeverComes_endsTheCast_atTheStartPosition() {
+    // ---- R3: a receiver that plays the title is never told off for a status that cannot say where.
+
+    /** READY is a reason to ask, whether the item is known or not, and again every few seconds. */
+    @Test fun readyAtAnUnknownItem_isAReasonToAsk_everyFewSeconds() {
+        playingHere()
+        connect()
+        val sent = receiver.sent.last().items
+        receiver.items = listOf(MediaItem.EMPTY) + sent.drop(1)
+        receiver.status(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        idle()
+        pass(1)
+        assertEquals("at once", 1, link.statusRequests)
+        pass(5)
+        assertEquals(2, link.statusRequests)
+        pass(50)
+        assertTrue(link.statusRequests.toString(), link.statusRequests >= 10)
+    }
+
+    /** The queue's item 0 is unknown and the index falls back to it, but the status's content id names the start file: that is the proof. */
+    @Test fun theContentId_namesTheStartFile_atAPlausiblePosition_isProof_alsoAtAStaleIndex() {
+        sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
+        playingHere()
+        connect()
+        val sent = receiver.sent.last().items
+        receiver.items = listOf(MediaItem.EMPTY) + sent.drop(1)
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        assertEquals("a proven cast", CastActivity.PLAYING, activities.last())
+        // Media3 has not placed it: the player stays at the title's own file, and nothing wrong reaches the progress.
+        assertEquals(1, output.currentMediaItemIndex)
+        assertFalse(output.isPlaying)
+        pass(70)
+        assertEquals("never another address", 1, receiver.sent.size)
+        assertTrue("never a word about reaching it", said.isEmpty())
+        assertTrue(link.ends.isEmpty())
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals("it follows the receiver meanwhile", 75_000, output.currentPosition)
+        // The queue is there.
+        receiver.items = sent
+        told(Player.STATE_READY, index = 1, position = 76_000)
+        assertTrue(output.isPlaying)
+        assertEquals(76_000, output.currentPosition)
+    }
+
+    /** It plays the title, and through the whole limit nothing says a plausible place. The TV stays on, nothing else moves, and it is said once. */
+    @Test fun aProofThatNeverComes_leavesTheTvPlaying_withNoOtherAddress_andSaysSoOnce() {
+        sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
         playingHere(index = 1, positionMs = 60_000)
         connect()
+        val sent = receiver.sent.last().items
+        link.content = sent[0].mediaId
+        told(Player.STATE_READY, index = 0, position = 0, paused = false)
+        pass(65)
+        assertEquals(listOf(R.string.cast_position_unknown), said)
+        assertTrue("the TV is not stopped", link.ends.isEmpty())
+        assertEquals("no other address", 1, receiver.sent.size)
+        assertTrue(receiver.pwr)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_REMOTE, output.deviceInfo.playbackType)
+        assertEquals("nothing reaches the progress", 60_000, output.currentPosition)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertFalse(output.isPlaying)
+        assertEquals(CastActivity.PLAYING, activities.last())
+        pass(200)
+        assertEquals("once", listOf(R.string.cast_position_unknown), said)
+        assertTrue(link.ends.isEmpty())
+        // A plausible status after all: an ordinary cast.
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 1, position = 300_000)
+        assertTrue(output.isPlaying)
+        assertEquals(300_000, output.currentPosition)
+    }
+
+    /** The way out for a person: a seek reaches the TV, and what it says next is the proof. */
+    @Test fun aSeekWhileThatLasts_reachesTheTv_andIsTheProof() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        val sent = receiver.sent.last().items
+        link.content = sent[0].mediaId
+        told(Player.STATE_READY, index = 0, position = 0, paused = false)
+        pass(65)
+        output.seekTo(1, 20_000)
+        idle()
+        assertEquals(1 to 20_000L, receiver.seeks.last())
+        link.content = sent[1].mediaId
+        told(Player.STATE_READY, index = 1, position = 20_500)
+        assertTrue(output.isPlaying)
+        assertEquals(20_500, output.currentPosition)
+        assertEquals(1, receiver.sent.size)
+    }
+
+    @Test fun aStopWhileThatLasts_leavesTheTitleHere_atTheLastProvenPlace() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        link.content = receiver.sent.last().items[0].mediaId
         receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
         idle()
-        pass(70)
-        assertEquals(listOf(R.string.cast_no_position), said)
-        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        pass(65)
+        output.stop()
+        idle()
+        assertEquals(listOf(true), link.ends)
         assertEquals(1, device.index)
         assertEquals(60_000, device.position)
         assertFalse(device.pwr)
+    }
+
+    /** The TV's own stop while that lasts: the title waits paused here, as after any stop from elsewhere. */
+    @Test fun aReceiverThatStopsWhileThatLasts_isStopped() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        link.content = receiver.sent.last().items[0].mediaId
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        idle()
+        pass(65)
+        status(ReceiverActivity.STOPPED)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertFalse(output.playWhenReady)
         assertEquals(1, receiver.sent.size)
+    }
+
+    /** The review's other case: one ask, and the one answer says 0 too. Asked again, a later answer is the proof. */
+    @Test fun positionZero_andTheOneAnswerToo_isAskedAgain() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        receiver.status(Player.STATE_READY, index = 1, position = 0, paused = true)
+        idle()
+        pass(2)
+        receiver.status(Player.STATE_READY, index = 1, position = 500, paused = true)
+        pass(10)
+        assertTrue(link.statusRequests >= 3)
+        assertEquals(60_000, output.currentPosition)
+        told(Player.STATE_READY, index = 1, position = 60_000, paused = false)
+        assertTrue(output.isPlaying)
+    }
+
+    /** Minor 6: a later failure names the address that really was tried. */
+    @Test fun aFailureAfterALongWait_namesTheAddressItUsed() {
+        sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        link.content = receiver.sent.last().items[0].mediaId
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        idle()
+        pass(65)
+        link.content = null
+        status(ReceiverActivity.FAILED)
+        assertEquals("the next address, really sent", 2, receiver.sent.size)
+        assertTrue(uris(receiver.sent.last()).first().startsWith("http://192.168.1.2"))
+        status(ReceiverActivity.BUSY)
+        status(ReceiverActivity.FAILED)
+        assertEquals(listOf(R.string.cast_position_unknown, R.string.cast_unreachable_http), said)
+    }
+
+    // ---- Minor 3: a title cast again that is finished.
+
+    /** Here it waits at its end, as ExoPlayer does at the end of its queue. A receiver that finishes it at once is that, not a network problem. */
+    @Test fun castingATitleAtItsEnd_thatTheReceiverFinishesAtOnce_isTheEnd() {
+        playingHere(index = 1, positionMs = 99_000)
+        connect()
+        receiver.status(Player.STATE_IDLE, index = 1, position = 99_000)
+        status(ReceiverActivity.FINISHED)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        assertFalse(output.playWhenReady)
+        assertTrue("no message: nothing went wrong", said.isEmpty())
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        pass(65)
+        assertTrue(said.isEmpty())
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        // The press the session turns a play at the end into: from the start of the file, as here.
+        output.seekToDefaultPosition()
+        idle()
+        assertEquals(2, receiver.sent.size)
+        assertEquals(0, receiver.sent.last().position)
+    }
+
+    /** Anywhere else it is a prompt, plain failure: no address is at fault and nothing waits for the limit. */
+    @Test fun aReceiverThatFinishesATitleAtOnce_elsewhere_saysSoPlainly_withoutTheLimit() {
+        sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
+        playingHere(index = 0, positionMs = 30_000)
+        connect()
+        receiver.status(Player.STATE_IDLE, index = 0, position = 0)
+        status(ReceiverActivity.FINISHED)
+        pass(5)
+        assertEquals(listOf(R.string.cast_finished_at_once), said)
+        assertEquals(1, receiver.sent.size)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(0, device.index)
+        assertEquals(30_000, device.position)
+        assertFalse(device.pwr)
+    }
+
+    /** A moment of it between two files, for a load right at a file's end, ends nothing. */
+    @Test fun aMomentOfFinishedInALoad_endsNothing() {
+        playingHere(index = 0, positionMs = 99_000)
+        connect()
+        receiver.status(Player.STATE_IDLE, index = 0, position = 100_000)
+        status(ReceiverActivity.FINISHED)
+        pass(1)
+        link.now = ReceiverActivity.BUSY
+        told(Player.STATE_READY, index = 1, position = 1_000, paused = false)
+        assertTrue(said.isEmpty())
+        assertTrue(output.isPlaying)
+        assertEquals(1, output.currentMediaItemIndex)
+    }
+
+    /** The status still says the title's end from the last time: only what comes after the load counts. */
+    @Test fun aFinishedStatusLeftFromBefore_isNotTheNewLoads() {
+        onReceiverNow()
+        playedTo(99_000)
+        status(ReceiverActivity.FINISHED)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        output.seekTo(0, 2_000)
+        idle()
+        assertEquals(2, receiver.sent.size)
+        output.onReceiverStatus()
+        pass(5)
+        assertTrue(said.isEmpty())
+        assertEquals(CastActivity.PLAYING, activities.last())
+        assertEquals(2_000, output.currentPosition)
+    }
+
+    // ---- Minor 2: only the next file is a crossing.
+
+    /** The index falls back to 0 for a status whose item the player cannot place: nothing moved, and a cast ending right then leaves it where it was. */
+    @Test fun aFallbackToIndexZero_isNoCrossing_andThePositionStands() {
+        onReceiverNow()
+        playedTo(60_000)
+        told(Player.STATE_READY, index = 0, position = 61_000)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(60_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        ended()
+        assertEquals(1, device.index)
+        assertEquals(60_000, device.position)
+    }
+
+    @Test fun aFallbackToIndexZero_thatPasses_changesNothing() {
+        onReceiverNow()
+        playedTo(60_000)
+        receiver.status(Player.STATE_READY, index = 0, position = 61_000)
+        pass(1)
+        told(Player.STATE_READY, index = 1, position = 62_000)
+        assertTrue(output.isPlaying)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(62_000, output.currentPosition)
+    }
+
+    /** Back across a file: the status that overtook the seek still has the old file, one further on than the target, which is no crossing. */
+    @Test fun aSeekBackAcrossFiles_withALateStatus_isNoCrossing() {
+        onReceiverNow()
+        playedTo(60_000)
+        output.seekTo(0, 40_000)
+        idle()
+        told(Player.STATE_READY, index = 1, position = 61_000)
+        pass(1)
+        assertEquals(0, output.currentMediaItemIndex)
+        assertEquals(40_000, output.currentPosition)
+        told(Player.STATE_READY, index = 0, position = 40_500)
+        assertTrue(output.isPlaying)
+        assertEquals(0, output.currentMediaItemIndex)
+        assertEquals(40_500, output.currentPosition)
+    }
+
+    /** Forward across a file: the same. */
+    @Test fun aSeekForwardAcrossFiles_withALateStatus_isNoCrossing() {
+        playingHere(index = 0, positionMs = 5_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(60_000)
+        output.seekTo(1, 40_000)
+        idle()
+        told(Player.STATE_READY, index = 0, position = 61_000)
+        pass(1)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(40_000, output.currentPosition)
+    }
+
+    /** A jump that lasts is what the receiver does (a TV's remote). */
+    @Test fun anotherFileForLonger_isWhatTheReceiverPlays() {
+        val three = listOf(localItem("srv", "li", 1), localItem("srv", "li", 2), localItem("srv", "li", 3))
+        sessions.tracksFor = { 3 }
+        playingHere(three, 2, 5_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(30_000)
+        told(Player.STATE_READY, index = 0, position = 10_000)
+        pass(5)
+        assertEquals(2, output.currentMediaItemIndex)
+        assertEquals(30_000, output.currentPosition)
+        pass(7)
+        assertEquals(0, output.currentMediaItemIndex)
+        assertEquals(22_000, output.currentPosition)
+        assertTrue(output.isPlaying)
     }
 
     @Test fun aFileBoundaryOnTheReceiver_neverPairsTheNewFileWithTheOldPosition() {
@@ -319,9 +606,7 @@ class CastOutputPlayerTest {
         assertEquals(0, output.currentPosition)
         assertFalse(output.isPlaying)
         // The next status: the new file really.
-        receiver.status(position = 800)
-        output.onReceiverStatus()
-        idle()
+        told(position = 800)
         assertEquals(1, output.currentMediaItemIndex)
         assertEquals(800, output.currentPosition)
         assertTrue(output.isPlaying)
@@ -807,9 +1092,7 @@ class CastOutputPlayerTest {
         playedTo(30_000)
         suspendSession()
         resumeSession()
-        receiver.status(position = 30_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 30_000)
         assertEquals("the old status is enough to go on", 1, receiver.sent.size)
         status(ReceiverActivity.STOPPED)
         pass(12)
@@ -848,9 +1131,7 @@ class CastOutputPlayerTest {
         playedTo(30_000)
         suspendSession()
         resumeSession()
-        receiver.status(position = 30_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 30_000)
         status(ReceiverActivity.FINISHED)
         pass(12)
         assertEquals("no load", 1, receiver.sent.size)
@@ -865,9 +1146,7 @@ class CastOutputPlayerTest {
         suspendSession()
         resumeSession()
         link.content = "someone-elses-title"
-        receiver.status(position = 1_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 1_000)
         pass(12)
         assertEquals("no load", 1, receiver.sent.size)
         assertFalse(output.playWhenReady)
@@ -934,9 +1213,7 @@ class CastOutputPlayerTest {
         val prepared = device.prepared
         suspendSession()
         resumeSession()
-        receiver.status(position = 40_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 40_000)
         assertEquals(prepared, device.prepared)
         assertEquals(1, receiver.sent.size)
         assertTrue(output.isPlaying)
@@ -995,9 +1272,7 @@ class CastOutputPlayerTest {
         suspendSession()
         output.onCastTakenBack()
         resumeSession()
-        receiver.status(position = 40_000)
-        output.onReceiverStatus()
-        idle()
+        told(position = 40_000)
         ended()
         assertFalse(device.pwr)
     }
@@ -1289,12 +1564,12 @@ class CastOutputPlayerTest {
         sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
         playingHere()
         connect()
-        pass(29)
-        assertEquals(1, receiver.sent.size)
+        pass(39)
+        assertEquals("two thirds for the first address", 1, receiver.sent.size)
         pass(2)
         assertEquals(2, receiver.sent.size)
         assertTrue(said.isEmpty())
-        pass(30)
+        pass(20)
         assertEquals(listOf(R.string.cast_unreachable_http), said)
     }
 
