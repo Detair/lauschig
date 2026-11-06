@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.setup
 
 import io.wolftown.lauschig.TestViewModels
+import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.SetupMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,12 +21,14 @@ class SsoReturnViewModelTest {
     private val bus = OidcCallbackBus()
     private var matches = true
     private var adds = false
+    private var unlock: String? = null
     private val oidc = object : OidcSignIn {
         override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart = OidcStart.Unreachable
         override suspend fun matchesPending(callback: OidcCallback) = matches
         override suspend fun finish(callback: OidcCallback): OidcResult = error("not here")
         override suspend fun clearPending() {}
         override suspend fun pendingAddsProfile() = adds
+        override suspend fun pendingUnlock() = unlock
     }
     private val viewModels = TestViewModels()
 
@@ -39,7 +42,7 @@ class SsoReturnViewModelTest {
     @Test fun theAnswerToTheAttempt_waits_untilAFormTookIt() {
         val vm = vm()
         bus.post(OidcCallback("c", "s", null))
-        assertEquals(SetupMode.SIGN_IN, vm.waiting.value)
+        assertEquals(Setup(), vm.waiting.value)
         bus.take()
         assertNull(vm.waiting.value)
     }
@@ -49,7 +52,15 @@ class SsoReturnViewModelTest {
         adds = true
         val vm = vm()
         bus.post(OidcCallback("c", "s", null))
-        assertEquals(SetupMode.ADD_PROFILE, vm.waiting.value)
+        assertEquals(Setup(SetupMode.ADD_PROFILE), vm.waiting.value)
+    }
+
+    /** Task 3.6: the form that opens is that account's, and its mode is in the route from there on. */
+    @Test fun theAnswerToAnUnlockAttempt_opensThatAccountsForm() {
+        unlock = "aaaaaaaaaaaaaaaa"
+        val vm = vm()
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(Setup(SetupMode.UNLOCK, "aaaaaaaaaaaaaaaa"), vm.waiting.value)
     }
 
     @Test fun aForeignLink_opensNothing() {

@@ -64,6 +64,8 @@ private class FakeOidc : OidcSignIn {
     var matches = true
     var pendingAdd = false
     override suspend fun pendingAddsProfile() = pendingAdd
+    var pendingUnlockOf: String? = null
+    override suspend fun pendingUnlock() = pendingUnlockOf
     override suspend fun start(baseUrl: HttpUrl, flow: OidcFlowContext): OidcStart { started += baseUrl; lastFlow = flow; return start }
     override suspend fun matchesPending(callback: OidcCallback) = matches
     override suspend fun finish(callback: OidcCallback): OidcResult { finished += callback; return finishResult() }
@@ -676,5 +678,204 @@ class SetupViewModelTest {
         store.acc.value = null
         store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a0", "r0", false))
         assertTrue(addVm().state.value.nobodyActive)
+    }
+
+    // --- 3.6, a forgotten PIN ---
+
+    private val kindAtHome = Account(
+        Account.computeServerId(ServerAddresses("http://nas.lan:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl(), setOf("HomeNet")), "u9"),
+        "u9", "kind", false, ServerAddresses("http://nas.lan:13378".toHttpUrl(), "https://abs.example.org".toHttpUrl(), setOf("HomeNet")), setOf("http://nas.lan:13378"),
+    )
+    private val unlocked = mutableListOf<Account>()
+    private val ended = mutableListOf<String>()
+    private var unlockFails = false
+
+    private fun unlockVm(target: String? = kindAtHome.serverId, mode: SetupMode = SetupMode.UNLOCK) = viewModels.own(
+        SetupViewModel(
+            store, login, net, sync, oidc, bus, signOut, addProfile = { a, _, _ -> added += a }, mode = mode, unlockTarget = target,
+            unlock = { a, acc, ref ->
+                if (unlockFails) throw IOException("disk full")
+                unlocked += a
+                store.add(a, acc, ref)
+            },
+            endSession = { a, _ -> ended += a.username },
+        ),
+    )
+
+    private fun kindIsSaved() {
+        signedInAsFabian()
+        store.aside.value = listOf(FakeAccountStore.Aside(kindAtHome, "old-a", "old-r", false))
+    }
+
+    private fun answersAs(id: String, name: String) {
+        login.behaviour = { LoginResponse(AbsUser(id, name, "user", "new-a", "new-r")) }
+    }
+
+    @Test fun unlock_theFormIsThatAccounts_butThePassword() {
+        kindIsSaved()
+        val s = unlockVm().state.value
+        assertEquals(kindAtHome.serverId, s.unlockServerId)
+        assertEquals("kind", s.unlockName)
+        assertEquals("kind", s.username)
+        assertEquals("http://nas.lan:13378", s.local)
+        assertEquals("https://abs.example.org", s.public)
+        assertEquals("", s.password)
+        assertTrue(s.ssidBinding)
+        assertEquals(setOf("HomeNet"), s.keptSsids)
+        assertFalse(s.addProfile)
+        assertTrue(s.addressesFixed)
+    }
+
+    /** The form of the active profile, when it was its own PIN that was forgotten at „Profil schützen“. */
+    @Test fun unlock_alsoForTheActiveProfile() {
+        store.acc.value = kindAtHome
+        assertEquals("kind", unlockVm().state.value.unlockName)
+    }
+
+    /** No such account (any more): nothing can be sent. */
+    @Test fun unlock_withoutThatAccount_theFormStaysEmpty() {
+        signedInAsFabian()
+        val s = unlockVm().state.value
+        assertEquals("", s.local)
+        assertEquals("", s.public)
+        assertFalse(s.copy(username = "x", password = "y").canLogin)
+    }
+
+    /** Review focus 3: another server could answer anything with the account's user id. */
+    @Test fun unlock_theAddressesCannotBeChanged() {
+        kindIsSaved()
+        val v = unlockVm()
+        v.onLocalChanged("http://evil.lan")
+        v.onPublicChanged("https://evil.example")
+        assertEquals("http://nas.lan:13378", v.state.value.local)
+        assertEquals("https://abs.example.org", v.state.value.public)
+    }
+
+    @Test fun unlock_exactlyThisAccount_comesIn_notAsAnAddNotAsASignIn() {
+        kindIsSaved()
+        answersAs("u9", "kind")
+        val v = unlockVm()
+        v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(listOf("kind"), unlocked.map { it.username })
+        assertEquals(kindAtHome.serverId, unlocked.single().serverId)
+        assertTrue(added.isEmpty())
+        assertTrue(signOut.switched.isEmpty())
+        assertTrue(v.state.value.done)
+        assertEquals("", v.state.value.password)
+        assertEquals(1, sync.count)
+    }
+
+    /** Task 3.6: refused and nothing changes; the session it has just got on the server does not stay behind. */
+    @Test fun unlock_anotherAccount_isRefused_andChangesNothing() {
+        kindIsSaved()
+        answersAs("u1", "fabian")
+        val v = unlockVm()
+        v.onUsernameChanged("fabian")
+        v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(SetupError.UNLOCK_OTHER_ACCOUNT, v.state.value.error)
+        assertFalse(v.state.value.done)
+        assertFalse(v.state.value.loading)
+        assertTrue(unlocked.isEmpty())
+        assertTrue(added.isEmpty())
+        assertTrue(signOut.switched.isEmpty())
+        assertEquals(fabian, store.acc.value)
+        assertEquals("a0", store.access)
+        assertEquals("old-a", store.aside.value.single().access)
+        assertEquals(0, sync.count)
+        assertEquals(listOf("fabian"), ended)
+    }
+
+    @Test fun unlock_aWrongPassword_changesNothing() {
+        kindIsSaved()
+        login.behaviour = { throw HttpException(Response.error<Any>(401, "".toResponseBody())) }
+        val v = unlockVm()
+        v.onPasswordChanged("wrong")
+        v.login()
+        assertEquals(SetupError.WRONG_LOGIN, v.state.value.error)
+        assertTrue(unlocked.isEmpty())
+        assertEquals(fabian, store.acc.value)
+    }
+
+    @Test fun unlock_whatCannotBeStored_saysSo() {
+        kindIsSaved()
+        answersAs("u9", "kind")
+        unlockFails = true
+        val v = unlockVm()
+        v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(SetupError.SAVE_FAILED, v.state.value.error)
+        assertEquals(fabian, store.acc.value)
+    }
+
+    @Test fun unlock_theSsoAttemptCarriesWhoseItIs() {
+        kindIsSaved()
+        val v = unlockVm()
+        v.loginWithSso()
+        assertEquals(kindAtHome.serverId, oidc.lastFlow.unlockServerId)
+        assertFalse(oidc.lastFlow.addProfile)
+        assertEquals("the account's own addresses", listOf("https://abs.example.org/".toHttpUrl()), oidc.started.take(1))
+    }
+
+    private val unlockFlow get() = OidcFlowContext(
+        "http://nas.lan:13378/", "https://abs.example.org/", true, "HomeNet", setOf("HomeNet"), unlockServerId = kindAtHome.serverId,
+    )
+
+    /** Review focus 4 for this mode: back from the browser on a form of whatever mode, after a rotation or a process death. */
+    @Test fun unlock_ssoBack_onAPlainForm_theAttemptDecides() {
+        kindIsSaved()
+        oidc.pendingUnlockOf = kindAtHome.serverId
+        oidc.finishResult = { OidcResult("https://abs.example.org".toHttpUrl(), LoginResponse(AbsUser("u9", "kind", "user", "new-a", "new-r")), unlockFlow) }
+        val v = unlockVm(target = null, mode = SetupMode.SIGN_IN)
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(kindAtHome.serverId, unlocked.single().serverId)
+        assertEquals(setOf("HomeNet"), unlocked.single().addresses.homeSsids)
+        assertTrue(v.state.value.done)
+        assertTrue("not signed out", signOut.switched.isEmpty())
+    }
+
+    @Test fun unlock_ssoBack_anotherAccount_isRefused_onAPlainFormToo() {
+        kindIsSaved()
+        oidc.pendingUnlockOf = kindAtHome.serverId
+        oidc.finishResult = { OidcResult("https://abs.example.org".toHttpUrl(), LoginResponse(AbsUser("u1", "fabian", "user", "new-a", "new-r")), unlockFlow) }
+        val v = unlockVm(target = null, mode = SetupMode.SIGN_IN)
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(SetupError.UNLOCK_OTHER_ACCOUNT, v.state.value.error)
+        assertTrue(unlocked.isEmpty())
+        assertTrue(signOut.switched.isEmpty())
+        assertEquals(fabian, store.acc.value)
+        assertEquals(listOf("fabian"), ended)
+    }
+
+    /** M1 of Task 2, for this mode: the attempt fails on a plain form; the second try is still about that account, and only that. */
+    @Test fun unlock_ssoFailingOnAPlainForm_theFormBecomesThatAccounts() {
+        kindIsSaved()
+        oidc.pendingUnlockOf = kindAtHome.serverId
+        oidc.finishResult = { throw OidcException(OidcException.Reason.UNREACHABLE) }
+        val v = unlockVm(target = null, mode = SetupMode.SIGN_IN)
+        bus.post(OidcCallback("c", "s", null))
+        assertEquals(SetupError.UNREACHABLE, v.state.value.error)
+        assertEquals(kindAtHome.serverId, v.state.value.unlockServerId)
+        assertEquals("https://abs.example.org", v.state.value.public)
+        assertTrue(v.state.value.addressesFixed)
+
+        answersAs("u1", "fabian")
+        v.onUsernameChanged("fabian")
+        v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(SetupError.UNLOCK_OTHER_ACCOUNT, v.state.value.error)
+        assertTrue(signOut.switched.isEmpty())
+        assertEquals(fabian, store.acc.value)
+    }
+
+    /** A form of this mode gets the answer of an older attempt that was something else: that one decides, and takes off nothing. */
+    @Test fun unlock_theFormDoesNotMakeAnOlderAttemptAnUnlock() {
+        kindIsSaved()
+        oidc.finishResult = { OidcResult("https://abs.example.org".toHttpUrl(), LoginResponse(AbsUser("u5", "oma", "user", "a", "r")), OidcFlowContext(null, "https://abs.example.org/", addProfile = true)) }
+        unlockVm()
+        bus.post(OidcCallback("c", "s", null))
+        assertTrue(unlocked.isEmpty())
+        assertEquals(listOf("oma"), added.map { it.username })
     }
 }

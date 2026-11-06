@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material3.AlertDialog
@@ -59,7 +60,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.account.ProfileLockKind
 import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.theme.Spacing
 import io.wolftown.lauschig.ui.theme.initialsOf
@@ -95,14 +98,54 @@ fun ProfileHeaderButton(rows: List<ProfileRow>?, onClick: () -> Unit, modifier: 
 /** „Profile“ as a sheet over whatever page opened it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfilesSheet(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove: (ProfileRow) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+fun ProfilesSheet(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove: (ProfileRow) -> Unit, onAdd: () -> Unit, onProtect: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        ProfilesSheetContent(rows, onSwitch, onRemove, onAdd)
+        ProfilesSheetContent(rows, onSwitch, onRemove, onAdd, onProtect = onProtect)
+    }
+}
+
+/**
+ * The sheet with all that hangs on it, for the settings row and the start page's avatar alike: the removal question and what the
+ * gate asks. The sheet stays behind a prompt, a cancel is back in it; it goes when an operation starts. [onSignIn]: the way of a
+ * forgotten PIN.
+ */
+@Composable
+fun ProfilesHost(viewModel: ProfilesViewModel, open: Boolean, onClose: () -> Unit, onAdd: () -> Unit, onSignIn: (serverId: String) -> Unit) {
+    val rows by viewModel.profiles.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    LaunchedEffect(busy) { if (busy != null) onClose() }
+    if (open) {
+        ProfilesSheet(
+            rows.orEmpty(),
+            onSwitch = { row -> if (row.active) onClose() else viewModel.switchTo(row) },
+            onRemove = viewModel::askRemove,
+            onAdd = {
+                onClose()
+                onAdd()
+            },
+            onProtect = viewModel::changeProtection,
+            onDismiss = onClose,
+        )
+    }
+    val removal by viewModel.removal.collectAsStateWithLifecycle()
+    removal?.let {
+        ProfileRemoveDialog(
+            it,
+            onConfirm = {
+                onClose() // the result comes as a snackbar
+                viewModel.confirmRemove()
+            },
+            onCancel = viewModel::cancelRemove,
+        )
+    }
+    ProfileGateDialogs(viewModel) {
+        onClose()
+        onSignIn(it)
     }
 }
 
 @Composable
-fun ProfilesSheetContent(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove: (ProfileRow) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+fun ProfilesSheetContent(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove: (ProfileRow) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier, onProtect: () -> Unit = {}) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Spacing.l).testTag("profilesSheet")) {
         Text(
             stringResource(R.string.profiles_title),
@@ -110,6 +153,15 @@ fun ProfilesSheetContent(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit,
             modifier = Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
         )
         ProfileList(rows, onSwitch, onRemove, onAdd)
+        protectionRow(rows)?.let { active ->
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.profiles_protect)) },
+                supportingContent = { Text(stringResource(active.protection.label())) },
+                leadingContent = { Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(40.dp).padding(Spacing.s)) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onProtect).testTag("protectProfile"),
+            )
+        }
     }
 }
 
@@ -129,10 +181,11 @@ fun ProfileList(rows: List<ProfileRow>, onSwitch: (ProfileRow) -> Unit, onRemove
 private fun ProfileListRow(row: ProfileRow, onSwitch: (ProfileRow) -> Unit, onRemove: (ProfileRow) -> Unit) {
     ListItem(
         headlineContent = { Text(row.name) },
-        supportingContent = if (row.host != null || row.needsReauth) {
+        supportingContent = if (row.host != null || row.needsReauth || row.protection != ProfileLockKind.NONE) {
             {
                 Column {
                     row.host?.let { Text(it) }
+                    if (row.protection != ProfileLockKind.NONE) Text(stringResource(R.string.profiles_protected))
                     if (row.needsReauth) Text(stringResource(R.string.profiles_needs_reauth), color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -259,6 +312,7 @@ fun profileOutcomeText(outcome: ProfileOutcome): String = stringResource(
         ProfileOutcome.Kind.SWITCH_FAILED -> R.string.profiles_switch_failed
         ProfileOutcome.Kind.REMOVED -> R.string.profiles_removed
         ProfileOutcome.Kind.REMOVE_FAILED -> R.string.profiles_remove_failed
+        ProfileOutcome.Kind.UNLOCKED -> R.string.profiles_unlocked
     },
     outcome.name,
 )

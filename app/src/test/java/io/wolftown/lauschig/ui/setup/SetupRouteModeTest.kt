@@ -29,7 +29,7 @@ class SetupRouteModeTest {
         nav = rememberNavController()
         NavHost(nav, startDestination = Start) {
             composable<Start> { Text("start") }
-            composable<Setup> { entry -> Text("form ${setupMode(entry.savedStateHandle)}") }
+            composable<Setup> { entry -> Text("form ${setupMode(entry.savedStateHandle)} ${setupUnlockTarget(entry.savedStateHandle)}") }
         }
     }
 
@@ -49,7 +49,7 @@ class SetupRouteModeTest {
     @Test fun theModeIsInTheRoute() {
         content(StateRestorationTester(rule))
         openAdd()
-        rule.onNodeWithText("form ADD_PROFILE").assertExists()
+        rule.onNodeWithText("form ADD_PROFILE null").assertExists()
     }
 
     @Test fun theModeSurvivesARecreation() {
@@ -57,10 +57,29 @@ class SetupRouteModeTest {
         content(tester)
         openAdd()
         tester.emulateSavedInstanceStateRestore()
-        rule.onNodeWithText("form ADD_PROFILE").assertExists()
+        rule.onNodeWithText("form ADD_PROFILE null").assertExists()
         // "back" still returns to the account's own page.
         rule.runOnUiThread { assertEquals(true, nav.popBackStack()) }
         rule.waitForIdle()
         rule.onNodeWithText("start").assertExists()
+    }
+
+    /** Task 3.6: whose form it is survives like the mode, and a plain route has no one. */
+    @Test fun theAccountOfAForgottenPin_survivesARecreation() {
+        val tester = StateRestorationTester(rule)
+        content(tester)
+        rule.runOnUiThread { nav.navigate(Setup.unlock("aaaaaaaaaaaaaaaa")) }
+        rule.waitForIdle()
+        rule.onNodeWithText("form UNLOCK aaaaaaaaaaaaaaaa").assertExists()
+        tester.emulateSavedInstanceStateRestore()
+        rule.onNodeWithText("form UNLOCK aaaaaaaaaaaaaaaa").assertExists()
+    }
+
+    @Test fun aServerIdWithoutThatMode_isNoTarget() {
+        val tester = StateRestorationTester(rule)
+        content(tester)
+        rule.runOnUiThread { nav.navigate(Setup(SetupMode.ADD_PROFILE, "aaaaaaaaaaaaaaaa")) }
+        rule.waitForIdle()
+        rule.onNodeWithText("form ADD_PROFILE null").assertExists()
     }
 }

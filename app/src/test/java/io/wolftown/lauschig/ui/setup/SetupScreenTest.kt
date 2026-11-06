@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -93,5 +94,29 @@ class SetupScreenTest {
         show(SetupUiState(error = SetupError.WRONG_LOGIN))
         val line = rule.onNodeWithTag("setupError").fetchSemanticsNode().boundsInRoot
         assertTrue(line.height > 20f)
+    }
+
+    /** Task 3.6. */
+    @Test fun aForgottenPin_saysWhoAndWhatHappens_withAWayBack_andTheAddressesAreFixed() {
+        show(SetupUiState(unlockServerId = "aaaaaaaaaaaaaaaa", unlockName = "kind", username = "kind", public = "https://abs.example.org"))
+        rule.onNodeWithText("Remove the protection").assertExists()
+        rule.onNodeWithText("Sign in as kind. The protection of this profile is then removed and you switch to it.").assertExists()
+        rule.onNodeWithTag("setupLocal").assertIsNotEnabled()
+        rule.onNodeWithTag("setupPublic").assertIsNotEnabled()
+        rule.onNodeWithTag("ssidCheckbox").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Back").performClick()
+        assertEquals(1, backs)
+    }
+
+    /** I1 of Task 2: the words of a refusal come on the node that was there before. */
+    @Test fun anotherAccount_isSaid_onTheLineThatWasThere() {
+        var state by mutableStateOf(SetupUiState(unlockServerId = "aaaaaaaaaaaaaaaa", unlockName = "kind"))
+        rule.setContent { LauschigTheme { SetupScreen(state, {}, {}, {}, {}, {}, {}, {}, {}, {}) } }
+        val line = rule.onNodeWithTag("setupError")
+        val before = line.fetchSemanticsNode().id
+        state = state.copy(error = SetupError.UNLOCK_OTHER_ACCOUNT)
+        rule.waitForIdle()
+        assertEquals(before, line.fetchSemanticsNode().id)
+        assertEquals(listOf("That is a different account. Nothing has changed."), line.fetchSemanticsNode().config[SemanticsProperties.ContentDescription])
     }
 }

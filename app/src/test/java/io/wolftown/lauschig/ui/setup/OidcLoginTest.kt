@@ -223,4 +223,16 @@ class OidcLoginTest {
         assertEquals("acc", res.response.user.accessToken)
         assertTrue(server.takeRequest().getHeader("Cookie")!!.contains("connect.sid=sess123"))
     }
+
+    /** Task 3.6: whose attempt it is survives with the attempt, also in a new process; a later plain attempt has no one. */
+    @Test fun whoseForgottenPinItIs_isInTheAttempt() = runBlocking {
+        assertEquals("nothing pending", null, oidc().pendingUnlock())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/", unlockServerId = "aaaaaaaaaaaaaaaa"))
+        assertEquals("aaaaaaaaaaaaaaaa", oidc().pendingUnlock())
+        assertEquals(false, oidc().pendingAddsProfile())
+        enqueueStart()
+        oidc().start(base, OidcFlowContext(null, "https://abs.example.org/"))
+        assertEquals(null, oidc().pendingUnlock())
+    }
 }

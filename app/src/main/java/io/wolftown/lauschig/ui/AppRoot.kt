@@ -51,8 +51,7 @@ import io.wolftown.lauschig.ui.player.PlayerRoute
 import io.wolftown.lauschig.ui.player.PlayerViewModel
 import io.wolftown.lauschig.ui.profiles.ProfileBusyDialog
 import io.wolftown.lauschig.ui.profiles.ProfileHeaderButton
-import io.wolftown.lauschig.ui.profiles.ProfileRemoveDialog
-import io.wolftown.lauschig.ui.profiles.ProfilesSheet
+import io.wolftown.lauschig.ui.profiles.ProfilesHost
 import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
 import io.wolftown.lauschig.ui.profiles.profileOutcomeText
 import io.wolftown.lauschig.ui.setup.SsoReturnViewModel
@@ -167,8 +166,8 @@ fun AppRoot(
                 // The attempt itself knows what it was started as.
                 val ssoWaiting by ssoReturn.waiting.collectAsStateWithLifecycle()
                 LaunchedEffect(ssoWaiting) {
-                    val mode = ssoWaiting ?: return@LaunchedEffect
-                    if (navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(Setup(mode)) { launchSingleTop = true }
+                    val form = ssoWaiting ?: return@LaunchedEffect
+                    if (navController.currentDestination?.hasRoute<Setup>() != true) navController.navigate(form) { launchSingleTop = true }
                 }
 
                 val onSetup = navController.isOnSetup()
@@ -236,32 +235,13 @@ fun AppRoot(
                 val deletingPrevious by previousAccount.deleting.collectAsStateWithLifecycle()
                 val previousFailed by previousAccount.deleteFailed.collectAsStateWithLifecycle()
                 previous?.let { if (!onSetup) PreviousAccountDialog(it, deletingPrevious, previousAccount::delete, previousAccount::keep, previousFailed) }
-                if (profilesOpen) {
-                    ProfilesSheet(
-                        profileRows.orEmpty(),
-                        onSwitch = {
-                            profilesOpen = false
-                            profiles.switchTo(it)
-                        },
-                        onRemove = profiles::askRemove,
-                        onAdd = {
-                            profilesOpen = false
-                            navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true }
-                        },
-                        onDismiss = { profilesOpen = false },
-                    )
-                }
-                val removal by profiles.removal.collectAsStateWithLifecycle()
-                removal?.let {
-                    ProfileRemoveDialog(
-                        it,
-                        onConfirm = {
-                            profilesOpen = false // the result comes as a snackbar
-                            profiles.confirmRemove()
-                        },
-                        onCancel = profiles::cancelRemove,
-                    )
-                }
+                ProfilesHost(
+                    profiles,
+                    open = profilesOpen,
+                    onClose = { profilesOpen = false },
+                    onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
+                )
             }
             // Outside the pages: it stays up while they change underneath, and a recreated activity finds it again.
             val profileWork by profiles.busy.collectAsStateWithLifecycle()

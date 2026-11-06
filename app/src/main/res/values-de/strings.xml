@@ -818,6 +818,7 @@
         <item>Profil hinzufügen: Die Serveradresse ist schon eingetragen, praktisch für die Familie auf einem Server</item>
         <item>Nach dem Abmelden fragt die App „Wer hört zu?“, wenn weitere Profile da sind</item>
         <item>Die Downloads-Seite zeigt, wie viel Platz die anderen Profile belegen</item>
+        <item>Profil schützen, wenn du möchtest: Vor dem Wechsel fragt die App nach der Gerätesperre oder einer eigenen PIN</item>
     </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Sprungzeiten einstellbar: zurück 5–30 s, vor 15–60 s – im Player, in der Benachrichtigung, im Auto und am Kopfhörer</item>
@@ -1080,4 +1081,49 @@
     <string name="welcome_sign_in">Anmelden</string>
     <string name="welcome_place">Seite %1$d von %2$d</string>
     <string name="setup_add_intro_nobody">Melde dich mit einem weiteren Konto an. Liegt es auf demselben Server, lass die Adressen einfach stehen.</string>
+    <!-- Schutz eines Profils -->
+    <string name="profiles_protected">Geschützt</string>
+    <string name="profiles_protect">Profil schützen</string>
+    <string name="profiles_protect_off">Aus</string>
+    <string name="profiles_protect_device">Gerätesperre</string>
+    <string name="profiles_protect_pin">App-PIN</string>
+    <string name="profiles_protect_no_device_lock">Dieses Gerät hat keine Bildschirmsperre.</string>
+    <string name="profiles_protect_note">Das hält Kinder vom Wechsel in dieses Profil ab. Gegen jemanden mit vollem Zugriff auf das Gerät schützt es nicht.</string>
+    <string name="profiles_protect_save_failed">Der Schutz ließ sich nicht speichern. Es hat sich nichts geändert.</string>
+    <string name="profiles_device_title">Profil %1$s</string>
+    <string name="profiles_device_subtitle">Mit der Bildschirmsperre bestätigen</string>
+    <string name="profiles_signin_title">Mit dem Konto anmelden</string>
+    <string name="profiles_signin">Anmelden</string>
+    <string name="profiles_signin_device_gone">%1$s ist mit der Gerätesperre geschützt, aber dieses Gerät hat keine mehr. Melde dich mit diesem Konto an, dann ist der Schutz aufgehoben.</string>
+    <string name="profiles_signin_device_failed">Die Gerätesperre hat gerade nicht geklappt. Versuch es später noch einmal, oder melde dich als %1$s an, dann ist der Schutz aufgehoben.</string>
+    <string name="profiles_signin_unreadable">Der Schutz von %1$s lässt sich nicht mehr lesen. Melde dich mit diesem Konto an, dann ist er aufgehoben.</string>
+    <string name="profiles_unlocked">Profil %1$s ist aktiv, der Schutz ist aus</string>
+    <string name="pin_field">PIN</string>
+    <string name="pin_title">PIN für %1$s</string>
+    <string name="pin_ok">OK</string>
+    <string name="pin_next">Weiter</string>
+    <string name="pin_forgot">PIN vergessen?</string>
+    <string name="pin_wait">Zu viele falsche Eingaben. Bitte warte %1$s.</string>
+    <string name="pin_wait_left">Noch %1$s</string>
+    <string name="pin_ready">Du kannst es jetzt wieder versuchen.</string>
+    <string name="pin_check_failed">Die Eingabe ließ sich nicht prüfen. Bitte versuch es noch einmal.</string>
+    <string name="pin_new_title">App-PIN festlegen</string>
+    <string name="pin_new_hint">4 bis 8 Ziffern</string>
+    <string name="pin_new_again">Gib die PIN noch einmal ein.</string>
+    <string name="pin_new_differs">Die beiden Eingaben waren verschieden. Bitte fang noch einmal an.</string>
+    <string name="setup_unlock_title">Schutz aufheben</string>
+    <string name="setup_unlock_intro">Melde dich als %1$s an. Der Schutz dieses Profils ist dann aufgehoben, und du wechselst hinein.</string>
+    <string name="setup_error_unlock_other">Das ist ein anderes Konto. Es hat sich nichts geändert.</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">Falsche PIN. Noch ein Versuch bis zur Wartezeit.</item>
+        <item quantity="other">Falsche PIN. Noch %d Versuche bis zur Wartezeit.</item>
+    </plurals>
+    <plurals name="pin_wait_seconds">
+        <item quantity="one">%d Sekunde</item>
+        <item quantity="other">%d Sekunden</item>
+    </plurals>
+    <plurals name="pin_wait_minutes">
+        <item quantity="one">%d Minute</item>
+        <item quantity="other">%d Minuten</item>
+    </plurals>
 </resources>

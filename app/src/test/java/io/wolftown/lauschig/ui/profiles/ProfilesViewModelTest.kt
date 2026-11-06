@@ -2,6 +2,7 @@ package io.wolftown.lauschig.ui.profiles
 
 import io.wolftown.lauschig.TestViewModels
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.account.FakeProfileLocks
 import io.wolftown.lauschig.account.ProfileSwitch
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.net.FakeAccountStore
@@ -59,7 +60,7 @@ class ProfilesViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() { viewModels.clear(); scope.cancel(); Dispatchers.resetMain() }
 
-    private fun vm() = viewModels.own(ProfilesViewModel(store, ops) { facts(it) })
+    private fun vm() = viewModels.own(ProfilesViewModel(store, ops, ProfileGate(FakeProfileLocks()) { true }) { facts(it) })
     private fun <T> await(block: suspend () -> T): T = runBlocking { withTimeout(5_000) { block() } }
 
     private fun aside(vararg accounts: Account, flagged: Set<String> = emptySet()) {

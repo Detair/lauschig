@@ -83,6 +83,7 @@ import io.wolftown.lauschig.ui.setup.OidcLogin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -541,7 +542,7 @@ class ProfileSwitchFlowTest {
         try {
             val operations = ProfileOperations(signOut, scope)
             val main = viewModels.own(MainViewModel(store))
-            val profiles = viewModels.own(ProfilesViewModel(store, operations) { RemovalFacts(0, 0, false) })
+            val profiles = viewModels.own(ProfilesViewModel(store, operations, io.wolftown.lauschig.ui.profiles.ProfileGate(FakeProfileLocks()) { true }) { RemovalFacts(0, 0, false) })
             val starter = PlayDownloadStarter(flowOf(true), flowOf(MeteredDownload.ASK), {}, { false }, { _, _ -> null }, { _, _ -> null }, manager, prompts, scope)
             val frame = viewModels.own(AppViewModel(api, store, jumps, player, prompts, starter))
             suspend fun <T> soon(what: suspend () -> T): T = kotlinx.coroutines.withTimeout(10_000) { what() }
@@ -550,8 +551,10 @@ class ProfileSwitchFlowTest {
             soon { profiles.profiles.first { it?.size == 2 } }
             soon { frame.downloadPrompt.first { it != null } }
 
+            // The gate reads its store first; whoever looks from there on sees it running.
+            val running = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { profiles.busy.first { it != null } }
             profiles.switchTo(row(b))
-            assertEquals(ProfileWork.Switching(web.b.username), profiles.busy.value)
+            assertEquals(ProfileWork.Switching(web.b.username), soon { running.await() })
             val done = soon { profiles.outcome.first { it != null } }!!
             assertEquals(ProfileOutcome.Kind.SWITCHED, done.kind)
             assertEquals(web.b.username, done.name)

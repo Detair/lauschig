@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -23,6 +24,10 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.core.app.ApplicationProvider
 import io.wolftown.lauschig.ui.LauschigTheme
+import io.wolftown.lauschig.ui.profiles.GatePrompt
+import io.wolftown.lauschig.ui.profiles.PinNotice
+import io.wolftown.lauschig.ui.profiles.PinPromptBody
+import io.wolftown.lauschig.ui.profiles.ProfileRow
 import io.wolftown.lauschig.ui.setup.SetupError
 import io.wolftown.lauschig.ui.setup.SetupScreen
 import io.wolftown.lauschig.ui.setup.SetupUiState
@@ -153,5 +158,36 @@ class LiveRegionEventsTest {
         rule.waitForIdle()
         settle()
         assertTrue("events: $events", spokenFrom(id).isNotEmpty())
+    }
+
+    /** Task 3.5: the wrong entries, the start of the wait and its end are all read out, from the same line. */
+    @Test fun whatThePinPromptSays_isSentFromTheSameNode() {
+        val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)
+        var prompt by mutableStateOf(GatePrompt.Pin(row))
+        show { LauschigTheme { PinPromptBody(prompt, "", {}, FocusRequester(), {}, {}) } }
+        settle()
+        val id = rule.onNodeWithTag("pinNotice").fetchSemanticsNode().id
+        for (next in listOf(PinNotice.Wrong(4), PinNotice.Wrong(3), PinNotice.Wait(30_000), PinNotice.Ready)) {
+            events.clear()
+            prompt = prompt.copy(notice = next)
+            rule.waitForIdle()
+            settle()
+            assertTrue("$next, events: $events", spokenFrom(id).isNotEmpty())
+        }
+    }
+
+    /** The countdown changes every second, for the eye: it must not talk. */
+    @Test fun theCountdown_saysNothingByItself() {
+        val row = ProfileRow("aaaaaaaaaaaaaaaa", "kind", null, active = false, needsReauth = false)
+        var prompt by mutableStateOf(GatePrompt.Pin(row, notice = PinNotice.Wait(30_000), waitMs = 30_000))
+        show { LauschigTheme { PinPromptBody(prompt, "", {}, FocusRequester(), {}, {}) } }
+        settle()
+        val id = rule.onNodeWithTag("pinNotice").fetchSemanticsNode().id
+        events.clear()
+        prompt = prompt.copy(waitMs = 29_000)
+        rule.waitForIdle()
+        settle()
+        assertEquals("events: $events", 0, spokenFrom(id).size)
+        assertEquals(null, rule.onNodeWithTag("pinCountdown").accessibilityInfo()?.liveRegion?.takeIf { it != View.ACCESSIBILITY_LIVE_REGION_NONE })
     }
 }

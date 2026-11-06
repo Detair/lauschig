@@ -24,13 +24,14 @@ import io.wolftown.lauschig.ui.theme.Spacing
  * profile may be protected, and the next person is not necessarily the one it would be.
  */
 @Composable
-fun ProfilePickerRoute(onAdd: () -> Unit, onNoneLeft: () -> Unit, viewModel: ProfilesViewModel = hiltViewModel()) {
+fun ProfilePickerRoute(onAdd: () -> Unit, onNoneLeft: () -> Unit, onSignIn: (serverId: String) -> Unit = {}, viewModel: ProfilesViewModel = hiltViewModel()) {
     val rows by viewModel.profiles.collectAsStateWithLifecycle()
     val removal by viewModel.removal.collectAsStateWithLifecycle()
     val list = rows ?: return
     if (list.isEmpty()) LaunchedEffect(Unit) { onNoneLeft() }
     ProfilePickerScreen(list, viewModel::switchTo, viewModel::askRemove, onAdd)
     removal?.let { ProfileRemoveDialog(it, viewModel::confirmRemove, viewModel::cancelRemove) }
+    ProfileGateDialogs(viewModel, onSignIn)
 }
 
 @Composable

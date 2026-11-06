@@ -162,6 +162,7 @@ fun AppNavHost(
                     onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
                     // The last one was removed here: only the sign-in is left.
                     onNoneLeft = { navController.navigate(Setup()) { popUpTo<ProfilePicker> { inclusive = true } } },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
                 )
             }
         }

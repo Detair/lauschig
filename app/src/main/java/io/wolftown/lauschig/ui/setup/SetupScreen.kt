@@ -121,26 +121,33 @@ fun SetupScreen(
         modifier.verticalScroll(rememberScrollState()).imePadding().padding(16.dp).testTag("setupScreen"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (state.addProfile) {
+        if (state.addProfile || state.unlockServerId != null) {
             // The arrow's own inset makes it line up with the text below.
             Row(Modifier.offset(x = (-12).dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.detail_back)) }
-                Text(stringResource(R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(if (state.unlockServerId != null) R.string.setup_unlock_title else R.string.profiles_add), style = MaterialTheme.typography.headlineSmall)
             }
-            Text(stringResource(if (state.nobodyActive) R.string.setup_add_intro_nobody else R.string.setup_add_intro), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                when {
+                    state.unlockServerId != null -> stringResource(R.string.setup_unlock_intro, state.unlockName ?: state.username)
+                    state.nobodyActive -> stringResource(R.string.setup_add_intro_nobody)
+                    else -> stringResource(R.string.setup_add_intro)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
         } else {
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
         }
 
         OutlinedTextField(
-            state.local, onLocal, Modifier.fillMaxWidth(), singleLine = true,
+            state.local, onLocal, Modifier.fillMaxWidth().testTag("setupLocal"), enabled = !state.addressesFixed, singleLine = true,
             label = { Text(stringResource(R.string.setup_local_address)) },
             placeholder = { Text(stringResource(R.string.setup_local_placeholder)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
         OutlinedTextField(
-            state.public, onPublic, Modifier.fillMaxWidth(), singleLine = true,
+            state.public, onPublic, Modifier.fillMaxWidth().testTag("setupPublic"), enabled = !state.addressesFixed, singleLine = true,
             label = { Text(stringResource(R.string.setup_public_address)) },
             placeholder = { Text(stringResource(R.string.setup_public_placeholder)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -150,7 +157,7 @@ fun SetupScreen(
             Checkbox(
                 checked = state.ssidBinding,
                 onCheckedChange = onSsidBinding,
-                enabled = state.local.isNotBlank(),
+                enabled = state.local.isNotBlank() && !state.addressesFixed,
                 modifier = Modifier.testTag("ssidCheckbox"),
             )
             Text(stringResource(R.string.setup_ssid_binding), style = MaterialTheme.typography.bodyMedium)
@@ -217,4 +224,5 @@ private fun SetupError.message(): Int = when (this) {
     SetupError.SAVE_FAILED -> R.string.setup_error_save_failed
     SetupError.SSO_REDIRECT_NOT_ALLOWED -> R.string.setup_error_sso_redirect
     SetupError.SSO_FAILED -> R.string.setup_error_sso_failed
+    SetupError.UNLOCK_OTHER_ACCOUNT -> R.string.setup_error_unlock_other
 }

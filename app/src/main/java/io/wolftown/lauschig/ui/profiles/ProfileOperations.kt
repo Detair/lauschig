@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.ui.profiles
 
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.account.ProfileLocks
 import io.wolftown.lauschig.account.ProfileSwitch
 import io.wolftown.lauschig.diagnostics.Log
 import kotlinx.coroutines.CancellationException
@@ -26,7 +27,7 @@ sealed interface ProfileWork {
 
 /** How an operation ended; waits here until the app has shown it. Every result is its own, also the same one twice. */
 data class ProfileOutcome(val kind: Kind, val name: String, private val seq: Long) {
-    enum class Kind { SWITCHED, SWITCH_FAILED, REMOVED, REMOVE_FAILED }
+    enum class Kind { SWITCHED, SWITCH_FAILED, REMOVED, REMOVE_FAILED, UNLOCKED }
 }
 
 /**
@@ -36,8 +37,13 @@ data class ProfileOutcome(val kind: Kind, val name: String, private val seq: Lon
  * there for whichever screen looks, however often it was recreated, and one operation at a time.
  */
 @Singleton
-class ProfileOperations(private val profiles: ProfileSwitch, private val scope: CoroutineScope) {
-    @Inject constructor(profiles: ProfileSwitch) : this(profiles, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+class ProfileOperations(
+    private val profiles: ProfileSwitch,
+    private val scope: CoroutineScope,
+    /** Takes the protection off a profile. */
+    private val removeProtection: suspend (serverId: String) -> Unit = {},
+) {
+    @Inject constructor(profiles: ProfileSwitch, locks: ProfileLocks) : this(profiles, CoroutineScope(SupervisorJob() + Dispatchers.Default), locks::remove)
 
     private val _running = MutableStateFlow<ProfileWork?>(null)
     val running: StateFlow<ProfileWork?> = _running.asStateFlow()
@@ -62,13 +68,35 @@ class ProfileOperations(private val profiles: ProfileSwitch, private val scope: 
      * happened, it must not get lost). The caller may go away meanwhile: the switch still arrives. A failure is thrown to
      * the caller, which still has its form open; the active account stays.
      */
-    suspend fun add(next: Account, accessToken: String, refreshToken: String) {
+    suspend fun add(next: Account, accessToken: String, refreshToken: String) = comeInWith(next, accessToken, refreshToken) {
+        finished(ProfileOutcome.Kind.SWITCHED, next.username)
+    }
+
+    /**
+     * A forgotten PIN (3.6): [next] has just signed in with its password or SSO, the stronger proof. It comes in like [add], and
+     * only then the protection goes: if it cannot be stored, everything stays as it was. Should the protection fail to go, the
+     * person is in and it stays on.
+     */
+    suspend fun unlock(next: Account, accessToken: String, refreshToken: String) = comeInWith(next, accessToken, refreshToken) {
+        val removed = try {
+            removeProtection(next.serverId)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "a protection could not be removed")
+            false
+        }
+        finished(if (removed) ProfileOutcome.Kind.UNLOCKED else ProfileOutcome.Kind.SWITCHED, next.username)
+    }
+
+    private suspend fun comeInWith(next: Account, accessToken: String, refreshToken: String, then: suspend () -> Unit) {
         scope.async {
             val work = ProfileWork.Switching(next.username)
             while (!_running.compareAndSet(null, work)) _running.first { it == null }
             try {
                 profiles.addProfile(next, accessToken, refreshToken)
-                finished(ProfileOutcome.Kind.SWITCHED, next.username)
+                then()
             } finally {
                 _running.value = null
             }

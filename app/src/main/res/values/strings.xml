@@ -818,6 +818,7 @@
         <item>Add a profile: the server address is already filled in, handy for a family on one server</item>
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
         <item>The downloads page shows how much space the other profiles take</item>
+        <item>Protect a profile if you like: before a switch the app asks for the device lock or a PIN of its own</item>
     </string-array>
     <string-array name="whatsnew_0_4_0">
         <item>Adjustable skip steps: back 5–30 s, forward 15–60 s – in the player, the notification, the car and on headphones</item>
@@ -1080,4 +1081,49 @@
     <string name="welcome_sign_in">Sign in</string>
     <string name="welcome_place">Page %1$d of %2$d</string>
     <string name="setup_add_intro_nobody">Sign in with another account. If it is on the same server, just leave the addresses as they are.</string>
+    <!-- Protecting a profile -->
+    <string name="profiles_protected">Protected</string>
+    <string name="profiles_protect">Protect profile</string>
+    <string name="profiles_protect_off">Off</string>
+    <string name="profiles_protect_device">Device lock</string>
+    <string name="profiles_protect_pin">App PIN</string>
+    <string name="profiles_protect_no_device_lock">This device has no screen lock.</string>
+    <string name="profiles_protect_note">This keeps children from switching to this profile. It does not protect against someone with full access to the device.</string>
+    <string name="profiles_protect_save_failed">The protection could not be saved. Nothing has changed.</string>
+    <string name="profiles_device_title">Profile %1$s</string>
+    <string name="profiles_device_subtitle">Confirm with your screen lock</string>
+    <string name="profiles_signin_title">Sign in with the account</string>
+    <string name="profiles_signin">Sign in</string>
+    <string name="profiles_signin_device_gone">%1$s is protected by the device lock, but this device no longer has one. Sign in with this account and the protection is removed.</string>
+    <string name="profiles_signin_device_failed">The device lock did not work just now. Try again later, or sign in as %1$s and the protection is removed.</string>
+    <string name="profiles_signin_unreadable">The protection of %1$s can no longer be read. Sign in with this account and it is removed.</string>
+    <string name="profiles_unlocked">Profile %1$s is active, the protection is off</string>
+    <string name="pin_field">PIN</string>
+    <string name="pin_title">PIN for %1$s</string>
+    <string name="pin_ok">OK</string>
+    <string name="pin_next">Next</string>
+    <string name="pin_forgot">Forgot your PIN?</string>
+    <string name="pin_wait">Too many wrong entries. Please wait %1$s.</string>
+    <string name="pin_wait_left">%1$s left</string>
+    <string name="pin_ready">You can try again now.</string>
+    <string name="pin_check_failed">The entry could not be checked. Please try again.</string>
+    <string name="pin_new_title">Set an app PIN</string>
+    <string name="pin_new_hint">4 to 8 digits</string>
+    <string name="pin_new_again">Enter the PIN again.</string>
+    <string name="pin_new_differs">The two entries were different. Please start again.</string>
+    <string name="setup_unlock_title">Remove the protection</string>
+    <string name="setup_unlock_intro">Sign in as %1$s. The protection of this profile is then removed and you switch to it.</string>
+    <string name="setup_error_unlock_other">That is a different account. Nothing has changed.</string>
+    <plurals name="pin_wrong">
+        <item quantity="one">Wrong PIN. One more try before a wait.</item>
+        <item quantity="other">Wrong PIN. %d more tries before a wait.</item>
+    </plurals>
+    <plurals name="pin_wait_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <plurals name="pin_wait_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
 </resources>

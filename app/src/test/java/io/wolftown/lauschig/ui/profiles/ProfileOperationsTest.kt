@@ -173,4 +173,58 @@ class ProfileOperationsTest {
         await { added.join() }
         assertEquals(listOf("switch:b", "add:kind"), profiles.calls)
     }
+
+    // --- 3.6, a forgotten PIN ---
+
+    private val order = mutableListOf<String>()
+    private var removal: () -> Unit = {}
+    private val unlocking by lazy {
+        ProfileOperations(object : ProfileSwitch by profiles {
+            override suspend fun addProfile(next: Account, accessToken: String, refreshToken: String) {
+                order += "add"
+                profiles.addProfile(next, accessToken, refreshToken)
+            }
+        }, scope, removeProtection = {
+            order += "protection:$it"
+            removal()
+        })
+    }
+
+    @Test fun anUnlock_comesInFirst_thenTheProtectionGoes_andItSaysSo() {
+        await { unlocking.unlock(kind, "a", "r") }
+        assertEquals(listOf("add", "protection:kind"), order)
+        assertEquals(ProfileOutcome.Kind.UNLOCKED, unlocking.outcome.value!!.kind)
+        assertEquals("kind", unlocking.outcome.value!!.name)
+        assertNull(unlocking.running.value)
+    }
+
+    @Test fun anUnlock_whileItRuns_isShown() {
+        val gate = CompletableDeferred<Unit>()
+        profiles.gate = gate
+        val job = scope.launch { unlocking.unlock(kind, "a", "r") }
+        assertEquals(ProfileWork.Switching("kind"), unlocking.running.value)
+        assertTrue("not before it is in", order == listOf("add"))
+        gate.complete(Unit)
+        await { job.join() }
+    }
+
+    /** It cannot be stored: the form still says so, and the protection stays. */
+    @Test fun anUnlock_thatCannotComeIn_keepsTheProtection() {
+        profiles.addResult = { throw IOException("disk full") }
+        try {
+            await { unlocking.unlock(kind, "a", "r") }
+            org.junit.Assert.fail("the form has to hear of it")
+        } catch (_: IOException) {
+        }
+        assertEquals(listOf("add"), order)
+        assertNull(unlocking.outcome.value)
+        assertNull(unlocking.running.value)
+    }
+
+    /** In, and the protection stayed on: nothing that says it is off. */
+    @Test fun aProtectionThatDoesNotGo_saysNothingOfThat() {
+        removal = { throw IOException("disk full") }
+        await { unlocking.unlock(kind, "a", "r") }
+        assertEquals(ProfileOutcome.Kind.SWITCHED, unlocking.outcome.value!!.kind)
+    }
 }

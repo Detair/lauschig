@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import io.wolftown.lauschig.account.ProfileLockKind
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.accessibilityInfo
 import org.junit.Assert.assertEquals
@@ -199,5 +200,40 @@ class ProfilesScreensTest {
         rule.onNodeWithText("Remove").performClick()
         rule.onNodeWithTag("addProfile").performClick()
         assertEquals(listOf("switch:Fabian", "remove:kind", "add"), calls)
+    }
+
+    // --- 3.2 ---
+
+    private fun showSheetWithProtection(rows: List<ProfileRow>) = rule.setContent {
+        LauschigTheme { ProfilesSheetContent(rows, {}, {}, {}, onProtect = { calls += "protect" }) }
+    }
+
+    @Test fun oneProfile_noWordOfAProtection() {
+        showSheetWithProtection(listOf(active))
+        rule.onNodeWithTag("protectProfile").assertDoesNotExist()
+        rule.onNodeWithText("Protected").assertDoesNotExist()
+    }
+
+    @Test fun twoProfiles_theRowSaysWhatItIs_andOpensTheChoice() {
+        showSheetWithProtection(listOf(active.copy(protection = ProfileLockKind.PIN), saved))
+        rule.onNodeWithText("Protect profile").assertExists()
+        rule.onNodeWithText("App PIN").assertExists()
+        rule.onNodeWithTag("protectProfile").performClick()
+        assertEquals(listOf("protect"), calls)
+    }
+
+    @Test fun oneProfile_thatIsStillProtected_canTurnItOff() {
+        showSheetWithProtection(listOf(active.copy(protection = ProfileLockKind.DEVICE)))
+        rule.onNodeWithText("Device lock").assertExists()
+    }
+
+    @Test fun aProtectedProfile_isMarked_forTheEyeAndForTalkBack() {
+        showSheetWithProtection(listOf(active, saved.copy(protection = ProfileLockKind.PIN)))
+        rule.onNodeWithText("Protected").assertExists()
+    }
+
+    @Test fun thePicker_hasNoProtectionRow_thereIsNoActiveProfile() {
+        rule.setContent { LauschigTheme { ProfilePickerScreen(listOf(saved), {}, {}, {}) } }
+        rule.onNodeWithTag("protectProfile").assertDoesNotExist()
     }
 }

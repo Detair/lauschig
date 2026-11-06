@@ -78,6 +78,8 @@ data class OidcFlowContext(
     val keptSsids: Set<String> = emptySet(),
     /** Started as one more profile: however the form comes back, the active account is set aside, not signed out. */
     val addProfile: Boolean = false,
+    /** Started on the way of a forgotten PIN: however the form comes back, only this account counts. */
+    val unlockServerId: String? = null,
 )
 
 /** A finished SSO login: the server's answer, the address that was used and the form values from the start. */
@@ -99,6 +101,9 @@ interface OidcSignIn {
 
     /** The pending attempt was started as one more profile. False without one. */
     suspend fun pendingAddsProfile(): Boolean = false
+
+    /** The account whose forgotten PIN the pending attempt is about. Null without one. */
+    suspend fun pendingUnlock(): String? = null
 }
 
 private val Context.oidcPendingDataStore by preferencesDataStore(
@@ -203,6 +208,8 @@ class OidcLogin(
     override suspend fun clearPending() { store.edit { it.clear() } }
 
     override suspend fun pendingAddsProfile(): Boolean = loadPending()?.flow?.addProfile == true
+
+    override suspend fun pendingUnlock(): String? = loadPending()?.flow?.unlockServerId
 
     private fun stateMatches(received: String?, expected: String): Boolean =
         !received.isNullOrEmpty() && MessageDigest.isEqual(received.toByteArray(), expected.toByteArray())

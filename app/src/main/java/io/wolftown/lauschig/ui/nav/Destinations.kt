@@ -24,10 +24,20 @@ enum class SetupMode {
 
     /** One more account: the active one is set aside and stays signed in. */
     ADD_PROFILE,
+
+    /** A forgotten PIN: exactly the account [Setup.serverId] signs in; that takes the protection off and goes into it. */
+    UNLOCK,
 }
 
-/** The sign-in form. Its [mode] is in the route, so it survives a rotation, a process death and the way through the SSO browser. */
-@Serializable data class Setup(val mode: SetupMode = SetupMode.SIGN_IN)
+/**
+ * The sign-in form. Its [mode], and for [SetupMode.UNLOCK] whose form it is, are in the route, so they survive a rotation, a
+ * process death and the way through the SSO browser.
+ */
+@Serializable data class Setup(val mode: SetupMode = SetupMode.SIGN_IN, val serverId: String? = null) {
+    companion object {
+        fun unlock(serverId: String) = Setup(SetupMode.UNLOCK, serverId)
+    }
+}
 /** The few pages of the very first start, before the sign-in. */
 @Serializable data object Welcome
 /** „Wer hört zu?“: nobody is active, saved profiles are there. */
