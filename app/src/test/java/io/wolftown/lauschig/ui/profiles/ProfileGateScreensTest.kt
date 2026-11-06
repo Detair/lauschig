@@ -3,6 +3,7 @@ package io.wolftown.lauschig.ui.profiles
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -382,7 +383,8 @@ class ProfileGateScreensTest {
         rule.setContent {
             Themed {
                 var isOpen by androidx.compose.runtime.remember { mutableStateOf(open) }
-                if (opened != null) ProfileHeaderButton(vm.profiles.value, onClick = { isOpen = true })
+                val rows by vm.profiles.collectAsState()
+                if (opened != null) ProfileHeaderButton(rows, onClick = { isOpen = true })
                 ProfilesHost(vm, isOpen, onClose = { isOpen = false }, onAdd = { calls += "add" }, onSignIn = { calls += "signIn:$it" })
             }
         }
