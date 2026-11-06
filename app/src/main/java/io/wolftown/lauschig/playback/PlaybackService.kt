@@ -144,7 +144,7 @@ class PlaybackService : MediaLibraryService() {
     /** Library requests of cars and browsers; never the main thread (see [LibraryCallback]). */
     private val carScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: MediaLibrarySession? = null
-    private var output: PlaybackOutput? = null
+    @VisibleForTesting internal var output: PlaybackOutput? = null
     /** What plays ([PlaybackOutput.player]); the session and everything that follows the playback use it. */
     private val player: Player? get() = output?.player
     private var bridge: PlaybackProgressBridge? = null
@@ -468,7 +468,8 @@ class PlaybackService : MediaLibraryService() {
      * A car is connected or left. With a car, playback stays on this device: no Cast button, a session that was on ends (a car
      * has no way to reach a receiver in any case, and it should not go on at home).
      */
-    private fun carConnectionChanged(connected: Int) {
+    @VisibleForTesting
+    internal fun carConnectionChanged(connected: Int) {
         castState.update { it.copy(carConnected = connected > 0) }
         if (connected > 0 && output?.isLocal == false) castRuntime.endSession(stopReceiver = true)
     }

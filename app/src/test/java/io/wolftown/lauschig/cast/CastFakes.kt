@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.cast
 
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
@@ -15,7 +16,6 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.playback.MediaItemFactory
 import kotlinx.coroutines.CompletableDeferred
 import okhttp3.HttpUrl
@@ -40,7 +40,7 @@ internal fun localItem(serverId: String, key: String, i: Int, uri: String = "htt
     )
     .build()
 
-internal fun deviceItem(key: String = "local:0123456789abcdef01234567") = localItem(DeviceLibrary.SERVER_ID, key, 0, "content://documents/tree/x/$key")
+internal fun deviceItem(key: String = "local:0123456789abcdef01234567") = localItem(io.wolftown.lauschig.local.DeviceLibrary.SERVER_ID, key, 0, "content://documents/tree/x/$key")
 
 @OptIn(UnstableApi::class)
 internal abstract class FakeBase(private val info: DeviceInfo) : SimpleBasePlayer(Looper.getMainLooper()) {
@@ -50,7 +50,6 @@ internal abstract class FakeBase(private val info: DeviceInfo) : SimpleBasePlaye
     var pwr = false
     var playback = Player.STATE_IDLE
     var speed = 1f
-    var extraCommands = Player.Commands.EMPTY
 
     protected open fun commands(): Player.Commands = Player.Commands.Builder().addAllCommands().build()
 
@@ -105,7 +104,15 @@ internal class FakeDevice : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE
     }
 }
 
-/** `RemoteCastPlayer`'s behaviour that matters here: empty until the receiver's status shows the queue, speed at most 2×. */
+/**
+ * What `RemoteCastPlayer` 1.11.1 does, in the orders the bytecode allows:
+ * - Empty until a status shows the queue. A load moves nothing by itself.
+ * - [position] is `lastReportedPositionMs`: only a progress report moves it ([report]), a new load does not, the end of a session
+ *   does not.
+ * - The index only moves with a status ([status]), and that status may come before the queue, at index 0 of N, or at position 0.
+ * - [pwr] is `!isPaused`: true while idle, whatever was asked before the status.
+ * - Speed at most 2×, reset by every load.
+ */
 @OptIn(UnstableApi::class)
 internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(20).build()) {
     /** Every queue sent to the receiver. */
@@ -130,27 +137,39 @@ internal class FakeReceiver : FakeBase(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TY
         val p = startPositionMs.coerceAtLeast(0)
         sent += Sent(mediaItems, i, p, pwr)
         items = mediaItems
-        index = i
-        position = p
         queueShown = false
         playback = Player.STATE_IDLE
         return Futures.immediateVoidFuture()
     }
 
-    /** The receiver's first status: it holds the queue and is ready. */
-    fun loaded(state: Int = Player.STATE_READY) {
+    /** A status: the receiver holds the queue, in [state], at what it says. Nulls keep the last values. */
+    fun status(state: Int = Player.STATE_READY, index: Int? = null, position: Long? = null, paused: Boolean? = null) {
         queueShown = true
         playback = state
-        speed = 1f
+        index?.let { this.index = it }
+        position?.let { this.position = it }
+        paused?.let { pwr = !it }
         changed()
     }
+
+    /** The load arrived as it should: the first status names the start file and position. */
+    fun loaded(state: Int = Player.STATE_READY) {
+        val s = sent.last()
+        speed = 1f
+        status(state, s.index, s.position, paused = !s.playWhenReady)
+    }
+
+    /** A progress report: no event, the player just answers with it. */
+    fun report(positionMs: Long) { position = positionMs }
 
     fun queueGone() {
         queueShown = false
         playback = Player.STATE_IDLE
+        pwr = true
         changed()
     }
 
+    /** With no session this does nothing to the receiver: the receiver plays on, only this player's state goes idle. */
     override fun handleStop(): ListenableFuture<*> { playback = Player.STATE_IDLE; return Futures.immediateVoidFuture() }
     override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
     override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<*> {
@@ -178,14 +197,21 @@ internal class FakeCastPlayer(private val device: Player, private val receiver: 
     }
 }
 
+/** The running Cast session. Ending it is asynchronous as in the framework: posted, then the transfer, then the end. */
 internal class FakeLink(var onEnd: (Boolean) -> Unit = {}) : ReceiverLink {
     var now = ReceiverActivity.BUSY
+    var content: String? = null
+    var suspended = false
+    var statusRequests = 0
     var listener: ReceiverListener? = null
     val ends = ArrayList<Boolean>()
     override fun activity() = now
+    override fun contentId() = content
+    override fun isSuspended() = suspended
+    override fun requestStatus() { statusRequests++ }
     override fun endSession(stopReceiver: Boolean) {
         ends += stopReceiver
-        onEnd(stopReceiver)
+        Handler(Looper.getMainLooper()).post { onEnd(stopReceiver) }
     }
     override fun setReceiverListener(listener: ReceiverListener?) { this.listener = listener }
 }

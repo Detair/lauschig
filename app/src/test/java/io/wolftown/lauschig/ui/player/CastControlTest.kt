@@ -9,6 +9,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import io.wolftown.lauschig.cast.CastActivity
 import io.wolftown.lauschig.cast.CastUi
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Rule
@@ -69,6 +72,20 @@ class CastControlTest {
     @Test fun aDeviceWithoutAName_stillReads() {
         rule.setContent { LauschigTheme { CastOutputLine("") } }
         rule.onNodeWithText("Playing on the Cast device").assertExists()
+    }
+
+    /** It does not say "playing" where nothing plays there. */
+    @Test fun theLine_saysWhatIsTrue() {
+        var activity by androidx.compose.runtime.mutableStateOf(CastActivity.CONNECTED)
+        rule.setContent { LauschigTheme { CastOutputLine("Living Room TV", activity) } }
+        rule.onNodeWithText("Connected to Living Room TV").assertExists()
+        activity = CastActivity.SUSPENDED
+        rule.onNodeWithText("Connection to the Cast device interrupted", substring = true).assertExists()
+        rule.onNodeWithText("Playing on Living Room TV").assertDoesNotExist()
+        activity = CastActivity.NONE
+        rule.onNodeWithTag("castOutput").assertDoesNotExist()
+        activity = CastActivity.PLAYING
+        rule.onNodeWithText("Playing on Living Room TV").assertExists()
     }
 
     @Test fun whyACastEnded_isReadable() {

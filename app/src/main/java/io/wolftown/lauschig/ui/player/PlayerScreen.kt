@@ -309,7 +309,7 @@ fun PlayerScreen(
                     textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
-            state.castDevice?.let { CastOutputLine(it) }
+            state.castDevice?.let { CastOutputLine(it, state.castActivity) }
             state.error?.let {
                 Text(
                     stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,

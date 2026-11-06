@@ -13,6 +13,7 @@ import io.wolftown.lauschig.playback.MediaItemFactory
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +102,78 @@ class ReceiverItemsTest {
             listOf(accessToken, refreshToken, "token", "Bearer", "file:", "content:", "#srv", "download", "serverId", "itemId", "streamBase").forEach { bad ->
                 assertFalse("\"$bad\" in $json", json.contains(bad, ignoreCase = false))
             }
+        }
+    }
+
+    // ---- Large titles: one load, one message.
+
+    private fun aLongTitle(files: Int, title: String = "Die Säulen der Erde: Vollständige Lesung", base: String = "https://audiobooks.example.org"): Triple<OpenCastSession, List<MediaItem>, okhttp3.HttpUrl> {
+        val key = "4f6f0c0e-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
+        val session = OpenCastSession("0123456789abcdef", key, "7a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", List(files) { ReceiverTrack(it + 1, 600.0, "audio/mpeg") })
+        val local = List(files) { i ->
+            MediaItem.Builder().setMediaId("$key#$i").setUri("https://a/b/$i#s".toUri()).setMediaMetadata(
+                MediaMetadata.Builder().setTitle(title).setArtist("Ken Follett").setExtras(Bundle().apply { putString(MediaItemFactory.EXTRA_SERVER_ID, "s"); putString(MediaItemFactory.EXTRA_ITEM_ID, key) }).build(),
+            ).build()
+        }
+        return Triple(session, local, base.toHttpUrl())
+    }
+
+    private fun sentJson(item: MediaItem) = ReceiverConverter().toMediaQueueItem(item).toJson().toString()
+
+    @Test fun aTitleThatFits_goesInFull() {
+        val (session, local, base) = aLongTitle(40)
+        val items = ReceiverItems.forLoad(session, base, local, 3, 1_000)!!
+        items.forEach { assertTrue(sentJson(it), sentJson(it).contains("cover") && sentJson(it).contains("Ken Follett")) }
+    }
+
+    /** The TV keeps the cover and the author for the first file and the one it starts with, and loses them after. */
+    @Test fun aTitleThatWouldNotFit_goesCompact_theFirstAndTheStartFileKeepTheirCover() {
+        val (session, local, base) = aLongTitle(150)
+        assertTrue("does not fit in full", ReceiverItems.loadBytes(ReceiverItems.build(session, base, local), 7, 0) > com.google.android.gms.cast.Cast.MAX_MESSAGE_LENGTH)
+        val items = ReceiverItems.forLoad(session, base, local, 7, 1_000)!!
+        assertEquals(150, items.size)
+        assertTrue(ReceiverItems.loadBytes(items, 7, 1_000) <= com.google.android.gms.cast.Cast.MAX_MESSAGE_LENGTH)
+        listOf(0, 7).forEach { assertTrue(sentJson(items[it]).contains("cover") && sentJson(items[it]).contains("Ken Follett")) }
+        val compact = sentJson(items[8])
+        assertFalse(compact, compact.contains("cover") || compact.contains("Ken Follett") || compact.contains("customData"))
+        assertTrue(compact, compact.contains("Die Säulen der Erde"))
+        assertTrue(compact, compact.contains("public\\/session\\/7a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0\\/track\\/9"))
+        assertTrue(compact, compact.contains("audio\\/mpeg"))
+    }
+
+    /** What the phone shows comes from the item itself: the notification keeps cover and author on every file. */
+    @Test fun aCompactItem_staysComplete_onThePhone() {
+        val (session, local, base) = aLongTitle(150)
+        val item = ReceiverItems.forLoad(session, base, local, 7, 0)!![8]
+        assertEquals("Ken Follett", item.mediaMetadata.artist)
+        assertTrue(item.mediaMetadata.artworkUri.toString().endsWith("/cover"))
+        assertEquals("s0123456789abcdef".drop(1), item.mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_SERVER_ID))
+    }
+
+    @Test fun aCompactItem_comesBack_asAnItem() {
+        val (session, local, base) = aLongTitle(150)
+        val item = ReceiverItems.forLoad(session, base, local, 7, 0)!![8]
+        val converter = ReceiverConverter()
+        assertEquals(item.localConfiguration!!.uri, converter.toMediaItem(converter.toMediaQueueItem(item)).localConfiguration!!.uri)
+    }
+
+    @Test fun whatDoesNotFitEvenCompact_isNoQueue() {
+        val (session, local, base) = aLongTitle(1_000)
+        assertNull(ReceiverItems.forLoad(session, base, local, 0, 0))
+    }
+
+    /** The limit this title reaches, computed: a long title on a long address still has room for a good book on CDs. */
+    @Test fun theLimit_forATypicalTitle_isOverOneHundredAndFiftyFiles() {
+        val fitting = (100..400).last { n -> aLongTitle(n).let { (s, l, b) -> ReceiverItems.forLoad(s, b, l, 0, 0) != null } }
+        println("CAST FILE LIMIT typical title: $fitting")
+        assertTrue("limit $fitting", fitting >= 150)
+    }
+
+    /** The compact items obey the hard rule too. */
+    @Test fun aCompactItem_holdsNoTokenNoFragmentNoDeviceFile() {
+        val (session, local, base) = aLongTitle(150)
+        ReceiverItems.forLoad(session, base, local, 7, 0)!!.map(::sentJson).forEach { json ->
+            listOf("token", "Bearer", "file:", "content:", "#s", "download", "serverId", "itemId", "streamBase").forEach { bad -> assertFalse("\"$bad\" in $json", json.contains(bad)) }
         }
     }
 

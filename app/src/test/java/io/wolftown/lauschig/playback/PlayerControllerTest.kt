@@ -399,6 +399,57 @@ class PlayerControllerTest {
         outputMessages = outputMessages,
     )
 
+    /** The address changes while the receiver's items are in the player (no stream base); the title's own come back at the end. */
+    @Test fun anAddressChangeDuringACast_movesTheFilesWhenTheyAreBack() = runTest {
+        val home = "http://192.168.1.10:13378/"
+        val public = "https://abs.example.org/"
+        val f = FakeFacade()
+        val online = kotlinx.coroutines.flow.MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(listOf(file(0, 600.0, null), file(1, 300.0, null))) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        testScheduler.advanceUntilIdle()
+        val local = f.items
+        assertEquals(1, f.setCalls)
+        f.items = local.map { it.buildUpon().setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setExtras(android.os.Bundle().apply {
+            putString(MediaItemFactory.EXTRA_SERVER_ID, s); putString(MediaItemFactory.EXTRA_ITEM_ID, "it") }).build()).build() }
+        online.value = public.toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        assertEquals("the receiver's queue is left alone", 1, f.setCalls)
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals("still nothing to move", 1, f.setCalls)
+        // The cast ends.
+        f.items = local
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals(2, f.setCalls)
+        assertTrue(f.items.all { it.localConfiguration!!.uri.toString().startsWith(public) })
+        assertEquals(public, f.streamBase())
+    }
+
+    /** Away and back to the same address: nothing to reload. */
+    @Test fun anAddressThatIsTheSameAgain_movesNothing() = runTest {
+        val home = "http://192.168.1.10:13378/"
+        val f = FakeFacade()
+        val online = kotlinx.coroutines.flow.MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(listOf(file(0, 600.0, null))) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        testScheduler.advanceUntilIdle()
+        val local = f.items
+        f.items = local.map { it.buildUpon().setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setExtras(android.os.Bundle().apply {
+            putString(MediaItemFactory.EXTRA_SERVER_ID, s); putString(MediaItemFactory.EXTRA_ITEM_ID, "it") }).build()).build() }
+        online.value = "https://abs.example.org/".toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        online.value = home.toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        f.items = local
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, f.setCalls)
+    }
+
     @Test fun theCastDevice_isInTheState_alsoAcrossANewTitle() = runTest {
         val f = FakeFacade()
         val name = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)

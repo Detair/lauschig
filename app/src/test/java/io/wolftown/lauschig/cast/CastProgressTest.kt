@@ -3,6 +3,7 @@ package io.wolftown.lauschig.cast
 import android.app.Application
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -26,6 +27,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * What a cast leaves behind, through the real bridge and tracker on the real database: the app's existing path with the
@@ -93,6 +95,14 @@ class CastProgressTest {
         settle()
     }
 
+    /** A progress report, and the player's second-by-second look at it. */
+    private fun reported(positionMs: Long) {
+        receiver.report(positionMs)
+        receiver.changed()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        settle()
+    }
+
     private fun progress() = runBlocking { db.progressDao().get(s, "li") }
     private fun rows() = runBlocking { db.sessionDao().unsynced(s) }
 
@@ -101,7 +111,7 @@ class CastProgressTest {
         now += 10_000
         onReceiver()
         now += 20_000
-        receiver.position = 25_000
+        reported(25_000)
         cast.sessionAvailable(false)
         settle()
         assertEquals(1, rows().size)
@@ -116,9 +126,11 @@ class CastProgressTest {
         playingHere()
         onReceiver()
         now += 5_000
-        receiver.index = 1
-        receiver.position = 30_000
-        receiver.changed()
+        // Across the boundary: first the new file's start, then it plays on.
+        receiver.status(Player.STATE_READY, index = 1, position = 500)
+        settle()
+        now += 30_000
+        reported(30_000)
         output.pause()
         settle()
         val saved = progress()!!
@@ -147,6 +159,7 @@ class CastProgressTest {
         settle()
         onReceiver()
         now += 5_000
+        reported(99_000)
         link.now = ReceiverActivity.FINISHED
         output.onReceiverStatus()
         settle()
@@ -155,12 +168,47 @@ class CastProgressTest {
         assertEquals(200.0, saved.currentTimeSec, 0.01)
     }
 
+    /** The data risks of the device test, through the real tracker: an early status with the wrong file or position moves nothing. */
+    @Test fun aFirstStatusAtIndexZeroOrPositionZero_doesNotReachTheProgress() {
+        output.setMediaItems(book, 1, 60_000)
+        output.prepare()
+        output.play()
+        settle()
+        now += 5_000
+        cast.sessionAvailable(true)
+        settle()
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        settle()
+        receiver.status(Player.STATE_READY, index = 1, position = 0, paused = false)
+        settle()
+        output.pause()
+        settle()
+        assertEquals(160.0, progress()!!.currentTimeSec, 0.01)
+        assertTrue(!progress()!!.isFinished)
+    }
+
+    @Test fun aFinishedStatusWhenTheIndexReachesTheLastFile_doesNotFinishTheTitle() {
+        output.setMediaItems(book, 0, 90_000)
+        output.prepare()
+        output.play()
+        settle()
+        onReceiver()
+        reported(99_000)
+        link.now = ReceiverActivity.FINISHED
+        output.onReceiverStatus()
+        settle()
+        receiver.status(Player.STATE_READY, index = 1, position = 0)
+        settle()
+        output.onReceiverStatus()
+        settle()
+        assertTrue(!progress()!!.isFinished)
+    }
+
     @Test fun aNewTitleOnTheReceiver_savesTheOldOneWhereItWas() {
         playingHere()
         onReceiver()
         now += 5_000
-        receiver.position = 40_000
-        receiver.changed()
+        reported(40_000)
         output.setMediaItems(listOf(localItem(s, "other", 1), localItem(s, "other", 2)), 0, 0)
         settle()
         assertEquals(40.0, progress()!!.currentTimeSec, 0.01)

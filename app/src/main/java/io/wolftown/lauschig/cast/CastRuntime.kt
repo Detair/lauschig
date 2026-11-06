@@ -4,9 +4,11 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.media3.cast.Cast
 import androidx.media3.cast.CastParams
 import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.RemoteCastPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.mediarouter.media.MediaRouteSelector
@@ -51,6 +53,21 @@ enum class ReceiverActivity {
 
     /** It was stopped from elsewhere (another sender, the TV's remote, Google Home). */
     STOPPED,
+
+    /** Something interrupted the media: a load, also the receiver's own step to the next file in a queue. */
+    INTERRUPTED,
+}
+
+/** The receiver's status, as far as the player needs it. A null [playerState]: no status yet. */
+internal fun receiverActivity(playerState: Int?, idleReason: Int): ReceiverActivity {
+    if (playerState != MediaStatus.PLAYER_STATE_IDLE) return ReceiverActivity.BUSY
+    return when (idleReason) {
+        MediaStatus.IDLE_REASON_FINISHED -> ReceiverActivity.FINISHED
+        MediaStatus.IDLE_REASON_ERROR -> ReceiverActivity.FAILED
+        MediaStatus.IDLE_REASON_CANCELED -> ReceiverActivity.STOPPED
+        MediaStatus.IDLE_REASON_INTERRUPTED -> ReceiverActivity.INTERRUPTED
+        else -> ReceiverActivity.BUSY
+    }
 }
 
 /** A cast's events the player cannot read from [Player]: `RemoteCastPlayer` knows no end, no error and no load failure. */
@@ -64,6 +81,12 @@ interface ReceiverListener {
     /** The Cast session is over for good (not just suspended). */
     fun onCastSessionEnded()
 
+    /**
+     * The connection to the session is lost for now (the phone's Wi-Fi); the receiver plays on. Media3's transfer to this device
+     * comes before or after this, in whichever order the framework calls its listeners.
+     */
+    fun onCastSuspended()
+
     /** A person moved the cast back to this phone in the system's output switcher (Android 13+). */
     fun onCastTakenBack()
 }
@@ -71,6 +94,15 @@ interface ReceiverListener {
 /** The running Cast session as the player sees it. */
 interface ReceiverLink {
     fun activity(): ReceiverActivity
+
+    /** The content id of the media the receiver reports, null if it reports none. */
+    fun contentId(): String?
+
+    /** The session is suspended, not ending. */
+    fun isSuspended(): Boolean
+
+    /** Asks the receiver for a fresh status: it sends none by itself while it plays steadily. */
+    fun requestStatus()
 
     /** Ends the Cast session; the transfer back to this device follows from there. */
     fun endSession(stopReceiver: Boolean)
@@ -122,6 +154,7 @@ class GmsCastRuntime @Inject constructor(
     private var client: RemoteMediaClient? = null
     private var selector: MediaRouteSelector? = null
     private var discovering = false
+    private var suspended = false
     private val handler = Handler(Looper.getMainLooper())
 
     private val mediaClientCallback = object : RemoteMediaClient.Callback() {
@@ -134,12 +167,18 @@ class GmsCastRuntime @Inject constructor(
         }
     }
 
-    private val sessions = object : SessionManagerListener<CastSession> {
+    @VisibleForTesting internal val sessions = object : SessionManagerListener<CastSession> {
         override fun onSessionStarted(session: CastSession, sessionId: String) = connected(session)
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = connected(session)
-        override fun onSessionSuspended(session: CastSession, reason: Int) = disconnected()
+        override fun onSessionSuspended(session: CastSession, reason: Int) {
+            suspended = true
+            dropClient()
+            listener?.onCastSuspended()
+        }
         override fun onSessionEnded(session: CastSession, error: Int) {
             disconnected()
+            // Zero is a session someone ended on purpose, a person's "stop casting" or the app: that says nothing here.
+            if (error != 0 && error != CastStatusCodes.CANCELED) state.say(R.string.cast_dropped)
             listener?.onCastSessionEnded()
         }
         override fun onSessionStartFailed(session: CastSession, error: Int) {
@@ -148,6 +187,7 @@ class GmsCastRuntime @Inject constructor(
         }
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
             disconnected()
+            state.say(R.string.cast_dropped)
             listener?.onCastSessionEnded()
         }
         override fun onSessionStarting(session: CastSession) = Unit
@@ -158,13 +198,19 @@ class GmsCastRuntime @Inject constructor(
     private val routes = object : MediaRouter.Callback() {}
 
     private fun connected(session: CastSession) {
+        suspended = false
         state.update { it.copy(deviceName = session.castDevice?.friendlyName.orEmpty(), routeAvailable = true) }
-        client?.unregisterCallback(mediaClientCallback)
+        dropClient()
         client = session.remoteMediaClient?.also { it.registerCallback(mediaClientCallback) }
     }
 
     private fun disconnected() {
+        suspended = false
         state.update { it.copy(deviceName = null) }
+        dropClient()
+    }
+
+    private fun dropClient() {
         client?.unregisterCallback(mediaClientCallback)
         client = null
     }
@@ -225,16 +271,27 @@ class GmsCastRuntime @Inject constructor(
     }
 
     override fun newCastPlayer(device: Player, transfer: CastPlayer.TransferCallback): Player =
-        CastPlayer.Builder(app).setLocalPlayer(device).setTransferCallback(transfer).build()
+        CastPlayer.Builder(app)
+            .setLocalPlayer(device)
+            .setRemotePlayer(RemoteCastPlayer.Builder(app).setMediaItemConverter(ReceiverConverter()).build())
+            .setTransferCallback(transfer)
+            .build()
 
     override fun activity(): ReceiverActivity {
-        val status = client?.mediaStatus ?: return ReceiverActivity.BUSY
-        if (status.playerState != MediaStatus.PLAYER_STATE_IDLE) return ReceiverActivity.BUSY
-        return when (status.idleReason) {
-            MediaStatus.IDLE_REASON_FINISHED -> ReceiverActivity.FINISHED
-            MediaStatus.IDLE_REASON_ERROR -> ReceiverActivity.FAILED
-            MediaStatus.IDLE_REASON_CANCELED, MediaStatus.IDLE_REASON_INTERRUPTED -> ReceiverActivity.STOPPED
-            else -> ReceiverActivity.BUSY
+        val status = client?.mediaStatus
+        return receiverActivity(status?.playerState, status?.idleReason ?: MediaStatus.IDLE_REASON_NONE)
+    }
+
+    override fun contentId(): String? = client?.mediaStatus?.mediaInfo?.contentId
+
+    override fun isSuspended(): Boolean =
+        suspended || (_started.value && Cast.getSingletonInstance(app).currentCastSession?.isSuspended == true)
+
+    override fun requestStatus() {
+        try {
+            client?.requestStatus()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "no fresh status from the receiver", e)
         }
     }
 

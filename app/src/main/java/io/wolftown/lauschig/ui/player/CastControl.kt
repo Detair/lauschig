@@ -36,6 +36,7 @@ import androidx.media3.cast.MediaRouteButton
 import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.cast.CastActivity
 import io.wolftown.lauschig.cast.CastRuntime
 import io.wolftown.lauschig.cast.CastState
 import io.wolftown.lauschig.cast.CastUi
@@ -93,16 +94,26 @@ private fun DeviceTitleCastButton() {
     }
 }
 
-/** "Playing on Living Room TV" under the title; a change is announced by TalkBack. */
+/** "Playing on Living Room TV" under the title, or what is true instead; a change is announced by TalkBack. */
 @Composable
-fun CastOutputLine(deviceName: String, modifier: Modifier = Modifier) {
-    val text = if (deviceName.isBlank()) stringResource(R.string.cast_playing_elsewhere) else stringResource(R.string.cast_playing_on, deviceName)
+fun CastOutputLine(deviceName: String, activity: CastActivity = CastActivity.PLAYING, modifier: Modifier = Modifier) {
+    val named = deviceName.isNotBlank()
+    val text = when (activity) {
+        CastActivity.NONE -> return
+        CastActivity.PLAYING -> if (named) stringResource(R.string.cast_playing_on, deviceName) else stringResource(R.string.cast_playing_elsewhere)
+        CastActivity.CONNECTED -> if (named) stringResource(R.string.cast_connected_to, deviceName) else stringResource(R.string.cast_connected_elsewhere)
+        CastActivity.SUSPENDED -> stringResource(R.string.cast_suspended_line)
+    }
     Row(
         modifier.fillMaxWidth().padding(top = 8.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }.testTag("castOutput"),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Cast, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-        Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, overflow = TextOverflow.Ellipsis,
+            // The one that explains something may take its room; a name stays on its line.
+            maxLines = if (activity == CastActivity.SUSPENDED) 3 else 1,
+        )
     }
 }

@@ -124,10 +124,13 @@ class CastSessions(
 
     /**
      * Before a sign-out or a profile switch takes the token away: closes what is open for [serverId] and returns once that
-     * is done or could not be done.
+     * is done or could not be done, at most after [limitMs]: a person is waiting. What is not closed by then stays noted for
+     * [closeLeftovers], and the server closes it by itself in the end.
      */
-    suspend fun closeOpen(serverId: String) {
-        store.all().filter { it.first == serverId }.forEach { (sid, id) -> closeNow(sid, id) }
+    suspend fun closeOpen(serverId: String, limitMs: Long = CLOSE_LIMIT_MS) {
+        withTimeoutOrNull(limitMs) {
+            store.all().filter { it.first == serverId }.forEach { (sid, id) -> closeNow(sid, id) }
+        }
     }
 
     /**
@@ -172,5 +175,6 @@ class CastSessions(
         const val HTTP_NOT_FOUND = 404
         /** Long enough for the first connection check of a cold start, short enough for a person waiting at the button. */
         const val API_WAIT_MS = 8_000L
+        const val CLOSE_LIMIT_MS = 2_000L
     }
 }

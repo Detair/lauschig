@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cast.CastActivity
 import io.wolftown.lauschig.cast.CastState
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
@@ -87,6 +88,7 @@ class PlayerControllerImpl(
     private val outputName: Flow<String?> = emptyFlow(),
     /** What the player should say about a cast (why it ended or did not start). */
     private val outputMessages: Flow<Int> = emptyFlow(),
+    private val outputActivity: Flow<CastActivity> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -126,6 +128,7 @@ class PlayerControllerImpl(
         isSignedIn = { sid -> accounts.account.first()?.serverId == sid },
         outputName = cast.ui.map { it.deviceName },
         outputMessages = cast.messages,
+        outputActivity = cast.ui.map { it.activity },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -170,12 +173,13 @@ class PlayerControllerImpl(
     private var seekBack = PlaybackSettings.DEFAULT_SEEK_BACK
     private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
     private var output: String? = null
+    private var activity = CastActivity.PLAYING
 
     /** A fresh state for a new or no title; the settings it shows are kept. */
     private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =
         PlayerUiState(
             itemId = itemId, title = title, isStreaming = isStreaming, isLoading = isLoading, downloadThrottled = throttled,
-            seekBackSec = seekBack, seekForwardSec = seekForward, outputName = output,
+            seekBackSec = seekBack, seekForwardSec = seekForward, outputName = output, outputActivity = activity,
         )
 
     init {
@@ -197,6 +201,7 @@ class PlayerControllerImpl(
             _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
         }
         scope.launch { outputName.distinctUntilChanged().collect { name -> output = name; _state.update { it.copy(outputName = name) } } }
+        scope.launch { outputActivity.distinctUntilChanged().collect { a -> activity = a; _state.update { it.copy(outputActivity = a) } } }
         scope.launch { outputMessages.collect { message -> _state.update { it.copy(error = message) } } }
         // Only what the UI shows: a playing stream's stats change constantly but map to null.
         scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
@@ -325,7 +330,13 @@ class PlayerControllerImpl(
      */
     private suspend fun onOnlineBase(base: HttpUrl) {
         val c = current ?: return
-        val actual = facade.streamBase()?.toHttpUrlOrNull() ?: return
+        val actual = facade.streamBase()?.toHttpUrlOrNull()
+        if (actual == null) {
+            // Nothing streams in the player right now: a Cast receiver's queue, or all local. This collector will not offer the
+            // address again, so it is noted; the title's own files move when they are back ([refresh]).
+            pendingBase = base
+            return
+        }
         if (actual == base) {
             pendingBase = null
             return
@@ -343,6 +354,13 @@ class PlayerControllerImpl(
         val c = current ?: return
         pendingBase = null
         scope.launch { rebase(c, base) }
+    }
+
+    /** An address noted while nothing streamed: the title's streamed files are in the player again (a cast ended). */
+    private fun applyNotedBase() {
+        val noted = pendingBase ?: return
+        val actual = facade.streamBase()?.toHttpUrlOrNull() ?: return
+        if (actual == noted) pendingBase = null else applyPendingBase()
     }
 
     private suspend fun rebase(c: Current, base: HttpUrl) {
@@ -559,7 +577,7 @@ class PlayerControllerImpl(
         val snap = facade.snapshot()
         val stopped = wasPlaying && !snap.isPlaying
         wasPlaying = snap.isPlaying
-        if (stopped) applyPendingBase()
+        if (stopped) applyPendingBase() else if (!snap.isPlaying) applyNotedBase()
         if (snap.isPlaying) starting = false
         val playing = facade.currentKey()
         if (playing != null && !starting && playing.second != c.item.item.id) {

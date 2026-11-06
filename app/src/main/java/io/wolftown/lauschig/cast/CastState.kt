@@ -11,6 +11,21 @@ import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** What the line under the title says about a connected Cast device. */
+enum class CastActivity {
+    /** The device plays or loads the title: "Wird auf … abgespielt". */
+    PLAYING,
+
+    /** Connected, but it holds no title of ours (stopped from elsewhere, played to the end, nothing started yet). */
+    CONNECTED,
+
+    /** The connection is lost for now; the device may play on, and nothing here can reach it. */
+    SUSPENDED,
+
+    /** The session is ending, or nothing plays there: no line. */
+    NONE,
+}
+
 /** What the screens know about Cast. Without Play Services it stays at its defaults: no button, nothing else changes. */
 data class CastUi(
     /** A Cast device is known on the network (or one is connected). */
@@ -19,6 +34,8 @@ data class CastUi(
     val deviceName: String? = null,
     /** A car is connected: playback stays on this device. */
     val carConnected: Boolean = false,
+    /** What [deviceName] is doing. */
+    val activity: CastActivity = CastActivity.PLAYING,
 ) {
     val showButton: Boolean get() = routeAvailable && !carConnected
 }

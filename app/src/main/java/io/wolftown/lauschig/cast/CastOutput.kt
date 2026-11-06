@@ -31,7 +31,10 @@ class CastOutput(
     state: CastState,
     scope: CoroutineScope,
 ) : PlaybackOutput {
-    private val output = CastOutputPlayer(device, runtime, sessions, scope, state::say, carConnected = { state.ui.value.carConnected })
+    private val output = CastOutputPlayer(
+        device, runtime, sessions, scope, state::say, carConnected = { state.ui.value.carConnected },
+        publish = { activity -> state.update { it.copy(activity = activity) } },
+    )
     override val player: Player get() = output
     private val receiverVolume = ReceiverVolume({ output }, scope)
 

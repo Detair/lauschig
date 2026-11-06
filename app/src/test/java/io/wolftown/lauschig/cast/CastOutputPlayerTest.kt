@@ -3,7 +3,6 @@ package io.wolftown.lauschig.cast
 import android.app.Application
 import android.os.Looper
 import androidx.annotation.OptIn
-import androidx.media3.cast.DefaultMediaItemConverter
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
@@ -33,7 +32,7 @@ import java.time.Duration
 
 /**
  * The player on a receiver, between the app and `RemoteCastPlayer`. [FakeCastPlayer] does what Media3's `CastPlayer` does at a
- * change of output, and [FakeReceiver] what `RemoteCastPlayer` reports (empty until the receiver's first status).
+ * change of output, and [FakeReceiver] what `RemoteCastPlayer` reports, in the orders the review named.
  */
 @OptIn(UnstableApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -44,6 +43,7 @@ class CastOutputPlayerTest {
     private val receiver = FakeReceiver()
     private val sessions = FakeSessions()
     private val said = ArrayList<Int>()
+    private val activities = ArrayList<CastActivity>()
     private var car = false
     private var now = 1_000_000L
     private val link = FakeLink()
@@ -53,7 +53,7 @@ class CastOutputPlayerTest {
     private val book = listOf(localItem("srv", "li", 1), localItem("srv", "li", 2))
 
     @Before fun setUp() {
-        output = CastOutputPlayer(device, link, sessions, scope, { said += it }, { car }, clock = { now })
+        output = CastOutputPlayer(device, link, sessions, scope, { said += it }, { car }, clock = { now }, publish = { activities += it })
         cast = FakeCastPlayer(device, receiver, output)
         output.attach(cast)
         link.onEnd = {
@@ -68,8 +68,29 @@ class CastOutputPlayerTest {
     @After fun tearDown() = scope.cancel()
 
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
+    /** Time passes: for the player's timers and its clock. */
+    private fun pass(seconds: Long) = repeat(seconds.toInt()) {
+        now += 1000
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+    }
     private fun connect() { cast.sessionAvailable(true); idle() }
-    private fun disconnect() { cast.sessionAvailable(false); idle() }
+    /** The framework ends the Cast session: the transfer, then the end. */
+    private fun ended() {
+        cast.sessionAvailable(false)
+        output.onCastSessionEnded()
+        idle()
+    }
+    private fun suspendSession() {
+        link.suspended = true
+        output.onCastSuspended()
+        cast.sessionAvailable(false)
+        idle()
+    }
+    private fun resumeSession() {
+        link.suspended = false
+        cast.sessionAvailable(true)
+        idle()
+    }
     private fun status(activity: ReceiverActivity) { link.now = activity; output.onReceiverStatus(); idle() }
 
     private fun playingHere(items: List<MediaItem> = book, index: Int = 1, positionMs: Long = 5_000) {
@@ -86,12 +107,20 @@ class CastOutputPlayerTest {
         idle()
     }
 
+    /** The receiver plays on: a progress report, and the player's second-by-second look at it. */
+    private fun playedTo(positionMs: Long) {
+        receiver.report(positionMs)
+        pass(2)
+    }
+
+    private fun uris(sent: FakeReceiver.Sent) = sent.items.map { it.localConfiguration!!.uri.toString() }
+
     // ---- On the device nothing changes.
 
     @Test fun onTheDevice_everythingGoesThrough_beforeAndAfterTheCastPlayer() {
-        val before = CastOutputPlayer(FakeDevice(), link, sessions, scope, { said += it }, { car })
         val other = FakeDevice()
         val direct = CastOutputPlayer(other, link, sessions, scope, { said += it }, { car })
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, direct.deviceInfo.playbackType)
         direct.setMediaItems(book, 1, 7_000)
         direct.prepare()
         direct.play()
@@ -107,7 +136,6 @@ class CastOutputPlayerTest {
         direct.pause()
         assertFalse(other.pwr)
         assertEquals(0, sessions.opens.size)
-        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, before.deviceInfo.playbackType)
 
         playingHere()
         assertEquals(book, device.items)
@@ -122,7 +150,7 @@ class CastOutputPlayerTest {
         connect()
         assertEquals(listOf("srv" to "li"), sessions.opens)
         val sent = receiver.sent.single()
-        assertEquals(listOf("https://abs.example/public/session/sess-1/track/1", "https://abs.example/public/session/sess-1/track/2"), sent.items.map { it.localConfiguration!!.uri.toString() })
+        assertEquals(listOf("https://abs.example/public/session/sess-1/track/1", "https://abs.example/public/session/sess-1/track/2"), uris(sent))
         assertEquals(1, sent.index)
         assertEquals(5_000, sent.position)
         assertTrue(sent.playWhenReady)
@@ -132,7 +160,7 @@ class CastOutputPlayerTest {
         val files = listOf(localItem("srv", "li", 1, "file:///data/x/1.mp3"), localItem("srv", "li", 2, "file:///data/x/2.mp3"))
         playingHere(files)
         connect()
-        assertTrue(receiver.sent.single().items.all { it.localConfiguration!!.uri.toString().startsWith("https://abs.example/public/session/") })
+        assertTrue(uris(receiver.sent.single()).all { it.startsWith("https://abs.example/public/session/") })
     }
 
     /** The hard rule again, at the end of the whole path: every field of every item that reached the receiver. */
@@ -141,7 +169,7 @@ class CastOutputPlayerTest {
         playingHere(files)
         connect()
         receiver.sent.single().items.forEach { item ->
-            val json = DefaultMediaItemConverter().toMediaQueueItem(item).toJson().toString()
+            val json = ReceiverConverter().toMediaQueueItem(item).toJson().toString()
             listOf("token", "secret", "Bearer", "file:", "content:", "#srv", "download", "streamBase").forEach { assertFalse("$it in $json", json.contains(it)) }
             assertNull(item.localConfiguration!!.uri.fragment)
             assertNull(item.localConfiguration!!.uri.query)
@@ -174,9 +202,9 @@ class CastOutputPlayerTest {
         output.setPlaybackSpeed(1.5f)
         connect()
         assertEquals(1.5f, output.playbackParameters.speed)
-        receiver.position = 6_000
         receiver.loaded()
         idle()
+        receiver.report(6_000)
         assertEquals(Player.STATE_READY, output.playbackState)
         assertTrue(output.isPlaying)
         assertEquals(6_000, output.currentPosition)
@@ -187,6 +215,7 @@ class CastOutputPlayerTest {
         connect()
         assertEquals(0, sessions.opens.size)
         assertEquals(0, output.mediaItemCount)
+        assertEquals(CastActivity.CONNECTED, activities.last())
         output.setMediaItems(book, 0, 2_000)
         output.prepare()
         output.play()
@@ -194,6 +223,200 @@ class CastOutputPlayerTest {
         assertEquals(listOf("srv" to "li"), sessions.opens)
         assertEquals(2_000, receiver.sent.single().position)
         assertTrue(output.playWhenReady)
+        assertEquals(CastActivity.PLAYING, activities.last())
+    }
+
+    // ---- Guards: no position from the receiver reaches the tracker until the load is proven.
+
+    @Test fun theStartFileAtIndexZeroOfN_isNoProof_thePositionStands() {
+        playingHere()
+        connect()
+        // The status came before the queue's ids: READY, at index 0 of N, a position in the wrong file.
+        receiver.status(Player.STATE_READY, index = 0, position = 5_000, paused = false)
+        idle()
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(5_000, output.currentPosition)
+        assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        assertFalse(output.isPlaying)
+        assertEquals("asked for a fresh status", 1, link.statusRequests)
+        // The fresh status names the file.
+        receiver.status(Player.STATE_READY, index = 1, position = 5_500)
+        idle()
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(5_500, output.currentPosition)
+        assertTrue(output.isPlaying)
+    }
+
+    @Test fun positionZeroInTheFirstStatus_isNoProof_thePositionStands() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        receiver.status(Player.STATE_READY, index = 1, position = 0, paused = false)
+        idle()
+        assertEquals(60_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        // The next progress report shows where it really is, without any further status.
+        receiver.report(61_000)
+        pass(2)
+        assertEquals(61_000, output.currentPosition)
+        assertTrue(output.isPlaying)
+    }
+
+    @Test fun thePositionOfThePreviousCast_isNoProof() {
+        playingHere(index = 1, positionMs = 5_000)
+        connect()
+        // `lastReportedPositionMs` survives the session: the first status of a new cast may still say the old one.
+        receiver.status(Player.STATE_READY, index = 1, position = 90_000, paused = false)
+        idle()
+        assertEquals(5_000, output.currentPosition)
+        assertFalse(output.isPlaying)
+        ended()
+        assertEquals(5_000, device.position)
+    }
+
+    @Test fun queueIdsThatComeLate_keepTheTitleInThePlayer() {
+        playingHere()
+        connect()
+        // PLAYING before the queue's ids: nothing shown yet, and no way for the player to say so.
+        receiver.queueGone()
+        idle()
+        assertEquals(2, output.mediaItemCount)
+        assertEquals(5_000, output.currentPosition)
+        receiver.loaded()
+        idle()
+        assertTrue(output.isPlaying)
+    }
+
+    /** It plays there but never proves where: the cast ends with the masked position, and says what happened. */
+    @Test fun aProofThatNeverComes_endsTheCast_atTheStartPosition() {
+        playingHere(index = 1, positionMs = 60_000)
+        connect()
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        idle()
+        pass(70)
+        assertEquals(listOf(R.string.cast_no_position), said)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(1, device.index)
+        assertEquals(60_000, device.position)
+        assertFalse(device.pwr)
+        assertEquals(1, receiver.sent.size)
+    }
+
+    @Test fun aFileBoundaryOnTheReceiver_neverPairsTheNewFileWithTheOldPosition() {
+        playingHere(index = 0, positionMs = 90_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(99_500)
+        // The status moved the index; `lastReportedPositionMs` still says the last file's.
+        receiver.status(Player.STATE_READY, index = 1)
+        idle()
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(0, output.currentPosition)
+        assertFalse(output.isPlaying)
+        // The next report: the new file really.
+        receiver.report(800)
+        pass(2)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(800, output.currentPosition)
+        assertTrue(output.isPlaying)
+    }
+
+    // ---- Guards: a title is finished only at the true end of its last file.
+
+    @Test fun theReceiverFinishing_atTheTrueEnd_isTheEndOfTheTitle_forTheProgressAndTheQueue() {
+        playingHere(index = 1, positionMs = 90_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(99_000)
+        status(ReceiverActivity.FINISHED)
+        assertEquals(Player.STATE_ENDED, output.playbackState)
+        assertEquals(Player.STATE_ENDED, states.last())
+        assertEquals(2, output.mediaItemCount)
+        assertEquals("srv" to "li", output.currentMediaItem!!.titleKey())
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(100_000, output.currentPosition)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+
+        // The queue's next title goes where the sound is.
+        val next = listOf(localItem("srv", "next", 1), localItem("srv", "next", 2))
+        output.setMediaItems(next, 0, 0)
+        output.prepare()
+        output.play()
+        idle()
+        assertEquals("srv" to "next", sessions.opens.last())
+        assertEquals("https://abs.example/public/session/sess-2/track/1", uris(receiver.sent.last()).first())
+    }
+
+    @Test fun aFinishedFileInTheMiddle_isNoEnd() {
+        playingHere(index = 0, positionMs = 90_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(99_000)
+        status(ReceiverActivity.FINISHED)
+        assertFalse(states.contains(Player.STATE_ENDED))
+    }
+
+    /** The review's probe: the status still says finished when the index reaches the last file. */
+    @Test fun finishedStill_whenTheIndexReachesTheLastFile_isNoEnd() {
+        playingHere(index = 0, positionMs = 90_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(99_000)
+        status(ReceiverActivity.FINISHED)
+        receiver.status(Player.STATE_READY, index = 1, position = 0)
+        idle()
+        output.onReceiverStatus()
+        idle()
+        assertFalse(states.contains(Player.STATE_ENDED))
+        assertEquals(1, output.currentMediaItemIndex)
+    }
+
+    @Test fun finishedAnywhereElseInTheLastFile_isNoEnd_andTheQueueDoesNotStart() {
+        playingHere(index = 1, positionMs = 20_000)
+        connect()
+        receiver.loaded()
+        idle()
+        status(ReceiverActivity.FINISHED)
+        assertFalse(states.contains(Player.STATE_ENDED))
+        assertEquals(20_000, output.currentPosition)
+        // If it stays that way the receiver holds nothing: the title waits paused, at that position, and the play button loads it.
+        pass(12)
+        assertFalse(states.contains(Player.STATE_ENDED))
+        assertEquals(Player.STATE_READY, output.playbackState)
+        assertFalse(output.playWhenReady)
+        assertEquals(20_000, output.currentPosition)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+    }
+
+    /** An idle status may report position 0: it does not reach the progress. */
+    @Test fun anIdleStatusWithPositionZero_doesNotMoveThePosition() {
+        onReceiverNow()
+        playedTo(40_000)
+        link.now = ReceiverActivity.FINISHED
+        receiver.status(Player.STATE_IDLE, position = 0, paused = false)
+        idle()
+        assertEquals(40_000, output.currentPosition)
+        assertEquals(1, output.currentMediaItemIndex)
+    }
+
+    @Test fun aSeekAfterTheEnd_loadsAgain_withANewSession() {
+        playingHere(index = 1, positionMs = 90_000)
+        connect()
+        receiver.loaded()
+        idle()
+        playedTo(99_000)
+        status(ReceiverActivity.FINISHED)
+        output.seekTo(0, 1_000)
+        idle()
+        assertEquals(2, sessions.opens.size)
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(2, receiver.sent.size)
+        assertEquals("https://abs.example/public/session/sess-2/track/1", uris(receiver.sent.last()).first())
+        assertEquals(1_000, receiver.sent.last().position)
     }
 
     // ---- What cannot be cast.
@@ -240,13 +463,27 @@ class CastOutputPlayerTest {
         assertTrue(device.pwr)
     }
 
+    /** Minor 1: the old title may not go out once the cast is on its way out. */
+    @Test fun aSessionThatOpensWhileTheCastIsEnding_isNotSent() {
+        val slow = CompletableDeferred<Unit>()
+        sessions.gate = slow
+        link.onEnd = {} // the framework takes its time
+        playingHere()
+        connect()
+        output.setMediaItems(listOf(deviceItem()), 0, 0)
+        idle()
+        slow.complete(Unit)
+        idle()
+        assertTrue(receiver.sent.isEmpty())
+        assertEquals(listOf("sess-1"), sessions.closed)
+    }
+
     // ---- Back to the device.
 
     @Test fun takingItBack_keepsThePosition_withTheDevicesOwnItems_paused() {
         onReceiverNow()
-        receiver.index = 1
-        receiver.position = 42_000
-        disconnect()
+        playedTo(42_000)
+        ended()
         assertEquals(book, device.items)
         assertEquals(1, device.index)
         assertEquals(42_000, device.position)
@@ -255,6 +492,23 @@ class CastOutputPlayerTest {
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
         assertEquals(42_000, output.currentPosition)
         assertTrue(device.items.none(ReceiverItems::isReceiverItem))
+        assertEquals(CastActivity.NONE, activities.last())
+    }
+
+    /** Minor 3: a session lost right after the start does not restore a position the previous cast left in the player. */
+    @Test fun aSessionLostRightAfterTheStart_restoresWhereItStarted() {
+        onReceiverNow()
+        playedTo(90_000)
+        ended()
+        output.seekTo(0, 3_000)
+        output.play()
+        idle()
+        connect()
+        receiver.status(Player.STATE_READY, index = 0, paused = false) // `lastReportedPositionMs` still 90 s
+        idle()
+        ended()
+        assertEquals(0, device.index)
+        assertEquals(3_000, device.position)
     }
 
     @Test fun theSpeedAPersonChose_comesBackWithTheTitle_alsoAboveTheReceiversLimit() {
@@ -265,7 +519,7 @@ class CastOutputPlayerTest {
         idle()
         assertEquals(listOf(2.5f), asked)
         assertEquals(2f, receiver.speed)
-        disconnect()
+        ended()
         assertEquals(2.5f, device.speed)
     }
 
@@ -278,11 +532,19 @@ class CastOutputPlayerTest {
         assertEquals(1.25f, device.speed)
     }
 
-    @Test fun thePhonesOutputSwitcher_continuesAPlayingTitleHere() {
+    @Test fun thePhonesOutputSwitcher_continuesAPlayingTitleHere_afterTheEnd() {
         onReceiverNow()
-        disconnect()
+        ended()
         assertFalse(device.pwr)
         output.onCastTakenBack()
+        assertTrue(device.pwr)
+    }
+
+    /** Minor 2: in the other order as well. */
+    @Test fun thePhonesOutputSwitcher_continuesAPlayingTitleHere_beforeTheEnd() {
+        onReceiverNow()
+        output.onCastTakenBack()
+        ended()
         assertTrue(device.pwr)
     }
 
@@ -290,7 +552,9 @@ class CastOutputPlayerTest {
         onReceiverNow()
         output.pause()
         idle()
-        disconnect()
+        output.onCastTakenBack()
+        ended()
+        assertFalse(device.pwr)
         output.onCastTakenBack()
         assertFalse(device.pwr)
 
@@ -299,7 +563,7 @@ class CastOutputPlayerTest {
         connect()
         receiver.loaded()
         idle()
-        disconnect()
+        ended()
         output.pause()
         now += 60_000
         output.onCastTakenBack()
@@ -311,7 +575,7 @@ class CastOutputPlayerTest {
         output.onOutputChanged = { changes++ }
         onReceiverNow()
         assertEquals(1, changes)
-        disconnect()
+        ended()
         assertEquals(2, changes)
     }
 
@@ -325,7 +589,7 @@ class CastOutputPlayerTest {
         assertEquals(listOf("srv" to "li", "srv" to "other"), sessions.opens)
         assertEquals(listOf("sess-1"), sessions.closed)
         assertEquals("srv" to "other", output.currentMediaItem!!.titleKey())
-        assertEquals("https://abs.example/public/session/sess-2/track/1", receiver.sent.last().items.first().localConfiguration!!.uri.toString())
+        assertEquals("https://abs.example/public/session/sess-2/track/1", uris(receiver.sent.last()).first())
         assertEquals(1_000, receiver.sent.last().position)
     }
 
@@ -334,11 +598,27 @@ class CastOutputPlayerTest {
         sessions.gate = slow
         playingHere()
         connect()
-        disconnect()
+        ended()
         slow.complete(Unit)
         idle()
         assertEquals(listOf("sess-1"), sessions.closed)
         assertTrue(receiver.sent.isEmpty())
+    }
+
+    /** Minor 5: A, B, A with B still opening; the server closes A's session when B opens. */
+    @Test fun aTitleAgain_getsANewSession_neverTheOneTheServerMayHaveClosed() {
+        onReceiverNow()
+        val slow = CompletableDeferred<Unit>()
+        sessions.gate = slow
+        output.setMediaItems(listOf(localItem("srv", "other", 1), localItem("srv", "other", 2)), 0, 0)
+        idle()
+        output.setMediaItems(book, 1, 5_000)
+        idle()
+        slow.complete(Unit)
+        sessions.gate = null
+        idle()
+        assertEquals(1, receiver.sent.size - 1)
+        assertEquals("sess-3", uris(receiver.sent.last()).first().substringAfter("session/").substringBefore('/'))
     }
 
     @Test fun theSameTitleWithNewSources_reachesOnlyTheWayBack() {
@@ -349,7 +629,7 @@ class CastOutputPlayerTest {
         assertEquals(1, sessions.opens.size)
         assertEquals(1, receiver.sent.size)
         assertTrue(receiver.seeks.isEmpty())
-        disconnect()
+        ended()
         assertEquals(downloaded, device.items)
     }
 
@@ -368,7 +648,7 @@ class CastOutputPlayerTest {
         idle()
         assertEquals(0, receiver.replaced)
         assertEquals(1, receiver.sent.size)
-        disconnect()
+        ended()
         assertTrue(device.items.none(ReceiverItems::isReceiverItem))
     }
 
@@ -382,23 +662,196 @@ class CastOutputPlayerTest {
         assertEquals(0, link.ends.size)
     }
 
-    /** A suspended Cast session (a network hiccup) may come back: the session on the server waits for it. */
-    @Test fun aSuspendedSession_keepsTheServerSession_andUsesItAgain() {
-        onReceiverNow()
-        receiver.position = 9_000
-        disconnect()
-        assertTrue(sessions.closed.isEmpty())
-        connect()
-        assertEquals(1, sessions.opens.size)
-        assertEquals("https://abs.example/public/session/sess-1/track/1", receiver.sent.last().items.first().localConfiguration!!.uri.toString())
-        assertEquals(9_000, receiver.sent.last().position)
-    }
-
     @Test fun anEndedSession_closesTheServerSession() {
         onReceiverNow()
-        disconnect()
-        output.onCastSessionEnded()
+        ended()
         assertEquals(listOf("sess-1"), sessions.closed)
+    }
+
+    // ---- I1: a suspended Cast session (a network hiccup) leaves the running receiver alone.
+
+    @Test fun aSuspendAndResume_doesNotTouchTheReceiver_andTakesItsPosition() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        assertTrue(sessions.closed.isEmpty())
+        assertEquals(1, receiver.sent.size)
+        resumeSession()
+        // The receiver played on meanwhile, and says so with its first status.
+        receiver.status(Player.STATE_READY, index = 1, position = 90_000, paused = false)
+        idle()
+        assertEquals("no second load", 1, receiver.sent.size)
+        assertEquals(1, sessions.opens.size)
+        assertTrue(sessions.closed.isEmpty())
+        assertTrue("not paused", receiver.pwr)
+        assertTrue(output.isPlaying)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(90_000, output.currentPosition)
+        assertEquals(CastActivity.PLAYING, activities.last())
+    }
+
+    @Test fun aResumeAsksForAFreshStatus() {
+        onReceiverNow()
+        val before = link.statusRequests
+        suspendSession()
+        resumeSession()
+        assertEquals(before + 1, link.statusRequests)
+    }
+
+    /** While suspended the phone cannot know: it shows neither playing nor paused, plays nothing and controls nothing. */
+    @Test fun whileSuspended_thePhoneMakesNoSound_andPretendsNothing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        assertEquals(CastActivity.SUSPENDED, activities.last())
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_REMOTE, output.deviceInfo.playbackType)
+        assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        assertFalse(output.isPlaying)
+        assertEquals(30_000, output.currentPosition)
+        assertFalse(device.pwr)
+        output.play()
+        output.seekTo(0, 1_000)
+        output.setPlaybackSpeed(1.5f)
+        idle()
+        assertFalse("no sound here", device.pwr)
+        assertEquals(30_000, output.currentPosition)
+        assertEquals(1, output.currentMediaItemIndex)
+        assertEquals(1f, output.playbackParameters.speed)
+        output.pause()
+        idle()
+        assertTrue("no pretended pause", output.playWhenReady)
+        resumeSession()
+        receiver.status(Player.STATE_READY, index = 1, position = 40_000, paused = false)
+        idle()
+        assertTrue(receiver.seeks.isEmpty())
+        assertTrue(receiver.pwr)
+        assertTrue(output.isPlaying)
+    }
+
+    /** The framework's order is not documented: the transfer may come before the news of the suspend. */
+    @Test fun theSuspendAfterTheTransfer_isASuspendToo() {
+        onReceiverNow()
+        playedTo(30_000)
+        cast.sessionAvailable(false)
+        idle()
+        link.suspended = true
+        output.onCastSuspended()
+        idle()
+        assertEquals(CastActivity.SUSPENDED, activities.last())
+        assertEquals(Player.STATE_BUFFERING, output.playbackState)
+        resumeSession()
+        receiver.status(Player.STATE_READY, index = 1, position = 40_000, paused = false)
+        idle()
+        assertEquals(1, receiver.sent.size)
+        assertTrue(output.isPlaying)
+    }
+
+    @Test fun aResume_whereTheReceiverLostTheTitle_loadsIt_withWhatItWasDoing() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        status(ReceiverActivity.STOPPED)
+        assertEquals(2, receiver.sent.size)
+        assertEquals(30_000, receiver.sent.last().position)
+        assertEquals(1, receiver.sent.last().index)
+        assertTrue("it was playing", receiver.sent.last().playWhenReady)
+        // Its session is still good: the server knows nothing of the hiccup.
+        assertEquals(1, sessions.opens.size)
+    }
+
+    @Test fun aResume_withoutAnyAnswer_loadsAfterTheLimit() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        resumeSession()
+        pass(9)
+        assertEquals(1, receiver.sent.size)
+        pass(3)
+        assertEquals(2, receiver.sent.size)
+        assertEquals(30_000, receiver.sent.last().position)
+    }
+
+    @Test fun aPausedCast_staysPausedAcrossASuspend() {
+        onReceiverNow()
+        output.pause()
+        idle()
+        playedTo(30_000)
+        suspendSession()
+        assertFalse(output.playWhenReady)
+        resumeSession()
+        receiver.status(Player.STATE_READY, index = 1, position = 30_000, paused = true)
+        idle()
+        assertFalse(output.playWhenReady)
+        assertEquals(1, receiver.sent.size)
+    }
+
+    @Test fun aSuspendThatEnds_leavesTheTitleHere_paused_atTheLastPosition() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        output.onCastSessionEnded()
+        idle()
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(30_000, output.currentPosition)
+        assertFalse(device.pwr)
+        assertEquals(CastActivity.NONE, activities.last())
+    }
+
+    /** The framework may never say: a phone that stays away gives up, and says so. */
+    @Test fun aSuspendThatNeverEnds_isGivenUpAfterFiveMinutes() {
+        onReceiverNow()
+        playedTo(30_000)
+        suspendSession()
+        pass(4 * 60)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_REMOTE, output.deviceInfo.playbackType)
+        pass(61)
+        assertEquals(listOf(R.string.cast_dropped), said)
+        assertEquals(listOf(true), link.ends)
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(30_000, output.currentPosition)
+        assertFalse(device.pwr)
+    }
+
+    @Test fun aSwitchWhileSuspended_endsItAll() {
+        onReceiverNow()
+        suspendSession()
+        output.stop()
+        output.clearMediaItems()
+        idle()
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(listOf(true), link.ends)
+        assertEquals(0, output.mediaItemCount)
+        assertTrue(device.items.isEmpty())
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+    }
+
+    @Test fun anotherTitleWhileSuspended_waitsHere_paused_andTheCastEnds() {
+        onReceiverNow()
+        suspendSession()
+        val other = listOf(localItem("srv", "other", 1))
+        output.setMediaItems(other, 0, 1_000)
+        output.play()
+        idle()
+        assertEquals(listOf(R.string.cast_suspended_title_here), said)
+        assertEquals(other, device.items)
+        assertEquals(listOf("sess-1"), sessions.closed)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+    }
+
+    /** A new Cast session on another day: what the old one left does not come back. */
+    @Test fun aNewCastAfterARealEnd_startsFromTheDevice() {
+        onReceiverNow()
+        playedTo(30_000)
+        ended()
+        output.seekTo(0, 2_000)
+        idle()
+        connect()
+        assertEquals(2, receiver.sent.size)
+        assertEquals(0, receiver.sent.last().index)
+        assertEquals(2_000, receiver.sent.last().position)
     }
 
     // ---- A switch or a sign-out.
@@ -411,6 +864,7 @@ class CastOutputPlayerTest {
         // At once, not after the Cast framework answered.
         assertEquals(listOf("sess-1"), sessions.closed)
         assertEquals(0, output.mediaItemCount)
+        assertEquals(CastActivity.NONE, activities.last())
         idle()
         assertEquals(listOf(true), link.ends)
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
@@ -431,9 +885,7 @@ class CastOutputPlayerTest {
 
     @Test fun aStopLeavesTheTitleHere_paused() {
         onReceiverNow()
-        receiver.position = 12_000
-        // Remembered while it plays (once a second), read when it ends.
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        playedTo(12_000)
         output.stop()
         idle()
         assertEquals(book, device.items)
@@ -456,7 +908,7 @@ class CastOutputPlayerTest {
         connect()
         status(ReceiverActivity.FAILED)
         assertEquals(2, receiver.sent.size)
-        assertEquals("http://192.168.1.2:13378/public/session/sess-1/track/1", receiver.sent[1].items.first().localConfiguration!!.uri.toString())
+        assertEquals("http://192.168.1.2:13378/public/session/sess-1/track/1", uris(receiver.sent[1]).first())
         assertEquals(5_000, receiver.sent[1].position)
         assertTrue(said.isEmpty())
         // The same status once more is still the first failure's; only a new one counts.
@@ -481,6 +933,7 @@ class CastOutputPlayerTest {
     @Test fun aFailureLeftFromThePreviousTitle_isNotTheNewLoads() {
         onReceiverNow()
         link.now = ReceiverActivity.FAILED
+        link.content = "li#2"
         output.setMediaItems(listOf(localItem("srv", "other", 1), localItem("srv", "other", 2)), 0, 0)
         idle()
         assertEquals(2, receiver.sent.size)
@@ -489,6 +942,7 @@ class CastOutputPlayerTest {
         assertTrue(said.isEmpty())
         assertEquals(DeviceInfo.PLAYBACK_TYPE_REMOTE, output.deviceInfo.playbackType)
         // Then the new media's own failure counts.
+        link.content = "other#1"
         status(ReceiverActivity.BUSY)
         status(ReceiverActivity.FAILED)
         assertEquals(listOf(R.string.cast_unreachable), said)
@@ -497,11 +951,27 @@ class CastOutputPlayerTest {
     @Test fun aReceiverThatNeverAnswers_failsTheSameWay() {
         playingHere()
         connect()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(50))
+        pass(50)
+        assertTrue(said.isEmpty())
+        pass(11)
         assertEquals(listOf(R.string.cast_unreachable), said)
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
         assertEquals(5_000, device.position)
         assertFalse(device.pwr)
+    }
+
+    /** Minor 7: one limit for a person's wait, shared by the addresses. */
+    @Test fun aReceiverThatNeverAnswers_onTwoAddresses_stillEndsWithinAMinute() {
+        sessions.bases = listOf("https://abs.example".toHttpUrl(), "http://192.168.1.2:13378".toHttpUrl())
+        playingHere()
+        connect()
+        pass(29)
+        assertEquals(1, receiver.sent.size)
+        pass(2)
+        assertEquals(2, receiver.sent.size)
+        assertTrue(said.isEmpty())
+        pass(30)
+        assertEquals(listOf(R.string.cast_unreachable_http), said)
     }
 
     @Test fun aFormatTheDeviceCannotPlay_isNoAddressProblem() {
@@ -525,95 +995,144 @@ class CastOutputPlayerTest {
         assertFalse(device.pwr)
     }
 
-    @Test fun otherFilesOnTheServer_areNoQueue() {
+    /** Minor 4: no advice that cannot help. */
+    @Test fun otherFilesOnTheServer_areNoQueue_andTheMessageSaysSoHonestly() {
         sessions.tracksFor = { 3 }
         playingHere()
         connect()
         assertTrue(receiver.sent.isEmpty())
-        assertEquals(listOf(R.string.cast_open_failed), said)
+        assertEquals(listOf(R.string.cast_files_differ), said)
         assertEquals(listOf("sess-1"), sessions.closed)
     }
 
     @Test fun aFailureWhilePlaying_alsoEndsTheCast_atThePositionItHadReached() {
         onReceiverNow()
-        receiver.position = 33_000
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        playedTo(33_000)
         status(ReceiverActivity.FAILED)
         assertEquals(listOf(R.string.cast_unreachable), said)
         assertEquals(33_000, device.position)
         assertEquals(1, receiver.sent.size)
     }
 
-    // ---- The end, and what happens on the receiver by itself.
-
-    @Test fun theReceiverFinishing_isTheEndOfTheTitle_forTheProgressAndTheQueue() {
-        playingHere(index = 1)
+    @Test fun aTitleWithTooManyFiles_isRefused_beforeAnyLoad_withoutWaiting() {
+        val huge = List(2_000) { localItem("srv", "huge", it) }
+        sessions.tracksFor = { 2_000 }
+        playingHere(huge, 3, 1_000)
         connect()
-        receiver.loaded()
-        idle()
-        status(ReceiverActivity.FINISHED)
-        assertEquals(Player.STATE_ENDED, output.playbackState)
-        assertEquals(Player.STATE_ENDED, states.last())
-        assertEquals(2, output.mediaItemCount)
-        assertEquals("srv" to "li", output.currentMediaItem!!.titleKey())
-        assertEquals(1, output.currentMediaItemIndex)
-        assertEquals(100_000, output.currentPosition)
-
-        // The queue's next title goes where the sound is.
-        val next = listOf(localItem("srv", "next", 1), localItem("srv", "next", 2))
-        output.setMediaItems(next, 0, 0)
-        output.prepare()
-        output.play()
-        idle()
-        assertEquals("srv" to "next", sessions.opens.last())
-        assertEquals("https://abs.example/public/session/sess-2/track/1", receiver.sent.last().items.first().localConfiguration!!.uri.toString())
+        assertTrue(receiver.sent.isEmpty())
+        assertEquals(listOf(R.string.cast_too_many_files), said)
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
+        assertEquals(3, device.index)
+        assertEquals(1_000, device.position)
+        assertEquals(listOf("sess-1"), sessions.closed)
     }
 
-    @Test fun aFinishedFileInTheMiddle_isNoEnd() {
-        playingHere(index = 0)
-        connect()
-        receiver.loaded()
-        idle()
-        status(ReceiverActivity.FINISHED)
-        assertEquals(Player.STATE_READY, output.playbackState)
-    }
+    // ---- I3: what the receiver does by itself.
 
-    @Test fun aSeekAfterTheEnd_loadsAgain_fromTheSameSession() {
+    @Test fun stoppedFromElsewhere_theTitleWaitsPaused_andPlayLoadsItAgain_withANewSession() {
         onReceiverNow()
-        status(ReceiverActivity.FINISHED)
-        output.seekTo(0, 1_000)
-        idle()
-        assertEquals(1, sessions.opens.size)
-        assertEquals(2, receiver.sent.size)
-        assertEquals(1_000, receiver.sent.last().position)
-    }
-
-    @Test fun stoppedFromElsewhere_theTitleWaitsPaused_andPlayLoadsItAgain() {
-        onReceiverNow()
-        receiver.position = 20_000
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        playedTo(20_000)
         status(ReceiverActivity.STOPPED)
         assertEquals(Player.STATE_READY, output.playbackState)
         assertFalse(output.playWhenReady)
         assertEquals(20_000, output.currentPosition)
         assertEquals(1, receiver.sent.size)
+        assertEquals(CastActivity.CONNECTED, activities.last())
         link.now = ReceiverActivity.BUSY
         output.play()
         idle()
         assertEquals(2, receiver.sent.size)
         assertEquals(20_000, receiver.sent.last().position)
+        assertEquals(2, sessions.opens.size)
+        assertEquals(listOf("sess-1"), sessions.closed)
+    }
+
+    /** The review's probe: the way back. */
+    @Test fun stopped_butTheReceiverPlaysItsOwnTitle_goesBack() {
+        onReceiverNow()
+        status(ReceiverActivity.STOPPED)
+        assertFalse(output.isPlaying)
+        link.now = ReceiverActivity.BUSY
+        receiver.status(Player.STATE_READY, index = 1, position = 1_000, paused = false)
+        idle()
+        output.onReceiverStatus()
+        idle()
+        assertTrue(output.isPlaying)
+        assertEquals(1_000, output.currentPosition)
+        assertEquals(1, receiver.sent.size)
+        assertEquals(CastActivity.PLAYING, activities.last())
+    }
+
+    /** Google documents it as interrupted by a load: a queue jump may report it, and playing goes on. */
+    @Test fun interrupted_whileTheOwnTitleIsInTheQueue_isBusy() {
+        onReceiverNow()
+        playedTo(20_000)
+        status(ReceiverActivity.INTERRUPTED)
+        assertTrue(output.isPlaying)
+        assertEquals(1, receiver.sent.size)
+        assertFalse(activities.last() == CastActivity.CONNECTED)
+    }
+
+    @Test fun interrupted_withAnotherTitleInTheQueue_isStopped() {
+        onReceiverNow()
+        receiver.items = listOf(MediaItem.fromUri("https://elsewhere.example/a.mp3"))
+        receiver.status(Player.STATE_READY, index = 0, position = 0)
+        status(ReceiverActivity.INTERRUPTED)
+        assertFalse(output.playWhenReady)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+    }
+
+    /** A moment of an item without a title (a large queue's unknown item, the index fallback) ends nothing. */
+    @Test fun aMomentOfAnotherItem_endsNothing_tenSecondsDo() {
+        onReceiverNow()
+        playedTo(20_000)
+        val own = receiver.items
+        receiver.items = listOf(MediaItem.fromUri("https://elsewhere.example/a.mp3"))
+        receiver.status(Player.STATE_READY, index = 0, position = 0)
+        idle()
+        assertEquals("the position stands", 20_000, output.currentPosition)
+        assertEquals(1, output.currentMediaItemIndex)
+        val asked = link.statusRequests
+        pass(3)
+        assertEquals("asked once", asked, link.statusRequests)
+        assertTrue(output.playWhenReady)
+        // It was a moment.
+        receiver.items = own
+        receiver.status(Player.STATE_READY, index = 1, position = 23_000)
+        idle()
+        assertTrue(output.isPlaying)
+        assertEquals(23_000, output.currentPosition)
+
+        // Now for good.
+        receiver.items = listOf(MediaItem.fromUri("https://elsewhere.example/a.mp3"))
+        receiver.status(Player.STATE_READY, index = 0, position = 0)
+        pass(12)
+        assertFalse(output.playWhenReady)
+        assertEquals(CastActivity.CONNECTED, activities.last())
+        assertEquals(23_000, output.currentPosition)
+    }
+
+    /** A large queue: the current item is unknown yet, but the status names its content. */
+    @Test fun anItemWithoutATitle_butTheOwnContentId_isNoDoubt() {
+        onReceiverNow()
+        playedTo(20_000)
+        link.content = "li#2"
+        receiver.items = listOf(MediaItem.EMPTY.buildUpon().setUri("https://x/y").build(), receiver.items[1])
+        receiver.status(Player.STATE_READY, index = 0, position = 0)
+        pass(20)
+        assertTrue(output.playWhenReady)
+        assertEquals(20_000, output.currentPosition)
     }
 
     @Test fun aQueueThatVanishesForAMoment_doesNotTakeTheTitleAway() {
         onReceiverNow()
-        receiver.position = 8_000
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        playedTo(8_000)
         receiver.queueGone()
         idle()
         assertEquals(2, output.mediaItemCount)
         assertEquals(8_000, output.currentPosition)
         assertEquals(Player.STATE_BUFFERING, output.playbackState)
-        receiver.loaded()
+        receiver.status(Player.STATE_READY, index = 1, position = 8_500, paused = false)
         idle()
         assertEquals(Player.STATE_READY, output.playbackState)
         assertEquals(1, receiver.sent.size)
@@ -631,8 +1150,8 @@ class CastOutputPlayerTest {
         assertFalse(output.playWhenReady)
         assertEquals(11_000, output.currentPosition)
         assertEquals(1.25f, output.playbackParameters.speed)
-        receiver.pwr = true
-        receiver.loaded()
+        // The load went out before the person's seek: it proves itself with its own start.
+        receiver.status(Player.STATE_READY, index = 1, position = 5_000, paused = false)
         idle()
         assertEquals(listOf(0 to 11_000L), receiver.seeks)
         assertFalse(receiver.pwr)
@@ -665,5 +1184,18 @@ class CastOutputPlayerTest {
 
     @Test fun deviceKeysAreRecognised() {
         assertTrue(DeviceLibrary.isLocal(DeviceLibrary.SERVER_ID, deviceItem().titleKey()!!.second))
+    }
+
+    // ---- Minor 8: the line under the title says what is true.
+
+    @Test fun theLineFollowsThePhases() {
+        playingHere()
+        connect()
+        assertEquals(CastActivity.PLAYING, activities.last())
+        receiver.loaded()
+        idle()
+        assertEquals(CastActivity.PLAYING, activities.last())
+        output.stop()
+        assertEquals(CastActivity.NONE, activities.last())
     }
 }

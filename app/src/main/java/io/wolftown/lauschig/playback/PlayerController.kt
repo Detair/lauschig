@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.playback
 
 import androidx.annotation.StringRes
+import io.wolftown.lauschig.cast.CastActivity
 import io.wolftown.lauschig.settings.PlaybackSettings
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,6 +41,8 @@ data class PlayerUiState(
     val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
     /** The Cast device that plays; null while the sound comes from this device. */
     val outputName: String? = null,
+    /** What [outputName] is doing, for the line under the title. */
+    val outputActivity: CastActivity = CastActivity.PLAYING,
 )
 
 interface PlayerController {

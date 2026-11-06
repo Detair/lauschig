@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -136,6 +137,18 @@ class CastSessionsTest {
         assertEquals("/api/session/mine/close", server.takeRequest().path)
         assertEquals(1, server.requestCount)
         assertEquals(listOf("b" to "other"), store.open.toList())
+    }
+
+    /** The switch waits for a person: a server that does not answer costs it two seconds at most, and the next start closes it. */
+    @Test fun closeOpen_isBounded_andTheNoteStays() = runTest {
+        store.add("a", "s")
+        val never = CastSessions(
+            api = { kotlinx.coroutines.flow.flow { kotlinx.coroutines.awaitCancellation() } },
+            deviceInfo = { DeviceInfoDto(deviceId = "dev") }, store = store, accounts = accounts, scope = CoroutineScope(Dispatchers.Unconfined),
+        )
+        never.closeOpen("a")
+        assertEquals(2_000L, testScheduler.currentTime)
+        assertEquals(listOf("a" to "s"), store.open.toList())
     }
 
     /** After a process death: the active account's go, a saved profile's wait for it, an account that is gone is the server's. */

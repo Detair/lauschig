@@ -11,12 +11,17 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
+import com.google.android.gms.cast.CastStatusCodes
+import com.google.android.gms.cast.MediaStatus
+import com.google.android.gms.cast.framework.CastSession
+import io.wolftown.lauschig.R
 import io.wolftown.lauschig.playback.DeviceOutput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -55,6 +60,9 @@ class CastOutputTest {
         override fun setDiscovery(on: Boolean) { discovery = on }
         override fun newCastPlayer(device: Player, transfer: CastPlayer.TransferCallback): Player = cast(device, transfer).also { built += it }
         override fun activity() = ReceiverActivity.BUSY
+        override fun contentId(): String? = null
+        override fun isSuspended() = false
+        override fun requestStatus() = Unit
         override fun endSession(stopReceiver: Boolean) = Unit
         override fun setReceiverListener(listener: ReceiverListener?) { this.listener = listener }
     }
@@ -159,6 +167,126 @@ class CastOutputTest {
         output.clearMediaItems()
         assertTrue(device.items.isEmpty())
         output.release()
+    }
+
+    // ---- Where the volume goes.
+
+    /** The sleep fade goes where the sound is; on a receiver the device's own volume stays as it was. */
+    @Test fun theVolume_goesWhereTheSoundIs() {
+        val receiver = FakeReceiver()
+        var cast: FakeCastPlayer? = null
+        val runtime = FakeRuntime(supported = true) { d, t -> FakeCastPlayer(d, receiver, t).also { cast = it } }
+        val out = playbackOutput(exo, runtime, FakeSessions(), state, scope)
+        runtime.start()
+        idle()
+        out.setVolume(0.5f)
+        assertEquals(0.5f, exo.volume, 0.001f)
+        assertTrue(receiver.volumes.isEmpty())
+        cast!!.sessionAvailable(true)
+        idle()
+        assertFalse(out.isLocal)
+        out.setVolume(0.25f)
+        assertEquals(listOf(0.25f), receiver.volumes)
+        assertEquals(0.5f, exo.volume, 0.001f)
+    }
+
+    @Test fun withoutPlayServices_theVolumeIsTheExoPlayers() {
+        val out = playbackOutput(exo, FakeRuntime(supported = false), FakeSessions(), state, scope)
+        out.setVolume(0.3f)
+        assertEquals(0.3f, exo.volume, 0.001f)
+    }
+
+    // ---- What the framework's callbacks do, through the real listener.
+
+    private fun anyCastSession(): CastSession {
+        val unsafe = sun.misc.Unsafe::class.java.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) as sun.misc.Unsafe
+        return unsafe.allocateInstance(CastSession::class.java) as CastSession
+    }
+
+    private class Heard : ReceiverListener {
+        var ended = 0
+        var suspended = 0
+        var taken = 0
+        override fun onReceiverStatus() = Unit
+        override fun onReceiverError(detailedCode: Int?) = Unit
+        override fun onCastSessionEnded() { ended++ }
+        override fun onCastSuspended() { suspended++ }
+        override fun onCastTakenBack() { taken++ }
+    }
+
+    private fun runtimeWith(heard: Heard) = GmsCastRuntime(context, state).also { it.setReceiverListener(heard) }
+
+    private fun said(block: () -> Unit): List<Int> {
+        val all = ArrayList<Int>()
+        val job = scope.launch(Dispatchers.Unconfined) { state.messages.collect { all += it } }
+        block()
+        idle()
+        job.cancel()
+        return all
+    }
+
+    @Test fun aSessionsEnd_reachesThePlayer_andAPersonsOwnStopSaysNothing() {
+        val heard = Heard()
+        val runtime = runtimeWith(heard)
+        state.update { it.copy(deviceName = "TV") }
+        val messages = said { runtime.sessions.onSessionEnded(anyCastSession(), 0) }
+        assertEquals(1, heard.ended)
+        assertEquals(null, state.ui.value.deviceName)
+        assertTrue(messages.isEmpty())
+    }
+
+    /** I4: the TV switched off, the network gone. */
+    @Test fun aCastThatDrops_saysWhy() {
+        val heard = Heard()
+        val runtime = runtimeWith(heard)
+        val messages = said { runtime.sessions.onSessionEnded(anyCastSession(), CastStatusCodes.NETWORK_ERROR) }
+        assertEquals(1, heard.ended)
+        assertEquals(listOf(R.string.cast_dropped), messages)
+    }
+
+    @Test fun aFailedResume_saysWhy_andIsAnEnd() {
+        val heard = Heard()
+        val runtime = runtimeWith(heard)
+        val messages = said { runtime.sessions.onSessionResumeFailed(anyCastSession(), CastStatusCodes.TIMEOUT) }
+        assertEquals(1, heard.ended)
+        assertEquals(listOf(R.string.cast_dropped), messages)
+    }
+
+    @Test fun aCancelledStart_saysNothing_aFailedOneDoes() {
+        val runtime = runtimeWith(Heard())
+        assertTrue(said { runtime.sessions.onSessionStartFailed(anyCastSession(), CastStatusCodes.CANCELED) }.isEmpty())
+        assertEquals(listOf(R.string.cast_connect_failed), said { runtime.sessions.onSessionStartFailed(anyCastSession(), CastStatusCodes.TIMEOUT) })
+    }
+
+    /** I1: a suspend keeps the device's name for the line, is no end, and the runtime says so. */
+    @Test fun aSuspend_isNoEnd() {
+        val heard = Heard()
+        val runtime = runtimeWith(heard)
+        state.update { it.copy(deviceName = "TV") }
+        assertFalse(runtime.isSuspended())
+        val messages = said { runtime.sessions.onSessionSuspended(anyCastSession(), 2) }
+        assertEquals(1, heard.suspended)
+        assertEquals(0, heard.ended)
+        assertEquals("TV", state.ui.value.deviceName)
+        assertTrue(runtime.isSuspended())
+        assertTrue(messages.isEmpty())
+        runtime.sessions.onSessionEnded(anyCastSession(), 0)
+        assertFalse(runtime.isSuspended())
+    }
+
+    // ---- The receiver's status, as a table.
+
+    @Test fun theStatusMapping() {
+        val idle = MediaStatus.PLAYER_STATE_IDLE
+        assertEquals(ReceiverActivity.FINISHED, receiverActivity(idle, MediaStatus.IDLE_REASON_FINISHED))
+        assertEquals(ReceiverActivity.FAILED, receiverActivity(idle, MediaStatus.IDLE_REASON_ERROR))
+        assertEquals(ReceiverActivity.STOPPED, receiverActivity(idle, MediaStatus.IDLE_REASON_CANCELED))
+        assertEquals(ReceiverActivity.INTERRUPTED, receiverActivity(idle, MediaStatus.IDLE_REASON_INTERRUPTED))
+        assertEquals(ReceiverActivity.BUSY, receiverActivity(idle, MediaStatus.IDLE_REASON_NONE))
+        listOf(MediaStatus.PLAYER_STATE_PLAYING, MediaStatus.PLAYER_STATE_PAUSED, MediaStatus.PLAYER_STATE_BUFFERING, MediaStatus.PLAYER_STATE_LOADING, MediaStatus.PLAYER_STATE_UNKNOWN).forEach {
+            assertEquals(ReceiverActivity.BUSY, receiverActivity(it, MediaStatus.IDLE_REASON_FINISHED))
+        }
+        assertEquals(ReceiverActivity.BUSY, receiverActivity(null, MediaStatus.IDLE_REASON_NONE))
     }
 
     // ---- The fade on a receiver.
