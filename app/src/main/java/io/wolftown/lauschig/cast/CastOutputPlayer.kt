@@ -148,17 +148,15 @@ class CastOutputPlayer(
         // No local focus and no local sound while casting; Media3 stops the device right after this.
         device.playWhenReady = false
         when {
-            DeviceLibrary.isLocal(c.serverId, c.key) -> refuse(c, R.string.cast_refused_device_title)
-            carConnected() -> refuse(c, R.string.cast_refused_car)
+            // Only the system's output switcher gets here (the player's button explains first): it waits here, and the player says why.
+            DeviceLibrary.isLocal(c.serverId, c.key) -> failed(R.string.cast_refused_device_title)
+            // A car stays as it was: the sound goes on where it is, and the button is not even there.
+            carConnected() -> {
+                c.resumeOnDevice = c.playWhenReady
+                leave()
+            }
             else -> load(c)
         }
-    }
-
-    /** The title cannot go there: the session ends again, and it plays on here as if nothing happened. */
-    private fun refuse(c: CastTitle, @StringRes reason: Int) {
-        c.resumeOnDevice = c.playWhenReady
-        say(reason)
-        leave()
     }
 
     private fun toDevice(source: Player) {
@@ -251,6 +249,8 @@ class CastOutputPlayer(
         active.playWhenReady = c.playWhenReady
         active.setMediaItems(items, c.index.coerceIn(0, items.lastIndex), c.positionMs)
         loadSent = true
+        // A failure the status still shows is the previous media's: the server closes a device's old session when it opens the next.
+        failureAnswered = link.activity() == ReceiverActivity.FAILED
         watchdog?.cancel()
         watchdog = scope.launch {
             delay(loadTimeoutMs)

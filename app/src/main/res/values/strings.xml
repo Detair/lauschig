@@ -817,12 +817,15 @@
     </plurals>
     <string name="stats_card_open">Open statistics</string>
     <string name="cast_refused_device_title">This title is only on this device, a Cast device cannot play it. It is waiting for you here.</string>
-    <string name="cast_refused_car">While a car is connected, playback stays on this device.</string>
+    <!-- The labels of Media3's Cast button; its own are English only. -->
+    <string name="media_route_button_connected">Cast: connected</string>
+    <string name="media_route_button_connecting">Cast: connecting</string>
+    <string name="media_route_button_disconnected">Cast: choose a device</string>
     <string name="cast_connect_failed">Could not connect to the Cast device. Is it switched on and on the same Wi-Fi?</string>
     <string name="cast_server_offline">Your server is not answering right now, so this title cannot be cast.</string>
     <string name="cast_open_failed">The server did not make this title available to the Cast device. Try again after a sync.</string>
-    <string name="cast_unreachable">The Cast device cannot reach your server. The Cast device itself is fine, it is missing the address: it needs a server address that is publicly reachable. Playback is waiting here, at the same spot.</string>
-    <string name="cast_unreachable_http">The Cast device cannot reach your server. The Cast device itself is fine, but your server address uses http, which it may not load. Playback is waiting here, at the same spot.</string>
+    <string name="cast_unreachable">The Cast device cannot reach your server. It was connected, but it cannot load the server address, which has to work without a VPN and without your home DNS. Playback is waiting here, at the same spot.</string>
+    <string name="cast_unreachable_http">The Cast device cannot reach your server. It was connected, but it cannot load the server address: it uses http, which it may not load. Playback is waiting here, at the same spot.</string>
     <string name="cast_format_failed">The Cast device cannot play the audio format of this title. Playback is waiting here, at the same spot.</string>
     <string name="cast_playing_on">Playing on %1$s</string>
     <string name="cast_playing_elsewhere">Playing on the Cast device</string>

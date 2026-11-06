@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.cast
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.cast.Cast
 import androidx.media3.cast.CastParams
@@ -10,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
+import com.google.android.gms.cast.CastStatusCodes
 import com.google.android.gms.cast.MediaError
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.SessionState
@@ -94,6 +97,7 @@ interface CastRuntime : ReceiverLink {
     fun setDiscovery(on: Boolean)
 
     /** `CastPlayer.Builder(context).setLocalPlayer(device)`; only after [started]. */
+    @OptIn(UnstableApi::class)
     fun newCastPlayer(device: Player, transfer: CastPlayer.TransferCallback): Player
 }
 
@@ -118,6 +122,7 @@ class GmsCastRuntime @Inject constructor(
     private var client: RemoteMediaClient? = null
     private var selector: MediaRouteSelector? = null
     private var discovering = false
+    private val handler = Handler(Looper.getMainLooper())
 
     private val mediaClientCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
@@ -139,7 +144,7 @@ class GmsCastRuntime @Inject constructor(
         }
         override fun onSessionStartFailed(session: CastSession, error: Int) {
             Log.w(TAG, "the Cast session did not start: $error")
-            state.say(R.string.cast_connect_failed)
+            if (error != CastStatusCodes.CANCELED) state.say(R.string.cast_connect_failed)
         }
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
             disconnected()
@@ -171,13 +176,25 @@ class GmsCastRuntime @Inject constructor(
             cast.addSessionManagerListener(sessions)
             // The Default Media Receiver, not Media3's default (its DRM variant): no registration, and it is the one documented for all Cast devices.
             cast.initialize(CastParams.Builder().setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID).build())
-            CastContext.getSharedInstance(app, app.mainExecutor)
-                .addOnSuccessListener(app.mainExecutor) { context -> contextReady(context) }
-                .addOnFailureListener(app.mainExecutor) { e -> Log.w(TAG, "the Cast framework did not load", e) }
+            whenContextReady(cast, CONTEXT_POLLS)
             _started.value = true
         } catch (e: RuntimeException) {
             // A framework that cannot start: no button, and playback stays where it is.
             Log.w(TAG, "the Cast framework did not start", e)
+        }
+    }
+
+    /**
+     * Media3's [Cast] loads the framework in the background and does not say when it is done; another `getSharedInstance` with
+     * options could create a second context, and one without options needs a provider in the manifest.
+     */
+    private fun whenContextReady(cast: Cast, polls: Int) {
+        val context = CastContext.getSharedInstance()
+        when {
+            context != null -> contextReady(context)
+            cast.castContextLoadFailure != null -> Log.w(TAG, "the Cast framework did not load", cast.castContextLoadFailure)
+            polls > 0 -> handler.postDelayed({ whenContextReady(cast, polls - 1) }, CONTEXT_POLL_MS)
+            else -> Log.w(TAG, "the Cast framework took too long to load")
         }
     }
 
@@ -231,6 +248,8 @@ class GmsCastRuntime @Inject constructor(
 
     private companion object {
         const val TAG = "CastRuntime"
+        const val CONTEXT_POLL_MS = 200L
+        const val CONTEXT_POLLS = 150
     }
 }
 

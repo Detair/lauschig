@@ -817,12 +817,15 @@
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
     <string name="cast_refused_device_title">Dieser Titel liegt nur auf diesem Gerät, ein Cast-Gerät kann ihn nicht abspielen. Er wartet hier auf dich.</string>
-    <string name="cast_refused_car">Solange ein Auto verbunden ist, bleibt die Wiedergabe auf diesem Gerät.</string>
+    <!-- The labels of Media3's Cast button; its own are English only. -->
+    <string name="media_route_button_connected">Cast: verbunden</string>
+    <string name="media_route_button_connecting">Cast: wird verbunden</string>
+    <string name="media_route_button_disconnected">Cast: Gerät wählen</string>
     <string name="cast_connect_failed">Keine Verbindung zum Cast-Gerät. Ist es eingeschaltet und im selben WLAN?</string>
     <string name="cast_server_offline">Dein Server antwortet gerade nicht, deshalb kann dieser Titel nicht gecastet werden.</string>
     <string name="cast_open_failed">Der Server hat den Titel nicht für das Cast-Gerät freigegeben. Versuch es nach einem Sync noch einmal.</string>
-    <string name="cast_unreachable">Das Cast-Gerät erreicht deinen Server nicht. Mit dem Cast-Gerät ist alles in Ordnung, ihm fehlt die Adresse: Es braucht eine öffentlich erreichbare Serveradresse. Die Wiedergabe wartet hier, an derselben Stelle.</string>
-    <string name="cast_unreachable_http">Das Cast-Gerät erreicht deinen Server nicht. Mit dem Cast-Gerät ist alles in Ordnung, aber deine Serveradresse nutzt http, und das lädt es womöglich nicht. Die Wiedergabe wartet hier, an derselben Stelle.</string>
+    <string name="cast_unreachable">Das Cast-Gerät erreicht deinen Server nicht. Es war verbunden, kann aber die Serveradresse nicht laden: Sie muss ohne VPN und ohne Heim-DNS erreichbar sein. Die Wiedergabe wartet hier, an derselben Stelle.</string>
+    <string name="cast_unreachable_http">Das Cast-Gerät erreicht deinen Server nicht. Es war verbunden, kann aber die Serveradresse nicht laden: Sie nutzt http, und das lädt es womöglich nicht. Die Wiedergabe wartet hier, an derselben Stelle.</string>
     <string name="cast_format_failed">Das Cast-Gerät kann das Audioformat dieses Titels nicht abspielen. Die Wiedergabe wartet hier, an derselben Stelle.</string>
     <string name="cast_playing_on">Wird auf %1$s abgespielt</string>
     <string name="cast_playing_elsewhere">Wird auf dem Cast-Gerät abgespielt</string>

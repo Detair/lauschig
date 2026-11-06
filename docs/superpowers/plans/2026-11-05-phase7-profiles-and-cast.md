@@ -460,3 +460,95 @@ Das Gesamtreview empfiehlt den Merge, mit vier kleinen Befunden; alle übernomme
 
 **Nicht auf dem Gerät:** die Übernahme des alten Werts (der Emulator hatte keinen, nur der Test zeigt sie; dass `LauschigApp` sie aufruft, hat wie bei `migrateAutoDelete` keinen Test), eine Serienseite mit Audible.
 
+
+## Umsetzung Task 4 (2026-11-06)
+
+Branch `p7-cast`, von `origin/p7-profiles`. Paket `io.wolftown.lauschig.cast`. Kein echter Empfänger im Spiel: Die Tests laufen
+gegen Fakes, die `CastPlayerImpl.updateActivePlayer` und das Verhalten von `RemoteCastPlayer` 1.11.1 nachbilden (aus den Quellen des
+Artefakts), plus ein Test mit dem echten `CastPlayer` ohne Framework. Der Gerätedurchlauf am Chromecast steht aus (Fabians OK).
+
+### Was gebaut ist
+
+- **`:abs-api`:** `PlaybackSessionApi` (`POST api/items/<id>/play`, `…/play/<episodeId>`, `POST api/session/<id>/close`),
+  `sessionTrackUrl`. `forceDirectPlay` wird immer gesendet.
+- **`CastSessions`:** öffnet und schließt, merkt sich offene Sitzungen in einem DataStore; `closeOpen` vor dem Abmelden und vor dem
+  Wechsel, `closeLeftovers` beim App-Start.
+- **`ReceiverItems`:** die Warteschlange des Empfängers, nur aus der Sitzung gebaut. `MediaItemFactory` bleibt unberührt.
+- **`CastOutputPlayer`** (`ForwardingSimpleBasePlayer`): der Player der Service-Kette, siehe „Claudes Wahl“.
+- **`CastRuntime`/`GmsCastRuntime`:** die einzige Stelle mit Play-Services-Aufrufen außer dem `MediaError`-Code. `CastState` verbindet
+  Framework, Service und Oberfläche.
+- **`CastOutput`, `ReceiverVolume`:** `PlaybackOutput` mit Lautstärke; der Sleep-Fade geht an die Stream-Lautstärke, sonst an die
+  Gerätelautstärke, höchstens alle 500 ms, das Ende (1,0) sofort.
+- **`PlaybackComfort` geteilt:** Tempo je Titel, Rückspulen, letzte Aktivität auf `player`; Boost, Kompressor, Stille überspringen auf
+  `device`. Was ein Empfänger an Tempo meldet, wird nicht gespeichert; was eine Person wählt, kommt über `speedRequested`.
+- **Oberfläche:** Media3s Compose-`MediaRouteButton` (gibt es in 1.11.1), nur mit `CastUi.showButton`. Bei einem Gerätetitel ein
+  eigener Knopf mit Erklärung. Zeile „Wird auf … abgespielt“ unter dem Titel, Klang-Blatt „nicht verfügbar“, Tempo-Blatt nennt 2×.
+- **Dokumente:** Datenschutz DE und EN, `data-safety.md`, README, `NOTICE` (Entwurf).
+
+### Was ABS tut (Quellen v2.26.0, v2.37.1; 2.37.1 auch lokal geprüft)
+
+- **Route:** `/public/session/:id/track/:index` steht in `server/routers/PublicRouter.js` seit **v2.22.0** (v2.21.0 nicht), also auch in
+  v2.26.0. Kein Fallback und keine Sperre nötig. Lokal: 206 mit Range ohne Token, nach dem Schließen 404. `index` beginnt bei 1; 0 gibt
+  bei einem Buch 404. Das Cover antwortet ohne Token mit 200.
+- **Podcast-Folgen:** `POST /api/items/:id/play/:episodeId` füllt dieselben `audioTracks`, `getTrack` liest nur diese: Die Route bedient
+  sie auch. Nur aus den Quellen, der lokale Testserver hat keine Podcasts. Lücke: Alte Folgen ohne `index` findet v2.26 nicht (404, der
+  Player meldet es), ab v2.37 greift dort ein Fallback.
+- **Ablauf:** `closeStaleOpenSessions` jede Nacht um 00:30, alles ohne Update seit 36 Stunden. Eine neue Sitzung desselben Benutzers auf
+  demselben Gerät schließt die alte. Ein zweites Close gibt 404.
+- **Statistik:** `saveSession` speichert keine Sitzung ohne `timeListening`. Die Cast-Sitzung bekommt nie welche; lokal geprüft: 258
+  Sitzungen vor und nach Öffnen und Schließen. Gezählt wird über den bestehenden Weg (`ProgressTracker`, lokale Sitzung,
+  `local-all`), mit der Position aus `output.player`. Hin und zurück innerhalb von 10 Minuten bleibt es **eine** Sitzung; die
+  Ladezeit zählt nicht. Test `CastProgressTest`.
+
+### Was dokumentiert ist und was nicht
+
+- **`http://` am Default Media Receiver:** Google dokumentiert es nicht. `web_receiver/basic` sagt nur, veröffentlichte Empfänger liegen auf
+  TLS-Servern; `cast/docs/media` verlangt CORS nur für adaptive Streams und Untertitel. Der Empfänger läuft also vermutlich auf einer https-Seite. Ob
+  http-Audio dort geladen wird, klärt erst der Gerätetest. Deshalb ein eigener Text für http.
+- **Suche:** „Device discovery is completely managed by the `CastContext`“; gelegentlich beim Wechsel in den Vordergrund, solange der
+  Dialog offen ist, beim Wiederaufnehmen einer Sitzung; Ende im Hintergrund (`android_sender/integrate`).
+- **Android 17:** Lokale Netzzugriffe sind ab `targetSdk` 37 ohne `ACCESS_LOCAL_NETWORK` gesperrt. Für Cast nennt Android den Output
+  Switcher als Weg ohne die Berechtigung. Media3 öffnet ihn ab API 37 von selbst, wenn `Cast.initialize` genutzt wird und
+  `MediaTransferReceiver` im Manifest steht: beides der Fall. **Keine neue Laufzeitberechtigung.**
+- **Google-Logs:** Das Cast-SDK protokolliert laut `android_sender/data_disclosure` seine Nutzung (Suche, Sitzungen, Telefon, App) und
+  sendet sie an Google; kein Abschalten. Datenschutz und `data-safety.md` sagen das.
+
+### Claudes Wahl
+
+1. **`PlaybackOutput.player` ist `CastOutputPlayer`, nicht `CastPlayer` direkt.** `CastPlayer.Builder(context).setLocalPlayer(exo)` liegt
+   darunter. Ohne diese Schicht wäre der Player sekundenlang leer (Timeline erst nach dem ersten Status; Bildschirm, Benachrichtigung und
+   Widget würden den Titel verlieren), `RemoteCastPlayer` kennt kein `STATE_ENDED` und keinen `playerError`, und jede Stelle mit
+   `setMediaItems`, `replaceMediaItem` (Kapitel-Untertitel, neue Cover, fertiger Download) müsste selbst wissen, wohin sie sendet. Der
+   Transfer läuft trotzdem nur über `CastPlayer.TransferCallback`. Der Rest der App bleibt fast unverändert.
+2. **Framework erst beim Öffnen des großen Players.** Nicht beim App-Start, nicht fürs Auto, nicht für den Mini-Player: Erst dann gehen Suche
+   und Google-Logs los. Dafür beginnt der Player auf dem Gerät und nimmt den `CastPlayer` später dazu (`setPlayer`). Weil die Suche des
+   Frameworks am Activity-Lebenszyklus hängt, fordert der offene Player sie selbst an (`CALLBACK_FLAG_REQUEST_DISCOVERY`).
+3. **Default Media Receiver `CC1AD845`** statt Media3s Vorgabe `A12D4273` (die DRM-Variante): Wir brauchen kein DRM, und `CC1AD845` ist der
+   für alle Cast-Geräte dokumentierte, auch reine Audiogeräte.
+4. **Adresse:** erst die öffentliche, dann die lokale, bei einem Ladefehler automatisch die nächste. Fabians öffentliche Adresse geht nur
+   über NetBird; ohne diesen Schritt könnte Cast bei ihm nie laufen.
+5. **Ladefehler:** Die Sitzung endet, der Titel wartet pausiert hier an derselben Stelle, der Player sagt warum. Ein offener Cast mit einem
+   Knopf, der wieder scheitert, wäre schlechter. Zeitlimit 45 s. Getrennte Texte: Gerät nicht erreichbar (`cast_connect_failed`), Gerät
+   erreicht den Server nicht (`cast_unreachable`, `_http`), Format (`cast_format_failed`).
+6. **Zurückholen:** immer pausiert, Position bleibt. Ton springt nie von selbst in einen anderen Raum, auch nicht nach einem WLAN-Ausfall. Nur
+   wer im System-Ausgabeumschalter „dieses Telefon“ wählt (`onTransferred`), hört weiter, wenn es gerade lief.
+7. **Gerätetitel beim Casten gestartet, auch als nächster in der Warteschlange:** Cast endet, der Titel wartet pausiert hier. Über den
+   System-Umschalter auf einen Gerätetitel: ebenso, mit Grund. Der Knopf im Player erklärt es vorher.
+8. **Hinweiston:** beim Casten aus. Die Lautstärketasten steuern den Empfänger, die Medienlautstärke des Telefons ist also außer Reichweite, und
+   der Ton käme in einem stillen Raum in unbekannter Lautstärke. Das Ausblenden am Empfänger sagt dasselbe; Schütteln geht weiter.
+9. **Auto:** kein Grund gefunden, davon abzuweichen. Ein verbundener Car-Host (`CarAccess.isCar`, per Controller im Service gezählt)
+   versteckt den Knopf und beendet eine laufende Sitzung; ein Cast-Versuch über das System lässt den Ton, wo er ist.
+10. **Tempo:** Empfänger können 0,5–2×. Der Titel behält sein Tempo auch darüber (2,5×), das Tempo-Blatt nennt die Grenze.
+11. **Stop oder leerer Player am Empfänger** beendet die Sitzung: So laufen Abmelden und Wechsel ohne eigenen Weg. Beide warten zusätzlich auf
+    `closeOpen`, damit das Close noch den Token hat (`ProfileSwitchFlowTest`).
+12. **Während des Castens kein Download-on-Play und kein Auto-Resume durch Kopfhörer:** Beide gehören zu diesem Gerät.
+
+### Bekannte Grenzen
+
+- Im Cast zeigt die Benachrichtigung Titel und Autor, nicht das Kapitel: Ein `replaceMediaItem` würde den Empfänger unterbrechen.
+- Die Fehlererkennung liest `MediaStatus.idleReason`, `onMediaError` und ein Zeitlimit. Ob der Default Media Receiver sie so meldet, zeigt erst
+  der Gerätetest.
+
+### Was der Gerätetest und der Review wissen müssen
+
+Prüfliste steht im Bericht. Zuerst dort klären: `http`, `onTransferred`-Reihenfolge, Ende einer Warteschlange, Sitzung bei Netzverlust.

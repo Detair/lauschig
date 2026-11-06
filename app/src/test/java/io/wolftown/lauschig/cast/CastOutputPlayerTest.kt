@@ -198,7 +198,8 @@ class CastOutputPlayerTest {
 
     // ---- What cannot be cast.
 
-    @Test fun aDeviceTitle_isRefused_andPlaysOnWhereItWas() {
+    /** Only the system's output switcher gets this far. The session ends again, nothing reaches the receiver, the player says why. */
+    @Test fun aDeviceTitle_isRefused_andWaitsWhereItWas() {
         val title = listOf(deviceItem())
         playingHere(title, 0, 3_000)
         connect()
@@ -208,7 +209,7 @@ class CastOutputPlayerTest {
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
         assertEquals(title, device.items)
         assertEquals(3_000, output.currentPosition)
-        assertTrue(device.pwr)
+        assertFalse(device.pwr)
         assertTrue(receiver.sent.isEmpty())
     }
 
@@ -231,7 +232,8 @@ class CastOutputPlayerTest {
         playingHere()
         connect()
         assertEquals(0, sessions.opens.size)
-        assertEquals(listOf(R.string.cast_refused_car), said)
+        assertTrue(said.isEmpty())
+        assertEquals(listOf(true), link.ends)
         assertEquals(DeviceInfo.PLAYBACK_TYPE_LOCAL, output.deviceInfo.playbackType)
         assertEquals(1, output.currentMediaItemIndex)
         assertEquals(5_000, output.currentPosition)
@@ -473,6 +475,23 @@ class CastOutputPlayerTest {
         assertEquals(5_000, device.position)
         assertFalse(device.pwr)
         assertEquals(listOf("sess-1"), sessions.closed)
+    }
+
+    /** Opening the next session closes the old one on the server, and the receiver may report that just then. */
+    @Test fun aFailureLeftFromThePreviousTitle_isNotTheNewLoads() {
+        onReceiverNow()
+        link.now = ReceiverActivity.FAILED
+        output.setMediaItems(listOf(localItem("srv", "other", 1), localItem("srv", "other", 2)), 0, 0)
+        idle()
+        assertEquals(2, receiver.sent.size)
+        output.onReceiverStatus()
+        idle()
+        assertTrue(said.isEmpty())
+        assertEquals(DeviceInfo.PLAYBACK_TYPE_REMOTE, output.deviceInfo.playbackType)
+        // Then the new media's own failure counts.
+        status(ReceiverActivity.BUSY)
+        status(ReceiverActivity.FAILED)
+        assertEquals(listOf(R.string.cast_unreachable), said)
     }
 
     @Test fun aReceiverThatNeverAnswers_failsTheSameWay() {
