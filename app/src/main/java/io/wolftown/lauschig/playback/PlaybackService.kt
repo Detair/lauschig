@@ -14,6 +14,7 @@ import androidx.media3.common.AudioAttributes
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -27,6 +28,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.auto.CarAccess
@@ -148,7 +151,12 @@ class PlaybackService : MediaLibraryService() {
     private var carButtons: CarButtons? = null
     private var buttonState: CarButtons.State? = null
     private var widgets: WidgetPublisher? = null
-    private var startGuard: ForegroundStartGuard? = null
+    @VisibleForTesting internal var startGuard: ForegroundStartGuard? = null
+    /**
+     * The newest start that reached [onStartCommand] (-1: none, as `stopSelf()`). Stopping with it, Android refuses if a key
+     * is already on its way with a newer one: stopping under that key's open deadline would crash the app.
+     */
+    private var lastStartId = -1
     /** Counts covers that arrived in the background; browsers reload their lists when it changes. */
     private val coverArrivals = MutableStateFlow(0)
     /** Folders browsers subscribed to (Android Auto keeps a few); notified when the library changes. */
@@ -429,11 +437,12 @@ class PlaybackService : MediaLibraryService() {
             onStart = { out -> if (out.streaming) playDownloadStarter.start(out.title.serverId, out.title.key) },
             onPlayLoaded = { scope.launch { player?.play() } },
             onSubscribed = { id -> subscribed.remove(id); subscribed += id; while (subscribed.size > MAX_SUBSCRIBED) subscribed.remove(subscribed.first()) },
+            onResumptionAsked = { startGuard?.resumptionAsked() },
             onResumption = { ok, message ->
                 scope.launch {
-                    // A play key that cannot start anything says why (Bluetooth, car, widget); the guard then lets go.
-                    if (!ok && startGuard?.armed == true && message != null) Toast.makeText(this@PlaybackService, message, Toast.LENGTH_LONG).show()
-                    startGuard?.resumption(ok)
+                    // A play key that cannot start anything says why (Bluetooth, car, widget), once the guard lets go.
+                    val failed = startGuard?.resumption(ok) == true
+                    if (failed && message != null) Toast.makeText(this@PlaybackService, message, Toast.LENGTH_LONG).show()
                 }
             },
         )
@@ -441,9 +450,21 @@ class PlaybackService : MediaLibraryService() {
 
     /** A play key (Bluetooth, car, widget) may have started us with startForegroundService; see [ForegroundStartGuard]. */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         val p = player
-        if (intent != null && p != null && ForegroundStartGuard.shouldArm(intent, engaged = isEngaged(p))) startGuard?.arm()
-        return super.onStartCommand(intent, flags, startId)
+        val guard = startGuard
+        if (p == null || guard == null) return super.onStartCommand(intent, flags, startId)
+        return guard.onStart(intent, engaged = isEngaged(p)) { super.onStartCommand(intent, flags, startId) }
+    }
+
+    /**
+     * See [ForegroundStartGuard.holdsNotificationUpdate]. Here and not in `onUpdateNotification`: Media3 1.11.1 remembers for
+     * good that its default `onUpdateNotification` ran once (`defaultMethodCalled`) and updates regardless from then on.
+     */
+    @OptIn(UnstableApi::class)
+    override fun onUpdateNotificationAsync(session: MediaSession, startInForegroundRequired: Boolean): ListenableFuture<Void?> {
+        if (!startInForegroundRequired && startGuard?.holdsNotificationUpdate() == true) return Futures.immediateVoidFuture()
+        return super.onUpdateNotificationAsync(session, startInForegroundRequired)
     }
 
     /** Something plays or buffers to play: Media3 shows the notification and goes foreground itself. */
@@ -453,7 +474,7 @@ class PlaybackService : MediaLibraryService() {
     private fun foregroundType() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
 
     /** What the play-key guard ([ForegroundStartGuard]) does to this service. Main thread. */
-    private inner class StartHost(private val p: Player) : ForegroundStartGuard.Host {
+    @VisibleForTesting internal inner class StartHost(private val p: Player) : ForegroundStartGuard.Host {
         override fun engaged() = isEngaged(p)
 
         override fun hasItems() = p.mediaItemCount > 0
@@ -471,7 +492,7 @@ class PlaybackService : MediaLibraryService() {
             } ?: return false
             return try {
                 ServiceCompat.startForeground(this@PlaybackService, ForegroundStartGuard.MEDIA_NOTIFICATION_ID, posted, foregroundType())
-                Log.i(TAG, "play key played nothing: in the foreground with the media notification")
+                Log.i(TAG, "play key: in the foreground with the media notification")
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "could not go foreground with the media notification", e)
@@ -486,6 +507,7 @@ class PlaybackService : MediaLibraryService() {
                 val notification = NotificationCompat.Builder(this@PlaybackService, START_CHANNEL)
                     .setSmallIcon(R.drawable.ic_widget_play)
                     .setContentTitle(getString(R.string.app_name))
+                    .setContentText(getString(R.string.playback_start_text))
                     .setSilent(true)
                     .build()
                 ServiceCompat.startForeground(this@PlaybackService, START_NOTIFICATION_ID, notification, foregroundType())
@@ -508,8 +530,15 @@ class PlaybackService : MediaLibraryService() {
                 Log.w(TAG, "could not leave the foreground start", e)
             }
             Log.i(TAG, "play key started nothing: left the foreground start")
-            if (p.mediaItemCount == 0) stopSelf()
+            if (p.mediaItemCount == 0) stopSelf(lastStartId)
         }
+
+        override fun cancelPlaceholder() {
+            getSystemService(NotificationManager::class.java)?.cancel(START_NOTIFICATION_ID)
+        }
+
+        @OptIn(UnstableApi::class)
+        override fun updateNotification() = triggerNotificationUpdate()
     }
 
     /**
@@ -636,7 +665,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Keep playing in the background; stop only if nothing is playing (and never while the play-key guard waits).
         val p = player
-        if (stopsOnTaskRemoved(p != null, p?.playWhenReady == true, p?.mediaItemCount ?: 0, startGuard?.armed == true)) stopSelf()
+        if (stopsOnTaskRemoved(p != null, p?.playWhenReady == true, p?.mediaItemCount ?: 0, startGuard?.armed == true)) stopSelf(lastStartId)
     }
 
     override fun onDestroy() {

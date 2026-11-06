@@ -25,23 +25,464 @@ class ForegroundStartGuardTest {
         var hasItems = false
         /** Media3's media notification is posted (a loaded, paused title). */
         var mediaNotification = false
+        /** The notification is posted, but Android refuses `startForeground` with it. */
+        var adoptionRefused = false
         val calls = mutableListOf<String>()
         override fun engaged() = engaged
         override fun hasItems() = hasItems
         override fun adoptMediaNotification(): Boolean {
+            if (adoptionRefused) { calls += "adoptRefused"; return false }
             if (!mediaNotification) return false
             calls += "adopt"
             return true
         }
         override fun showPlaceholder() { calls += "placeholder" }
         override fun leavePlaceholder() { calls += "leave" }
+        override fun cancelPlaceholder() { calls += "cancel" }
+        override fun updateNotification() { calls += "update" }
+    }
+
+    private fun playKey(code: Int = KeyEvent.KEYCODE_MEDIA_PLAY) =
+        Intent(Intent.ACTION_MEDIA_BUTTON).putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, code))
+
+    /** A key on an empty player: the guard arms, then Media3 asks the resumption for a title. */
+    private fun ForegroundStartGuard.press() {
+        arm()
+        resumptionAsked()
     }
 
     private val host = FakeHost()
     private val timeout = 7_000L
     private val cap = 60_000L
 
-    private fun guard(scope: CoroutineScope) = ForegroundStartGuard(scope, host, timeout, cap)
+    /** Up to API 34: nothing is asked of Android before the deadline. */
+    private fun guard(scope: CoroutineScope) = ForegroundStartGuard(scope, host, timeout, cap, foregroundFirst = false)
+
+    /** API 35+: audio focus needs the foreground, so the guard goes there before Media3 handles the key. */
+    private fun firstGuard(scope: CoroutineScope) = ForegroundStartGuard(scope, host, timeout, cap, foregroundFirst = true)
+
+    @Test fun foregroundFirst_emptyPlayer_placeholderAtTheKey_thenMedia3TakesOver() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertEquals(listOf("placeholder"), host.calls) // before the key reaches Media3: focus is asked for right after
+        assertTrue(g.armed)
+        g.resumption(ok = true)
+        host.engaged = true
+        g.onEngaged()
+        assertEquals(listOf("placeholder"), host.calls) // Media3's startForeground replaces it, nothing happens right now
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_keyThenForward_inThatOrder() = runTest {
+        val g = firstGuard(backgroundScope)
+        val result = g.onStart(playKey(), engaged = false) { host.calls += "forward"; 42 }
+        // Media3 asks for audio focus when it handles the key: the foreground has to be there before it does.
+        assertEquals(listOf("placeholder", "forward"), host.calls)
+        assertEquals(42, result)
+    }
+
+    @Test fun foregroundFirst_loadedTitle_keyThenForward_inThatOrder() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = firstGuard(backgroundScope)
+        g.onStart(playKey(), engaged = false) { host.calls += "forward"; 0 }
+        assertEquals(listOf("adopt", "forward"), host.calls)
+    }
+
+    @Test fun onStart_withoutAPlayKey_onlyForwards() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.onStart(null, engaged = false) { host.calls += "forward"; 0 }
+        g.onStart(playKey(KeyEvent.KEYCODE_MEDIA_PAUSE), engaged = false) { host.calls += "forward"; 0 }
+        g.onStart(playKey(), engaged = true) { host.calls += "forward"; 0 }
+        assertEquals(listOf("forward", "forward", "forward"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun beforeApi35_keyThenForward_doesNotGoForegroundFirst() = runTest {
+        val g = guard(backgroundScope)
+        g.onStart(playKey(), engaged = false) { host.calls += "forward"; 0 }
+        assertEquals(listOf("forward"), host.calls)
+        assertTrue(g.armed)
+    }
+
+    @Test fun foregroundFirst_foregroundLost_secondPress_goesForegroundAgain() = runTest {
+        // Something took the foreground away after the first press; the second start set a new deadline at Android, and a
+        // service that stops with that deadline open crashes the app.
+        val g = firstGuard(backgroundScope)
+        g.press()
+        assertEquals(listOf("placeholder"), host.calls)
+        g.press()
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertTrue(g.armed)
+        g.resumption(ok = false)
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_oneResumptionFails_theOtherStillPlays() = runTest {
+        // Each press on an empty player asks for a title. A failed answer must not stop the service under the other one:
+        // its title would arrive just to be destroyed.
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.press()
+        assertFalse(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertTrue(g.armed)
+        assertFalse(g.resumption(ok = true))
+        host.hasItems = true
+        host.engaged = true
+        g.onEngaged()
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_bothResumptionsFail_leavesAtTheLastAnswer_andSaysSoOnce() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.press()
+        assertFalse(g.resumption(ok = false))
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_successThenFailure_doesNotLeave_untilTheDeadline() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.press()
+        assertFalse(g.resumption(ok = true))
+        assertFalse(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        assertTrue(g.armed)
+        host.hasItems = true
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_theOtherAnswerNeverComes_theCapEndsIt() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.press()
+        assertFalse(g.resumption(ok = false))
+        advanceTimeBy(timeout + cap - 10)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder"), host.calls)
+        advanceTimeBy(20)
+        runCurrent()
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun secondPress_thatAsksForNothing_opensNoResumption() = runTest {
+        // A key on a loaded title, or one Media3 turns into a pause: the failure of the first press still decides.
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.arm()
+        assertTrue(g.resumption(ok = false))
+        assertFalse(g.armed)
+    }
+
+    @Test fun aKeyThatAsksForNothing_leavesAtTheDeadline_notAtTheCap() = runTest {
+        // A bound controller keeps the service alive after a failed key, and the player stays empty with playWhenReady
+        // set: Media3 turns the next PLAY_PAUSE into a pause and asks the resumption for nothing.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout - 1)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun aKeyThatAsksForNothing_thenARealPlay_theFailureSettlesAtOnce() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.press()
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun anAskWithoutAnArming_isNotCounted() = runTest {
+        // A car or SystemUI on the empty player: no key, nothing for the guard to wait for later.
+        val g = firstGuard(backgroundScope)
+        g.resumptionAsked()
+        g.arm()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun anAskFromElsewhereWhileArmed_itsFailureDoesNotEndTheKeysWait() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        g.resumptionAsked()
+        assertFalse(g.resumption(ok = false))
+        assertTrue(g.armed)
+        assertTrue(g.resumption(ok = false))
+        assertFalse(g.armed)
+    }
+
+    @Test fun release_cancelsAPlaceholderLeftBehind() = runTest {
+        // Play and pause within milliseconds detach the placeholder; a swipe from Recents ends the service before the tidy-up.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        g.release()
+        assertEquals(listOf("placeholder", "cancel"), host.calls)
+        advanceTimeBy(timeout * 2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "cancel"), host.calls)
+    }
+
+    @Test fun onePress_failingResumption_saysSo() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertTrue(g.resumption(ok = false))
+    }
+
+    @Test fun onePress_succeedingResumption_saysNothing() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertFalse(g.resumption(ok = true))
+    }
+
+    @Test fun beforeApi35_secondPress_oneResumptionFails_waitsForTheOther() = runTest {
+        val g = guard(backgroundScope)
+        g.press()
+        g.press()
+        assertFalse(g.resumption(ok = false))
+        assertEquals(emptyList<String>(), host.calls)
+        assertTrue(g.armed)
+        assertTrue(g.resumption(ok = false))
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_secondPress_afterTheTitleLoaded_adoptsItsNotification() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.resumption(ok = true)
+        host.hasItems = true
+        host.mediaNotification = true
+        g.arm()
+        assertEquals(listOf("placeholder", "adopt"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_loadedTitle_withoutPostedNotification_placeholderThenLeaveAtTheDeadline() = runTest {
+        host.hasItems = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertEquals(listOf("placeholder"), host.calls)
+        assertTrue(g.armed)
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_refusedAdoption_fallsBackToThePlaceholder() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        host.adoptionRefused = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertEquals(listOf("adoptRefused", "placeholder"), host.calls)
+        assertTrue(g.armed)
+    }
+
+    @Test fun foregroundFirst_holdsMedia3sUpdates_whileArmed() = runTest {
+        val g = firstGuard(backgroundScope)
+        assertFalse(g.holdsNotificationUpdate()) // not armed: Media3 does as it likes
+        g.arm()
+        assertTrue(g.holdsNotificationUpdate())
+        g.resumption(ok = false)
+        assertFalse(g.holdsNotificationUpdate())
+    }
+
+    @Test fun beforeApi35_neverHoldsMedia3sUpdates() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        assertFalse(g.holdsNotificationUpdate())
+    }
+
+    @Test fun foregroundFirst_heldUpdate_runsOnceTheArmingEndsWithoutPlaying() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertTrue(g.holdsNotificationUpdate())
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave", "update"), host.calls)
+    }
+
+    @Test fun foregroundFirst_heldUpdate_atTheDeadline_runsAfterLeaving() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.resumption(ok = true)
+        assertTrue(g.holdsNotificationUpdate())
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave", "update"), host.calls)
+    }
+
+    @Test fun foregroundFirst_heldUpdate_atTheCap_runsAfterLeaving() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        assertTrue(g.holdsNotificationUpdate())
+        advanceTimeBy(timeout + cap + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave", "update"), host.calls)
+    }
+
+    @Test fun foregroundFirst_noHeldUpdate_noExtraUpdate() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun foregroundFirst_engaged_doesNotRunTheHeldUpdateRightAway() = runTest {
+        // Media3's controller may not know the new title yet: an update now would end the foreground just after play().
+        // Its own update follows with the player's change.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertTrue(g.holdsNotificationUpdate())
+        host.engaged = true
+        g.onEngaged()
+        assertEquals(listOf("placeholder"), host.calls)
+    }
+
+    @Test fun foregroundFirst_engaged_cancelsADetachedPlaceholderAtTheDeadline() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        advanceTimeBy(timeout - 1)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "cancel"), host.calls)
+    }
+
+    @Test fun foregroundFirst_engagedThenPaused_updatesAndCancelsAtTheDeadline() = runTest {
+        // Play and pause within milliseconds: Media3's controller may have seen no change, so nothing ends the placeholder.
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        host.engaged = false
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("placeholder", "update"), host.calls)
+        // Media3 builds its notification asynchronously and only then detaches the placeholder.
+        advanceTimeBy(ForegroundStartGuard.UPDATE_SETTLE_MS)
+        runCurrent()
+        assertEquals(listOf("placeholder", "update", "cancel"), host.calls)
+    }
+
+    @Test fun foregroundFirst_adopted_notEngagedAtTheDeadline_triggersAnUpdate() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        advanceTimeBy(timeout - 1)
+        runCurrent()
+        assertEquals(listOf("adopt"), host.calls)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf("adopt", "update"), host.calls)
+    }
+
+    @Test fun foregroundFirst_adopted_playingAtTheDeadline_leavesItToMedia3() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        host.engaged = true
+        g.onEngaged()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("adopt"), host.calls)
+    }
+
+    @Test fun release_endsWhatIsStillToCome() = runTest {
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.release()
+        advanceTimeBy(timeout + 1)
+        runCurrent()
+        assertEquals(listOf("adopt"), host.calls)
+    }
+
+    @Test fun release_doesNotRunAHeldUpdate() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertTrue(g.holdsNotificationUpdate())
+        g.release()
+        assertEquals(listOf("placeholder"), host.calls)
+    }
+
+    @Test fun foregroundFirst_loadedTitle_adoptsMedia3sNotificationAtTheKey() = runTest {
+        // A paused title past Media3's foreground timeout: no placeholder, nothing is swapped, the guard is done at once.
+        host.hasItems = true
+        host.mediaNotification = true
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        assertEquals(listOf("adopt"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_failingResumption_leavesAtOnce_withOnePlaceholder() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.resumption(ok = false)
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+        advanceTimeBy(cap * 2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun foregroundFirst_nothingPlays_leavesAtTheDeadline() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.arm()
+        g.resumption(ok = true)
+        advanceTimeBy(timeout - 1)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_slowResumption_keepsThePlaceholderUpToTheCap() = runTest {
+        val g = firstGuard(backgroundScope)
+        g.press()
+        advanceTimeBy(timeout + cap - 10)
+        runCurrent()
+        assertEquals(listOf("placeholder"), host.calls)
+        assertTrue(g.armed)
+        advanceTimeBy(20)
+        runCurrent()
+        assertEquals(listOf("placeholder", "leave"), host.calls)
+        assertFalse(g.armed)
+    }
+
+    @Test fun foregroundFirst_fromApi35() {
+        assertFalse(ForegroundStartGuard.foregroundFirstFor(34))
+        assertTrue(ForegroundStartGuard.foregroundFirstFor(35))
+        assertTrue(ForegroundStartGuard.foregroundFirstFor(37))
+    }
 
     @Test fun emptyPlayer_failingResumption_placeholderAndStop_atOnce() = runTest {
         val g = guard(backgroundScope)
@@ -66,8 +507,8 @@ class ForegroundStartGuardTest {
     }
 
     @Test fun loadedTitle_playKeyThatNeverPlays_adoptsMedia3sNotification() = runTest {
-        // Double tap of the headset key on a paused title: Media3 skips +30 s, nothing plays. The deadline is met with
-        // Media3's own notification id – nothing is swapped, the service is not stopped, the title keeps its controls.
+        // A key on a paused title that Media3 does not turn into playback. The deadline is met with Media3's own
+        // notification id – nothing is swapped, the service is not stopped, the title keeps its controls.
         host.hasItems = true
         host.mediaNotification = true
         val g = guard(backgroundScope)
@@ -97,7 +538,7 @@ class ForegroundStartGuardTest {
 
     @Test fun pendingResumption_placeholderAtTheDeadline_capStopsIt() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         assertEquals(listOf("placeholder"), host.calls)
@@ -111,13 +552,13 @@ class ForegroundStartGuardTest {
         assertEquals(listOf("placeholder", "leave"), host.calls)
         assertFalse(g.armed)
         // And the next play key arms again.
-        g.arm()
+        g.press()
         assertTrue(g.armed)
     }
 
     @Test fun pendingResumption_thatFailsLater_stopsThen() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         g.resumption(ok = false)
@@ -129,7 +570,7 @@ class ForegroundStartGuardTest {
 
     @Test fun pendingResumption_thatPlaysLater_handsOverToMedia3() = runTest {
         val g = guard(backgroundScope)
-        g.arm()
+        g.press()
         advanceTimeBy(timeout + 1)
         runCurrent()
         g.resumption(ok = true)
@@ -174,6 +615,13 @@ class ForegroundStartGuardTest {
         advanceTimeBy(timeout - 5_000 + 1)
         runCurrent()
         assertEquals(listOf("placeholder", "leave"), host.calls)
+    }
+
+    @Test fun beforeApi35_secondPress_doesNothingYet() = runTest {
+        val g = guard(backgroundScope)
+        g.arm()
+        g.arm()
+        assertEquals(emptyList<String>(), host.calls)
     }
 
     @Test fun resumptionWithoutAPlayKey_isIgnored() = runTest {

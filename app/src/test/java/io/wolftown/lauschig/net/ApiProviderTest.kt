@@ -57,6 +57,24 @@ class ApiProviderTest {
     }
 
     @Test
+    fun whoeverSeesTheCheckEnd_findsTheAnswerInTheState() = runTest {
+        val online = ConnectionState.Online("http://abs.test/".toHttpUrl(), ConnectionState.Via.PUBLIC)
+        val upstream = flow {
+            emit(online)
+            awaitCancellation()
+        }
+        val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
+        val seen = mutableListOf<ConnectionState>()
+        // Unconfined: this runs inside the write to `checking`, before anything that comes after that write.
+        backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+            provider.checking.collect { if (!it) seen += provider.connectionState.value }
+        }
+        backgroundScope.launch { provider.connection.collect {} }
+        runCurrent()
+        assertEquals(listOf<ConnectionState>(online), seen)
+    }
+
+    @Test
     fun checking_untilTheFirstAnswer_andAgainAfterTheListenersLeft() = runTest {
         val answer = kotlinx.coroutines.CompletableDeferred<Unit>()
         val upstream = flow {

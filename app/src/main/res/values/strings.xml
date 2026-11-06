@@ -606,6 +606,7 @@
     <string name="settings_connection_status">Connection status</string>
     <string name="settings_connection_status_hint">Local, public or offline, addresses, network, reconnect</string>
     <string name="playback_start_channel">Starting playback</string>
+    <string name="playback_start_text">Starting …</string>
     <!-- Links (phase 4B) -->
     <string name="link_no_server">This link belongs to no server set up in Lauschig</string>
     <string name="link_unsupported">Lauschig cannot open this link</string>
