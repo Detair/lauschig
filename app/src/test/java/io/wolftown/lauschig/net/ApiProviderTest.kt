@@ -3,7 +3,6 @@ package io.wolftown.lauschig.net
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.connection.ConnectionState
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
@@ -67,7 +66,7 @@ class ApiProviderTest {
         val provider = ApiProvider(upstream, OkHttpClient(), FakeAccountStore(), backgroundScope)
         val seen = mutableListOf<ConnectionState>()
         // Unconfined: this runs inside the write to `checking`, before anything that comes after that write.
-        backgroundScope.launch(Dispatchers.Unconfined) {
+        backgroundScope.launch(kotlinx.coroutines.Dispatchers.Unconfined) {
             provider.checking.collect { if (!it) seen += provider.connectionState.value }
         }
         backgroundScope.launch { provider.connection.collect {} }
