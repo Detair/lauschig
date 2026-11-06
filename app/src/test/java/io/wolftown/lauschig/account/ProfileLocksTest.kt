@@ -64,8 +64,10 @@ class ProfileLocksTest {
         if (derive == null) DataStoreProfileLocks(data, cipher, { clock }, iterations)
         else DataStoreProfileLocks(data, cipher, { clock }, iterations, derive)
 
+    private val realRecorder = Log.recorder
+
     @After fun tearDown() {
-        Log.recorder = { _, _, _, _ -> }
+        Log.recorder = realRecorder
         scope.cancel()
     }
 

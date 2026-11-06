@@ -239,8 +239,8 @@ class ProfileGateScreensTest {
 
     // --- The choice ---
 
-    private fun showChoice(current: ProfileLockKind = ProfileLockKind.NONE, device: Boolean = true, failed: Boolean = false) = rule.setContent {
-        Themed { ProtectionChoiceDialog(ProtectionStep.Choose(row, current, device, failed), onChoose = { calls += "$it" }, onCancel = { calls += "cancel" }) }
+    private fun showChoice(current: ProfileLockKind = ProfileLockKind.NONE, device: Boolean = true) = rule.setContent {
+        Themed { ProtectionChoiceDialog(ProtectionStep.Choose(row, current, device), onChoose = { calls += "$it" }, onCancel = { calls += "cancel" }) }
     }
 
     @Test fun theChoice_threeWays_theCurrentOneMarked_andWhatItIsFor() {
@@ -259,12 +259,18 @@ class ProfileGateScreensTest {
         rule.onNodeWithText("This device has no screen lock.").assertExists()
     }
 
-    @Test fun theChoice_whatCouldNotBeSaved_isSaid() {
-        showChoice(failed = true)
-        assertEquals(
-            listOf("The protection could not be saved. Nothing has changed."),
-            rule.onNodeWithTag("protectionError").fetchSemanticsNode().config[SemanticsProperties.ContentDescription],
-        )
+    /** I1 of Task 2: on the node that was there before. */
+    @Test fun theChoice_whatCouldNotBeSaved_isSaid_onTheLineThatWasThere() {
+        var step by mutableStateOf(ProtectionStep.Choose(row, ProfileLockKind.NONE, deviceLockAvailable = true))
+        rule.setContent { Themed { ProtectionChoiceDialog(step, onChoose = {}, onCancel = {}) } }
+        val line = rule.onNodeWithTag("protectionError", useUnmergedTree = true)
+        val before = line.fetchSemanticsNode().id
+        assertEquals(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE, line.accessibilityInfo()!!.liveRegion)
+        assertFalse(SemanticsProperties.ContentDescription in line.fetchSemanticsNode().config)
+        step = step.copy(saveFailed = true)
+        rule.waitForIdle()
+        assertEquals(before, line.fetchSemanticsNode().id)
+        assertEquals(listOf("The protection could not be saved. Nothing has changed."), line.fetchSemanticsNode().config[SemanticsProperties.ContentDescription])
     }
 
     // --- A sign-in instead ---
@@ -470,7 +476,7 @@ class ProfileGateScreensTest {
         store.acc.value = null
         store.aside.value = listOf(FakeAccountStore.Aside(fabian, "a", "r", false), FakeAccountStore.Aside(kind, "a", "r", false))
         rule.setContent {
-            Themed { ProfilePickerRoute(onAdd = {}, onNoneLeft = {}, viewModel = vm) }
+            Themed { ProfilePickerRoute(onAdd = {}, onNoneLeft = {}, onSignIn = {}, viewModel = vm) }
         }
         rule.onNodeWithTag("profile:kind").performClick()
         passThePrompt()
