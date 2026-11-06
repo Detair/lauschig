@@ -118,6 +118,7 @@ class CastOutputPlayer(
     private var cast: CastTitle? = null
     private var phase = Phase.NONE
         set(value) {
+            if (value != field) Log.d(TAG, "phase $field -> $value")
             field = value
             publish(
                 when (value) {
@@ -204,6 +205,7 @@ class CastOutputPlayer(
     // ---- The way there and back: called by Media3's CastPlayer right before it changes the active player.
 
     override fun transferState(sourcePlayer: Player, targetPlayer: Player) {
+        Log.d(TAG, "transfer to ${if (sourcePlayer === device) "the receiver" else "this device"}, suspended=${link.isSuspended()}")
         if (sourcePlayer === device) toReceiver() else toDevice(sourcePlayer)
     }
 
@@ -364,6 +366,8 @@ class CastOutputPlayer(
         // The title waits on the device for the way back, not prepared: it may all come back, and a phone without a network has no stream to load.
         device.playWhenReady = false
         device.stop()
+        // After Media3's own step at this transfer.
+        handler.post { Log.d(TAG, "suspended, device state=${device.playbackState}") }
         watchdog?.cancel()
         // The framework may never say: a phone that stays away gives up. Closing the session also stops a receiver out of reach, at its next read.
         watchdog = scope.launch {

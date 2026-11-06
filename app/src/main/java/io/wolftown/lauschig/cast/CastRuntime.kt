@@ -159,10 +159,12 @@ class GmsCastRuntime @Inject constructor(
 
     private val mediaClientCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
+            client?.mediaStatus?.let { Log.d(TAG, "status state=${it.playerState} idle=${it.idleReason} item=${it.currentItemId} content=${it.mediaInfo?.contentId} pos=${client?.approximateStreamPosition}") }
             listener?.onReceiverStatus()
         }
 
         override fun onMediaError(mediaError: MediaError) {
+            Log.d(TAG, "media error ${mediaError.detailedErrorCode}")
             listener?.onReceiverError(mediaError.detailedErrorCode)
         }
     }
@@ -171,11 +173,13 @@ class GmsCastRuntime @Inject constructor(
         override fun onSessionStarted(session: CastSession, sessionId: String) = connected(session)
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = connected(session)
         override fun onSessionSuspended(session: CastSession, reason: Int) {
+            Log.d(TAG, "session suspended, reason $reason")
             suspended = true
             dropClient()
             listener?.onCastSuspended()
         }
         override fun onSessionEnded(session: CastSession, error: Int) {
+            Log.d(TAG, "session ended, error $error")
             disconnected()
             // Zero is a session someone ended on purpose, a person's "stop casting" or the app: that says nothing here.
             if (error != 0 && error != CastStatusCodes.CANCELED) state.say(R.string.cast_dropped)
@@ -186,12 +190,13 @@ class GmsCastRuntime @Inject constructor(
             if (error != CastStatusCodes.CANCELED) state.say(R.string.cast_connect_failed)
         }
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            Log.d(TAG, "session resume failed, error $error")
             disconnected()
             state.say(R.string.cast_dropped)
             listener?.onCastSessionEnded()
         }
         override fun onSessionStarting(session: CastSession) = Unit
-        override fun onSessionEnding(session: CastSession) = Unit
+        override fun onSessionEnding(session: CastSession) { Log.d(TAG, "session ending") }
         override fun onSessionResuming(session: CastSession, sessionId: String) = Unit
     }
 
@@ -203,6 +208,7 @@ class GmsCastRuntime @Inject constructor(
         state.update { it.copy(deviceName = session.castDevice?.friendlyName.orEmpty(), routeAvailable = true, activity = CastActivity.CONNECTED) }
         dropClient()
         client = session.remoteMediaClient?.also { it.registerCallback(mediaClientCallback) }
+        Log.d(TAG, "session on, status kept=${client?.mediaStatus != null}")
     }
 
     private fun disconnected() {

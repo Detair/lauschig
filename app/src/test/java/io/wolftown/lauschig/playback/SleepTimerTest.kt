@@ -123,6 +123,12 @@ class SleepTimerTest {
         timer.start(SleepMode.Minutes(1))
         timer.step(120_000)
         assertEquals(0, player.pauses)
+        timer.cancel()
+        // Nor is a load's stale position the end of the chapter.
+        player.state.value = player.state.value.copy(positionSec = 99.9)
+        timer.start(SleepMode.EndOfChapter)
+        timer.step(1_000)
+        assertEquals(0, player.pauses)
     }
 
     @Test fun chime_silentWhenTurnedOff() {
