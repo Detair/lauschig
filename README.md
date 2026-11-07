@@ -32,7 +32,8 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.4.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). What works:
+Version 0.5.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
+[Releases](https://github.com/Detair/lauschig/releases) page as signed APKs. What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
 - Browsing by series, authors, narrators, genres, tags and collections; podcasts; search; single sign-on (OIDC).
@@ -43,6 +44,8 @@ Version 0.4.0, in daily use on our own devices; not on Google Play yet (a closed
 - New in 0.4.0 (Phase 6): adjustable skip steps, a new player layout, a hint tone (chime) before the sleep timer fades
   out, night compression, a warm night palette ("Fireside"), chapter search, faster search and library, and a cover
   cache.
+- New in 0.5.0: several profiles on one device, optional protection with the device lock or an app PIN, and a short
+  introduction on first start.
 - Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
   diagnostic log you can share – with passwords, tokens and server addresses masked.
 
