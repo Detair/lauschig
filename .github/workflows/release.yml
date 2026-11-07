@@ -1,15 +1,19 @@
 name: Release
 
+# A tag v* builds the signed bundle (for Play) and the signed APK, then publishes the APK as a GitHub release.
+# Run it by hand (workflow_dispatch) for a dry run: it builds and checks both, but publishes nothing.
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  bundle:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -22,15 +26,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
         with:
           cache-read-only: true
-      - name: Decode upload keystore
+      - name: Decode signing keystore
         env:
           LAUSCHIG_KEYSTORE_BASE64: ${{ secrets.LAUSCHIG_KEYSTORE_BASE64 }}
         run: |
           umask 077
           test -n "$LAUSCHIG_KEYSTORE_BASE64" || { echo "LAUSCHIG_KEYSTORE_BASE64 secret is missing"; exit 1; }
-          echo "$LAUSCHIG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
-          echo "LAUSCHIG_KEYSTORE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
-      - name: Build signed release bundle
+          echo "$LAUSCHIG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          echo "LAUSCHIG_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+      - name: Build signed bundle and APK
         env:
           LAUSCHIG_KEYSTORE_PASSWORD: ${{ secrets.LAUSCHIG_KEYSTORE_PASSWORD }}
           LAUSCHIG_KEY_ALIAS: ${{ secrets.LAUSCHIG_KEY_ALIAS }}
@@ -39,13 +43,73 @@ jobs:
           for v in LAUSCHIG_KEYSTORE_PASSWORD LAUSCHIG_KEY_ALIAS LAUSCHIG_KEY_PASSWORD; do
             test -n "${!v}" || { echo "$v secret is missing"; exit 1; }
           done
-          ./gradlew :app:bundleRelease
+          ./gradlew :app:bundleRelease :app:assembleRelease
       - name: Remove keystore
         if: always()
-        run: rm -f "$RUNNER_TEMP/upload.keystore"
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Check the APK and name the release files
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          test -f "$apk" || { echo "No signed APK (an unsigned build is named app-release-unsigned.apk)"; exit 1; }
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          "$tools/apksigner" verify --print-certs "$apk" > signature.txt
+          cat signature.txt
+          if grep -q 'CN=Android Debug' signature.txt; then echo "The APK is debug-signed"; exit 1; fi
+          version="$("$tools/aapt2" dump badging "$apk" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+          test -n "$version" || { echo "Could not read versionName from the APK"; exit 1; }
+          if [ -n "$TAG" ] && [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match versionName $version in app/build.gradle.kts"; exit 1
+          fi
+          mkdir dist
+          cp "$apk" "dist/lauschig-$version.apk"
+          (cd dist && sha256sum "lauschig-$version.apk" > "lauschig-$version.apk.sha256")
+          # Older apksigner prints "Signer #1 certificate SHA-256 digest: …", build-tools 37 one line per scheme
+          # ("V3.0 Signer: certificate SHA-256 digest: …"). Exactly one certificate must sign the APK.
+          grep -o 'certificate SHA-256 digest: [0-9a-f]*' signature.txt | awk '{ print $4 }' | sort -u > dist/signer-sha256.txt
+          test "$(grep -c . dist/signer-sha256.txt)" -eq 1 || { echo "Expected exactly one signer certificate"; exit 1; }
       - name: Upload AAB
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: lauschig-release-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+      - name: Upload APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lauschig-release-apk
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: lauschig-release-apk
+          path: dist
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="docs/release-notes/$TAG.md"
+          test -f "$notes" || { echo "Release notes $notes are missing"; exit 1; }
+          {
+            cat "$notes"
+            printf '\n## Signatur prüfen\n\nSHA-256 des Signaturzertifikats:\n\n```\n%s\n```\n' "$(cat dist/signer-sha256.txt)"
+          } > "$RUNNER_TEMP/notes.md"
+          # Until 1.0, every release is a test version.
+          prerelease=()
+          case "$TAG" in v0.*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" dist/*.apk dist/*.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Lauschig ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}"

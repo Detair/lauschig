@@ -46,25 +46,27 @@ timeout 30m ./gradlew :app:generateBaselineProfile
 Danach liegt ein neues Profil unter `app/src/release/generated/baselineProfiles/` (oder `app/src/main/…`). `git status` zeigt es – sag mir Bescheid, dann committe ich es.
 Falls es scheitert: Log schicken, das ist kein Blocker für den internen Test.
 
-## 3. Upload-Keystore anlegen
+## 3. Signaturschlüssel anlegen
 
-Der Upload-Key signiert nur das Hochladen zu Google. Google signiert die App für die Nutzer mit einem eigenen Schlüssel (Play App Signing). Geht der Upload-Key verloren, kann man ihn bei Google zurücksetzen lassen – trotzdem sichern.
+Dieser eine Schlüssel signiert die APKs auf GitHub und das `.aab` für Play. In Play gibst du ihn als eigenen App-Signaturschlüssel an (Schritt 6.5), statt Google einen erzeugen zu lassen. So tragen beide Wege dieselbe Signatur, und eine GitHub-Installation soll sich später mit der Play-Version aktualisieren lassen.
+
+**Geht der Schlüssel verloren, bekommen GitHub-Installationen keine Updates mehr**, Play signiert mit seiner Kopie weiter. Wird er bekannt, kann jemand Updates fälschen, die sich über GitHub-Installationen legen. Deshalb an zwei Orten sichern und nirgends sonst ablegen.
 
 ```bash
 mkdir -p ~/keys && chmod 700 ~/keys
 ```
 ```bash
-keytool -genkeypair -v -keystore ~/keys/lauschig-upload.jks -storetype PKCS12 -keyalg RSA -keysize 4096 -validity 10000 -alias upload
+keytool -genkeypair -v -keystore ~/keys/lauschig-release.jks -storetype PKCS12 -keyalg RSA -keysize 4096 -validity 10000 -alias lauschig
 ```
 - Passwort zweimal eingeben (lang, aus dem Passwortmanager generieren).
 - Namensfragen: Vor-/Nachname reicht, Rest leer lassen oder `DE` bei Ländercode.
 - **Wichtig:** Bei PKCS12 ist das Schlüssel-Passwort automatisch gleich dem Keystore-Passwort.
 
-**Sichern:** Datei `~/keys/lauschig-upload.jks` + Passwort in den Passwortmanager oder nach OpenBao unter einen eigenen Pfad wie `personal/lauschig/upload-key` (nicht unter `agents/`). Niemals ins Repo.
+**Sichern:** Datei `~/keys/lauschig-release.jks` + Passwort in den Passwortmanager und nach OpenBao unter einen eigenen Pfad wie `personal/lauschig/release-key` (nicht unter `agents/`). Niemals ins Repo.
 
-Fingerprint für später notieren:
+Fingerprint für später notieren (jedes GitHub-Release nennt ihn unter „Signatur prüfen“, ohne Doppelpunkte):
 ```bash
-keytool -list -v -keystore ~/keys/lauschig-upload.jks -alias upload | grep SHA256
+keytool -list -v -keystore ~/keys/lauschig-release.jks -alias lauschig | grep SHA256
 ```
 
 ## 4. GitHub-Secrets setzen
@@ -72,7 +74,7 @@ keytool -list -v -keystore ~/keys/lauschig-upload.jks -alias upload | grep SHA25
 `gh secret set` fragt den Wert interaktiv ab – so landet das Passwort nicht in der Shell-History.
 
 ```bash
-base64 -w0 ~/keys/lauschig-upload.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig
+base64 -w0 ~/keys/lauschig-release.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig
 ```
 ```bash
 gh secret set LAUSCHIG_KEYSTORE_PASSWORD --repo Detair/lauschig
@@ -82,7 +84,7 @@ gh secret set LAUSCHIG_KEY_PASSWORD --repo Detair/lauschig
 ```
 (beide Male dasselbe Passwort aus Schritt 3)
 ```bash
-printf upload | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig
+printf lauschig | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig
 ```
 Prüfen:
 ```bash
@@ -90,25 +92,31 @@ gh secret list --repo Detair/lauschig
 ```
 Es müssen genau die vier `LAUSCHIG_*`-Einträge erscheinen.
 
-## 5. Signiertes Release-Bundle bauen (per Tag)
+## 5. Release bauen (per Tag)
 
+Probelauf ohne Veröffentlichung: baut und prüft `.aab` und APK, legt aber kein Release an.
 ```bash
-git tag -a v0.1.0 -m "Lauschig 0.1.0 – interner Test" && git push origin v0.1.0
+gh workflow run Release --repo Detair/lauschig --ref main
 ```
-Der Workflow „Release“ baut das signierte `.aab`. Fortschritt:
+
+Das echte Release:
+```bash
+git tag -a v0.5.0 -m "Lauschig 0.5.0" && git push origin v0.5.0
+```
+Der Workflow „Release“ baut das signierte `.aab` und die signierte APK. Er bricht ab, wenn die APK debug-signiert oder unsigniert ist, wenn der Tag nicht zu `versionName` passt oder wenn `docs/release-notes/<tag>.md` fehlt. Dann legt er das GitHub-Release mit `lauschig-<version>.apk`, der SHA-256-Prüfsumme und dem Fingerprint des Zertifikats an. Bis 1.0 ist jedes Release als Vorabversion markiert. Fortschritt:
 ```bash
 gh run list --repo Detair/lauschig --workflow Release --limit 1
 ```
-Wenn grün, herunterladen:
+Das `.aab` für Play herunterladen, wenn grün:
 ```bash
-gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.1.0
+gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.5.0
 ```
 
-**Für jede weitere Version** muss `versionCode` in `app/build.gradle.kts` steigen (1 → 2 → …) und `versionName` angepasst werden – das mache ich beim nächsten Release mit.
+**Für jede weitere Version** muss `versionCode` in `app/build.gradle.kts` steigen und `versionName` angepasst werden, dazu kommt `docs/release-notes/v<version>.md`. Das mache ich beim nächsten Release mit.
 
 Alternative ohne GitHub (lokal signieren):
 ```bash
-LAUSCHIG_KEYSTORE=~/keys/lauschig-upload.jks LAUSCHIG_KEY_ALIAS=upload LAUSCHIG_KEYSTORE_PASSWORD='…' LAUSCHIG_KEY_PASSWORD='…' timeout 20m ./gradlew :app:bundleRelease
+LAUSCHIG_KEYSTORE=~/keys/lauschig-release.jks LAUSCHIG_KEY_ALIAS=lauschig LAUSCHIG_KEYSTORE_PASSWORD='…' LAUSCHIG_KEY_PASSWORD='…' timeout 20m ./gradlew :app:bundleRelease
 ```
 (Passwörter landen dabei in der History – Variante über Tag bevorzugen.)
 
@@ -147,10 +155,9 @@ Antworten stehen in `docs/play-store/data-safety.md`. Kurzfassung:
 ### 6.4 Interner Test für die Familie
 1. Testen → **Interner Test** → Tab „Tester“ → „E-Mail-Liste erstellen“, Name „Familie“, die Google-Konten der Familie eintragen (die im Play Store des jeweiligen Handys angemeldet sind) → speichern, Liste anhaken.
 2. „Feedback-URL / E-Mail“: `https://github.com/Detair/lauschig/issues` oder deine Mail.
-3. Tab „Releases“ → „Neuen Release erstellen“.
-   - Beim ersten Mal: **Play App Signing** akzeptieren („Google generiert den App-Signaturschlüssel“).
-   - `.aab` aus `~/lauschig-release/v0.1.0/` hochladen.
-   - Release-Name: `0.1.0`, Versionshinweise (de-DE): *Erste Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync.*
+3. Tab „Releases“ → „Neuen Release erstellen“. Bietet die Console den Schlüsselwechsel aus 6.5 schon jetzt an, mach ihn vorher.
+   - `.aab` aus `~/lauschig-release/v0.5.0/` hochladen.
+   - Release-Name: `0.5.0`, Versionshinweise (de-DE): *Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync, mehrere Profile.*
    - Speichern → Überprüfen → **Einführung starten**.
 4. Unter „Tester“ den **Link zur Teilnahme** kopieren und der Familie schicken. Jeder öffnet ihn am Handy (mit dem eingetragenen Google-Konto), tippt „Tester werden“ und installiert dann über den Play-Store-Link.
 
@@ -161,7 +168,17 @@ Interne Tests sind meist nach Minuten verfügbar. Fehlende Pflichtangaben zeigt 
 adb uninstall io.wolftown.lauschig
 ```
 
-### 6.5 Später: öffentliche Veröffentlichung
+### 6.5 Eigenen App-Signaturschlüssel hinterlegen
+
+Ohne dein Zutun signiert Play neue Apps mit Schlüsseln, die Google erzeugt. Dann passt die Play-Version nicht zu den GitHub-APKs. Google erlaubt den Wechsel auf den eigenen Schlüssel nur, **bevor** ein Release im offenen Test oder in der Produktion ausgerollt ist. Am besten direkt nach 6.1, spätestens nach dem ersten internen Test:
+
+1. In der Console: **Geschützt durch Play → Play Store-Schutz → Play App Signing verwalten** (englisch „Protected with Play → Play Store protection → Manage Play app signing“). Die deutschen Bezeichnungen können leicht abweichen. Du brauchst dafür Admin-Rechte.
+2. **Schlüssel ändern** („Change key“) → **eine Kopie deines App-Signaturschlüssels bereitstellen** („Provide a copy of your app signing key“) und den Anweisungen folgen, mit `~/keys/lauschig-release.jks` und dem Alias `lauschig` aus Schritt 3.
+3. **Fragt die Console nach einem eigenen Upload-Schlüssel**, sag mir Bescheid. Google empfiehlt, Upload- und App-Signaturschlüssel zu trennen. Dann bekommt die CI einen zweiten Schlüssel nur fürs Hochladen.
+4. **Hybrid-Signatur prüfen:** Neue Apps nimmt Play automatisch in eine „quantensichere“ Hybrid-Signatur auf. Google dokumentiert nicht, wie sie mit einem eigenen Schlüssel zusammenspielt. Schau, was die Seite nach dem Wechsel anzeigt, und schick mir einen Screenshot.
+5. **Der eigentliche Beweis:** Auf einem Handy die Play-Version aus dem internen Test installieren, dann die GitHub-APK derselben oder einer höheren Version darüber (`adb install -r lauschig-0.5.0.apk`). Meldet Android „App nicht installiert“ oder adb `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, passen die Signaturen nicht. Am besten einmal auf Android 17 (dort prüft Android die neue Signatur v3.2) und einmal auf einem älteren Android. Erst danach sagen wir den Testern, dass sie ohne Neuinstallation wechseln können.
+
+### 6.6 Später: öffentliche Veröffentlichung
 Neue private Entwicklerkonten müssen vor der Produktion einen **geschlossenen Test** mit mindestens 12 Testern über 14 Tage durchführen (Stand meines Wissens – in der Console unter „Produktion“ steht die aktuelle Anforderung). Für die Familie ist das nicht nötig; der interne Test hat keine solche Hürde.
 
 ## SSO aktivieren (Audiobookshelf mit OpenID)
@@ -194,8 +211,9 @@ Treffer in Klasse 9 oder 41 mit gleichem oder sehr ähnlichem Namen → mir Besc
 
 - [ ] 1 Handy-Abnahme bestanden
 - [ ] 2 Baseline Profile erzeugt (optional)
-- [ ] 3 Upload-Keystore angelegt und gesichert
+- [ ] 3 Signaturschlüssel angelegt und an zwei Orten gesichert
 - [ ] 4 Vier GitHub-Secrets gesetzt
-- [ ] 5 Tag `v0.1.0` → signiertes `.aab` heruntergeladen
+- [ ] 5 Probelauf grün, Tag `v0.5.0` → GitHub-Release mit APK, signiertes `.aab` heruntergeladen
 - [ ] 6 Play Console: App, App-Inhalte, Store-Eintrag, interner Test, Familie eingeladen
+- [ ] 6.5 Eigener App-Signaturschlüssel in Play hinterlegt, Wechsel GitHub → Play auf einem Handy geprüft
 - [ ] 7 Markenprüfung ohne Konflikt
