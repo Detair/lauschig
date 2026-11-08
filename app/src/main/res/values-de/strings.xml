@@ -34,6 +34,8 @@
     <string name="setup_ssid_unreadable">Das aktuelle WLAN konnte nicht gelesen werden. Erlaube den Standortzugriff und verbinde dich mit deinem Heim-WLAN, um diese Option zu nutzen.</string>
     <string name="setup_username">Benutzername</string>
     <string name="setup_password">Passwort</string>
+    <string name="password_show">Passwort anzeigen</string>
+    <string name="password_hide">Passwort verbergen</string>
     <string name="setup_login">Anmelden</string>
     <string name="setup_cancel">Abbrechen</string>
     <string name="setup_cleartext_title">Unverschlüsselte Verbindung</string>
@@ -248,6 +250,8 @@
     <string name="rmab_username">Benutzer</string>
     <string name="rmab_password">Passwort</string>
     <string name="rmab_token">API-Token</string>
+    <string name="token_show">Token anzeigen</string>
+    <string name="token_hide">Token verbergen</string>
     <string name="rmab_use_token">Stattdessen API-Token eintragen</string>
     <string name="rmab_use_login">Stattdessen mit Benutzer und Passwort anmelden</string>
     <string name="rmab_error_wrong_login">Benutzer, Passwort oder Token falsch.</string>

@@ -138,7 +138,7 @@ Antworten stehen in `docs/play-store/data-safety.md`. Kurzfassung:
 | Punkt | Eintrag |
 |---|---|
 | Datenschutzerklärung | `https://github.com/Detair/lauschig/blob/main/docs/privacy-policy.md` |
-| App-Zugriff | „Alle oder einige Funktionen sind eingeschränkt“ → Hinweis: *Benötigt einen eigenen Audiobookshelf-Server; Adresse, Benutzername und Passwort vergibt der Server-Betreiber.* Für den internen Test reicht das. Für eine spätere Veröffentlichung braucht Google Zugangsdaten zu einem Testserver. |
+| App-Zugriff | „Alle oder einige Funktionen sind eingeschränkt“ → Anleitung mit dem Demo-Server `https://lauschig-demo.athene.pmind.de` (gemeinfreie Hörbücher, Prüfer-Konto `play-review`). Felder und englischen Anweisungstext für das Formular enthält das Runbook `docs/runbooks/lauschig-demo.md` im Repo `kdorf/athene`. Das Passwort steht in OpenBao, nie in diesem Repo. |
 | Werbung | Nein |
 | Einstufung des Inhalts | Fragebogen ausfüllen: Kategorie „Referenz, Nachrichten oder Bildung“ bzw. „Sonstige“, alle Inhaltsfragen „Nein“ (Nutzer laden eigene Inhalte vom eigenen Server; keine Nutzerinteraktion untereinander). |
 | Zielgruppe | 18+ (bzw. „nicht für Kinder“); App spricht Kinder nicht gezielt an. |

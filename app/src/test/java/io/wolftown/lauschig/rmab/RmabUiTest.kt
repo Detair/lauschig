@@ -2,11 +2,14 @@ package io.wolftown.lauschig.rmab
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import io.wolftown.lauschig.external.AudibleVolume
 import io.wolftown.lauschig.ui.LauschigTheme
 import org.junit.Assert.assertEquals
@@ -98,5 +101,24 @@ class RmabUiTest {
         show(RmabUiState(true, mapOf("B1" to RmabStatus.WAITING), mapOf("B1" to RmabOutcome(RmabMessage(io.wolftown.lauschig.R.string.rmab_msg_created, "Band Drei"), false))))
         rule.onNodeWithText("Requested “Band Drei”").assertIsDisplayed()
         rule.onNodeWithTag("rmabOutcome").assertIsDisplayed()
+    }
+
+    /** The same eye as on the sign-in form; for a token it says token. */
+    @Test fun connectDialog_secretCanBeShown_andTheEyeNamesWhatItShows() {
+        rule.setContent {
+            LauschigTheme { RmabSettingsContent(RmabSettingsState(dialogOpen = true), {}, {}, {}, { _, _, _, _ -> }, {}, {}) }
+        }
+        val secret = rule.onNodeWithTag("rmabSecret")
+        secret.performTextInput("kein-echtes-Passwort")
+        fun drawn() = secret.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        assertEquals("\u2022".repeat(20), drawn())
+
+        rule.onNodeWithContentDescription("Show password").performClick()
+        assertEquals("kein-echtes-Passwort", drawn())
+
+        rule.onNodeWithContentDescription("Hide password").performClick()
+        rule.onNodeWithTag("rmabToggleMode").performClick()
+        rule.onNodeWithContentDescription("Show token").assertExists()
+        rule.onNodeWithContentDescription("Show password").assertDoesNotExist()
     }
 }

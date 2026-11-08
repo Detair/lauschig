@@ -46,13 +46,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.ui.common.AnnouncedLine
+import io.wolftown.lauschig.ui.common.PasswordField
 
 @Composable
 fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> Unit = {}, viewModel: SetupViewModel = hiltViewModel()) {
@@ -171,11 +171,10 @@ fun SetupScreen(
             state.username, onUsername, Modifier.fillMaxWidth(), singleLine = true,
             label = { Text(stringResource(R.string.setup_username)) },
         )
-        OutlinedTextField(
-            state.password, onPassword, Modifier.fillMaxWidth(), singleLine = true,
+        PasswordField(
+            state.password, onPassword,
             label = { Text(stringResource(R.string.setup_password)) },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth().testTag("setupPassword"),
         )
 
         // One group: no gap for an error that is not there.
