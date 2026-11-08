@@ -820,6 +820,9 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_5_1">
+        <item>Beim Anmelden zeigt das Auge neben dem Passwort, was du getippt hast, auch im RMAB-Dialog</item>
+    </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Mehrere Profile auf einem Gerät: In den Einstellungen wechselst du zwischen Konten, ohne dich abzumelden</item>
         <item>Fortschritt, Downloads, RMAB-Verbindung und letzte Suchen bleiben bei ihrem Profil; ein Wechsel löscht nichts</item>
