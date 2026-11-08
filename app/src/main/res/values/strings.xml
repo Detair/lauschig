@@ -34,6 +34,8 @@
     <string name="setup_ssid_unreadable">The current Wi-Fi network could not be read. Allow location access and connect to your home Wi-Fi to use this option.</string>
     <string name="setup_username">Username</string>
     <string name="setup_password">Password</string>
+    <string name="password_show">Show password</string>
+    <string name="password_hide">Hide password</string>
     <string name="setup_login">Sign in</string>
     <string name="setup_cancel">Cancel</string>
     <string name="setup_cleartext_title">Unencrypted connection</string>
@@ -248,6 +250,8 @@
     <string name="rmab_username">Username</string>
     <string name="rmab_password">Password</string>
     <string name="rmab_token">API token</string>
+    <string name="token_show">Show token</string>
+    <string name="token_hide">Hide token</string>
     <string name="rmab_use_token">Enter an API token instead</string>
     <string name="rmab_use_login">Sign in with username and password instead</string>
     <string name="rmab_error_wrong_login">Wrong username, password or token.</string>

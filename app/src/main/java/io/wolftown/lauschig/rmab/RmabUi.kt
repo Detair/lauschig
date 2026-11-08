@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -29,13 +30,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.external.AudibleVolume
+import io.wolftown.lauschig.ui.common.PasswordField
 
 /** Small status symbol for a missing-volume tile; null when there is nothing to show (not requested, or a failed request). */
 fun RmabStatus.tileIcon(): ImageVector? = when (this) {
@@ -191,13 +192,16 @@ private fun ConnectDialog(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabUser"),
                     )
                 }
-                OutlinedTextField(
-                    secret, { secret = it }, singleLine = true,
-                    label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
-                )
+                // A new mode is a new, empty field: it starts hidden again.
+                key(tokenMode) {
+                    PasswordField(
+                        secret, { secret = it },
+                        label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
+                        showDescription = if (tokenMode) R.string.token_show else R.string.password_show,
+                        hideDescription = if (tokenMode) R.string.token_hide else R.string.password_hide,
+                    )
+                }
                 TextButton(onClick = { tokenMode = !tokenMode; secret = "" }, modifier = Modifier.testTag("rmabToggleMode")) {
                     Text(stringResource(if (tokenMode) R.string.rmab_use_login else R.string.rmab_use_token))
                 }
