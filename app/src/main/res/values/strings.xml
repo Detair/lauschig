@@ -820,6 +820,9 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_5_1">
+        <item>When signing in, the eye next to the password shows what you typed, in the RMAB dialog too</item>
+    </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
         <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>

@@ -32,7 +32,7 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.5.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
+Version 0.5.1, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
 [Releases](https://github.com/Detair/lauschig/releases) page as signed APKs. What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
