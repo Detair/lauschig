@@ -7,6 +7,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.VisibleForTesting
 import io.wolftown.lauschig.diagnostics.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.wolftown.lauschig.account.AccountStore
@@ -101,7 +102,7 @@ class AutoResumer @Inject constructor(
         val cb = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
                 val devices = addedDevices.filter { it.isSink }.map { it.id to it.type }
-                scope.launch { onAdded(devices) }
+                scope.launch { onAdded(devices, enabled = callback != null) }
             }
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
@@ -117,15 +118,17 @@ class AutoResumer @Inject constructor(
         callback = null
     }
 
-    private suspend fun onAdded(devices: List<Pair<Int, Int>>) {
+    @VisibleForTesting
+    internal suspend fun onAdded(devices: List<Pair<Int, Int>>, enabled: Boolean) {
         val s = player.state.value
         // Only a relevant output needs the last title; the policy still has to see every device it did not know.
         val last = if (devices.any { AutoResumePolicy.isResumeOutput(it.second) }) starter.last() else null
         val mode = audio?.mode
         val go = policy.onDevicesAdded(
             devices,
-            enabled = callback != null,
-            isPlayingOrLoading = s.isPlaying || s.isLoading,
+            enabled = enabled,
+            // Headphones on this device say nothing about a receiver somewhere else.
+            isPlayingOrLoading = s.isPlaying || s.isLoading || s.outputName != null,
             lastPausedAt = last?.pausedAt,
             now = System.currentTimeMillis(),
             inCall = mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_RINGTONE,

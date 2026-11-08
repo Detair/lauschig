@@ -70,6 +70,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Cast: the system's output switcher may choose the device (Android 13+). From Android 17 on it is what spares the app the
+             local-network permission for Cast (a target of API 37 and the Cast button, see cast/CastRuntime). -->
+        <receiver
+            android:name="androidx.mediarouter.media.MediaTransferReceiver"
+            android:exported="true" />
+
         <!-- Covers for Android Auto and SystemUI (read-only; access only through prefix grants to allowed callers). -->
         <provider
             android:name=".auto.CoverProvider"

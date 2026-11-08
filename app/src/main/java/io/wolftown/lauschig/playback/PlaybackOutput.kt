@@ -12,9 +12,8 @@ import androidx.media3.exoplayer.ExoPlayer
  * [device] is this device's ExoPlayer: its audio session carries the effects (boost, compressor), it skips silence and
  * the stream monitor watches its buffer – all of which only matter while the sound comes from here.
  *
- * Today both are the same ExoPlayer ([DeviceOutput]). Phase 7 can make [player] Media3's `CastPlayer`
- * (media3-cast ≥ 1.9: `CastPlayer.Builder(context).setLocalPlayer(device)`), which plays here or on a receiver and
- * moves the queue between them; what is built on [player] then follows it.
+ * Without Google Play services both are the same ExoPlayer ([DeviceOutput]). With them [player] plays here or on a Cast
+ * receiver ([io.wolftown.lauschig.cast.CastOutput]) and moves the title between them; what is built on it follows it.
  */
 interface PlaybackOutput {
     val player: Player
@@ -22,6 +21,11 @@ interface PlaybackOutput {
 
     /** True while the sound comes out of this device ([Player.getDeviceInfo]: local playback). */
     val isLocal: Boolean get() = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL
+
+    /** The sound's volume where it comes out now (the sleep timer's fade, see [PlayerVolume]). */
+    fun setVolume(volume: Float) {
+        device.volume = volume
+    }
 
     /** Releases the players (the service is going away). */
     fun release()

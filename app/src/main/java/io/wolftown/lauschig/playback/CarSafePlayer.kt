@@ -73,7 +73,7 @@ class CarSafePlayer(
     override fun getAvailableCommands(): Player.Commands = widen(super.getAvailableCommands())
 
     override fun isCommandAvailable(command: Int): Boolean =
-        super.isCommandAvailable(command) || (command in STEP_COMMANDS && player.mediaItemCount > 0)
+        super.isCommandAvailable(command) || (command in STEP_COMMANDS && player.mediaItemCount > 0) || (command in VOLUME_COMMANDS && volume != null)
 
     override fun addListener(listener: Player.Listener) {
         val wrapper = wrappers.getOrPut(listener) { WidenedListener(listener, ::widen) }
@@ -84,8 +84,14 @@ class CarSafePlayer(
         super.removeListener(wrappers.remove(listener) ?: listener)
     }
 
-    private fun widen(commands: Player.Commands): Player.Commands =
-        if (player.mediaItemCount == 0) commands else commands.buildUpon().addAll(*STEP_COMMANDS.toIntArray()).build()
+    /** The volume has its owner here: the sleep fade needs it also where the player itself offers none (a Cast receiver). */
+    private fun widen(commands: Player.Commands): Player.Commands {
+        if (player.mediaItemCount == 0 && volume == null) return commands
+        val wider = commands.buildUpon()
+        if (player.mediaItemCount > 0) wider.addAll(*STEP_COMMANDS.toIntArray())
+        if (volume != null) wider.addAll(*VOLUME_COMMANDS.toIntArray())
+        return wider.build()
+    }
 
     /** Back by [backMs] or forward by [forwardMs] within the book (the car's seek buttons call this too). */
     fun step(forward: Boolean) {
@@ -108,6 +114,7 @@ class CarSafePlayer(
             Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
         )
+        val VOLUME_COMMANDS = listOf(Player.COMMAND_GET_VOLUME, Player.COMMAND_SET_VOLUME)
     }
 }
 

@@ -53,7 +53,9 @@ internal class FakeFacade : PlayerFacade {
     var stopBlock: suspend () -> Unit = {}
     /** What the service's tracker does on a pause: it saves the title's position, a moment later. */
     var onPause: (title: Pair<String, String>?) -> Unit = {}
-    override fun play() { snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
+    /** A press whose stream fails at once: no moment of playing. */
+    var playFails = false
+    override fun play() { if (!playFails) snap = snap.copy(isPlaying = true); playWhenReady = true; playCalls++ }
     override fun pause() { snap = snap.copy(isPlaying = false); playWhenReady = false; onPause(currentKey()) }
     override fun seekTo(mediaIndex: Int, positionMs: Long) { snap = snap.copy(mediaIndex = mediaIndex, positionMs = positionMs) }
     override fun setSpeed(speed: Float) { snap = snap.copy(speed = speed) }
@@ -375,6 +377,8 @@ class PlayerControllerTest {
         onlineBase: Flow<okhttp3.HttpUrl?> = emptyFlow(),
         seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
         isSignedIn: suspend (String) -> Boolean = { true },
+        outputName: Flow<String?> = emptyFlow(),
+        outputMessages: Flow<Int> = emptyFlow(),
     ) = PlayerControllerImpl(
         scope = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler)),
         facade = facade,
@@ -393,7 +397,186 @@ class PlayerControllerTest {
         onlineBase = onlineBase,
         seekSteps = seekSteps,
         isSignedIn = isSignedIn,
+        outputName = outputName,
+        outputMessages = outputMessages,
     )
+
+    /** The address changes while the receiver's items are in the player (no stream base); the title's own come back at the end. */
+    @Test fun anAddressChangeDuringACast_movesTheFilesWhenTheyAreBack() = runTest {
+        val home = "http://192.168.1.10:13378/"
+        val public = "https://abs.example.org/"
+        val f = FakeFacade()
+        val online = kotlinx.coroutines.flow.MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(listOf(file(0, 600.0, null), file(1, 300.0, null))) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        testScheduler.advanceUntilIdle()
+        val local = f.items
+        assertEquals(1, f.setCalls)
+        f.items = local.map { it.buildUpon().setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setExtras(android.os.Bundle().apply {
+            putString(MediaItemFactory.EXTRA_SERVER_ID, s); putString(MediaItemFactory.EXTRA_ITEM_ID, "it") }).build()).build() }
+        online.value = public.toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        assertEquals("the receiver's queue is left alone", 1, f.setCalls)
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals("still nothing to move", 1, f.setCalls)
+        // The cast ends.
+        f.items = local
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals(2, f.setCalls)
+        assertTrue(f.items.all { it.localConfiguration!!.uri.toString().startsWith(public) })
+        assertEquals(public, f.streamBase())
+    }
+
+    /** Away and back to the same address: nothing to reload. */
+    @Test fun anAddressThatIsTheSameAgain_movesNothing() = runTest {
+        val home = "http://192.168.1.10:13378/"
+        val f = FakeFacade()
+        val online = kotlinx.coroutines.flow.MutableStateFlow<okhttp3.HttpUrl?>(home.toHttpUrl())
+        val c = controller(f, { item(listOf(file(0, 600.0, null))) }, base = home, onlineBase = online)
+        c.play(s, "it")
+        c.pause()
+        testScheduler.advanceUntilIdle()
+        val local = f.items
+        f.items = local.map { it.buildUpon().setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setExtras(android.os.Bundle().apply {
+            putString(MediaItemFactory.EXTRA_SERVER_ID, s); putString(MediaItemFactory.EXTRA_ITEM_ID, "it") }).build()).build() }
+        online.value = "https://abs.example.org/".toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        online.value = home.toHttpUrl()
+        testScheduler.advanceUntilIdle()
+        f.items = local
+        f.change()
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, f.setCalls)
+    }
+
+    @Test fun theCastDevice_isInTheState_alsoAcrossANewTitle() = runTest {
+        val f = FakeFacade()
+        val name = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputName = name)
+        assertEquals(null, c.state.value.outputName)
+        name.value = "Wohnzimmer"
+        assertEquals("Wohnzimmer", c.state.value.outputName)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        assertEquals("Wohnzimmer", c.state.value.outputName)
+        name.value = null
+        assertEquals(null, c.state.value.outputName)
+    }
+
+    /** A phone that lost its network loses its Cast session, and then the title's stream too: why it all stopped is the reason it has. */
+    @Test fun aStreamThatFailsRightAfterADroppedCast_keepsTheReason() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        said.tryEmit(R.string.cast_suspended_title_here)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_suspended_title_here, c.state.value.error)
+    }
+
+    /** Minor 4: the reason belongs to the moment of the drop. A press after it that fails reads as what it is. */
+    @Test fun theKeptReason_goesAtTheNextPress() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        f.playFails = true
+        c.togglePlayPause()
+        testScheduler.advanceUntilIdle()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+    }
+
+    /** The notification or a key: the app hears only that the player wants to play now, after it had not. */
+    @Test fun theKeptReason_goesAtAPressFromOutside() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        // The message can overtake the state: the masked player still looks as if it wanted to play.
+        f.snap = f.snap.copy(isPlaying = false, isBuffering = true)
+        said.tryEmit(R.string.cast_dropped)
+        testScheduler.runCurrent()
+        c.refreshNow()
+        assertEquals("not a press", R.string.cast_dropped, c.state.value.error)
+        f.snap = f.snap.copy(isBuffering = false)
+        c.refreshNow()
+        assertEquals(R.string.cast_dropped, c.state.value.error)
+        f.snap = f.snap.copy(isBuffering = true)
+        c.refreshNow()
+        assertEquals("a press", null, c.state.value.error)
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+    }
+
+    @Test fun aStreamThatFails_withNoCastBehindIt_saysSo() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(R.string.cast_unreachable)
+        testScheduler.runCurrent()
+        f.errorCb(androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        testScheduler.runCurrent()
+        assertEquals(R.string.error_playback_failed, c.state.value.error)
+    }
+
+    /** Why a cast ended stays readable until something plays again. */
+    @Test fun whatACastHasToSay_isThePlayersError_untilItPlaysAgain() = runTest {
+        val f = FakeFacade()
+        val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 1)
+        val c = controller(f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", outputMessages = said)
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        f.snap = f.snap.copy(isPlaying = false)
+        said.tryEmit(io.wolftown.lauschig.R.string.cast_unreachable)
+        testScheduler.runCurrent()
+        assertEquals(io.wolftown.lauschig.R.string.cast_unreachable, c.state.value.error)
+        c.refreshNow()
+        assertEquals(io.wolftown.lauschig.R.string.cast_unreachable, c.state.value.error)
+        f.snap = f.snap.copy(isPlaying = true)
+        c.refreshNow()
+        assertEquals(null, c.state.value.error)
+    }
+
+    /** A receiver loads from the server itself: no download on play for it. */
+    @Test fun aTitleStartedWhileCasting_startsNoDownloadOnPlay() = runTest {
+        val f = FakeFacade()
+        val streamed = mutableListOf<String>()
+        val c = controller(
+            f, { item(listOf(file(0, 1800.0))) }, base = "https://abs.example/", onStreamStarted = { _, id -> streamed += id },
+            outputName = kotlinx.coroutines.flow.flowOf("Wohnzimmer"),
+        )
+        testScheduler.runCurrent()
+        c.play(s, "it")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, f.setCalls)
+        assertEquals(emptyList<String>(), streamed)
+    }
 
     /** A page that outlived a switch: A's title would stream with B's token and write under A. */
     @Test fun play_aTitleOfAnotherAccountThanTheSignedInOne_doesNotStart() = runTest {

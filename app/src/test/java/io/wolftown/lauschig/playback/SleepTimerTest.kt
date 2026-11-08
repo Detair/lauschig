@@ -56,6 +56,81 @@ class SleepTimerTest {
         assertEquals(1, chimes)
     }
 
+    /** The sound is elsewhere, and the keys steer the receiver: no tone at an unknown loudness from the phone. */
+    @Test fun chime_silentWhileCasting_theFadeStillRuns() {
+        player.state.value = player.state.value.copy(outputName = "Wohnzimmer")
+        timer.start(SleepMode.Minutes(1))
+        timer.step(31_000)
+        assertEquals(0, chimes)
+        timer.step(25_000)
+        assertEquals(true, player.volumes.any { it < 1f })
+        timer.step(10_000)
+        assertEquals(1, player.pauses)
+        assertEquals(1f, player.volumes.last())
+    }
+
+    // ---- A TV that plays while the state cannot show it: it still has a timer.
+
+    private fun playingUnseen(positionSec: Double = 90.0, speed: Float = 1f, ends: List<Double> = listOf(100.0, 3600.0)) {
+        player.state.value = player.state.value.copy(
+            isPlaying = false, isLoading = true, outputName = "Wohnzimmer", outputActivity = io.wolftown.lauschig.cast.CastActivity.PLAYING_UNSEEN,
+            positionSec = positionSec, speed = speed, chapterIndex = 0, chapterEndsSec = ends,
+        )
+    }
+
+    @Test fun minutes_runOnATvThatPlaysUnseen_andFadeAndPause() {
+        playingUnseen()
+        timer.start(SleepMode.Minutes(1))
+        timer.step(31_000)
+        assertEquals(0, player.pauses)
+        timer.step(25_000)
+        assertTrue(player.volumes.any { it < 1f })
+        timer.step(10_000)
+        assertEquals(1, player.pauses)
+        assertEquals(1f, player.volumes.last())
+        assertNull(timer.state.value)
+    }
+
+    /** Its position stands, so the chapter's end is counted from the last place known, at the speed it plays. */
+    @Test fun endOfChapter_runsOnATvThatPlaysUnseen_fromTheLastKnownPlace() {
+        playingUnseen(positionSec = 90.0, speed = 2f)
+        timer.start(SleepMode.EndOfChapter)
+        timer.step(1_000)
+        assertEquals(0, player.pauses)
+        timer.step(3_000)
+        assertEquals(0, player.pauses)
+        assertTrue("the fade is on", player.volumes.any { it < 1f })
+        timer.step(1_100)
+        assertEquals(1, player.pauses)
+    }
+
+    @Test fun endOfChapter_takesARealPositionAsSoonAsThereIsOne() {
+        playingUnseen(positionSec = 90.0)
+        timer.start(SleepMode.EndOfChapter)
+        timer.step(1_000)
+        timer.step(5_000)
+        // Proven after all, further back than the count had got.
+        player.state.value = player.state.value.copy(isPlaying = true, isLoading = false, outputActivity = io.wolftown.lauschig.cast.CastActivity.PLAYING, positionSec = 50.0)
+        timer.step(1_000)
+        assertEquals(0, player.pauses)
+        assertEquals(50_000L, timer.state.value!!.remainingMs)
+    }
+
+    /** An ordinary load is what it was: the state is reset and no tick reads it. */
+    @Test fun anOrdinaryLoad_stillHoldsTheTimer() {
+        playingUnseen()
+        player.state.value = player.state.value.copy(outputActivity = io.wolftown.lauschig.cast.CastActivity.PLAYING)
+        timer.start(SleepMode.Minutes(1))
+        timer.step(120_000)
+        assertEquals(0, player.pauses)
+        timer.cancel()
+        // Nor is a load's stale position the end of the chapter.
+        player.state.value = player.state.value.copy(positionSec = 99.9)
+        timer.start(SleepMode.EndOfChapter)
+        timer.step(1_000)
+        assertEquals(0, player.pauses)
+    }
+
     @Test fun chime_silentWhenTurnedOff() {
         chimeOn.value = false
         timer.start(SleepMode.Minutes(1))

@@ -6,7 +6,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 
 **Lauschig** ist ein Android-Client für Audiobookshelf-Server. Die App wird als Open-Source-Projekt (GPL-3.0-or-later) entwickelt.
 
-**Mit wem spricht die App?** Mit dem Audiobookshelf-Server, dessen Adresse du bei der Einrichtung selbst einträgst. Dazu kommen zwei optionale Dienste, die unten beschrieben sind: der öffentliche Audible-Katalog und ein von dir eingetragener ReadMeABook-Server (RMAB). Es gibt keinen Server des Entwicklers, mit dem die App kommuniziert. Betreibt jemand anderes deinen Audiobookshelf-Server, ist diese Person für die dort gespeicherten Daten zuständig.
+**Mit wem spricht die App?** Mit dem Audiobookshelf-Server, dessen Adresse du bei der Einrichtung selbst einträgst. Dazu kommen zwei optionale Dienste, die unten beschrieben sind: der öffentliche Audible-Katalog und ein von dir eingetragener ReadMeABook-Server (RMAB). Auf Geräten mit den Google-Play-Diensten kommt Googles Cast-Framework hinzu, sobald du den großen Player öffnest (siehe „Chromecast“). Es gibt keinen Server des Entwicklers, mit dem die App kommuniziert. Betreibt jemand anderes deinen Audiobookshelf-Server, ist diese Person für die dort gespeicherten Daten zuständig.
 
 **Anmeldung per SSO.** Bietet dein Server eine Anmeldung über einen externen Anbieter an und du wählst sie, öffnet die App dafür den Browser. Die Anmeldung läuft dann zwischen dir, deinem Server und diesem Anbieter; die App erhält am Ende nur die Token deines Servers. Wenn du ein Profil hinzufügst, eine vergessene PIN aufhebst oder weitere Profile auf dem Gerät sind, bittet die App den Anbieter um eine neue Anmeldung: Er soll nach deinen Zugangsdaten fragen, auch wenn der Browser dort noch angemeldet ist. Ob er das tut, entscheidet der Anbieter.
 
@@ -26,7 +26,15 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 
 **Android Auto und Sprachsteuerung.** Im Auto zeigt die App Titel und Cover über Android Auto auf dem Bildschirm des Fahrzeugs an. Bei einer Sprachanfrage übergibt der Assistent von Google der App den Suchtext; für die Sprachverarbeitung selbst gelten die Bedingungen von Google.
 
-**Was passiert nicht?** Keine Analyse- oder Tracking-Dienste, keine Werbung, keine automatische Übertragung von Absturzberichten durch die App (Google Play kann je nach den Android-Einstellungen des Geräts selbst Absturzdaten erheben), kein Verkauf von Daten, kein Konto beim Entwickler.
+**Chromecast (optional).** Du kannst einen Titel vom Server aus dem Player auf ein Chromecast- oder Google-TV-Gerät schicken. Dafür enthält die App Googles Cast-Framework, ein proprietärer Teil der Google-Play-Dienste; ohne die Dienste läuft nichts davon, und es gibt keinen Cast-Knopf.
+
+*Was das Cast-Gerät bekommt:* die Adresse einer Sitzung auf deinem Server, Titel, Autor und die Adresse des Covers. Es lädt Ton und Cover dann selbst von deinem Server, über die öffentliche Adresse deines Kontos oder, wenn das nicht geht, über die lokale. Dein Zugriffs- oder Aktualisierungs-Token geht nie an das Gerät: Die Sitzungsadresse gilt nur, bis die Sitzung endet. Die App schließt sie, wenn das Casten endet, der Titel wechselt, du dich abmeldest oder das Profil wechselst, nach einem Absturz beim nächsten Start; sonst schließt dein Server sie in der Nacht, wenn sie 36 Stunden lang nicht aktualisiert wurde. Bis dahin kann jeder im Netz, der diese Adresse kennt, den Titel abrufen. Das Cover ist auf deinem Server ohnehin ohne Anmeldung abrufbar. Auf dem Gerät läuft Googles „Default Media Receiver“; dafür gelten die Bedingungen von Google. Titel vom Gerät (eigene Ordner) werden nicht gecastet, Downloads werden vom Server gecastet.
+
+*Wann Googles Framework läuft:* Die App startet es erst, wenn du den großen Player öffnest, und dann bis zum Ende der App. Davor nicht, auch nicht im Auto oder wenn du nur den Mini-Player benutzt. Nach Googles Beschreibung sucht es von da an im lokalen Netz nach Cast-Geräten: gelegentlich, wenn die App in den Vordergrund kommt, und solange die Geräteauswahl offen ist; im Hintergrund nicht. Außerdem lässt die App suchen, solange der große Player zu sehen ist. Die Suche läuft über Googles Framework und die Google-Play-Dienste.
+
+*Was Google erfährt:* Nach Googles Angaben zum Cast-SDK protokolliert es seine Nutzung (etwa die Suche nach Geräten und Cast-Sitzungen, Angaben zum Telefon und zur App) und sendet sie verschlüsselt an Google, um das SDK zu verbessern. Google beschreibt diese Protokolle als anonym und nur kurz gespeichert. Abstellen lässt sich das nach Googles Angaben weder von Entwicklern noch von Nutzern, außer indem du den großen Player nicht öffnest. Wir selbst erhalten davon nichts und können es nicht prüfen.
+
+**Was passiert nicht?** Keine Analyse- oder Tracking-Dienste durch die App (zu Googles Cast-Framework siehe „Chromecast“), keine Werbung, keine automatische Übertragung von Absturzberichten durch die App (Google Play kann je nach den Android-Einstellungen des Geräts selbst Absturzdaten erheben), kein Verkauf von Daten, kein Konto beim Entwickler.
 
 **Berechtigungen.**
 - Standort (ungefähr/genau) und „Geräte in der Nähe“: Android verlangt diese Berechtigung, damit die App den WLAN-Namen (SSID) lesen kann, nur für die optionale Heimnetz-Bindung. Die SSID wird ausschließlich auf dem Gerät verarbeitet und weder auf einem Server gespeichert noch übertragen. Der Standort selbst wird nicht verwendet.
@@ -35,6 +43,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 - Vordergrunddienste: Wiedergabe und Downloads im Hintergrund.
 - Vibration: kurze Rückmeldung, wenn du den Sleep-Timer durch Schütteln verlängerst.
 - Biometrie und Gerätesperre: die Abfrage des Systems, nur wenn du ein Profil mit der Gerätesperre schützt.
+- Chromecast braucht keine weitere Berechtigung: Googles Framework bringt keine neue mit, und die App fragt dafür nichts ab.
 
 **Bewegungssensor.** In der letzten Minute eines Sleep-Timers wertet die App den Beschleunigungssensor aus, um ein Schütteln zu erkennen. Die Werte werden nicht gespeichert und nicht übertragen.
 
@@ -48,7 +57,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 
 **Lauschig** is an Android client for Audiobookshelf servers, developed as an open-source project (GPL-3.0-or-later).
 
-**Who does the app talk to?** The Audiobookshelf server whose address you enter during setup. In addition there are two optional services, described below: the public Audible catalog and a ReadMeABook (RMAB) server you configure. There is no developer-operated server that the app communicates with. If someone else runs your Audiobookshelf server, that person is responsible for the data stored there.
+**Who does the app talk to?** The Audiobookshelf server whose address you enter during setup. In addition there are two optional services, described below: the public Audible catalog and a ReadMeABook (RMAB) server you configure. On devices with Google Play services, Google's Cast framework joins them once you open the full player (see "Chromecast"). There is no developer-operated server that the app communicates with. If someone else runs your Audiobookshelf server, that person is responsible for the data stored there.
 
 **Single sign-on.** If your server offers sign-in through an external provider and you choose it, the app opens the browser for it. The sign-in then takes place between you, your server and that provider; in the end the app receives only your server's tokens. When you add a profile, lift a forgotten PIN or have other profiles on the device, the app asks the provider for a fresh login: it should ask for your credentials even if the browser is still signed in there. Whether it does is up to the provider.
 
@@ -68,7 +77,15 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 
 **Android Auto and voice control.** In the car the app shows titles and covers on the vehicle's screen through Android Auto. For a voice request, Google's assistant passes the search text to the app; Google's terms apply to the voice processing itself.
 
-**What does not happen?** No analytics or tracking, no ads, no automatic sending of crash reports by the app (Google Play may collect crash data depending on your Android settings), no selling of data, no account with the developer.
+**Chromecast (optional).** You can send a title from the server to a Chromecast or Google TV device from the player. For this the app contains Google's Cast framework, a proprietary part of Google Play services; without those services none of it runs and there is no Cast button.
+
+*What the Cast device gets:* the address of a session on your server, the title, the author and the address of the cover. It then loads the audio and the cover from your server by itself, over your account's public address or, if that does not work, the local one. Your access or refresh token never goes to the device: the session address is valid only until the session ends. The app closes it when casting ends, the title changes, you sign out or switch profiles, and after a crash at the next start; otherwise your server closes it at night once it has not been updated for 36 hours. Until then anyone on the network who knows this address can fetch the title. The cover can be fetched from your server without signing in anyway. The device runs Google's "Default Media Receiver"; Google's terms apply to it. Titles on the device (your own folders) are not cast, and downloads are cast from the server.
+
+*When Google's framework runs:* the app starts it only when you open the full player, and from then on until the app ends. Not before, also not in the car or if you only use the mini player. According to Google, it then looks for Cast devices on the local network: now and then when the app comes to the foreground, and while the device picker is open; not in the background. The app also has it look for devices while the full player is on screen. The search runs through Google's framework and Google Play services.
+
+*What Google learns:* according to Google's statement on the Cast SDK, it logs its use (such as device discovery and Cast sessions, information about the phone and the app) and sends this encrypted to Google to improve the SDK. Google describes these logs as anonymous and kept only briefly. According to Google, neither developers nor users can turn this off, other than by not opening the full player. We receive none of it and cannot check it.
+
+**What does not happen?** No analytics or tracking by the app (for Google's Cast framework see "Chromecast"), no ads, no automatic sending of crash reports by the app (Google Play may collect crash data depending on your Android settings), no selling of data, no account with the developer.
 
 **Permissions.**
 - Location (approximate/precise) and "nearby devices": Android requires this permission so the app can read the Wi-Fi name (SSID), only for the optional home-network binding. The SSID is processed on the device only and is never stored on a server or transmitted. The location itself is not used.
@@ -77,6 +94,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 - Foreground services: playback and downloads in the background.
 - Vibration: a short signal when you extend the sleep timer by shaking.
 - Biometrics and device lock: the system's prompt, only if you protect a profile with the device lock.
+- Chromecast needs no further permission: Google's framework brings no new one, and the app asks for nothing for it.
 
 **Motion sensor.** During the last minute of a sleep timer the app reads the accelerometer to detect a shake. The values are neither stored nor transmitted.
 

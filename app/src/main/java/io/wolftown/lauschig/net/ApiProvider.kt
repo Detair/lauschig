@@ -5,6 +5,7 @@ import io.wolftown.lauschig.absapi.admin.AdminApi
 import io.wolftown.lauschig.absapi.auth.AuthApi
 import io.wolftown.lauschig.absapi.library.LibraryApi
 import io.wolftown.lauschig.absapi.me.MeApi
+import io.wolftown.lauschig.absapi.playback.PlaybackSessionApi
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.AccountStore
 import io.wolftown.lauschig.connection.ConnectionState
@@ -104,6 +105,7 @@ class ApiProvider(
     fun libraryApi(serverId: String): Flow<LibraryApi?> = apiOf(serverId, LibraryApi::class.java)
     fun meApi(serverId: String): Flow<MeApi?> = apiOf(serverId, MeApi::class.java)
     fun adminApi(serverId: String): Flow<AdminApi?> = apiOf(serverId, AdminApi::class.java)
+    fun playbackSessionApi(serverId: String): Flow<PlaybackSessionApi?> = apiOf(serverId, PlaybackSessionApi::class.java)
 
     private fun <T : Any> apiOf(serverId: String, type: Class<T>): Flow<T?> =
         retrofit.map { bound -> bound?.takeIf { it.owner == serverId }?.retrofit?.create(type) }

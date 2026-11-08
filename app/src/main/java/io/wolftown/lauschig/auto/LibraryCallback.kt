@@ -62,13 +62,21 @@ class LibraryCallback(
     private val onResumption: (ok: Boolean, message: String?) -> Unit = { _, _ -> },
     /** Media3 asks for a playback resumption for playing, so [onResumption] will answer. Main thread, before that answer. */
     private val onResumptionAsked: () -> Unit = {},
+    /** How many car hosts are connected now. Main thread. */
+    private val onCarConnection: (connected: Int) -> Unit = {},
 ) : MediaLibrarySession.Callback {
     private val own = context.packageName
+    private val cars = HashSet<MediaSession.ControllerInfo>()
     private val coverAuthority = CoverUris.authority(own)
 
     private fun level(controller: MediaSession.ControllerInfo) = CarAccess.levelFor(controller.packageName, own, controller.isTrusted)
 
+    override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+        if (cars.remove(controller)) onCarConnection(cars.size)
+    }
+
     override fun onConnectAsync(session: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.ConnectionResult> {
+        if (CarAccess.isCar(controller.packageName) && cars.add(controller)) onCarConnection(cars.size)
         if (level(controller) == CarAccess.Level.CONTROL) {
             // Play, pause and seek, but no library, no search, no car buttons and no queue of its own.
             Log.i(TAG, "playback control only for ${controller.packageName}")

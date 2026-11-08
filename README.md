@@ -46,6 +46,8 @@ Version 0.5.0, in daily use on our own devices; not on Google Play yet (a closed
   cache.
 - New in 0.5.0: several profiles on one device, optional protection with the device lock or an app PIN, and a short
   introduction on first start.
+- Chromecast and Google TV: send a server title from the player, control it from the app, the notification and the lock
+  screen, and take it back. Uses Google's proprietary Cast framework; without Google Play services the app plays as before.
 - Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
   diagnostic log you can share – with passwords, tokens and server addresses masked.
 
@@ -94,4 +96,5 @@ Journeys (startup, library scroll) live in `baselineprofile/src/main/kotlin/`. C
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+GPL-3.0-or-later. See [LICENSE](LICENSE). The rights holder's additional permission to link with Google's Cast framework is in
+[NOTICE](NOTICE).

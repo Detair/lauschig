@@ -1,0 +1,219 @@
+package io.wolftown.lauschig.cast
+
+import android.app.Application
+import android.os.Looper
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import io.wolftown.lauschig.db.dao.ItemWithDetails
+import io.wolftown.lauschig.db.entities.AudioFileEntity
+import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.R
+import io.wolftown.lauschig.playback.MediaItemFactory
+import io.wolftown.lauschig.playback.PlayerControllerImpl
+import io.wolftown.lauschig.playback.PlayerFacade
+import io.wolftown.lauschig.playback.PlayerSnapshot
+import io.wolftown.lauschig.playback.ShakeSource
+import io.wolftown.lauschig.playback.SleepMode
+import io.wolftown.lauschig.playback.SleepTimer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.time.Duration
+
+/** The app's real controller on the real output player: a whole cast, from the app's side. */
+@OptIn(UnstableApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
+class CastWholeWayTest {
+    private val s = "aaaaaaaaaaaaaaaa"
+    private val home = "http://192.168.1.10:13378/"
+    private val public = "https://abs.example.org/"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val device = FakeDevice()
+    private val receiver = FakeReceiver()
+    private val link = FakeLink()
+    private val said = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    private val activity = MutableStateFlow(CastActivity.CONNECTED)
+    private val output = CastOutputPlayer(device, link, FakeSessions(listOf(public.toHttpUrl())), scope, { said.tryEmit(it) }, { false }, publish = { activity.value = it })
+    private val volume = ReceiverVolume({ output }, scope, minGapMs = 0)
+    private val cast = FakeCastPlayer(device, receiver, output)
+    private val online = MutableStateFlow<HttpUrl?>(home.toHttpUrl())
+    private val book = ItemWithDetails(
+        ItemEntity(s, "it", "lib", "Title", author = "Author", durationSec = 200.0), emptyList(),
+        listOf(AudioFileEntity(s, "it", 0, "a", 100.0, 1, "mp3", null), AudioFileEntity(s, "it", 1, "b", 100.0, 1, "mp3", null)), null, null,
+    )
+
+    private fun titled(id: String) = if (id == "it") book else ItemWithDetails(
+        ItemEntity(s, id, "lib", "Other", author = "Author", durationSec = 200.0), emptyList(),
+        listOf(AudioFileEntity(s, id, 0, "a", 100.0, 1, "mp3", null), AudioFileEntity(s, id, 1, "b", 100.0, 1, "mp3", null)), null, null,
+    )
+
+    /** What `MediaControllerFacade` does, on the player itself. */
+    private inner class Direct : PlayerFacade {
+        private var change: () -> Unit = {}
+        init {
+            output.addListener(object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) = change()
+            })
+        }
+        override suspend fun setMediaItems(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
+            output.setMediaItems(items, startIndex, startPositionMs)
+            output.prepare()
+        }
+        override fun replaceMediaItem(index: Int, item: MediaItem) = output.replaceMediaItem(index, item)
+        override fun play() = output.play()
+        override fun pause() = output.pause()
+        override fun seekTo(mediaIndex: Int, positionMs: Long) = output.seekTo(mediaIndex, positionMs)
+        override fun setSpeed(speed: Float) = output.setPlaybackSpeed(speed)
+        override fun setVolume(volume: Float) = this@CastWholeWayTest.volume.set(volume)
+        override fun snapshot() = PlayerSnapshot(
+            output.isPlaying, output.currentMediaItemIndex, output.currentPosition.coerceAtLeast(0), output.playbackParameters.speed,
+            isBuffering = output.playWhenReady && output.playbackState == Player.STATE_BUFFERING,
+        )
+        override fun currentKey() = output.currentMediaItem?.titleKey()
+        override fun hasMedia() = output.mediaItemCount > 0
+        override fun setOnError(onError: (Int) -> Unit) = Unit
+        override fun streamBase(): String? = (0 until output.mediaItemCount).firstNotNullOfOrNull { output.getMediaItemAt(it).mediaMetadata.extras?.getString(MediaItemFactory.EXTRA_STREAM_BASE) }
+        override fun setOnDisconnected(onDisconnected: () -> Unit) = Unit
+        override fun setOnChange(onChange: () -> Unit) { change = onChange }
+    }
+
+    private val controller by lazy {
+        PlayerControllerImpl(
+            scope = scope, facade = Direct(), factory = MediaItemFactory({ true }) { _, _ -> null }, loadItem = { _, id -> titled(id) },
+            onlineBaseUrl = { online.value }, coverFile = { _, _ -> null }, io = Dispatchers.Main.immediate, onlineBase = online,
+            outputMessages = said, outputActivity = activity,
+        )
+    }
+
+    @After fun tearDown() {
+        // The controller's poll would keep the looper busy for ever.
+        scope.cancel()
+    }
+
+    private fun idle() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10))
+
+    private fun uris() = device.items.map { it.localConfiguration!!.uri.toString() }
+
+    private fun endingLikeTheFramework() {
+        link.onEnd = {
+            cast.sessionAvailable(false)
+            output.onCastSessionEnded()
+        }
+    }
+
+    /** Minor 3: another title while suspended, the way the app starts it: no spinner beside "it waits here", and the first press plays. */
+    @Test fun anotherTitleWhileSuspended_noSpinner_andTheFirstPressPlays() {
+        endingLikeTheFramework()
+        output.attach(cast)
+        controller.play(s, "it", startSec = 105.0)
+        idle()
+        cast.sessionAvailable(true)
+        idle()
+        receiver.loaded()
+        idle()
+        link.suspended = true
+        output.onCastSuspended()
+        cast.sessionAvailable(false)
+        idle()
+        controller.play(s, "other", startSec = 0.0)
+        idle()
+        idle()
+        assertFalse(device.pwr)
+        assertEquals(R.string.cast_suspended_title_here, controller.state.value.error)
+        assertFalse("no spinner", controller.state.value.isLoading)
+        assertEquals("other", controller.state.value.itemId)
+        controller.togglePlayPause()
+        idle()
+        idle()
+        assertTrue("the first press plays", device.pwr)
+    }
+
+    /** Minor 2 the whole way: a person's timer, through the real controller, while the TV plays in a hold. */
+    @Test fun aSleepTimer_inAHold_getsItsFadeAndItsPauseToTheTv() {
+        endingLikeTheFramework()
+        output.attach(cast)
+        controller.play(s, "it", startSec = 160.0)
+        idle()
+        cast.sessionAvailable(true)
+        idle()
+        link.content = receiver.sent.last().items[0].mediaId
+        receiver.status(Player.STATE_READY, index = 0, position = 0, paused = false)
+        repeat(65) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1)) }
+        assertEquals(CastActivity.PLAYING_UNSEEN, controller.state.value.outputActivity)
+        assertFalse(controller.state.value.isPlaying)
+        assertTrue(controller.state.value.isLoading)
+        val timer = SleepTimer(controller, object : ShakeSource {
+            override fun start(onShake: () -> Unit) = Unit
+            override fun stop() = Unit
+        }, scope, clock = { 0L }, tickMs = Long.MAX_VALUE / 4)
+        timer.start(SleepMode.Minutes(1))
+        timer.step(55_000)
+        idle()
+        assertTrue(receiver.volumes.toString(), receiver.volumes.any { it < 1f })
+        assertTrue(receiver.pwr)
+        timer.step(6_000)
+        idle()
+        assertFalse("paused on the TV", receiver.pwr)
+        assertEquals(1f, receiver.volumes.last())
+        timer.cancel()
+    }
+
+    /** I2: an address that changes during a cast is not lost. Back on this device the title streams from the new one. */
+    @Test fun anAddressChangeDuringACast_thenPlayingHere_usesTheNewAddress() {
+        link.onEnd = {
+            cast.sessionAvailable(false)
+            output.onCastSessionEnded()
+        }
+        output.attach(cast)
+        controller.play(s, "it", startSec = 105.0)
+        idle()
+        assertTrue(uris().all { it.startsWith(home) })
+        assertEquals(1, device.index)
+        assertEquals(5_000, device.position)
+
+        cast.sessionAvailable(true)
+        idle()
+        receiver.loaded()
+        idle()
+        assertEquals("the receiver has it from the server's address", 1, receiver.sent.size)
+
+        // The phone left home with the receiver still going.
+        online.value = public.toHttpUrl()
+        idle()
+        assertEquals(1, receiver.sent.size)
+        receiver.status(position = 40_000)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+
+        // The cast ends: the title is back, paused, where it was, with the new address.
+        link.endSession(stopReceiver = true)
+        idle()
+        idle()
+        assertFalse(device.pwr)
+        assertEquals(1, device.index)
+        assertEquals(40_000, device.position)
+        assertTrue(uris().toString(), uris().all { it.startsWith(public) })
+        assertEquals(public, device.items.first().mediaMetadata.extras!!.getString(MediaItemFactory.EXTRA_STREAM_BASE))
+
+        controller.togglePlayPause()
+        idle()
+        assertTrue(device.pwr)
+        assertTrue(uris().all { it.startsWith(public) })
+        assertEquals(1, receiver.sent.size)
+    }
+}

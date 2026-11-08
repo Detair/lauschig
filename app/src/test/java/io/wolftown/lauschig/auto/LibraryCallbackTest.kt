@@ -179,4 +179,25 @@ class LibraryCallbackTest {
         assertTrue(resolved.isEmpty())
         assertTrue(started.isEmpty())
     }
+
+    /** With a car, the sound stays on this device (Cast): the service learns how many car hosts are there. */
+    @Test fun carHosts_areCounted_otherControllersAreNot() {
+        val counts = mutableListOf<Int>()
+        val c = LibraryCallback(
+            context = context, scope = CoroutineScope(Dispatchers.Unconfined), library = library, search = CarSearch(library), starts = starts,
+            mediaItems = CarMediaItems("$own.covers"), carContext = { CarContext(s, online = true) }, lastTitle = { null }, buttons = { emptyList() },
+            onCommand = { true }, onStart = {}, onPlayLoaded = {}, onSubscribed = {}, onCarConnection = { counts += it },
+        )
+        val theCar = car
+        val other = stranger
+        c.onConnectAsync(session, other)
+        c.onConnectAsync(session, app)
+        assertEquals(emptyList<Int>(), counts)
+        c.onConnectAsync(session, theCar)
+        assertEquals(listOf(1), counts)
+        c.onDisconnected(session, other)
+        assertEquals(listOf(1), counts)
+        c.onDisconnected(session, theCar)
+        assertEquals(listOf(1, 0), counts)
+    }
 }
