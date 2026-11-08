@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -191,13 +192,16 @@ private fun ConnectDialog(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabUser"),
                     )
                 }
-                PasswordField(
-                    secret, { secret = it },
-                    label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
-                    showDescription = if (tokenMode) R.string.token_show else R.string.password_show,
-                    hideDescription = if (tokenMode) R.string.token_hide else R.string.password_hide,
-                )
+                // A new mode is a new, empty field: it starts hidden again.
+                key(tokenMode) {
+                    PasswordField(
+                        secret, { secret = it },
+                        label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
+                        showDescription = if (tokenMode) R.string.token_show else R.string.password_show,
+                        hideDescription = if (tokenMode) R.string.token_hide else R.string.password_hide,
+                    )
+                }
                 TextButton(onClick = { tokenMode = !tokenMode; secret = "" }, modifier = Modifier.testTag("rmabToggleMode")) {
                     Text(stringResource(if (tokenMode) R.string.rmab_use_login else R.string.rmab_use_token))
                 }

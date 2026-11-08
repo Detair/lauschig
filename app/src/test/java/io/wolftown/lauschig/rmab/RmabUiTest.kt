@@ -103,7 +103,7 @@ class RmabUiTest {
         rule.onNodeWithTag("rmabOutcome").assertIsDisplayed()
     }
 
-    /** The same eye as on the sign-in form; for a token it says token. */
+    /** The same eye as on the sign-in form; for a token it says token, and a new mode starts hidden. */
     @Test fun connectDialog_secretCanBeShown_andTheEyeNamesWhatItShows() {
         rule.setContent {
             LauschigTheme { RmabSettingsContent(RmabSettingsState(dialogOpen = true), {}, {}, {}, { _, _, _, _ -> }, {}, {}) }
@@ -116,9 +116,11 @@ class RmabUiTest {
         rule.onNodeWithContentDescription("Show password").performClick()
         assertEquals("kein-echtes-Passwort", drawn())
 
-        rule.onNodeWithContentDescription("Hide password").performClick()
+        // Switching to a token while the password is shown: the new field starts hidden again.
         rule.onNodeWithTag("rmabToggleMode").performClick()
         rule.onNodeWithContentDescription("Show token").assertExists()
-        rule.onNodeWithContentDescription("Show password").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Hide token").assertDoesNotExist()
+        secret.performTextInput("kein-echtes-Token")
+        assertEquals("\u2022".repeat(17), drawn())
     }
 }
