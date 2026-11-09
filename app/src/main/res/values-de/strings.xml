@@ -79,6 +79,8 @@
     <string name="detail_continue">Weiterhören</string>
     <string name="detail_listen_again">Nochmal hören</string>
     <string name="detail_series_band">%1$s · Band %2$s</string>
+    <string name="detail_series_line">Serie: %1$s</string>
+    <string name="detail_series_open">Alle Bände der Serie zeigen</string>
     <string name="detail_quick_length">Länge: %1$s</string>
     <string name="detail_quick_narrator">Gelesen von %1$s</string>
     <string name="detail_quick_year">Erschienen: %1$s</string>

@@ -79,6 +79,8 @@
     <string name="detail_continue">Continue</string>
     <string name="detail_listen_again">Listen again</string>
     <string name="detail_series_band">%1$s · Book %2$s</string>
+    <string name="detail_series_line">Series: %1$s</string>
+    <string name="detail_series_open">Show all books in the series</string>
     <string name="detail_quick_length">Length: %1$s</string>
     <string name="detail_quick_narrator">Read by %1$s</string>
     <string name="detail_quick_year">Published: %1$s</string>
