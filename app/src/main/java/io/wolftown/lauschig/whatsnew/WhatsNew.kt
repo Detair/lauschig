@@ -8,6 +8,7 @@ data class Release(val versionCode: Int, val versionName: String, @ArrayRes val 
 
 /** Every release with notes, newest first. A new version adds its entry on top (a test checks the current one has notes). */
 val WHATS_NEW: List<Release> = listOf(
+    Release(7, "0.5.2", R.array.whatsnew_0_5_2),
     Release(6, "0.5.1", R.array.whatsnew_0_5_1),
     Release(5, "0.5.0", R.array.whatsnew_0_5_0),
     Release(4, "0.4.0", R.array.whatsnew_0_4_0),
