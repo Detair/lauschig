@@ -822,6 +822,9 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_5_2">
+        <item>In the book details the series now sits right under the title, a tap shows all its books</item>
+    </string-array>
     <string-array name="whatsnew_0_5_1">
         <item>When signing in, the eye next to the password shows what you typed, in the RMAB dialog too</item>
     </string-array>
