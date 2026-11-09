@@ -202,6 +202,49 @@ class ItemDetailScreenTest {
         assertTrue(bar.top >= title.bottom && bar.bottom <= chip.top && bar.bottom <= primary.top)
     }
 
+    @Test fun seriesLine_underTheTitle_opensTheSeries_insteadOfAChip() {
+        val opened = mutableListOf<Pair<BrowseKind, String>>()
+        rule.setContent {
+            LauschigTheme { ItemDetailScreen(base, {}, {}, {}, {}, {}, {}, onOpenBrowse = { k, n -> opened += k to n }) }
+        }
+        val line = rule.onNodeWithTag("seriesLine").assertIsDisplayed()
+            .assertContentDescriptionEquals("Series: Saga · Book 3")
+            .assert(clickLabel("Show all books in the series"))
+            .assertHeightIsAtLeast(48.dp)
+        // Its own line, no longer one of the chips.
+        rule.onAllNodesWithText("Saga · Book 3").assertCountEquals(1)
+        // Right under the title, above the quick facts.
+        val title = rule.onNodeWithText("The Book").getUnclippedBoundsInRoot()
+        val bounds = line.getUnclippedBoundsInRoot()
+        val bar = rule.onNodeWithTag("quickBar").getUnclippedBoundsInRoot()
+        assertTrue(bounds.top >= title.bottom && bounds.bottom <= bar.top)
+        line.performClick()
+        assertEquals(listOf(BrowseKind.SERIES to "Saga"), opened)
+    }
+
+    @Test fun seriesLine_withoutSequence_namesTheSeriesOnly() {
+        show(base.copy(seriesSequence = null))
+        rule.onNodeWithTag("seriesLine").assertContentDescriptionEquals("Series: Saga")
+    }
+
+    @Test fun seriesLine_noSeries_noLine() {
+        show(base.copy(seriesName = null, seriesSequence = null))
+        rule.onNodeWithTag("seriesLine").assertDoesNotExist()
+    }
+
+    @Test fun seriesLine_deviceTitle_shownButLeadsNowhere() {
+        show(base.copy(isLocal = true))
+        rule.onNodeWithTag("seriesLine").assertIsDisplayed().assertHasNoClickAction()
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "de-w400dp-h2400dp")
+    fun seriesLine_german() {
+        show(base)
+        rule.onNodeWithTag("seriesLine")
+            .assertContentDescriptionEquals("Serie: Saga · Band 3")
+            .assert(clickLabel("Alle Bände der Serie zeigen"))
+    }
+
     @Test fun quickBar_severalNarrators_oneFact_aMenuPicksWhose() {
         val opened = mutableListOf<Pair<BrowseKind, String>>()
         rule.setContent {
