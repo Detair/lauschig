@@ -81,7 +81,8 @@ class ProgressSyncTest {
 
     @After fun tearDown() = db.close()
 
-    private fun sync() = ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device })
+    private val stamps = InMemorySyncStamps()
+    private fun sync() = ProgressSync({ flowOf(me) }, db.progressDao(), db.sessionDao(), db.itemDao(), db.episodeDao(), { device }, stamps = stamps)
 
     private fun srv(id: String, t: Double, last: Long, fin: Boolean = false, ep: String? = null) =
         MediaProgressDto(id, ep, t, 100.0, t / 100.0, fin, last)
@@ -234,6 +235,8 @@ class ProgressSyncTest {
         assertFalse(db.progressDao().get(s, "b")!!.dirty)
         assertTrue(db.sessionDao().unsynced(s).isEmpty())
         assertEquals(7.0, db.progressDao().get(s, "c")!!.currentTimeSec, 0.0)
+        // The run went through as far as the server lets it: it counts as the last sync.
+        assertTrue(stamps.get(ProgressSync.stampKey(s)) != null)
     }
 
     /**
@@ -254,6 +257,8 @@ class ProgressSyncTest {
         assertFalse(db.progressDao().get(s, "b")!!.dirty)
         assertTrue(db.sessionDao().unsynced(s).isEmpty())
         assertEquals(7.0, db.progressDao().get(s, "c")!!.currentTimeSec, 0.0)
+        // Something of ours did not reach a server in trouble: the connection window must not call this run a sync.
+        assertEquals(null, stamps.get(ProgressSync.stampKey(s)))
     }
 
     /** Not signed in any more, or told to slow down: that is about every title, the run stops at once. */

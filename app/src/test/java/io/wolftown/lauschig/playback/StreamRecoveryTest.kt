@@ -98,6 +98,31 @@ class StreamRecoveryTest {
         assertEquals(0, host.prepares)
     }
 
+    /** The next title fails while the try for the one before still waits: it gets a try of its own. */
+    @Test fun anotherTitleFailsWhileATryWaits_getsItsOwnTry() = runTest {
+        online.value = false
+        val r = recovery()
+        r.onError(retryable = true)
+        host.title = "B"
+        r.onError(retryable = true)
+        online.value = true
+        advanceTimeBy(60_000); runCurrent()
+        assertEquals(1, host.prepares)
+    }
+
+    /** The tries are the title's: a title that used up its three does not take the next one's away. */
+    @Test fun anotherTitle_afterOneThatGaveUp_getsItsTries() = runTest {
+        val r = recovery()
+        for (wait in listOf(2_000L, 10_000L, 30_000L)) { r.onError(retryable = true); advanceTimeBy(wait); runCurrent() }
+        r.onError(retryable = true)
+        advanceTimeBy(60_000); runCurrent()
+        assertEquals(3, host.prepares)
+        host.title = "B"
+        r.onError(retryable = true)
+        advanceTimeBy(2_000); runCurrent()
+        assertEquals(4, host.prepares)
+    }
+
     @Test fun errorThatARetryCannotCure_orNothingWaiting_isLeftAlone() = runTest {
         val r = recovery()
         r.onError(retryable = false)

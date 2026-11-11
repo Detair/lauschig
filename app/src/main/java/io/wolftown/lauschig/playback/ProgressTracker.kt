@@ -83,12 +83,16 @@ class ProgressTracker(
      * The tracked title waits paused in the player and its saved row was moved meanwhile by something else: sync merged
      * what another device heard, "fetch from server", "start over". Returns the position to continue at, if it is more
      * than [thresholdSec] from what this tracker saved last; null otherwise, and for a row that is finished (no place to
-     * continue). Compared with the tracker's own last save, not with the player: a title started somewhere else on
-     * purpose (a chapter, a bookmark) is not "moved".
+     * continue).
+     *
+     * Only for a plain resume: the player ([playerSec]) still sits where this tracker left it, give or take the rewind
+     * after a pause (within [thresholdSec]). A title started somewhere else on purpose (a chapter, a bookmark, a fresh
+     * queue) stays where the listener put it, whatever happened to the row.
      */
-    suspend fun movedWhilePaused(serverId: String, itemId: String, thresholdSec: Double): Double? = lock.withLock {
+    suspend fun movedWhilePaused(serverId: String, itemId: String, playerSec: Double, thresholdSec: Double): Double? = lock.withLock {
         val t = target ?: return@withLock null
         if (t.serverId != serverId || t.itemId != itemId || playingSince != null) return@withLock null
+        if (abs(playerSec - lastPosition) > thresholdSec) return@withLock null
         val saved = progressDao.get(serverId, itemId)?.takeUnless { it.isFinished } ?: return@withLock null
         saved.currentTimeSec.takeIf { abs(it - lastPosition) > thresholdSec }
     }

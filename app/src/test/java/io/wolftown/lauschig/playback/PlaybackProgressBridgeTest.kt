@@ -171,6 +171,34 @@ class PlaybackProgressBridgeTest {
         assertEquals(50.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
     }
 
+    /**
+     * Sync moved the paused title AND the user then starts it somewhere else on purpose (a fresh queue at a chapter): the
+     * place the user chose wins. Only a title that still sits where it was paused is taken to the moved position.
+     */
+    @Test fun startingThePausedTitleElsewhere_afterSyncMovedIt_staysWhereItWasStarted() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 100.0, 900.0, false, currentTime + 1)))
+        val old = p.positionInfo()
+        p.items = factory.build(a, null); p.index = 0; p.positionMs = 400_000
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_REMOVE)
+        br.onMediaItemTransition(p.items[0], Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED); runCurrent()
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(emptyList<Pair<Int, Long>>(), p.seeks)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(400.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
+    /** The rewind after a pause (at most 30 s) has already moved the player a little: still a plain resume. */
+    @Test fun playKey_afterSyncMovedThePausedTitle_andTheRewindAfterThePause_continuesAtTheSyncedPosition() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 100.0, 900.0, false, currentTime + 1)))
+        p.positionMs -= 30_000 // PlaybackComfort's rewind, done before the bridge hears of the start
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(listOf(0 to 100_000L), p.seeks)
+    }
+
     @Test fun switchingBook_whilePlaying_savesOldBookAtItsOwnPosition_notAtNewQueueOffset() = runTest {
         val (p, br) = playingA()
         val old = p.switchToB()

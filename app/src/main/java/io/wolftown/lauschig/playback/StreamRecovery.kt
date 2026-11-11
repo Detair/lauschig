@@ -21,7 +21,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * After such an error the player is prepared again: once the server is in reach ([online]; right away if the connection
  * never went, e.g. one bad answer), after a pause that grows with every failed try ([delaysMs]), and that many times at
  * most. Never against the listener: a pause, another title or a title that already plays again end the try
- * ([Host.waitsToStream]). A title that plays again gets its tries back ([onPlaying]). Calls on the player's thread.
+ * ([Host.waitsToStream]). A title that plays again gets its tries back ([onPlaying]), and so does every other title.
+ * Calls on the player's thread.
  *
  * The wait for the server ends after [giveUpAfterMs]: Media3 keeps the service in the foreground for ten minutes after
  * the player stopped, and Android refuses to start playback from the background after that. Then only a play key helps.
@@ -45,15 +46,25 @@ class StreamRecovery(
 
     private var job: Job? = null
     private var tries = 0
+    /** The title the tries (and a waiting try) belong to. */
+    private var triedTitle: Any? = null
 
     /** The player reported an error. [retryable]: reading the source failed in a way another try can cure. */
     fun onError(retryable: Boolean) {
-        if (!retryable || !host.waitsToStream() || job?.isActive == true) return
+        if (!retryable || !host.waitsToStream()) return
+        val title = host.title()
+        if (title != triedTitle) {
+            // Another title: a try still waiting for the one before would find it gone and do nothing.
+            job?.cancel()
+            job = null
+            tries = 0
+            triedTitle = title
+        }
+        if (job?.isActive == true) return
         if (tries >= delaysMs.size) {
             Log.i(TAG, "the stream did not come back after $tries tries: waiting for play")
             return
         }
-        val title = host.title()
         val wait = delaysMs[tries++]
         job = scope.launch {
             val inReach = withTimeoutOrNull(giveUpAfterMs) {

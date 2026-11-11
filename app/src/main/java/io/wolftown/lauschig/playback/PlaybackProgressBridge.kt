@@ -127,7 +127,8 @@ class PlaybackProgressBridge(
         // own play button checks the same ([PlayerControllerImpl.resumeLoaded]); a play key of a headset, the car, the
         // widget or the notification reaches the player without passing the app, and the tracker's next save would
         // overwrite the newer position with the stale one.
-        tracker.movedWhilePaused(key.serverId, key.itemId, ProgressSync.JUMP_THRESHOLD_SEC)?.let { sec ->
+        val playerSec = mapper.toGlobal(player.currentMediaItemIndex, player.currentPosition)
+        tracker.movedWhilePaused(key.serverId, key.itemId, playerSec, ProgressSync.JUMP_THRESHOLD_SEC)?.let { sec ->
             if (player.currentMediaItem?.key() == key) {
                 val (index, offsetMs) = mapper.toFile(sec)
                 Log.i(TAG, "continuing where the title was moved to while it was paused")

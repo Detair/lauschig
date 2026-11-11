@@ -70,6 +70,7 @@ class ProgressSync(
 
         var server = fetchProgress(api)
         var pushed = false
+        var serverTrouble = false
         for (local in progress.dirty(serverId)) {
             if (DeviceLibrary.isLocalKey(local.itemId)) continue
             try {
@@ -80,6 +81,7 @@ class ProgressSync(
                 // This title is gone (404), refused or rejected, or the server tripped over it: its row stays dirty for the
                 // next run. It must not hold up the other titles, the sessions and the pull, run after run.
                 Log.w(TAG, "the progress of one title was not accepted (HTTP ${e.code()})")
+                if (e.code() >= 500) serverTrouble = true
             }
         }
         val uploaded = uploadSessions(api, serverId)
@@ -92,7 +94,8 @@ class ProgressSync(
         val jumps = progress.mergeFromServer(rows)
             .filter { abs(it.newCurrentTimeSec - it.oldCurrentTimeSec) > JUMP_THRESHOLD_SEC }
             .map { PositionJump(it.itemId, it.oldCurrentTimeSec, it.newCurrentTimeSec) }
-        stamps.set(stampKey(serverId), clock())
+        // A server error kept something of ours from arriving: not what the connection window may call the last sync.
+        if (!serverTrouble) stamps.set(stampKey(serverId), clock())
         jumps
     }
 
