@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * Persists listening progress (always dirty, for later sync) and the listening session.
@@ -76,6 +77,20 @@ class ProgressTracker(
     suspend fun onPausedFor(serverId: String, itemId: String, finalPositionSec: Double) = lock.withLock {
         val t = target
         if (t != null && t.serverId == serverId && t.itemId == itemId) halt(ended = false, finalPositionSec)
+    }
+
+    /**
+     * The tracked title waits paused in the player and its saved row was moved meanwhile by something else: sync merged
+     * what another device heard, "fetch from server", "start over". Returns the position to continue at, if it is more
+     * than [thresholdSec] from what this tracker saved last; null otherwise, and for a row that is finished (no place to
+     * continue). Compared with the tracker's own last save, not with the player: a title started somewhere else on
+     * purpose (a chapter, a bookmark) is not "moved".
+     */
+    suspend fun movedWhilePaused(serverId: String, itemId: String, thresholdSec: Double): Double? = lock.withLock {
+        val t = target ?: return@withLock null
+        if (t.serverId != serverId || t.itemId != itemId || playingSince != null) return@withLock null
+        val saved = progressDao.get(serverId, itemId)?.takeUnless { it.isFinished } ?: return@withLock null
+        saved.currentTimeSec.takeIf { abs(it - lastPosition) > thresholdSec }
     }
 
     /** The last file finished: progress is saved as finished at the end of the book. */
