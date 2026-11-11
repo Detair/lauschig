@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,8 +51,11 @@ private class FakeMe : StubMeApi() {
     override suspend fun updateEpisodeProgress(itemId: String, episodeId: String, u: ProgressUpdate) {
         episodePatches += Triple(itemId, episodeId, u)
     }
+    /** HTTP status the server answers a title's PATCH with. */
+    var failCodes: Map<String, Int> = emptyMap()
     override suspend fun updateProgress(itemId: String, u: ProgressUpdate) {
         if (failOnPatch) throw IOException("boom")
+        failCodes[itemId]?.let { throw HttpException(Response.error<Unit>(it, "".toResponseBody())) }
         patches += itemId to u
     }
     override suspend fun syncLocalSessions(body: LocalSessionsBody): LocalSessionsResult {
@@ -211,6 +217,56 @@ class ProgressSyncTest {
         assertEquals(50.0, db.progressDao().get(s, "a")!!.currentTimeSec, 0.0)
         // The sessions go after the progress push: they wait for the next run, nothing is lost.
         assertEquals(listOf("s1"), db.sessionDao().unsynced(s).map { it.id })
+    }
+
+    /** One title the server refuses (no access any more, a bad row) must not hold up everything behind it. */
+    @Test fun refusedTitle_isSkipped_theRestSyncs() = runTest {
+        db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
+        db.progressDao().saveLocal(s, "b", 60.0, 100.0, false, 9_000)
+        db.sessionDao().upsert(session("s1"))
+        me.server = listOf(srv("c", 7.0, 5_000))
+        me.failCodes = mapOf("a" to 403)
+
+        sync().sync(s)
+
+        assertEquals(listOf("b"), me.patches.map { it.first })
+        assertTrue(db.progressDao().get(s, "a")!!.dirty) // kept for a later try
+        assertFalse(db.progressDao().get(s, "b")!!.dirty)
+        assertTrue(db.sessionDao().unsynced(s).isEmpty())
+        assertEquals(7.0, db.progressDao().get(s, "c")!!.currentTimeSec, 0.0)
+    }
+
+    /**
+     * A server error for one title while the server answers everything else (a dead server fails the first request of the
+     * run already): the others, the sessions and the pull go through, the title is tried again with the next run.
+     */
+    @Test fun serverErrorForOneTitle_theRestSyncs() = runTest {
+        db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
+        db.progressDao().saveLocal(s, "b", 60.0, 100.0, false, 9_000)
+        db.sessionDao().upsert(session("s1"))
+        me.server = listOf(srv("c", 7.0, 5_000))
+        me.failCodes = mapOf("a" to 500)
+
+        sync().sync(s)
+
+        assertEquals(listOf("b"), me.patches.map { it.first })
+        assertTrue(db.progressDao().get(s, "a")!!.dirty)
+        assertFalse(db.progressDao().get(s, "b")!!.dirty)
+        assertTrue(db.sessionDao().unsynced(s).isEmpty())
+        assertEquals(7.0, db.progressDao().get(s, "c")!!.currentTimeSec, 0.0)
+    }
+
+    /** Not signed in any more, or told to slow down: that is about every title, the run stops at once. */
+    @Test fun unauthorizedOrThrottled_stopsTheRun() = runTest {
+        for (code in listOf(401, 429)) {
+            me.patches.clear()
+            db.progressDao().saveLocal(s, "a", 50.0, 100.0, false, 9_000)
+            db.progressDao().saveLocal(s, "b", 60.0, 100.0, false, 9_000)
+            me.failCodes = mapOf("a" to code)
+            try { sync().sync(s); fail("expected HttpException $code") } catch (e: HttpException) { assertEquals(code, e.code()) }
+            assertTrue(me.patches.isEmpty())
+            assertTrue(db.progressDao().get(s, "b")!!.dirty)
+        }
     }
 
     @Test fun offline_isNoOp() = runTest {

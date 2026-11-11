@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.sync
 
+import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.local.DeviceLibrary
 import io.wolftown.lauschig.absapi.me.DeviceInfoDto
 import io.wolftown.lauschig.absapi.me.LocalSessionDto
@@ -29,8 +30,9 @@ import kotlin.math.abs
 
 /**
  * Reconciles listening state: (1) push dirty progress that is newer than the server's (or as new but different),
- * (2) upload offline sessions, (3) pull newer server progress. Any failure propagates; nothing local is cleared before
- * the server accepted it, so dirty flags survive a failed run. One sync at a time per process.
+ * (2) upload offline sessions, (3) pull the server's progress. A failure of the connection or the account propagates; a
+ * single title the server does not accept is skipped. Nothing local is cleared before the server accepted it, so dirty
+ * flags survive a failed run. One sync at a time per process.
  *
  * The order matters with ABS (`PlaybackSessionManager.syncLocalSession`): an uploaded session overwrites the server
  * progress with its position and its own `updatedAt` unless the progress is newer, and never carries `isFinished`. The
@@ -70,7 +72,15 @@ class ProgressSync(
         var pushed = false
         for (local in progress.dirty(serverId)) {
             if (DeviceLibrary.isLocalKey(local.itemId)) continue
-            if (push(api, serverId, local, server[local.itemId])) pushed = true
+            try {
+                if (push(api, serverId, local, server[local.itemId])) pushed = true
+            } catch (e: HttpException) {
+                // About the account or the server as a whole, not this title: the run stops and is tried again.
+                if (e.code() in STOPS_THE_RUN) throw e
+                // This title is gone (404), refused or rejected, or the server tripped over it: its row stays dirty for the
+                // next run. It must not hold up the other titles, the sessions and the pull, run after run.
+                Log.w(TAG, "the progress of one title was not accepted (HTTP ${e.code()})")
+            }
         }
         val uploaded = uploadSessions(api, serverId)
         // The server may have advanced (or auto-finished) progress from the pushes and sessions: merge its newest state.
@@ -128,13 +138,8 @@ class ProgressSync(
         )
         val key = PlayableKey.parse(local.itemId)
         val episodeId = key.episodeId
-        try {
-            if (episodeId != null) api.updateEpisodeProgress(key.libraryItemId, episodeId, update)
-            else api.updateProgress(key.libraryItemId, update)
-        } catch (e: HttpException) {
-            if (e.code() == 404) return false // item is gone on the server; keep the row dirty, do not block the rest
-            throw e
-        }
+        if (episodeId != null) api.updateEpisodeProgress(key.libraryItemId, episodeId, update)
+        else api.updateProgress(key.libraryItemId, update)
         progress.markSynced(serverId, local.itemId, local.lastUpdate)
         return true
     }
@@ -171,6 +176,10 @@ class ProgressSync(
         /** [SyncStamps] key of the last successful run for [serverId]. */
         fun stampKey(serverId: String) = "progress_sync:$serverId"
         const val JUMP_THRESHOLD_SEC = 60.0
+        private const val TAG = "ProgressSync"
+
+        /** Not signed in any more (401) or told to slow down (429): no title of this run would fare better. */
+        private val STOPS_THE_RUN = setOf(401, 429)
         private const val SAME_POSITION_SEC = 1.0
 
         /** Process-wide: the periodic sync and the progress-only sync never push the same rows at once. */
