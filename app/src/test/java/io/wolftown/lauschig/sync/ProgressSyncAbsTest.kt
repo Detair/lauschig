@@ -158,6 +158,29 @@ class ProgressSyncAbsTest {
         assertTrue(db.progressDao().get(s, "li_1")!!.isFinished)
     }
 
+    /**
+     * The phone's clock runs behind the server's. After a push the row carries the server's stamp; what is heard right
+     * after it gets a phone stamp that looks older. It must still reach the server and never be replaced by the pushed row.
+     */
+    @Test fun phoneClockBehind_aPauseRightAfterASync_isNotLost() = runTest {
+        abs.clock = 100_000
+        db.itemDao().upsertDetails(ItemEntity(s, "li_1", "l", "Buch", durationSec = 1200.0))
+        db.progressDao().saveLocal(s, "li_1", 300.0, 1200.0, false, 10_000)
+        sync().sync(s)
+        assertEquals(300.0, abs.rows.getValue("li_1").currentTime, 0.0)
+
+        // Thirty seconds later on the phone's clock: still "before" the server's stamp.
+        db.progressDao().saveLocal(s, "li_1", 330.0, 1200.0, false, 40_000)
+        db.sessionDao().upsert(LocalSessionEntity("sess", s, "li_1", 300.0, 330.0, 30.0, 10_000, 40_000))
+        val jumps = sync().sync(s)
+
+        assertEquals(330.0, abs.rows.getValue("li_1").currentTime, 0.0)
+        val local = db.progressDao().get(s, "li_1")!!
+        assertEquals(330.0, local.currentTimeSec, 0.0)
+        assertFalse(local.dirty)
+        assertEquals(emptyList<PositionJump>(), jumps)
+    }
+
     @Test fun equalTimestamps_withADifferentFinishedState_arePushed() = runTest {
         // What an earlier version left behind: the session already moved the server row to the same timestamp, unfinished.
         abs.rows["li_1"] = AbsProgressServer.Row(1200.0, 1200.0, false, false, updatedAt = 10_000)
