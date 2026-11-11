@@ -101,12 +101,24 @@ class ProgressTracker(
         // The player may already be released when the service is torn down; fall back to the last known position.
         val pos = if (ended) t.durationSec else overridePositionSec ?: try { t.position() } catch (e: IllegalStateException) { lastPosition }
         lastPosition = pos
-        val finished = ended || (t.durationSec > 0 && pos / t.durationSec >= FINISHED_FRACTION)
+        val finished = ended || finishedAt(pos, t.durationSec)
         progressDao.saveLocal(t.serverId, t.itemId, pos, t.durationSec, finished, now)
         session = session?.copy(currentTimeSec = pos, timeListeningSec = listening, updatedAt = now)?.also { sessionDao.upsert(it) }
     }
 
     companion object {
+        /** The last half percent of a title; in the statistics a session that ended there dates the book's finish. */
         const val FINISHED_FRACTION = 0.995
+
+        /** The longest rest a pause may leave and still count as "heard to the end". */
+        const val FINISHED_REST_MAX_SEC = 60.0
+
+        /**
+         * Heard to the end as far as the player can tell: at most the last half percent is left, and never more than a
+         * minute. Half a percent alone is six minutes of a 20-hour book and a quarter of an hour of a 50-hour one: a pause
+         * there marked the book finished on the server, and the next start began at 0:00.
+         */
+        fun finishedAt(positionSec: Double, durationSec: Double): Boolean =
+            durationSec > 0 && durationSec - positionSec <= minOf(durationSec * (1 - FINISHED_FRACTION), FINISHED_REST_MAX_SEC)
     }
 }
