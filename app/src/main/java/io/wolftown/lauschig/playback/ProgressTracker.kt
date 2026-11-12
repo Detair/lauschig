@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
+import kotlin.math.abs
 
 /**
  * Persists listening progress (always dirty, for later sync) and the listening session.
@@ -78,6 +79,24 @@ class ProgressTracker(
         if (t != null && t.serverId == serverId && t.itemId == itemId) halt(ended = false, finalPositionSec)
     }
 
+    /**
+     * The tracked title waits paused in the player and its saved row was moved meanwhile by something else: sync merged
+     * what another device heard, "fetch from server", "start over". Returns the position to continue at, if it is more
+     * than [thresholdSec] from what this tracker saved last; null otherwise, and for a row that is finished (no place to
+     * continue).
+     *
+     * Only for a plain resume: the player ([playerSec]) still sits where this tracker left it, give or take the rewind
+     * after a pause (within [thresholdSec]). A title started somewhere else on purpose (a chapter, a bookmark, a fresh
+     * queue) stays where the listener put it, whatever happened to the row.
+     */
+    suspend fun movedWhilePaused(serverId: String, itemId: String, playerSec: Double, thresholdSec: Double): Double? = lock.withLock {
+        val t = target ?: return@withLock null
+        if (t.serverId != serverId || t.itemId != itemId || playingSince != null) return@withLock null
+        if (abs(playerSec - lastPosition) > thresholdSec) return@withLock null
+        val saved = progressDao.get(serverId, itemId)?.takeUnless { it.isFinished } ?: return@withLock null
+        saved.currentTimeSec.takeIf { abs(it - lastPosition) > thresholdSec }
+    }
+
     /** The last file finished: progress is saved as finished at the end of the book. */
     suspend fun onEnded() = lock.withLock { halt(ended = true) }
 
@@ -101,12 +120,24 @@ class ProgressTracker(
         // The player may already be released when the service is torn down; fall back to the last known position.
         val pos = if (ended) t.durationSec else overridePositionSec ?: try { t.position() } catch (e: IllegalStateException) { lastPosition }
         lastPosition = pos
-        val finished = ended || (t.durationSec > 0 && pos / t.durationSec >= FINISHED_FRACTION)
+        val finished = ended || finishedAt(pos, t.durationSec)
         progressDao.saveLocal(t.serverId, t.itemId, pos, t.durationSec, finished, now)
         session = session?.copy(currentTimeSec = pos, timeListeningSec = listening, updatedAt = now)?.also { sessionDao.upsert(it) }
     }
 
     companion object {
+        /** The last half percent of a title; in the statistics a session that ended there dates the book's finish. */
         const val FINISHED_FRACTION = 0.995
+
+        /** The longest rest a pause may leave and still count as "heard to the end". */
+        const val FINISHED_REST_MAX_SEC = 60.0
+
+        /**
+         * Heard to the end as far as the player can tell: at most the last half percent is left, and never more than a
+         * minute. Half a percent alone is six minutes of a 20-hour book and a quarter of an hour of a 50-hour one: a pause
+         * there marked the book finished on the server, and the next start began at 0:00.
+         */
+        fun finishedAt(positionSec: Double, durationSec: Double): Boolean =
+            durationSec > 0 && durationSec - positionSec <= minOf(durationSec * (1 - FINISHED_FRACTION), FINISHED_REST_MAX_SEC)
     }
 }

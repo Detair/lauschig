@@ -148,6 +148,24 @@ class ProgressTrackerTest {
         assertTrue(db.progressDao().get(s, "it")!!.isFinished)
     }
 
+    /**
+     * 0.5 % of a long book are minutes: a pause five minutes before the end of a 20-hour book is not "finished" (the next
+     * start would begin at 0:00 and the server would show the book as heard). Never more than the last minute counts.
+     */
+    @Test fun longBook_pausedMinutesBeforeTheEnd_isNotFinished() = runTest {
+        val t = tracker()
+        val twentyHours = 72_000.0
+        pos = twentyHours - 300
+        t.play(duration = twentyHours); advanceTimeBy(1_000); t.onPaused()
+        assertFalse(db.progressDao().get(s, "it")!!.isFinished)
+        pos = twentyHours - 61
+        t.play(duration = twentyHours); advanceTimeBy(1_000); t.onPaused()
+        assertFalse(db.progressDao().get(s, "it")!!.isFinished)
+        pos = twentyHours - 60
+        t.play(duration = twentyHours); advanceTimeBy(1_000); t.onPaused()
+        assertTrue(db.progressDao().get(s, "it")!!.isFinished)
+    }
+
     @Test fun finishedAtEndOfLastFile() = runTest {
         val t = tracker()
         pos = 400.0

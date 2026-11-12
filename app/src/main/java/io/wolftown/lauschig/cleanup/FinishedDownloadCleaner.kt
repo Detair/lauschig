@@ -62,7 +62,7 @@ data class AutoDeleteCandidate(
 /**
  * Which finished downloads the automatic clean-up deletes ([AutoDeleteMode]):
  * - The title really ended (played to the end) or was marked finished – not the progress tracker's mark in the last
- *   0.5 % (a pause, a sleep timer or a phone call just before the end).
+ *   minute ([ProgressTracker.finishedAt]: a pause, a sleep timer or a phone call just before the end).
  * - The download was already complete when the title became finished, both on the device's clock: a title downloaded
  *   again to hear it once more – also a paused or failed download resumed after the title was finished – stays until it is
  *   finished again.
@@ -76,7 +76,7 @@ object AutoDeleteRules {
     const val END_SLACK_SEC = 2.0
 
     fun reallyFinished(positionSec: Double, durationSec: Double): Boolean =
-        durationSec <= 0 || positionSec >= durationSec - END_SLACK_SEC || positionSec / durationSec < ProgressTracker.FINISHED_FRACTION
+        durationSec <= 0 || positionSec >= durationSec - END_SLACK_SEC || !ProgressTracker.finishedAt(positionSec, durationSec)
 
     /** Counts at all (whenever it is due); [keep] says which keys must stay. */
     fun counts(c: AutoDeleteCandidate, keep: (String) -> Boolean): Boolean {
