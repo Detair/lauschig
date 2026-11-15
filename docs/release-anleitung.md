@@ -192,9 +192,30 @@ Damit der Server Lauschig zulässt, muss ein Admin die Rückkehr-Adresse freigeb
 
 Hinweis: Audiobookshelf erwartet `code` und `code_verifier` als URL-Parameter; ein Reverse-Proxy vor Audiobookshelf sollte daher für `/auth/openid/callback` keine Query-Strings loggen.
 
-## RMAB-Hinweis (Bände anfragen)
+## RMAB (Bände anfragen): abgeschaltet, nur mit Build-Schalter
 
-Beim Verbinden mit ReadMeABook erzeugt Lauschig einen dauerhaften API-Token namens „Lauschig (<Gerät>)“; dein RMAB-Passwort wird nicht gespeichert. Der Token ist in RMAB unter den API-Tokens des Nutzers sichtbar und lässt sich dort jederzeit widerrufen.
+Stand 2026-11-15: ReadMeABook (RMAB) ist für den Start abgeschaltet. Der Code bleibt im Repo (`app/src/main/java/io/wolftown/lauschig/rmab/`). Der normale Build lässt die Funktion weg, auch der Release-Workflow.
+
+| | Normaler Build (Schalter aus) | Build mit `-Plauschig.rmab=true` |
+|---|---|---|
+| Einstellungen | kein Abschnitt „ReadMeABook“ | Abschnitt wie bisher |
+| Fehlender Band einer Serie | sichtbar, ohne „Anfragen“ und ohne Statussymbol | mit „Anfragen“ und Statussymbol |
+| Netzwerk | kein Aufruf an einen RMAB-Server | wie bisher |
+| Gespeicherte RMAB-Verbindungen | werden beim nächsten App-Start gelöscht, für alle Profile | bleiben |
+
+So schaltest du RMAB ein:
+
+```bash
+./gradlew assembleDebug -Plauschig.rmab=true
+```
+
+Dauerhaft geht es mit der Zeile `lauschig.rmab=true` in `~/.gradle/gradle.properties`. Erlaubt sind nur `true` und `false`.
+
+Wer RMAB mit einer älteren Version verbunden hatte: Der API-Token „Lauschig (<Gerät>)“ bleibt auf dem RMAB-Server gültig. Lösche ihn dort unter den API-Tokens des Nutzers.
+
+**Nur mit Schalter:** Beim Verbinden mit ReadMeABook erzeugt Lauschig einen dauerhaften API-Token namens „Lauschig (<Gerät>)“; dein RMAB-Passwort wird nicht gespeichert. Der Token ist in RMAB unter den API-Tokens des Nutzers sichtbar und lässt sich dort jederzeit widerrufen.
+
+Kommt RMAB zurück, gehört dazu: den Standard des Schalters in `app/build.gradle.kts` umdrehen, RMAB wieder in die Datenschutzerklärung und in `docs/play-store/data-safety.md` aufnehmen und es in „Was ist neu“ nennen.
 
 ## 7. Markenprüfung „Lauschig“
 

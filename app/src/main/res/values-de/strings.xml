@@ -826,11 +826,11 @@
         <item>In den Buchdetails steht die Serie jetzt direkt unter dem Titel, ein Tipp zeigt alle Bände</item>
     </string-array>
     <string-array name="whatsnew_0_5_1">
-        <item>Beim Anmelden zeigt das Auge neben dem Passwort, was du getippt hast, auch im RMAB-Dialog</item>
+        <item>Beim Anmelden zeigt das Auge neben dem Passwort, was du getippt hast</item>
     </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Mehrere Profile auf einem Gerät: In den Einstellungen wechselst du zwischen Konten, ohne dich abzumelden</item>
-        <item>Fortschritt, Downloads, RMAB-Verbindung und letzte Suchen bleiben bei ihrem Profil; ein Wechsel löscht nichts</item>
+        <item>Fortschritt, Downloads und letzte Suchen bleiben bei ihrem Profil; ein Wechsel löscht nichts</item>
         <item>Beim Wechsel pausiert die Wiedergabe, dein Fortschritt wird gesichert, und nichts startet von selbst</item>
         <item>Profil hinzufügen: Die Serveradresse ist schon eingetragen, praktisch für die Familie auf einem Server</item>
         <item>Nach dem Abmelden fragt die App „Wer hört zu?“, wenn weitere Profile da sind</item>
