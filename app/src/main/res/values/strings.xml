@@ -826,11 +826,11 @@
         <item>In the book details the series now sits right under the title, a tap shows all its books</item>
     </string-array>
     <string-array name="whatsnew_0_5_1">
-        <item>When signing in, the eye next to the password shows what you typed, in the RMAB dialog too</item>
+        <item>When signing in, the eye next to the password shows what you typed</item>
     </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
-        <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
+        <item>Progress, downloads and recent searches stay with their profile; a switch deletes nothing</item>
         <item>A switch pauses playback and saves your progress, and nothing starts by itself</item>
         <item>Add a profile: the server address is already filled in, handy for a family on one server</item>
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>

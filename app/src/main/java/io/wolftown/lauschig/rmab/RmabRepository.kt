@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
@@ -93,6 +94,11 @@ internal fun rmabStatusOf(raw: String?): RmabStatus? = when (raw) {
  * One connection per account (keys end with `:<serverId>`): it is the signed-in account's ([activeServer]), the one of a
  * profile set aside waits for its return. Signed out there is none. What runs when the account changes finishes for the
  * account that started it.
+ *
+ * With the feature switched off ([enabled] false, see [RmabFeature]) there is no connection for anybody: [config] is
+ * always null, nothing is stored, no call leaves the device ([api] refuses to build one), and [migrate], which runs at
+ * every start, removes whatever an earlier build stored. [forget] and [allConfigs] work as always, so a sign-out, a
+ * profile switch and the diagnostic log's masking do what they did.
  */
 @Singleton
 class RmabRepository(
@@ -103,12 +109,17 @@ class RmabRepository(
     private val activeServer: Flow<String?>,
     private val baseClient: OkHttpClient = OkHttpClient(),
     private val nowMs: () -> Long = System::currentTimeMillis,
+    /** The build switch ([RmabFeature]). The app passes it; a test of the feature itself has it on. */
+    private val enabled: Boolean = true,
 ) {
     @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher, device: DeviceInfoProvider, accounts: AccountStore) :
-        this(context.rmabDataStore, cipher, { device.get().deviceName?.takeIf(String::isNotBlank) ?: "Android" }, accounts.account.map { it?.serverId })
+        this(
+            context.rmabDataStore, cipher, { device.get().deviceName?.takeIf(String::isNotBlank) ?: "Android" }, accounts.account.map { it?.serverId },
+            enabled = RmabFeature.ENABLED,
+        )
 
-    /** The signed-in account's connection; follows a switch. */
-    val config: Flow<RmabConfig?> = combine(activeServer, store.data) { sid, p ->
+    /** The signed-in account's connection; follows a switch. None while the feature is off. */
+    val config: Flow<RmabConfig?> = if (!enabled) flowOf(null) else combine(activeServer, store.data) { sid, p ->
         if (sid == null) return@combine null
         val url = p[url(sid)] ?: return@combine null
         RmabConfig(url, p[username(sid)].orEmpty(), p[needsReconnect(sid)] ?: false)
@@ -130,8 +141,17 @@ class RmabRepository(
     /**
      * Before profiles there was one connection on the device: it belongs to the account signed in at the upgrade
      * ([activeServerId]); signed out it has no owner and goes. Idempotent; never over a connection the account has.
+     *
+     * With the feature off nobody can use or even see a connection, so none stays on the device: every account's goes,
+     * with its address, user name and encrypted token. (The token itself stays valid on the ReadMeABook server until it
+     * is deleted there.) A build with the feature starts unconnected.
      */
     suspend fun migrate(activeServerId: String?) {
+        if (!enabled) {
+            cache = null
+            store.edit { it.clear() }
+            return
+        }
         store.edit { p ->
             val old = p[URL]
             if (old != null && activeServerId != null && p[url(activeServerId)] == null) {
@@ -148,6 +168,7 @@ class RmabRepository(
     /** Login, then trade the short-lived JWT for a permanent API token; only that token is stored. */
     suspend fun connect(url: String, username: String, password: String, allowCleartext: Boolean = false): RmabConnectResult =
         guarded(RmabConnectResult.Unreachable) {
+            if (!enabled) return@guarded RmabConnectResult.Unreachable
             val sid = activeServer.first() ?: return@guarded RmabConnectResult.Unreachable
             val base = parseUrl(url) ?: return@guarded RmabConnectResult.InvalidUrl
             if (!base.isHttps && !allowCleartext) return@guarded RmabConnectResult.NeedsCleartextConfirmation(base.host)
@@ -174,6 +195,7 @@ class RmabRepository(
     /** For RMAB accounts that only have OIDC: the user pastes a token created in RMAB; checked via `/api/auth/me`. */
     suspend fun connectWithToken(url: String, token: String, allowCleartext: Boolean = false): RmabConnectResult =
         guarded(RmabConnectResult.Unreachable) {
+            if (!enabled) return@guarded RmabConnectResult.Unreachable
             val sid = activeServer.first() ?: return@guarded RmabConnectResult.Unreachable
             val base = parseUrl(url) ?: return@guarded RmabConnectResult.InvalidUrl
             if (!base.isHttps && !allowCleartext) return@guarded RmabConnectResult.NeedsCleartextConfirmation(base.host)
@@ -199,6 +221,7 @@ class RmabRepository(
     }
 
     suspend fun request(volume: AudibleVolume): RmabRequestResult {
+        if (!enabled) return RmabRequestResult.NotConnected
         val author = volume.authors.firstOrNull { it.isNotBlank() } ?: return RmabRequestResult.NoAuthor
         return guarded(RmabRequestResult.Unreachable) {
             val s = activeServer.first()?.let { session(it) } ?: return@guarded RmabRequestResult.NotConnected
@@ -225,6 +248,7 @@ class RmabRepository(
 
     /** The user's own requests by ASIN, all pages. Cached for 60 s; empty when not connected or on any failure. */
     suspend fun statusByAsin(): Map<String, RmabStatus> {
+        if (!enabled) return emptyMap()
         return guarded(emptyMap()) {
             val sid = activeServer.first() ?: return@guarded emptyMap()
             cache?.takeIf { it.serverId == sid && nowMs() - it.at < CACHE_MS }?.let { return@guarded it.statuses }
@@ -260,8 +284,9 @@ class RmabRepository(
         fallback
     }
 
-    /** Null when not connected, the token cannot be decrypted, or the token was already rejected. */
+    /** Null when not connected, the token cannot be decrypted, the token was already rejected, or the feature is off. */
     private suspend fun session(serverId: String): Session? {
+        if (!enabled) return null
         val p = store.data.first()
         val url = p[url(serverId)]?.toHttpUrlOrNull() ?: return null
         if (p[needsReconnect(serverId)] == true) return null
@@ -300,8 +325,12 @@ class RmabRepository(
         return if (u.encodedPath.endsWith("/")) u else u.newBuilder().addPathSegment("").build()
     }
 
-    /** One client per configured URL: 10 s timeouts, Bearer only for that host, plain HTTP only if confirmed. */
+    /**
+     * One client per configured URL: 10 s timeouts, Bearer only for that host, plain HTTP only if confirmed.
+     * The only place a call to ReadMeABook is built: with the feature off there is none, whoever asks.
+     */
     private fun api(base: HttpUrl, token: String?, allowCleartext: Boolean): RmabApi {
+        check(enabled) { "ReadMeABook is switched off in this build" }
         val client = baseClient.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS).callTimeout(10, TimeUnit.SECONDS)
