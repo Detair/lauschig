@@ -18,6 +18,8 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 
 **Audible-Katalog (optional, standardmäßig aus).** Fehlende Bände einer Serie schlägt die App nur nach, wenn du zustimmst, und zwar jedes Profil für sich: Die Serienseite fragt jedes Profil einmal, und in den Einstellungen lässt sich das unter „Fehlende Bände von Audible ergänzen“ jederzeit ändern. Beim Abmelden und beim Entfernen des Profils endet die Zustimmung. Mit deiner Zustimmung fragt die App auf Serienseiten online den öffentlichen Audible-Katalog (api.audible.*, Region in den Einstellungen wählbar) nach den Bänden der Serie; kennt dieser einen Titel nicht, fragt sie auch den Katalog einer zweiten Region. Dabei gehen die ASINs deiner Bücher und, wie bei jeder Verbindung, deine IP-Adresse an Audible, aber keine Kontodaten, keine Server-Adresse und kein Hörfortschritt. Die Antworten speichert die App lokal und fragt nach spätestens sieben Tagen neu; sie verlassen das Gerät nicht. Cover fehlender Bände lädt sie über https von den Bilder-Servern, die Audible in seinen Antworten nennt (Amazon). Ohne Zustimmung unterbleibt jede Anfrage.
 
+**Server-Adressen als QR-Code (optional).** Ein angemeldetes Gerät kann die Adressen deines Servers als QR-Code anzeigen, damit ein weiteres Gerät sie bei der Einrichtung scannt. Im Code stehen nur die lokale und die öffentliche Adresse, kein Benutzername, kein Passwort, kein Token und kein WLAN-Name. Der Code entsteht auf dem Gerät. Zum Scannen nutzt die App die Kamera: Die Bilder wertet sie nur auf dem Gerät und nur in diesem Moment aus, sie werden weder gespeichert noch gesendet. Der Scan füllt nur die zwei Adressfelder; angemeldet wird dadurch niemand.
+
 **Welche Daten werden verarbeitet?** Zugangsdaten (Zugriffs- und Aktualisierungs-Token), Bibliothek, Hörfortschritt, Hörsitzungen, Lesezeichen, heruntergeladene Hörbücher und Einstellungen. Diese Daten liegen auf deinem Gerät. Die Token werden verschlüsselt gespeichert. Hörfortschritt, Sitzungen und Lesezeichen werden nur an deinen eigenen Server übertragen. Statistik und Erfolge berechnet die App auf dem Gerät. Den WLAN-Namen (SSID) liest die App nur, wenn du das Heimnetz-Verhalten einrichtest, und verarbeitet ihn nur lokal auf dem Gerät. Die App-Daten sind von der Android-Sicherung ausgenommen.
 
 **Speicherort und eigene Ordner.** Downloads liegen im internen Speicher oder, wenn du das wählst, im App-Bereich einer SD-Karte. Ordner mit eigenen Hörbüchern gibst du über die Dateiauswahl von Android frei; die App liest nur diese Ordner, und ihre Titel und Dateien werden nicht an einen Server übertragen.
@@ -35,6 +37,7 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 - Vordergrunddienste: Wiedergabe und Downloads im Hintergrund.
 - Vibration: kurze Rückmeldung, wenn du den Sleep-Timer durch Schütteln verlängerst.
 - Biometrie und Gerätesperre: die Abfrage des Systems, nur wenn du ein Profil mit der Gerätesperre schützt.
+- Kamera: nur zum Scannen eines QR-Codes mit Server-Adressen bei der Einrichtung. Die App fragt erst, wenn du „QR-Code scannen“ antippst; ohne die Berechtigung tippst du die Adressen von Hand.
 
 **Bewegungssensor.** In der letzten Minute eines Sleep-Timers wertet die App den Beschleunigungssensor aus, um ein Schütteln zu erkennen. Die Werte werden nicht gespeichert und nicht übertragen.
 
@@ -58,6 +61,8 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 
 **Audible catalog (optional, off by default).** The app looks up missing volumes of a series only if you agree, each profile for itself: the series page asks each profile once, and you can change it at any time in settings under "Add missing volumes from Audible". Signing out or removing the profile ends the consent. With your consent, on series pages the app queries the public Audible catalog (api.audible.*, region selectable in settings) for the volumes of the series while online; if it does not know a title, the app also asks the catalog of a second region. The ASINs of your books and, as with any connection, your IP address go to Audible, but no account data, server address or listening progress. The app keeps the answers locally and asks again after seven days at the latest; they do not leave the device. Covers of missing volumes are loaded over https from the image servers Audible names in its answers (Amazon). Without your consent, no request is made.
 
+**Server addresses as a QR code (optional).** A signed-in device can show your server's addresses as a QR code so that another device can scan them during setup. The code contains only the local and the public address, no user name, password, token or Wi-Fi name. It is made on the device. For scanning, the app uses the camera: it analyses the pictures on the device and only at that moment; they are neither stored nor sent. A scan fills only the two address fields; nobody is signed in by it.
+
 **What data is processed?** Credentials (access and refresh tokens), library data, listening progress, listening sessions, bookmarks, downloaded audiobooks and settings. This data stays on your device. Tokens are stored encrypted. Listening progress, sessions and bookmarks are sent only to your own server. Statistics and achievements are computed on the device. The app reads the Wi-Fi name (SSID) only if you set up home-network behavior, and processes it only locally on the device. App data is excluded from Android backup.
 
 **Storage and your own folders.** Downloads are kept in internal storage or, if you choose so, in the app's area on an SD card. You share folders with your own audiobooks through Android's file picker; the app reads only those folders, and their titles and files are not sent to any server.
@@ -75,6 +80,7 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 - Foreground services: playback and downloads in the background.
 - Vibration: a short signal when you extend the sleep timer by shaking.
 - Biometrics and device lock: the system's prompt, only if you protect a profile with the device lock.
+- Camera: only for scanning a QR code with server addresses during setup. The app asks when you tap "Scan QR code", not before; without the permission you type the addresses.
 
 **Motion sensor.** During the last minute of a sleep timer the app reads the accelerometer to detect a shake. The values are neither stored nor transmitted.
 

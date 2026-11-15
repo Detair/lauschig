@@ -11,16 +11,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -37,6 +40,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +58,8 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.serverqr.ServerQrError
+import io.wolftown.lauschig.serverqr.ServerQrScanner
 import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.common.PasswordField
 
@@ -61,6 +70,17 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> 
     val context = LocalContext.current
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) viewModel.enableSsidBinding() else viewModel.ssidPermissionDenied()
+    }
+    // Server addresses from another device's QR code. The camera is asked for when the button is tapped, never before;
+    // a device without one has no button.
+    val canScan = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
+    var scanning by rememberSaveable { mutableStateOf(false) }
+    val scan = {
+        viewModel.onScanStarted()
+        scanning = true
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scan() else viewModel.onCameraRefused()
     }
     // Open the identity provider in a Custom Tab; the server sends the user back via lauschig://oauth (MainActivity).
     LaunchedEffect(state.ssoLaunchUrl) {
@@ -77,6 +97,11 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> 
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed() }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
+    }
+    if (scanning) {
+        // Whatever code the camera finds closes the page; the form decides what it was.
+        ServerQrScanner(onCode = { scanning = false; viewModel.onQrScanned(it) }, onClose = { scanning = false }, modifier = modifier)
+        return
     }
     SetupScreen(
         state = state,
@@ -98,6 +123,11 @@ fun SetupRoute(onDone: () -> Unit, modifier: Modifier = Modifier, onBack: () -> 
         onDismissCleartext = viewModel::dismissCleartext,
         modifier = modifier,
         onBack = onBack,
+        canScan = canScan,
+        onScan = {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scan()
+            else camera.launch(Manifest.permission.CAMERA)
+        },
     )
 }
 
@@ -116,6 +146,9 @@ fun SetupScreen(
     modifier: Modifier = Modifier,
     /** „Profil hinzufügen“ only: back to the active account's pages. */
     onBack: () -> Unit = {},
+    /** The device has a camera: the form offers to scan the addresses from another device's QR code. */
+    canScan: Boolean = false,
+    onScan: () -> Unit = {},
 ) {
     Column(
         modifier.verticalScroll(rememberScrollState()).imePadding().padding(16.dp).testTag("setupScreen"),
@@ -136,6 +169,25 @@ fun SetupScreen(
         } else {
             Text(stringResource(R.string.setup_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.setup_intro), style = MaterialTheme.typography.bodyMedium)
+        }
+
+        if (canScan && !state.addressesFixed) {
+            // One group: no gap for a note that is not there.
+            Column {
+                OutlinedButton(onClick = onScan, enabled = !state.loading, modifier = Modifier.fillMaxWidth().testTag("scanQr")) {
+                    Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.server_qr_scan))
+                }
+                val note = state.scanNote
+                AnnouncedLine(
+                    note?.let { stringResource(it.message()) },
+                    tag = "scanNote",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (note is SetupScanNote.Refused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    padding = PaddingValues(top = 8.dp),
+                )
+            }
         }
 
         OutlinedTextField(
@@ -210,6 +262,19 @@ fun SetupScreen(
             confirmButton = { TextButton(onClick = onConfirmCleartext) { Text(stringResource(R.string.setup_cleartext_confirm)) } },
             dismissButton = { TextButton(onClick = onDismissCleartext) { Text(stringResource(R.string.setup_cancel)) } },
         )
+    }
+}
+
+private fun SetupScanNote.message(): Int = when (this) {
+    SetupScanNote.Filled -> R.string.server_qr_note_filled
+    SetupScanNote.CameraRefused -> R.string.server_qr_note_camera_refused
+    is SetupScanNote.Refused -> when (reason) {
+        ServerQrError.NOT_A_SERVER_CODE -> R.string.server_qr_error_not_a_code
+        ServerQrError.UNKNOWN_VERSION -> R.string.server_qr_error_version
+        ServerQrError.NO_ADDRESS -> R.string.server_qr_error_no_address
+        ServerQrError.BAD_ADDRESS -> R.string.server_qr_error_bad_address
+        ServerQrError.CREDENTIALS -> R.string.server_qr_error_credentials
+        ServerQrError.TOO_LONG -> R.string.server_qr_error_too_long
     }
 }
 

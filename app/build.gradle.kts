@@ -211,6 +211,10 @@ dependencies {
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.layout)
     implementation(libs.androidx.palette)
+    implementation(libs.zxing.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)
