@@ -32,7 +32,7 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.5.2, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
+Version 0.6.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
 [Releases](https://github.com/Detair/lauschig/releases) page as signed APKs. What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
@@ -48,7 +48,7 @@ Version 0.5.2, in daily use on our own devices; not on Google Play yet (a closed
   introduction on first start.
 - Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
   diagnostic log you can share – with passwords, tokens and server addresses masked.
-- Not released yet: a signed-in device shows its server addresses as a QR code and a new device scans it during setup.
+- New in 0.6.0: a signed-in device shows its server addresses as a QR code and a new device scans it during setup.
   The code holds the addresses only, never an account ([format](docs/server-qr-code.md)).
 
 The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).

@@ -822,6 +822,15 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_6_0">
+        <item>Server-Adressen per QR-Code: Ein angemeldetes Gerät zeigt sie unter „Verbindungsstatus“, ein neues scannt sie bei der Einrichtung</item>
+        <item>Im QR-Code stehen nur die Adressen, kein Konto und kein Passwort; die Kamera dient nur zum Scannen</item>
+        <item>Eine Pause kurz vor dem Ende markiert ein langes Buch nicht mehr als gehört</item>
+        <item>Ein Titel, den der Server ablehnt, hält die Synchronisierung der anderen nicht mehr auf</item>
+        <item>Kopfhörer, Auto und Widget setzen an der neueren, synchronisierten Stelle fort</item>
+        <item>Ein Stream, der abreißt, startet von selbst neu</item>
+        <item>Ein einzelner Aussetzer des Schlüsselspeichers meldet nicht mehr alle Profile ab</item>
+    </string-array>
     <string-array name="whatsnew_0_5_2">
         <item>In den Buchdetails steht die Serie jetzt direkt unter dem Titel, ein Tipp zeigt alle Bände</item>
     </string-array>

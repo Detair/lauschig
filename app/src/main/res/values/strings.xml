@@ -822,6 +822,15 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_6_0">
+        <item>Server addresses by QR code: a signed-in device shows them under “Connection status”, a new one scans them during setup</item>
+        <item>The QR code holds only the addresses, no account and no password; the camera is used for scanning only</item>
+        <item>A pause shortly before the end no longer marks a long book as finished</item>
+        <item>One title the server refuses no longer holds up the sync of all the others</item>
+        <item>Headset, car and widget continue at the newer, synced position</item>
+        <item>A stream that breaks off starts again by itself</item>
+        <item>A single hiccup of the device\'s key store no longer signs every profile out</item>
+    </string-array>
     <string-array name="whatsnew_0_5_2">
         <item>In the book details the series now sits right under the title, a tap shows all its books</item>
     </string-array>
