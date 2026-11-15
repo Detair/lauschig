@@ -144,6 +144,7 @@ Antworten stehen in `docs/play-store/data-safety.md`. Kurzfassung:
 | Zielgruppe | 18+ (bzw. „nicht für Kinder“); App spricht Kinder nicht gezielt an. |
 | Datensicherheit | „Keine Daten erhoben oder geteilt“, Verschlüsselung bei Übertragung: Ja, Löschung: Ja (Deinstallation) – Details siehe Datei. |
 | Nachrichten-App / Behörden / Finanzen / Gesundheit | Nein |
+| Kamera-Berechtigung | Stand 2026-11-15, in der Console ungeprüft: Für `CAMERA` gibt es kein eigenes Erklärformular. Begründung, falls Google fragt: „Scannt bei der Einrichtung den QR-Code eines anderen Geräts mit den Server-Adressen. Die Bilder werden nur auf dem Gerät ausgewertet, nicht gespeichert und nicht gesendet. Die App fragt erst beim Tippen auf ‚QR-Code scannen‘.“ In der Datensicherheit bleibt „Fotos und Videos“ auf „nicht erhoben“. Die Kamera ist kein Pflicht-Merkmal, Geräte ohne Kamera bekommen die App. Format des Codes: `docs/server-qr-code.md`. |
 | Dienste im Vordergrund | Medienwiedergabe (Abspielen von Hörbüchern) und Datensynchronisierung (Downloads auf Nutzerwunsch). Falls ein Video verlangt wird: kurze Bildschirmaufnahme von Abspielen + Download. |
 
 ### 6.3 Store-Eintrag (Wachstum → Store-Präsenz → Haupt-Store-Eintrag)
