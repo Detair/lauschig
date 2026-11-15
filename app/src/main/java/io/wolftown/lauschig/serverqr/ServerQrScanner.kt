@@ -127,8 +127,9 @@ private fun CameraFrames(onCode: (String) -> Unit, onFailed: () -> Unit, modifie
         }, main)
         onDispose {
             gone = true
-            analysis.clearAnalyzer()
+            // The camera first, so no frame is on its way when the reader's thread ends.
             provider?.unbind(preview, analysis)
+            analysis.clearAnalyzer()
             frames.shutdown()
         }
     }

@@ -123,6 +123,44 @@ class ServerQrTest {
         assertEquals(addresses(public = "https://abs.example.org/audiobookshelf"), ServerQr.read(longest))
     }
 
+    // What someone who wants the form to show one server and use another might try (the review's list).
+
+    @Test fun anAddressDressedUpAsAnother_isRefused_orShownAsWhatItIs() {
+        // `host%40evil`: decoded once it reads `user@evil`, and that is credentials.
+        assertEquals(rejected(ServerQrError.CREDENTIALS), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org%40evil.example"))
+        // Encoded twice, the `%40` survives the decoding and is no host name.
+        assertEquals(rejected(ServerQrError.BAD_ADDRESS), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org%2540evil.example"))
+        // A backslash ends the host: what follows is a path, and the form shows it as one.
+        assertEquals(addresses(public = "https://abs.example.org/@evil.example"), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org%5C%40evil.example"))
+        // A look-alike name comes out in the spelling that shows it is one.
+        assertEquals(addresses(public = "https://xn--bcher-kva.example"), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fb%C3%BCcher.example"))
+    }
+
+    @Test fun bytesThatAreNoText_areRefused() {
+        listOf("https%3A%2F%2Fabs.example.org%00", "https%3A%2F%2Fabs.example.org%2F%FF", "https%3A%2F%2Fabs.example.org%2F%C0%AF", "https%3A%2F%2Fabs.example.org%0D%0AHost%3A%20evil.example").forEach {
+            assertEquals(it, rejected(ServerQrError.BAD_ADDRESS), ServerQr.read("lauschig://server?v=1&public=$it"))
+        }
+    }
+
+    @Test fun unusualButHonestAddresses_areRead() {
+        assertEquals(addresses(local = "http://[::1]:8080"), ServerQr.read("lauschig://server?v=1&local=http%3A%2F%2F%5B%3A%3A1%5D%3A8080"))
+        assertEquals("hex digits in either case", addresses(public = "https://abs.example.org/audiobookshelf"), ServerQr.read("lauschig://server?v=1&public=https%3a%2f%2Fabs.example.org%2faudiobookshelf"))
+        assertEquals("an upper-case scheme", addresses(public = "https://abs.example.org"), ServerQr.read("lauschig://server?v=1&public=HTTPS%3A%2F%2Fabs.example.org"))
+        assertEquals("an empty user is no user", addresses(public = "https://abs.example.org"), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2F%40abs.example.org"))
+        assertEquals("a plus stays a plus", addresses(public = "https://abs.example.org/a+b"), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org%2Fa+b"))
+    }
+
+    @Test fun keysAreExactlyAsWritten() {
+        assertEquals(rejected(ServerQrError.UNKNOWN_VERSION), ServerQr.read("lauschig://server?V=1&public=$public"))
+        assertEquals(rejected(ServerQrError.NO_ADDRESS), ServerQr.read("lauschig://server?v=1&PUBLIC=$public&Local=$local"))
+    }
+
+    /** `echo … | qrencode` ends the text with a line break: around the code it does not count, inside an address it does. */
+    @Test fun blanksAroundTheCode_doNotCount() {
+        assertEquals(addresses(public = "https://abs.example.org/audiobookshelf"), ServerQr.read("  lauschig://server?v=1&public=$public\n"))
+        assertEquals(rejected(ServerQrError.BAD_ADDRESS), ServerQr.read("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org%0A&local=$local"))
+    }
+
     // --- writer
 
     @Test fun text_isExactlyTheTwoAddresses() {

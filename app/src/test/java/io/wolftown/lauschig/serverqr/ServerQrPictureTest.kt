@@ -74,7 +74,15 @@ class ServerQrPictureTest {
         val frame = photographed(Appearance(theme = ThemeMode.DARK, pureBlack = true, dynamicColor = false))
         fun grey(x: Int, y: Int) = frame.bytes[y * frame.stride + x].toInt() and 0xFF
         assertTrue("the page is dark", grey(4, 4) < 40)
-        val inset = (24 * 2) + 6 // just inside the picture: its light border
-        assertTrue("the code's border is light", grey(inset, inset) > 215)
+        val picture = 24 * 2 // the padding around the picture, in pixels (xhdpi)
+        assertTrue("the code's border is light", grey(picture + 6, picture + 6) > 215)
+        // The top left module of the code (its finder pattern's corner) is dark, the one after the pattern light.
+        val modules = QrCode.modules(ServerQr.code(account)!!.text).size
+        val side = 300 * 2
+        val cell = side / (modules + 2 * QrCode.QUIET_ZONE)
+        val first = picture + (side - cell * modules) / 2
+        assertTrue("a module is dark", grey(first + cell / 2, first + cell / 2) < 40)
+        assertTrue("the ring inside the finder pattern is light", grey(first + cell + cell / 2, first + cell + cell / 2) > 215)
+        assertTrue("its core is dark", grey(first + 3 * cell + cell / 2, first + 3 * cell + cell / 2) < 40)
     }
 }

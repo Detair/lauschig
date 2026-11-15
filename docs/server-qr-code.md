@@ -32,9 +32,9 @@ lauschig://server?v=1&local=<lokale Adresse>&public=<öffentliche Adresse>
 Regeln für die Adressen:
 
 1. Eine Adresse steht so da wie im Formular: mit `http://` oder `https://`, mit Port und Pfad, falls der Server sie braucht.
-2. Sie ist prozent-kodiert (`:` wird `%3A`, `/` wird `%2F`). Lauschig liest auch unkodierte Adressen, solange sie kein `&` und kein `#` enthalten.
+2. Sie ist prozent-kodiert (`:` wird `%3A`, `/` wird `%2F`). Lauschig liest auch unkodierte Adressen, solange sie kein `%`, kein `&` und kein `#` enthalten. Im Zweifel kodieren.
 3. Die Reihenfolge der Teile ist egal. Unbekannte Teile verwirft Lauschig, ohne sie zu speichern.
-4. Der ganze Text ist höchstens 1024 Zeichen lang.
+4. Der ganze Text ist höchstens 1024 Zeichen lang. Leerzeichen und Zeilenumbrüche davor und dahinter zählen nicht; alles ab einem `#` verwirft Lauschig.
 
 Beispiel mit beiden Adressen:
 
@@ -59,7 +59,7 @@ Ist eine der beiden Adressen ungültig, übernimmt Lauschig keine.
 
 1. Die Kamera-Berechtigung fragt die App erst, wenn du „QR-Code scannen“ antippst. Bei Nein tippst du die Adressen von Hand.
 2. Der Scan füllt nur die zwei Adressfelder. Benutzername und Passwort gibst du selbst ein.
-3. Nichts wird von selbst abgeschickt. Danach läuft alles wie beim Tippen: Prüfung der Adresse, Hinweis bei `http://`, Erreichbarkeit, Erkennung von SSO.
+3. Nichts wird von selbst abgeschickt. Danach läuft alles wie beim Tippen: Prüfung der Adresse, Hinweis bei `http://`, Erreichbarkeit, Erkennung von SSO. Dazu fragt die App eine `https://`-Adresse kurz nach dem Scan einmal nach ihrem Status (ohne Anmeldedaten), genau wie nach dem Tippen; eine `http://`-Adresse erst nach deiner Bestätigung.
 4. Prüfe die Adressen im Formular, bevor du dich anmeldest. Ein fremder QR-Code kann auf einen fremden Server zeigen.
 5. Kamerabilder werden nicht gespeichert und nicht gesendet. Der gescannte Text steht nicht im Diagnose-Log.
 

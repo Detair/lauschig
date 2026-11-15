@@ -73,10 +73,13 @@ object ServerQr {
     fun code(addresses: ServerAddresses): ServerQrCode? =
         text(addresses)?.let { ServerQrCode(it, listOfNotNull(addresses.local?.let(::plain), addresses.public?.let(::plain))) }
 
-    /** What a scanned [text] holds. Everything but `v`, `local` and `public` is dropped here and kept nowhere. */
+    /**
+     * What a scanned [text] holds. Everything but `v`, `local` and `public` is dropped here and kept nowhere. Blanks
+     * around the text do not count (a tool may end it with a line break); inside an address they refuse it.
+     */
     fun read(text: String): ServerQrResult {
         if (text.length > MAX_LENGTH) return ServerQrResult.Rejected(ServerQrError.TOO_LONG)
-        val body = text.substringBefore('#')
+        val body = text.trim().substringBefore('#')
         val mark = body.indexOf('?')
         val head = if (mark < 0) body else body.substring(0, mark)
         if (mark < 0 || !(head.equals(HEAD, ignoreCase = true) || head.equals("$HEAD/", ignoreCase = true))) {

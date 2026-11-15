@@ -61,7 +61,7 @@ fun QrCodeImage(modules: QrModules, description: String, modifier: Modifier = Mo
 
 /**
  * "Server-Adressen als QR-Code": the code, what is in it as plain text, and the sentence that nothing else is.
- * [text] and [addresses] come from [ServerQr.text] and [ServerQr.shown] for the same account.
+ * [text] and [addresses] are a [ServerQrCode] ([ServerQr.code]).
  */
 @Composable
 fun ServerQrDialog(text: String, addresses: List<String>, onClose: () -> Unit) {
