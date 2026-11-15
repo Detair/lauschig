@@ -78,6 +78,7 @@ großer Tippfläche: **Start · Bibliothek · Entdecken · Suche**.
   ABS für Metadaten nutzt. Dafür braucht der Nutzer kein Konto. Nur online verfügbar.
 - Fehlender Band → Knopf **„Anfragen“** schickt eine Anfrage an **ReadMeABook (RMAB)**.
   Das ist optional: Ohne konfiguriertes RMAB wird der Knopf nicht angezeigt.
+  **Zurückgestellt, 2026-11-15:** RMAB ist für den Start per Build-Schalter abgeschaltet (`lauschig.rmab`, Standard aus); der Code bleibt, fehlende Bände bleiben sichtbar.
 - **Entscheidung (Phase 2b), fehlende Bände:** Quelle ist der öffentliche Audible-Katalog.
   Weg: eigene ASIN → Serie → Kinder. Die Region kommt aus den Einstellungen (Standard `de`),
   mit Ausweichen de↔us. Treffer werden 7 Tage gecacht, Fehler 6 Stunden. Der Schalter

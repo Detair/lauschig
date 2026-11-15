@@ -1,6 +1,6 @@
 # Data safety form — answers
 
-Basis: the app talks to the Audiobookshelf server the user enters, and to two services only by the user's choice: a ReadMeABook server the user adds, and the public Audible catalog after the user agreed. The developer operates no backend and receives no data. Google's help does not address self-hosted servers; treating the user's own server as neither collection nor sharing is our reading of it.
+Basis: the app talks to the Audiobookshelf server the user enters, and to one more service only by the user's choice: the public Audible catalog after the user agreed. The developer operates no backend and receives no data. Google's help does not address self-hosted servers; treating the user's own server as neither collection nor sharing is our reading of it.
 
 | Question | Answer |
 |---|---|
