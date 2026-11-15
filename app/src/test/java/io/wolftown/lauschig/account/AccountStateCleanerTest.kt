@@ -41,7 +41,7 @@ class AccountStateCleanerTest {
     private val a = "aaaaaaaaaaaaaaaa"
     private val b = "bbbbbbbbbbbbbbbb"
     private val active = kotlinx.coroutines.flow.MutableStateFlow<String?>(a)
-    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" }, active)
+    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" }, active, enabled = true)
     private val oidc = OidcLogin(oidcStore, cipher, OkHttpClient())
     private val searches = RecentSearches(store("searches"), active)
     private val prompts = DownloadPrompts()

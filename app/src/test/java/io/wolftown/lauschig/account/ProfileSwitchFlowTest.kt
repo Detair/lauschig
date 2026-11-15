@@ -165,7 +165,7 @@ class ProfileSwitchFlowTest {
     private val switched = SwitchedDownloads(prefs("switched"), db.downloadDao(), manager)
 
     private val rmabStore: DataStore<Preferences> by lazy { prefs("rmab") }
-    private val rmab by lazy { RmabRepository(rmabStore, cipher, { "Tablet" }, active) }
+    private val rmab by lazy { RmabRepository(rmabStore, cipher, { "Tablet" }, active, enabled = true) }
     private val searchesStore by lazy { prefs("searches") }
     private val searches by lazy { RecentSearches(searchesStore, active) }
     /** The last title; lazy, as a test about the upgrade writes the old file first. */

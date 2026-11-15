@@ -1,6 +1,7 @@
 package io.wolftown.lauschig.rmab
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -15,6 +16,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.wolftown.lauschig.BuildConfig
 import io.wolftown.lauschig.account.TokenCipher
 import io.wolftown.lauschig.external.AudibleVolume
 import io.wolftown.lauschig.external.MissingVolume
@@ -99,14 +101,19 @@ class RmabSwitchUiTest {
         BrowseKind.SERIES, "Saga", entries = listOf(BrowseEntry.Missing("3", audible("3")), BrowseEntry.Missing("4", audible("4"))), loaded = true,
     )
 
+    /** The build switch as the screens see it. */
+    @Composable
+    private fun Build(rmab: Boolean, content: @Composable () -> Unit) = CompositionLocalProvider(LocalRmabEnabled provides rmab) { LauschigTheme(content = content) }
+
     /** The series page as the route builds it: the missing volumes get what [rmabBrowse] hands out. */
     @Composable
-    private fun SeriesPage(rmab: RmabBrowse) = LauschigTheme {
+    private fun SeriesPage(viewModel: @Composable () -> RmabViewModel) {
+        val rmab = rmabBrowse(viewModel)
         BrowseScreen(series, {}, {}, {}, { _, _ -> }, missingActions = { rmab.actions(it.volume) }, missingStatuses = rmab.statuses)
     }
 
     @Test fun browse_off_missingVolumesStay_withoutSymbolAndRequestButton() {
-        rule.setContent { SeriesPage(rmabBrowse(enabled = false, viewModel = { error("no view model while the feature is off") })) }
+        rule.setContent { Build(rmab = false) { SeriesPage { error("no view model while the feature is off") } } }
         rule.onAllNodesWithTag("missingVolume").assertCountEquals(2)
         rule.onAllNodesWithTag("rmabTileStatus", useUnmergedTree = true).assertCountEquals(0)
         rule.onNodeWithContentDescription("Volume 4, not in the library").performClick()
@@ -118,19 +125,19 @@ class RmabSwitchUiTest {
 
     @Test fun browse_on_symbolOnTheTile_andRequestButtonInTheSheet() {
         val repo = repo(enabled = true)
-        rule.setContent { SeriesPage(rmabBrowse(enabled = true, viewModel = { viewModel { RmabViewModel(repo) } })) }
+        rule.setContent { Build(rmab = true) { SeriesPage { viewModel { RmabViewModel(repo) } } } }
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("rmabTileStatus", useUnmergedTree = true).fetchSemanticsNodes().size == 1 }
         rule.onNodeWithContentDescription("Volume 4, not in the library").performClick()
         rule.onNodeWithTag("rmabRequest").assertIsDisplayed()
     }
 
+    /** The settings as the route builds them: the slot is the section itself. */
     @Composable
-    private fun Settings(section: @Composable () -> Unit) = LauschigTheme {
-        SettingsScreen(SettingsUiState(), onBack = {}, onOpenCleanup = {}, onNextVolume = {}, onWifiOnly = {}, onCleanupReminder = {}, rmabSection = section)
-    }
+    private fun Settings(viewModel: @Composable () -> RmabSettingsViewModel) =
+        SettingsScreen(SettingsUiState(), onBack = {}, onOpenCleanup = {}, onNextVolume = {}, onWifiOnly = {}, onCleanupReminder = {}, rmabSection = { RmabSettingsSection(viewModel) })
 
     @Test fun settings_off_noSection() {
-        rule.setContent { Settings { RmabSettingsSection(enabled = false, viewModel = { error("no view model while the feature is off") }) } }
+        rule.setContent { Build(rmab = false) { Settings { error("no view model while the feature is off") } } }
         rule.onNodeWithTag("settingsScreen").assertIsDisplayed()
         rule.onAllNodesWithText("ReadMeABook", substring = true, ignoreCase = true).assertCountEquals(0)
         rule.onAllNodesWithText("RMAB", substring = true, ignoreCase = true).assertCountEquals(0)
@@ -140,10 +147,18 @@ class RmabSwitchUiTest {
 
     @Test fun settings_on_theSectionShowsTheConnection() {
         val repo = repo(enabled = true)
-        rule.setContent { Settings { RmabSettingsSection(enabled = true, viewModel = { viewModel { RmabSettingsViewModel(repo) } }) } }
+        rule.setContent { Build(rmab = true) { Settings { viewModel { RmabSettingsViewModel(repo) } } } }
         rule.waitUntil(10_000) { rule.onAllNodesWithTag("rmabConnected").fetchSemanticsNodes().size == 1 }
         rule.onNodeWithTag("rmabConnected").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("ReadMeABook").assertIsDisplayed()
         rule.onNodeWithText("Connected as fabi").assertIsDisplayed()
+    }
+
+    /** No provider anywhere in the app: the screens follow the build, and the build follows `lauschig.rmab`. */
+    @Test fun withoutAProvider_theScreensFollowTheBuildSwitch() {
+        var seen: Boolean? = null
+        rule.setContent { seen = LocalRmabEnabled.current }
+        rule.waitForIdle()
+        assertEquals(BuildConfig.RMAB, seen)
     }
 }

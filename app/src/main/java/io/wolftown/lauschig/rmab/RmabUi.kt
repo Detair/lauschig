@@ -109,30 +109,24 @@ class RmabBrowse(
 private val NoRmabBrowse = RmabBrowse(emptyMap()) {}
 
 /**
- * The series page's part of ReadMeABook. With the feature off ([enabled], the build switch) it is empty and [viewModel]
- * is never asked for: the missing volumes stay, without request button and status symbol.
+ * The series page's part of ReadMeABook. With the feature off ([LocalRmabEnabled], the build switch) it is empty and
+ * [viewModel] is never asked for: the missing volumes stay, without request button and status symbol.
  */
 @Composable
-fun rmabBrowse(
-    enabled: Boolean = RmabFeature.ENABLED,
-    viewModel: @Composable () -> RmabViewModel = { hiltViewModel() },
-): RmabBrowse {
-    if (!enabled) return NoRmabBrowse
+fun rmabBrowse(viewModel: @Composable () -> RmabViewModel = { hiltViewModel() }): RmabBrowse {
+    if (!LocalRmabEnabled.current) return NoRmabBrowse
     val vm = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     return RmabBrowse(if (state.connected) state.statuses else emptyMap()) { RmabMissingActions(it, state, vm::request) }
 }
 
 /**
- * Settings section "ReadMeABook" (a slot in the settings screen). With the feature off ([enabled], the build switch)
- * there is no section and [viewModel] is never asked for.
+ * Settings section "ReadMeABook" (a slot in the settings screen). With the feature off ([LocalRmabEnabled], the build
+ * switch) there is no section and [viewModel] is never asked for.
  */
 @Composable
-fun RmabSettingsSection(
-    enabled: Boolean = RmabFeature.ENABLED,
-    viewModel: @Composable () -> RmabSettingsViewModel = { hiltViewModel() },
-) {
-    if (!enabled) return
+fun RmabSettingsSection(viewModel: @Composable () -> RmabSettingsViewModel = { hiltViewModel() }) {
+    if (!LocalRmabEnabled.current) return
     val vm = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     RmabSettingsContent(state, vm::openDialog, vm::disconnect, vm::closeDialog, vm::connect, vm::confirmCleartext, vm::dismissCleartext)

@@ -107,10 +107,10 @@ class RmabRepository(
     private val deviceName: () -> String,
     /** The signed-in account. */
     private val activeServer: Flow<String?>,
+    /** The build switch ([RmabFeature]): the app passes it. No default, so nothing gets the feature without saying so. */
+    private val enabled: Boolean,
     private val baseClient: OkHttpClient = OkHttpClient(),
     private val nowMs: () -> Long = System::currentTimeMillis,
-    /** The build switch ([RmabFeature]). The app passes it; a test of the feature itself has it on. */
-    private val enabled: Boolean = true,
 ) {
     @Inject constructor(@ApplicationContext context: Context, cipher: TokenCipher, device: DeviceInfoProvider, accounts: AccountStore) :
         this(

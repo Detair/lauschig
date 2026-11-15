@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.rmab
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import io.wolftown.lauschig.BuildConfig
 
 /**
@@ -13,3 +14,9 @@ import io.wolftown.lauschig.BuildConfig
 object RmabFeature {
     const val ENABLED: Boolean = BuildConfig.RMAB
 }
+
+/**
+ * Whether the screens show ReadMeABook: the build switch. A composition local and not a parameter, so no call site can
+ * turn the feature on with an argument; only tests provide another value.
+ */
+val LocalRmabEnabled = staticCompositionLocalOf { RmabFeature.ENABLED }
