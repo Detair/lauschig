@@ -1145,4 +1145,23 @@
         <item quantity="one">%d Minute</item>
         <item quantity="other">%d Minuten</item>
     </plurals>
+    <string name="server_qr_show">Server-Adressen als QR-Code</string>
+    <string name="server_qr_show_hint">Zum Einrichten eines weiteren Geräts</string>
+    <string name="server_qr_title">Server-Adressen</string>
+    <string name="server_qr_description">QR-Code mit den Server-Adressen</string>
+    <string name="server_qr_only_addresses">Enthält nur die Server-Adressen, kein Konto und kein Passwort.</string>
+    <string name="server_qr_how">Auf dem neuen Gerät: bei der Einrichtung „QR-Code scannen“ antippen.</string>
+    <string name="server_qr_close">Schließen</string>
+    <string name="server_qr_scan">QR-Code scannen</string>
+    <string name="server_qr_scan_close">Kamera schließen</string>
+    <string name="server_qr_scan_hint">Halte die Kamera auf den QR-Code, den ein anderes Gerät unter Einstellungen → Verbindungsstatus zeigt.</string>
+    <string name="server_qr_scan_no_camera">Die Kamera lässt sich nicht nutzen. Schließe diese Seite und tippe die Adressen ein.</string>
+    <string name="server_qr_note_filled">Adressen aus dem QR-Code übernommen. Prüfe sie, bevor du dich anmeldest.</string>
+    <string name="server_qr_note_camera_refused">Ohne Kamera-Zugriff kannst du die Adressen weiter von Hand eintragen.</string>
+    <string name="server_qr_error_not_a_code">Das ist kein Server-Code von Lauschig.</string>
+    <string name="server_qr_error_version">Dieser Code stammt von einer anderen Lauschig-Version.</string>
+    <string name="server_qr_error_no_address">Der Code enthält keine Server-Adresse.</string>
+    <string name="server_qr_error_bad_address">Der Code enthält keine gültige Server-Adresse.</string>
+    <string name="server_qr_error_credentials">Der Code enthält Zugangsdaten in der Adresse. Er wird nicht übernommen.</string>
+    <string name="server_qr_error_too_long">Der Code ist zu lang.</string>
 </resources>

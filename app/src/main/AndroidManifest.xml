@@ -21,6 +21,14 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
     <!-- Short buzz when a shake extends the sleep timer (normal permission, no prompt). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Only for scanning another device's server QR code in the setup form (docs/server-qr-code.md); asked for when the
+         user taps "QR-Code scannen", never before. Pictures are neither stored nor sent. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- No camera is needed: a device without one gets the app without the scan button. The permission alone would make
+         Google Play require a camera with autofocus, so every camera feature is named as optional. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
         android:name=".LauschigApp"

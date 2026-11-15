@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import io.wolftown.lauschig.serverqr.ServerQrError
 import io.wolftown.lauschig.ui.LauschigTheme
 import io.wolftown.lauschig.ui.common.accessibilityInfo
 import org.junit.Assert.assertEquals
@@ -191,5 +192,66 @@ class SetupScreenTest {
 
         restoration.emulateSavedInstanceStateRestore()
         assertTrue(rule.onNodeWithTag("setupPassword").isHidden())
+    }
+
+    // Server addresses from a QR code (docs/server-qr-code.md): the button is there wherever the addresses can be typed,
+    // and only on a device with a camera. What the last scan did stands under it.
+
+    private fun showForScan(state: SetupUiState, canScan: Boolean = true, onScan: () -> Unit = {}) = rule.setContent {
+        LauschigTheme { SetupScreen(state, {}, {}, {}, {}, {}, {}, {}, {}, {}, canScan = canScan, onScan = onScan) }
+    }
+
+    @Test fun theFirstForm_hasTheScanButton_andATapAsksForAScan() {
+        var scans = 0
+        showForScan(SetupUiState()) { scans++ }
+        rule.onNodeWithText("Scan QR code").assertExists()
+        rule.onNodeWithTag("scanQr").performClick()
+        assertEquals(1, scans)
+    }
+
+    @Test fun addingAProfile_hasTheScanButton() {
+        showForScan(SetupUiState(addProfile = true, nobodyActive = false))
+        rule.onNodeWithTag("scanQr").assertExists()
+    }
+
+    @Test fun onTheWayOfAForgottenPin_thereIsNoScanButton() {
+        showForScan(SetupUiState(unlockServerId = "aaaaaaaaaaaaaaaa", unlockName = "kind", public = "https://abs.example.org"))
+        rule.onNodeWithTag("setupScreen").assertExists()
+        rule.onNodeWithTag("scanQr").assertDoesNotExist()
+    }
+
+    @Test fun onADeviceWithoutACamera_thereIsNoScanButton() {
+        showForScan(SetupUiState(), canScan = false)
+        rule.onNodeWithTag("setupScreen").assertExists()
+        rule.onNodeWithTag("scanQr").assertDoesNotExist()
+    }
+
+    @Test fun afterAScan_theFormAsksToCheckTheAddresses() {
+        showForScan(SetupUiState(public = "https://abs.example.org", scanNote = SetupScanNote.Filled))
+        rule.onNodeWithContentDescription("Addresses taken from the QR code. Check them before you sign in.").assertExists()
+    }
+
+    @Test fun aRefusedCamera_saysThatTypingStillWorks() {
+        showForScan(SetupUiState(scanNote = SetupScanNote.CameraRefused))
+        rule.onNodeWithContentDescription("Without camera access you can still type the addresses.").assertExists()
+    }
+
+    @Test fun everyRefusedCode_hasItsOwnSentence() {
+        var state by mutableStateOf(SetupUiState())
+        rule.setContent { LauschigTheme { SetupScreen(state, {}, {}, {}, {}, {}, {}, {}, {}, {}, canScan = true) } }
+        val sentences = ServerQrError.entries.map { reason ->
+            state = SetupUiState(scanNote = SetupScanNote.Refused(reason))
+            rule.waitForIdle()
+            rule.onNodeWithTag("scanNote").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].single()
+        }
+        assertEquals(ServerQrError.entries.size, sentences.toSet().size)
+        assertTrue(sentences.none { it.isBlank() })
+        assertEquals("That is not a Lauschig server code.", sentences[ServerQrError.NOT_A_SERVER_CODE.ordinal])
+        assertEquals("The code has sign-in data inside an address. It is not used.", sentences[ServerQrError.CREDENTIALS.ordinal])
+    }
+
+    @Test fun withoutAScan_thereIsNoNote() {
+        showForScan(SetupUiState())
+        assertFalse(SemanticsProperties.ContentDescription in rule.onNodeWithTag("scanNote").fetchSemanticsNode().config)
     }
 }

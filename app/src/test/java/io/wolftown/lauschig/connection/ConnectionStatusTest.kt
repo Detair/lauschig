@@ -49,6 +49,19 @@ class ConnectionStatusTest {
         assertFalse(ui(onHome = true).addresses.first { it.via == ConnectionState.Via.LOCAL }.onlyAtHome)
     }
 
+    @Test fun theServerQrCode_isTheTwoAddresses_andNothingElseOfTheAccount() {
+        val code = ui().serverQr!!
+        assertEquals("lauschig://server?v=1&local=http%3A%2F%2F192.168.1.5%3A13378&public=https%3A%2F%2Fabs.example.org", code.text)
+        assertEquals(listOf("http://192.168.1.5:13378", "https://abs.example.org"), code.addresses)
+        listOf("fabian", "geheim", "Home", "u1", "0123456789abcdef").forEach { assertFalse(it, code.toString().contains(it)) }
+    }
+
+    @Test fun withoutAServer_thereIsNoServerQrCode() {
+        assertEquals(null, ConnectionStatusMapper.map(null, ConnectionState.Offline, false, ConnectionLogState(), null, null, null, null).serverQr)
+        val nowhere = account.copy(addresses = ServerAddresses(null, null, setOf("Home")))
+        assertEquals(null, ConnectionStatusMapper.map(nowhere, ConnectionState.Offline, false, ConnectionLogState(), null, null, null, null).serverQr)
+    }
+
     @Test fun notSignedIn_hasNoAddresses() {
         val u = ConnectionStatusMapper.map(null, ConnectionState.Offline, false, ConnectionLogState(), null, null, null, null)
         assertFalse(u.signedIn)

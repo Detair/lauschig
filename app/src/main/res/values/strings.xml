@@ -1145,4 +1145,23 @@
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
     </plurals>
+    <string name="server_qr_show">Server addresses as QR code</string>
+    <string name="server_qr_show_hint">For setting up another device</string>
+    <string name="server_qr_title">Server addresses</string>
+    <string name="server_qr_description">QR code with the server addresses</string>
+    <string name="server_qr_only_addresses">Contains only the server addresses, no account and no password.</string>
+    <string name="server_qr_how">On the new device, tap “Scan QR code” during setup.</string>
+    <string name="server_qr_close">Close</string>
+    <string name="server_qr_scan">Scan QR code</string>
+    <string name="server_qr_scan_close">Close camera</string>
+    <string name="server_qr_scan_hint">Point the camera at the QR code another device shows under Settings → Connection status.</string>
+    <string name="server_qr_scan_no_camera">The camera cannot be used. Close this page and type the addresses.</string>
+    <string name="server_qr_note_filled">Addresses taken from the QR code. Check them before you sign in.</string>
+    <string name="server_qr_note_camera_refused">Without camera access you can still type the addresses.</string>
+    <string name="server_qr_error_not_a_code">That is not a Lauschig server code.</string>
+    <string name="server_qr_error_version">This code comes from another version of Lauschig.</string>
+    <string name="server_qr_error_no_address">The code contains no server address.</string>
+    <string name="server_qr_error_bad_address">The code contains no valid server address.</string>
+    <string name="server_qr_error_credentials">The code has sign-in data inside an address. It is not used.</string>
+    <string name="server_qr_error_too_long">The code is too long.</string>
 </resources>
