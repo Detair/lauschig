@@ -12,9 +12,10 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request replaces the run of the older one. Runs on main and release runs always finish.
+# A newer push to a pull request replaces the run of the older one. Every commit on main and every release gets its
+# own run, and those always finish.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
