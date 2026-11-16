@@ -1,7 +1,8 @@
 name: Release
 
-# A tag v* builds the signed bundle (for Play) and the signed APK, then publishes the APK as a GitHub release.
-# Run it by hand (workflow_dispatch) for a dry run: it builds and checks both, but publishes nothing.
+# A tag v* on main: checks, then the signed bundle (for Play) and the signed APK, then the GitHub release.
+# Run by hand (workflow_dispatch) it is a dry run: the same checks and an unsigned release build, nothing is signed
+# and nothing is published. The signing values live in the environment "release", which only tags v* may use.
 
 on:
   push:
@@ -12,9 +13,55 @@ on:
 permissions:
   contents: read
 
+# Two runs for the same tag never overlap, and a running release is never cancelled.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Public: the SHA-256 of the certificate every Lauschig release is signed with (each release prints it in its notes).
+  # A build signed with anything else is not published.
+  SIGNER_SHA256: b1a40701ffd33eb1ed0091a2e9bdf70e2a020fec3ea4ec3b0ce9c3fbca56c811
+
 jobs:
+  # Cheap checks first: a wrong tag or missing notes fail in seconds, not after the build.
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Version, release notes and branch
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          version="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$version" || { echo "Could not read versionName from app/build.gradle.kts"; exit 1; }
+          echo "versionName: $version"
+          if [ -n "$TAG" ]; then
+            if [ "$TAG" != "v$version" ]; then
+              echo "Tag $TAG does not match versionName $version in app/build.gradle.kts"; exit 1
+            fi
+            if ! git merge-base --is-ancestor "${GITHUB_SHA}^{commit}" origin/main; then
+              echo "Tag $TAG is not on main: releases are cut from main only"; exit 1
+            fi
+          fi
+          notes="docs/release-notes/v$version.md"
+          test -f "$notes" || { echo "Release notes $notes are missing"; exit 1; }
+
+  # The same tests, lint and builds as every pull request, on exactly the commit that is released.
+  verify:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
   build:
-    runs-on: ubuntu-latest
+    needs: verify
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -49,7 +96,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.keystore"
       - name: Check the APK and name the release files
         env:
-          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          TAG: ${{ github.ref_name }}
         run: |
           apk=app/build/outputs/apk/release/app-release.apk
           test -f "$apk" || { echo "No signed APK (an unsigned build is named app-release-unsigned.apk)"; exit 1; }
@@ -59,8 +106,8 @@ jobs:
           if grep -q 'CN=Android Debug' signature.txt; then echo "The APK is debug-signed"; exit 1; fi
           version="$("$tools/aapt2" dump badging "$apk" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
           test -n "$version" || { echo "Could not read versionName from the APK"; exit 1; }
-          if [ -n "$TAG" ] && [ "$TAG" != "v$version" ]; then
-            echo "Tag $TAG does not match versionName $version in app/build.gradle.kts"; exit 1
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match versionName $version in the APK"; exit 1
           fi
           mkdir dist
           cp "$apk" "dist/lauschig-$version.apk"
@@ -69,6 +116,9 @@ jobs:
           # ("V3.0 Signer: certificate SHA-256 digest: …"). Exactly one certificate must sign the APK.
           grep -o 'certificate SHA-256 digest: [0-9a-f]*' signature.txt | awk '{ print $4 }' | sort -u > dist/signer-sha256.txt
           test "$(grep -c . dist/signer-sha256.txt)" -eq 1 || { echo "Expected exactly one signer certificate"; exit 1; }
+          if [ "$(cat dist/signer-sha256.txt)" != "$SIGNER_SHA256" ]; then
+            echo "The APK is signed with another certificate than every release before it"; exit 1
+          fi
       - name: Upload AAB
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -85,7 +135,8 @@ jobs:
   publish:
     needs: build
     if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
