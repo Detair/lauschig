@@ -57,3 +57,13 @@ jobs:
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: /language:${{ matrix.language }}
+          output: sarif-results
+      # The result file also says how many lines of Kotlin the scan really covered (`metricResults`): the one number
+      # that tells a working scan from one that saw no code.
+      - name: Upload the result file
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: codeql-${{ matrix.language }}
+          path: sarif-results/
+          retention-days: 14
