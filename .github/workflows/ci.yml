@@ -31,6 +31,13 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      # Robolectric fetches its Android images from Maven Central while the tests run, outside Gradle and its cache.
+      # Kept from run to run, so a hiccup of Maven Central does not fail the tests.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
+          restore-keys: robolectric-
       - name: Unit tests
         # testDebugUnitTest covers :app and :core:database; the plain Kotlin modules run their tests with `test`.
         run: ./gradlew testDebugUnitTest :abs-api:test :core:model:test
@@ -105,6 +112,13 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      # Robolectric fetches its Android images from Maven Central while the tests run, outside Gradle and its cache.
+      # Kept from run to run, so a hiccup of Maven Central does not fail the tests.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
+          restore-keys: robolectric-
       - name: Unit tests with ReadMeABook switched on
         run: ./gradlew testDebugUnitTest -Plauschig.rmab=true
       - name: Upload test reports
