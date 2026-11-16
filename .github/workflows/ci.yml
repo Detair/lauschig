@@ -1,15 +1,27 @@
 name: CI
 
+# Runs once per change: on every pull request, and on main after a merge. A branch without a pull request is not
+# built (open a draft). The release workflow calls this file too, so nothing is signed that has not passed here.
+
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
+# A newer push to a pull request replaces the run of the older one. Every commit on main and every release gets its
+# own run, and those always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -19,13 +31,88 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
-      - name: Build and test
-        # lint and testDebugUnitTest cover :app and :core:database (and lint :core:model); the plain Kotlin modules
-        # run their tests with `test`.
-        run: ./gradlew lint testDebugUnitTest :abs-api:test :core:model:test assembleDebug
+      - name: Unit tests
+        # testDebugUnitTest covers :app and :core:database; the plain Kotlin modules run their tests with `test`.
+        run: ./gradlew testDebugUnitTest :abs-api:test :core:model:test
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 14
+
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      - name: Lint
+        run: ./gradlew lint
+      - name: Upload lint reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lint-reports
+          path: "**/build/reports/lint-results-*"
+          retention-days: 14
+
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      - name: Debug and release build
+        # The release build runs R8 and resource shrinking, the part a debug build never sees. There are no signing
+        # values here, so it stays unsigned.
+        run: ./gradlew assembleDebug assembleRelease
       - name: Upload debug APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: lauschig-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
+
+  # ReadMeABook is switched off by default (`lauschig.rmab`). Its code stays in the repository, so the tests run once
+  # more with the switch on after every merge: a break shows up on main, without doubling the time of every pull request.
+  test-rmab:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      - name: Unit tests with ReadMeABook switched on
+        run: ./gradlew testDebugUnitTest -Plauschig.rmab=true
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-reports-rmab
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 14

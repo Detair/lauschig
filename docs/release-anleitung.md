@@ -71,30 +71,47 @@ keytool -list -v -keystore ~/keys/lauschig-release.jks -alias lauschig | grep SH
 
 ## 4. GitHub-Secrets setzen
 
+Die vier Werte liegen in der Umgebung `release` des Repos, nicht bei den allgemeinen Repo-Secrets. Nur ein Lauf für einen Tag `v*` darf diese Umgebung benutzen. Ein Lauf von einem beliebigen Branch kommt an die Werte nicht heran.
+
 `gh secret set` fragt den Wert interaktiv ab – so landet das Passwort nicht in der Shell-History.
 
 ```bash
-base64 -w0 ~/keys/lauschig-release.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig
+base64 -w0 ~/keys/lauschig-release.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig --env release
 ```
 ```bash
-gh secret set LAUSCHIG_KEYSTORE_PASSWORD --repo Detair/lauschig
+gh secret set LAUSCHIG_KEYSTORE_PASSWORD --repo Detair/lauschig --env release
 ```
 ```bash
-gh secret set LAUSCHIG_KEY_PASSWORD --repo Detair/lauschig
+gh secret set LAUSCHIG_KEY_PASSWORD --repo Detair/lauschig --env release
 ```
 (beide Male dasselbe Passwort aus Schritt 3)
 ```bash
-printf lauschig | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig
+printf lauschig | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig --env release
 ```
 Prüfen:
 ```bash
-gh secret list --repo Detair/lauschig
+gh secret list --repo Detair/lauschig --env release
 ```
 Es müssen genau die vier `LAUSCHIG_*`-Einträge erscheinen.
 
+Liegen die vier Werte noch zusätzlich bei den allgemeinen Repo-Secrets (Stand vor dem 2026-11-16), dort löschen, sobald sie in der Umgebung stehen:
+```bash
+gh secret list --repo Detair/lauschig
+```
+```bash
+for s in LAUSCHIG_KEYSTORE_BASE64 LAUSCHIG_KEYSTORE_PASSWORD LAUSCHIG_KEY_ALIAS LAUSCHIG_KEY_PASSWORD; do gh secret delete "$s" --repo Detair/lauschig; done
+```
+
 ## 5. Release bauen (per Tag)
 
-Probelauf ohne Veröffentlichung: baut und prüft `.aab` und APK, legt aber kein Release an.
+Der Workflow „Release“ läuft in vier Schritten:
+
+1. **Vorprüfung** (Sekunden): Der Tag passt zu `versionName`, der Tag liegt auf `main`, `docs/release-notes/<tag>.md` ist da.
+2. **Prüfen:** dieselben Tests, derselbe Lint und dieselben Builds wie bei jedem PR, auf genau dem Commit des Tags.
+3. **Signiert bauen:** `.aab` und APK mit den Werten aus der Umgebung `release`. Der Lauf bricht ab, wenn die APK debug-signiert oder unsigniert ist, wenn die Version nicht zum Tag passt oder wenn sie mit einem anderen Zertifikat signiert ist als alle Releases davor.
+4. **Veröffentlichen:** GitHub-Release mit APK, Prüfsumme und Zertifikats-Fingerabdruck. Tags `v0.*` werden Vorabversionen.
+
+Probelauf: Er macht die Schritte 1 und 2 und baut das Release unsigniert. Er signiert nichts und veröffentlicht nichts.
 ```bash
 gh workflow run Release --repo Detair/lauschig --ref main
 ```
@@ -103,9 +120,12 @@ Das echte Release:
 ```bash
 git tag -a v0.6.0 -m "Lauschig 0.6.0" && git push origin v0.6.0
 ```
-Der Workflow „Release“ baut das signierte `.aab` und die signierte APK. Er bricht ab, wenn die APK debug-signiert oder unsigniert ist, wenn der Tag nicht zu `versionName` passt oder wenn `docs/release-notes/<tag>.md` fehlt. Dann legt er das GitHub-Release mit `lauschig-<version>.apk`, der SHA-256-Prüfsumme und dem Fingerprint des Zertifikats an. Bis 1.0 ist jedes Release als Vorabversion markiert. Fortschritt:
 ```bash
 gh run list --repo Detair/lauschig --workflow Release --limit 1
+```
+Scheitert Schritt 3 an einem falschen Secret: den Wert in der Umgebung `release` korrigieren (Schritt 4 dieser Anleitung) und nur die fehlgeschlagenen Jobs neu starten. Der Tag bleibt, wo er ist.
+```bash
+gh run rerun <Lauf-Nummer> --repo Detair/lauschig --failed
 ```
 Das `.aab` für Play herunterladen, wenn grün:
 ```bash
@@ -119,6 +139,21 @@ Alternative ohne GitHub (lokal signieren):
 LAUSCHIG_KEYSTORE=~/keys/lauschig-release.jks LAUSCHIG_KEY_ALIAS=lauschig LAUSCHIG_KEYSTORE_PASSWORD='…' LAUSCHIG_KEY_PASSWORD='…' timeout 20m ./gradlew :app:bundleRelease
 ```
 (Passwörter landen dabei in der History – Variante über Tag bevorzugen.)
+
+### CI und Schutzregeln (Stand 2026-11-16)
+
+| Was | Wie |
+|---|---|
+| Prüfung je PR | Workflow „CI“ mit drei Jobs nebeneinander: `test` (Unit-Tests), `lint`, `build` (Debug-Build und unsignierter Release-Build mit R8). Ein neuer Push bricht den alten Lauf desselben PRs ab. |
+| Nach dem Merge | Dieselben drei Jobs auf `main`, dazu `test-rmab` (alle Tests mit `-Plauschig.rmab=true`) und der Workflow „Dependency graph“. |
+| Berichte | Scheitert ein Job, hängen Test- und Lint-Berichte 14 Tage am Lauf (`gh run download`). |
+| `main` | Nur über einen PR, und nur wenn `test`, `lint` und `build` grün sind. Kein Force-Push, kein Löschen. |
+| Tags `v*` | Lassen sich nicht löschen und nicht verschieben. |
+| Actions | Nur mit festem Commit-Hash. Dependabot schlägt neue Versionen vor. |
+| Abhängigkeiten | Dependabot warnt bei bekannten Lücken und öffnet Sicherheits-Updates sofort; normale Gradle-Updates einmal im Monat gebündelt. |
+| Code-Scanning | CodeQL für Kotlin und die Workflow-Dateien, Funde im Reiter „Security“. |
+
+Die Regeln für `main` und die Tags stehen unter Settings → Rules → Rulesets. Für einen Notfall lässt sich ein Regelsatz dort abschalten.
 
 ## 6. Play Console einrichten
 

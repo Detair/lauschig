@@ -1,0 +1,33 @@
+name: Dependency graph
+
+# Sends the libraries the app ships with (also the indirect ones) to GitHub after every merge, so that Dependabot can
+# warn about known vulnerabilities in them. Build tools and test libraries are left out: they are not in the app.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-graph
+  cancel-in-progress: true
+
+jobs:
+  submit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # the dependency submission API asks for it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        with:
+          dependency-graph-include-configurations: "releaseRuntimeClasspath|runtimeClasspath"
