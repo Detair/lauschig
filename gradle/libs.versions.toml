@@ -49,6 +49,9 @@ palette = "1.1.0"
 # Google Play services (no ML Kit). 3.5.4 and 1.6.2 are the latest stable versions.
 zxing = "3.5.4"
 camera = "1.6.2"
+# Compose for TV (focus-aware buttons, surfaces, theme) for the Google TV interface; 1.1.0 is the latest stable and is
+# built against Compose 1.10.
+tvMaterial = "1.1.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -113,6 +116,7 @@ androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", versi
 androidx-glance-appwidget-testing = { module = "androidx.glance:glance-appwidget-testing", version.ref = "glance" }
 androidx-compose-material3-adaptive = { module = "androidx.compose.material3.adaptive:adaptive", version.ref = "adaptive" }
 androidx-compose-material3-adaptive-layout = { module = "androidx.compose.material3.adaptive:adaptive-layout", version.ref = "adaptive" }
+androidx-tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
 androidx-palette = { module = "androidx.palette:palette", version.ref = "palette" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
