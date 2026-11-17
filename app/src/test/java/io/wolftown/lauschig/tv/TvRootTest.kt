@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Text
 import io.wolftown.lauschig.AppPages
+import io.wolftown.lauschig.MainActivity
+import io.wolftown.lauschig.tv.nav.TvPlayer
 import io.wolftown.lauschig.tv.nav.TvHome
 import io.wolftown.lauschig.tv.nav.TvProfiles
 import androidx.navigation.NavHostController
@@ -20,6 +22,7 @@ import io.wolftown.lauschig.ui.nav.AccountPagesScope
 import io.wolftown.lauschig.ui.nav.ProfilePicker
 import io.wolftown.lauschig.ui.nav.Start
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -129,5 +132,72 @@ class TvRootTest {
         pages = AppPages("bbbb", Start)
         rule.waitForIdle()
         rule.onNodeWithText("bbbb home").assertExists()
+    }
+
+    private var request by mutableStateOf<String?>(null)
+    private var loaded = true
+
+    /** The real host's order: the pages, then the request on top of them. */
+    private fun showWithRequest(): () -> NavHostController {
+        lateinit var nav: NavHostController
+        rule.setContent {
+            TvAccountPages(pages, count, scope) { account, start ->
+                AccountNavHost(account, start) {
+                    composable<TvProfiles> { Text("who is listening") }
+                    composable<TvHome> { Text("home") }
+                    composable<TvPlayer> { Text("player") }
+                }
+                TvOpenRequest(account.controller, request, onHandled = { request = null }) { loaded }
+                nav = account.controller
+            }
+        }
+        return { nav }
+    }
+
+    private fun back(nav: NavHostController) {
+        rule.runOnIdle { nav.popBackStack() }
+        rule.waitForIdle()
+    }
+
+    /** From the now-playing card into a fresh start: the player, and Back from it leads to the start page (review focus 3). */
+    @Test fun openPlayer_withoutHistory_backLeadsToTheStartPage() {
+        count = 1
+        request = MainActivity.OPEN_PLAYER
+        val nav = showWithRequest()
+        rule.onNodeWithText("player").assertExists()
+        rule.runOnIdle { assertNull(request) }
+        back(nav())
+        rule.onNodeWithText("home").assertExists()
+    }
+
+    /** With several profiles the question comes first; the player waits for its answer and then opens on top of home. */
+    @Test fun openPlayer_waitsForWhoIsListening() {
+        request = MainActivity.OPEN_PLAYER
+        val nav = showWithRequest()
+        rule.onNodeWithText("who is listening").assertExists()
+        rule.runOnIdle { assertEquals(MainActivity.OPEN_PLAYER, request) }
+        rule.runOnIdle { nav().navigate(TvHome) { popUpTo<TvProfiles> { inclusive = true } } }
+        rule.waitForIdle()
+        rule.onNodeWithText("player").assertExists()
+        back(nav())
+        rule.onNodeWithText("home").assertExists()
+    }
+
+    @Test fun openPlayer_withNothingLoaded_staysWhereItIs() {
+        count = 1
+        loaded = false
+        request = MainActivity.OPEN_PLAYER
+        showWithRequest()
+        rule.onNodeWithText("home").assertExists()
+        rule.onNodeWithText("player").assertDoesNotExist()
+        rule.runOnIdle { assertNull(request) }
+    }
+
+    @Test fun aRequestTheTvHasNoPageFor_isLetGo() {
+        count = 1
+        request = MainActivity.OPEN_CLEANUP
+        showWithRequest()
+        rule.onNodeWithText("home").assertExists()
+        rule.runOnIdle { assertNull(request) }
     }
 }
