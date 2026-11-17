@@ -122,7 +122,7 @@ private fun HomeRows(rows: List<HomeRow>) {
     var focusedRow by rememberSaveable { mutableStateOf<String?>(null) }
     var inside by remember { mutableStateOf(false) }
     val keys = rows.map { it.key }
-    val requesters = remember { HashMap<String, FocusRequester>() }
+    val requesters = remember { RowFocus() }
     val columnState = rememberLazyListState()
     val pending = remember { Pending() }
     // Decided while composing, before the row leaves: afterwards the focus is already gone. The focus goes to the row now in
@@ -139,7 +139,7 @@ private fun HomeRows(rows: List<HomeRow>) {
         pending.entered = true
         pending.refocus = null
         columnState.bringIntoReach(keys.indexOf(key))
-        requesters.getOrPut(key) { FocusRequester() }.requestFocusWhenPlaced()
+        requesters.of(key).requestFocusWhenPlaced()
     }
     LazyColumn(
         Modifier.fillMaxSize().onFocusChanged { inside = it.hasFocus },
@@ -150,10 +150,17 @@ private fun HomeRows(rows: List<HomeRow>) {
         items(rows, key = { it.key }) { row ->
             row.content(
                 Modifier.testTag(TAG_ROW + row.key).onFocusChanged { if (it.hasFocus) focusedRow = row.key },
-                requesters.getOrPut(row.key) { FocusRequester() },
+                requesters.of(row.key),
             )
         }
     }
+}
+
+/** One requester per row, kept for as long as the page: it reaches the card the row remembers. */
+private class RowFocus {
+    private val byRow = HashMap<String, FocusRequester>()
+
+    fun of(key: String): FocusRequester = byRow.getOrPut(key) { FocusRequester() }
 }
 
 /** What the focus still has to do; plain fields, not state: they are read and written around a composition. */

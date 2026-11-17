@@ -42,7 +42,7 @@ class TvRootTest {
     private var count by mutableStateOf<Int?>(2)
 
     @Composable
-    private fun content() = TvAccountPages(pages, count, scope) { account, start ->
+    private fun Content() = TvAccountPages(pages, count, scope) { account, start ->
         probes[pages.owner] = viewModel<Probe>(viewModelStoreOwner = account.models)
         Text("${pages.owner} starts on $start")
     }
@@ -50,26 +50,26 @@ class TvRootTest {
     private fun shows(owner: String?, start: Any) = rule.onNodeWithText("$owner starts on $start").assertExists()
 
     @Test fun severalProfiles_askWhoIsListening_evenWithOneActive() {
-        rule.setContent { content() }
+        rule.setContent { Content() }
         shows("aaaa", TvProfiles)
     }
 
     @Test fun oneProfile_startsOnTheStartPage() {
         count = 1
-        rule.setContent { content() }
+        rule.setContent { Content() }
         shows("aaaa", TvHome)
     }
 
     @Test fun nobodyActive_isAskedAnyway() {
         count = 1
         pages = AppPages(null, ProfilePicker)
-        rule.setContent { content() }
+        rule.setContent { Content() }
         shows(null, TvProfiles)
     }
 
     @Test fun untilTheProfilesAreRead_nothingShows() {
         count = null
-        rule.setContent { content() }
+        rule.setContent { Content() }
         rule.onNodeWithText("starts on", substring = true).assertDoesNotExist()
         count = 2
         rule.waitForIdle()
@@ -78,7 +78,7 @@ class TvRootTest {
 
     /** Asked once per start: the profile chosen there starts on its start page, and the pages before end with their view models. */
     @Test fun afterASwitch_theNextProfileStartsAtHome_andNothingOfTheFirstStays() {
-        rule.setContent { content() }
+        rule.setContent { Content() }
         shows("aaaa", TvProfiles)
         val first = probes.getValue("aaaa")
         pages = AppPages("bbbb", Start)
@@ -91,7 +91,7 @@ class TvRootTest {
 
     @Test fun aRecreation_doesNotAskAgain_butKeepsThePagesItHas() {
         val tester = StateRestorationTester(rule)
-        tester.setContent { content() }
+        tester.setContent { Content() }
         shows("aaaa", TvProfiles)
         tester.emulateSavedInstanceStateRestore()
         // The first pages keep the start they were built on: their back stack comes back on top of it.
