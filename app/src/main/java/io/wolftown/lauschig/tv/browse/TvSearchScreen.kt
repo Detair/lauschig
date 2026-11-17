@@ -13,16 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -39,6 +42,8 @@ import io.wolftown.lauschig.tv.common.TvCardRow
 import io.wolftown.lauschig.tv.common.TvCoverCard
 import io.wolftown.lauschig.tv.common.TvFacetCard
 import io.wolftown.lauschig.tv.common.TvTextField
+import io.wolftown.lauschig.tv.common.bringIntoReach
+import io.wolftown.lauschig.tv.common.requestFocusWhenPlaced
 import io.wolftown.lauschig.tv.nav.LocalRailHasFocus
 import io.wolftown.lauschig.ui.nav.BrowseKind
 import io.wolftown.lauschig.ui.search.SearchUiState
@@ -90,11 +95,14 @@ fun TvSearchScreen(
     val field = remember { FocusRequester() }
     var editing by remember { mutableStateOf(false) }
     val railHasFocus = LocalRailHasFocus.current
-    LaunchedEffect(Unit) { if (!railHasFocus()) field.requestFocus() }
+    // The result row the focus was last in; null while it is on the field. Saved, so that coming back from a result lands
+    // on it again, as on the start page.
+    var focusedRow by rememberSaveable { mutableStateOf<String?>(null) }
     val shownResults = state.titles.isNotEmpty() || state.series.isNotEmpty() || state.authors.isNotEmpty() || state.narrators.isNotEmpty()
+    LaunchedEffect(Unit) { if (!railHasFocus() && (focusedRow == null || !shownResults)) field.requestFocus() }
 
     Column(Modifier.fillMaxSize().padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Box(Modifier.widthIn(max = FIELD_WIDTH).padding(end = 12.dp)) {
+        Box(Modifier.widthIn(max = FIELD_WIDTH).padding(end = 12.dp).onFocusChanged { if (it.hasFocus) focusedRow = null }) {
             TvTextField(
                 value = state.query,
                 onValueChange = onQuery,
@@ -137,7 +145,11 @@ fun TvSearchScreen(
                     }
                 }
             }
-            shownResults -> Results(state, onOpenItem, onOpenBrowse)
+            shownResults -> Results(
+                state, onOpenItem, onOpenBrowse,
+                focusedRow = focusedRow, onRowFocused = { focusedRow = it },
+                onBackToNothing = { field.requestFocus() },
+            )
             state.searched -> Text(
                 stringResource(R.string.search_nothing_found, state.resultsFor),
                 style = MaterialTheme.typography.titleLarge,
@@ -161,20 +173,33 @@ private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.
 /** One row of results. */
 private class ResultRow(val key: String, val content: @Composable (Modifier) -> Unit)
 
+/**
+ * The rows. Coming back to the page with the focus last in [focusedRow], it goes there again (the row keeps its card); if
+ * that row is gone, to the field ([onBackToNothing]).
+ */
 @Composable
-private fun Results(state: SearchUiState, onOpenItem: (String) -> Unit, onOpenBrowse: (BrowseKind, String) -> Unit) {
+private fun Results(
+    state: SearchUiState,
+    onOpenItem: (String) -> Unit,
+    onOpenBrowse: (BrowseKind, String) -> Unit,
+    focusedRow: String?,
+    onRowFocused: (String) -> Unit,
+    onBackToNothing: () -> Unit,
+) {
+    val requesters = remember { HashMap<String, FocusRequester>() }
+    fun requester(key: String) = requesters.getOrPut(key) { FocusRequester() }
     val volumes = @Composable { f: Facet -> pluralStringResource(R.plurals.discover_volumes, f.count, f.count) }
     val titles = @Composable { f: Facet -> pluralStringResource(R.plurals.browse_title_count, f.count, f.count) }
     val facetRow = { key: String, heading: Int, facets: List<Facet>, kind: BrowseKind, count: @Composable (Facet) -> String ->
         ResultRow(key) { modifier ->
-            TvCardRow(stringResource(heading), facets, key = { it.name }, modifier = modifier) { facet, cardModifier ->
+            TvCardRow(stringResource(heading), facets, key = { it.name }, modifier = modifier, focusRequester = requester(key)) { facet, cardModifier ->
                 TvFacetCard(facet.name, count(facet), facet.coverItemId, "$key:${facet.name}", { onOpenBrowse(kind, facet.name) }, cardModifier)
             }
         }.takeIf { facets.isNotEmpty() }
     }
     val rows = listOfNotNull(
         ResultRow("titles") { modifier ->
-            TvCardRow(stringResource(R.string.search_titles), state.titles, key = { it.key }, modifier = modifier) { item, cardModifier ->
+            TvCardRow(stringResource(R.string.search_titles), state.titles, key = { it.key }, modifier = modifier, focusRequester = requester("titles")) { item, cardModifier ->
                 TvCoverCard(item, { onOpenItem(item.id) }, cardModifier)
             }
         }.takeIf { state.titles.isNotEmpty() },
@@ -182,11 +207,24 @@ private fun Results(state: SearchUiState, onOpenItem: (String) -> Unit, onOpenBr
         facetRow("authors", R.string.search_authors, state.authors, BrowseKind.AUTHOR, titles),
         facetRow("narrators", R.string.search_narrators, state.narrators, BrowseKind.NARRATOR, titles),
     )
+    val list = rememberLazyListState()
+    val railHasFocus = LocalRailHasFocus.current
+    LaunchedEffect(Unit) {
+        val back = focusedRow ?: return@LaunchedEffect
+        if (railHasFocus()) return@LaunchedEffect
+        val index = rows.indexOfFirst { it.key == back }
+        if (index < 0) return@LaunchedEffect onBackToNothing()
+        list.bringIntoReach(index)
+        if (!requester(back).requestFocusWhenPlaced()) onBackToNothing()
+    }
     LazyColumn(
         Modifier.fillMaxWidth(),
+        state = list,
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(rows, key = { it.key }) { row -> row.content(Modifier.testTag(TAG_SEARCH_ROW + row.key)) }
+        items(rows, key = { it.key }) { row ->
+            row.content(Modifier.testTag(TAG_SEARCH_ROW + row.key).onFocusChanged { if (it.hasFocus) onRowFocused(row.key) })
+        }
     }
 }

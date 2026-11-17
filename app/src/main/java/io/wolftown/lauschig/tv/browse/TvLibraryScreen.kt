@@ -5,11 +5,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -102,6 +102,7 @@ fun TvLibraryScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LibraryContent(
     state: DiscoverUiState,
@@ -116,19 +117,27 @@ private fun LibraryContent(
     val takeFocus = !started.value
     SideEffect { started.value = true }
     Column(Modifier.fillMaxSize().padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Label(stringResource(R.string.tv_library_show))
-            Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip(stringResource(R.string.search_titles), !showSeries, TAG_SHOW_TITLES) { onShowSeries(false) }
-                Chip(stringResource(R.string.discover_series), showSeries, TAG_SHOW_SERIES) { onShowSeries(true) }
+        // Two groups that wrap as a whole: the open rail leaves less room, and a group must not be squeezed.
+        FlowRow(
+            Modifier.fillMaxWidth().padding(start = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(32.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Label(stringResource(R.string.tv_library_show))
+                Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip(stringResource(R.string.search_titles), !showSeries, TAG_SHOW_TITLES) { onShowSeries(false) }
+                    Chip(stringResource(R.string.discover_series), showSeries, TAG_SHOW_SERIES) { onShowSeries(true) }
+                }
             }
             // The sort applies to the titles only; the series keep their order.
             if (!showSeries) {
-                Spacer(Modifier.width(32.dp))
-                Label(stringResource(R.string.tv_library_sort))
-                Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DiscoverSort.entries.forEach { sort ->
-                        Chip(stringResource(sort.label()), state.sort == sort, TAG_SORT + sort.name) { onSort(sort) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label(stringResource(R.string.tv_library_sort))
+                    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DiscoverSort.entries.forEach { sort ->
+                            Chip(stringResource(sort.label()), state.sort == sort, TAG_SORT + sort.name) { onSort(sort) }
+                        }
                     }
                 }
             }

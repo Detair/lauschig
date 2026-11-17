@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ListItem
@@ -193,7 +194,8 @@ private fun ItemContent(
                 state.narrator?.let { Secondary(stringResource(R.string.detail_quick_narrator, it)) }
                 state.durationSec.takeIf { it > 0 }?.let { Secondary(stringResource(R.string.detail_quick_length, listenedText(it))) }
                 SeriesLine(state, onOpenSeries)
-                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Room between the buttons for the focused one to grow.
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     ActionButton(primaryLabel(state.primary), Icons.Rounded.PlayArrow, playable, onPrimary, Modifier.focusRequester(primary).testTag(TAG_PRIMARY), filled = true)
                     // Only with progress: without any, the main button already starts at the beginning.
                     if (state.primary != PrimaryAction.Play) {
@@ -258,7 +260,14 @@ private fun ActionButton(text: String, icon: ImageVector, enabled: Boolean, onCl
         Text(text)
     }
     // Focusable also while it is off: the person sees it is there, and the hint below says why it is off.
-    if (filled) Button(onClick = onClick, enabled = enabled, modifier = modifier) { content() }
+    // The main button in the accent colour: the one to press, seen at a glance from the sofa.
+    if (filled) {
+        val scheme = MaterialTheme.colorScheme
+        Button(
+            onClick = onClick, enabled = enabled, modifier = modifier,
+            colors = ButtonDefaults.colors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
+        ) { content() }
+    }
     else OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { content() }
 }
 

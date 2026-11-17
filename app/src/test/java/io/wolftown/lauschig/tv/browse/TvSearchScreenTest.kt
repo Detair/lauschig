@@ -167,4 +167,37 @@ class TvSearchScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag(cardTag("t1")).assertIsFocused()
     }
+
+    /** As after Back from a result: the page comes again, and the focus is on the card it was on. */
+    @Test fun comingBack_landsOnTheResultItLeftFrom() {
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+            TvTheme { if (shown) pages.SaveableStateProvider("search") { Screen(found) } }
+        }
+        press(Key.DirectionDown)
+        press(Key.DirectionRight)
+        press(Key.DirectionCenter)
+        shown = false
+        rule.waitForIdle()
+        shown = true
+        rule.waitForIdle()
+        rule.onNodeWithTag(cardTag("t2")).assertIsFocused()
+    }
+
+    @Test fun comingBack_fromTheField_landsOnTheField() {
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+            TvTheme { if (shown) pages.SaveableStateProvider("search") { Screen(found) } }
+        }
+        press(Key.DirectionDown)
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(TAG_SEARCH_FIELD).assertIsFocused()
+        shown = false
+        rule.waitForIdle()
+        shown = true
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_SEARCH_FIELD).assertIsFocused()
+    }
 }
