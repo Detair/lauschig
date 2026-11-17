@@ -7,7 +7,8 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.isFocused
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -24,7 +25,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class, qualifiers = TV_QUALIFIERS)
 class TvPinPadTest {
-    @get:Rule val rule = createComposeRule()
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val submitted = mutableListOf<String>()
     private var cancelled = 0
@@ -117,9 +118,11 @@ class TvPinPadTest {
         rule.onNodeWithTag(TAG_PIN_DIGIT + '5').assertIsNotEnabled()
     }
 
+    /** Through the activity's back dispatcher: how Back arrives on newer Android, and what a key nobody takes ends in. */
     @Test fun back_cancels() {
         show()
-        press(Key.Back)
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
         assertEquals(1, cancelled)
         assertEquals(emptyList<String>(), submitted)
     }

@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.tv.profiles
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.Card
@@ -54,7 +58,12 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.ProfileLockKind
 import io.wolftown.lauschig.tv.TvDimens
 import io.wolftown.lauschig.tv.common.requestFocusWhenPlaced
+import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.profiles.GatePrompt
+import io.wolftown.lauschig.ui.profiles.PROFILE_BUSY_SLOW_MS
+import io.wolftown.lauschig.ui.profiles.ProfileOutcome
+import io.wolftown.lauschig.ui.profiles.ProfileWork
+import io.wolftown.lauschig.ui.profiles.profileOutcomeText
 import io.wolftown.lauschig.ui.profiles.ProfileRow
 import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
 import io.wolftown.lauschig.ui.profiles.SignInReason
@@ -68,6 +77,9 @@ internal const val TAG_PIN_FORGOT = "tvPinForgot"
 internal const val TAG_SIGN_IN_DIALOG = "tvSignInDialog"
 internal const val TAG_SIGN_IN = "tvSignIn"
 internal const val TAG_SIGN_IN_CANCEL = "tvSignInCancel"
+internal const val TAG_PROFILE_BUSY = "tvProfileBusy"
+internal const val TAG_OUTCOME_DIALOG = "tvProfileOutcome"
+internal const val TAG_OUTCOME_OK = "tvProfileOutcomeOk"
 
 /** The add tile's place in the remembered focus; a server id is hex. */
 private const val ADD = "add"
@@ -83,6 +95,8 @@ fun TvProfilesRoute(onChosen: () -> Unit, onAdd: () -> Unit, onSignIn: (String) 
     val rows by viewModel.profiles.collectAsStateWithLifecycle()
     val gate by viewModel.gatePrompt.collectAsStateWithLifecycle()
     val entered by viewModel.enteredActive.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     LaunchedEffect(entered) { if (entered) onChosen() }
     val list = rows ?: return
     TvProfilesScreen(
@@ -96,6 +110,9 @@ fun TvProfilesRoute(onChosen: () -> Unit, onAdd: () -> Unit, onSignIn: (String) 
             viewModel.cancelGate()
             onSignIn(serverId)
         },
+        busy = busy,
+        outcome = outcome,
+        onOutcomeShown = viewModel::shown,
     )
 }
 
@@ -113,11 +130,20 @@ fun TvProfilesScreen(
     onCancelGate: () -> Unit,
     onAdd: () -> Unit,
     onSignIn: (String) -> Unit,
+    /** A switch is running: the page waits for it (up to some 20 s), nothing on it can be chosen. */
+    busy: ProfileWork? = null,
+    /** How the last operation ended. Only a failure is shown here; a switch that worked brings the next profile's pages. */
+    outcome: ProfileOutcome? = null,
+    onOutcomeShown: (ProfileOutcome) -> Unit = {},
 ) {
     // The tile last in focus: back from the PIN, the focus is where it was.
     var focused by rememberSaveable { mutableStateOf<String?>(null) }
+    // Back leaves nothing half done: the switch goes on anyway, and the page it leads to replaces this one.
+    BackHandler(enabled = busy != null) {}
     Box(Modifier.fillMaxSize().padding(horizontal = TvDimens.overscanHorizontal, vertical = TvDimens.overscanVertical)) {
-        if (gate is GatePrompt.Pin) {
+        if (busy != null) {
+            BusyState(busy)
+        } else if (gate is GatePrompt.Pin) {
             PinPage(gate, onPin, onCancelGate, onForgot = { onSignIn(gate.row.serverId) })
         } else {
             val target = focused?.takeIf { f -> f == ADD || rows.any { it.serverId == f } }
@@ -146,6 +172,61 @@ fun TvProfilesScreen(
         )
         else -> Unit
     }
+    outcome?.takeIf { it.kind in FAILURES }?.let { failed -> FailedDialog(profileOutcomeText(failed), onOk = { onOutcomeShown(failed) }) }
+}
+
+private val FAILURES = setOf(ProfileOutcome.Kind.SWITCH_FAILED, ProfileOutcome.Kind.REMOVE_FAILED)
+
+/** "Switching to …" with the focus on its text, so that the focus stays on the page while the tiles are gone. */
+@Composable
+private fun BusyState(work: ProfileWork) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    var slow by remember(work) { mutableStateOf(false) }
+    LaunchedEffect(work) {
+        delay(PROFILE_BUSY_SLOW_MS)
+        slow = true
+    }
+    Column(
+        Modifier.fillMaxSize().testTag(TAG_PROFILE_BUSY),
+        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(Modifier.size(48.dp), color = MaterialTheme.colorScheme.primary)
+        Text(
+            stringResource(
+                when (work) {
+                    is ProfileWork.Switching -> R.string.profiles_switching
+                    is ProfileWork.Removing -> R.string.profiles_removing
+                },
+                work.name,
+            ),
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.focusRequester(focus).focusable(),
+        )
+        AnnouncedLine(
+            if (slow) stringResource(R.string.profiles_slow) else null,
+            tag = "tvProfileSlow",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** A failed switch: what happened, and one button to go on. */
+@Composable
+private fun FailedDialog(text: String, onOk: () -> Unit) {
+    val okFocus = remember { FocusRequester() }
+    AlertDialog(
+        onDismissRequest = onOk,
+        text = { androidx.compose.material3.Text(text) },
+        confirmButton = {
+            // Here, in the dialog's own composition: only once the button exists can the focus be asked for.
+            LaunchedEffect(Unit) { okFocus.requestFocus() }
+            Button(onClick = onOk, modifier = Modifier.focusRequester(okFocus).testTag(TAG_OUTCOME_OK)) { Text(stringResource(R.string.pin_ok)) }
+        },
+        modifier = Modifier.testTag(TAG_OUTCOME_DIALOG),
+    )
 }
 
 @Composable

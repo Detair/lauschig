@@ -4,6 +4,7 @@ import android.view.KeyEvent.KEYCODE_0
 import android.view.KeyEvent.KEYCODE_9
 import android.view.KeyEvent.KEYCODE_NUMPAD_0
 import android.view.KeyEvent.KEYCODE_NUMPAD_9
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -77,15 +78,13 @@ fun TvPinPad(notice: String?, waitMs: Long, checking: Boolean, onSubmit: (String
         }
     }
 
+    // Wherever the focus is on the page, and however Back arrives (a key, or the system's back gesture on newer Android): the
+    // pad closes, the page under it stays.
+    BackHandler { onCancel() }
     Column(
         Modifier.onPreviewKeyEvent { event ->
             val code = event.key.nativeKeyCode
             when {
-                // Here and not with the activity: the pad closes, the page under it stays.
-                event.key == Key.Back -> {
-                    if (event.type == KeyEventType.KeyUp) onCancel()
-                    true
-                }
                 code in KEYCODE_0..KEYCODE_9 || code in KEYCODE_NUMPAD_0..KEYCODE_NUMPAD_9 -> {
                     if (event.type == KeyEventType.KeyDown) type('0' + (if (code >= KEYCODE_NUMPAD_0) code - KEYCODE_NUMPAD_0 else code - KEYCODE_0))
                     true

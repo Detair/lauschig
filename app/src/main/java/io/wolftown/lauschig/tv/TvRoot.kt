@@ -26,6 +26,7 @@ import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
 import io.wolftown.lauschig.ui.nav.AccountNavigation
 import io.wolftown.lauschig.ui.nav.AccountPages
 import io.wolftown.lauschig.ui.nav.AccountPagesScope
+import io.wolftown.lauschig.ui.profiles.ProfileOutcome
 import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
 import io.wolftown.lauschig.ui.rememberSettledOffline
 import androidx.compose.material3.LocalContentColor as Material3ContentColor
@@ -51,6 +52,10 @@ fun TvRoot(
     val baseUrl = (connection as? ConnectionState.Online)?.baseUrl
     val dimOffline = rememberSettledOffline(connection, checking)
     val rows by profiles.profiles.collectAsStateWithLifecycle()
+    val outcome by profiles.outcome.collectAsStateWithLifecycle()
+    // A switch or an unlock that worked shows itself: the next profile's pages are there. Taken off here, as the page that
+    // started it is gone by then; a failure stays for "who is listening?" to show.
+    LaunchedEffect(outcome) { outcome?.takeIf { it.kind in SHOWN_BY_THEIR_PAGES }?.let(profiles::shown) }
     LaunchedEffect(openRequest) { if (openRequest != null) onOpenHandled() }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         TvTheme {
@@ -88,3 +93,5 @@ internal fun TvAccountPages(
         host(account, if (askFirst) TvProfiles else tvStart(pages.start))
     }
 }
+
+private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOutcome.Kind.UNLOCKED, ProfileOutcome.Kind.REMOVED)
