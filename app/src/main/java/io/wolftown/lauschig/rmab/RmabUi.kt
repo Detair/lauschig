@@ -20,6 +20,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -96,11 +97,39 @@ private fun Outcome(outcome: RmabOutcome?) {
     )
 }
 
-/** Settings section "ReadMeABook" (a slot in the settings screen). */
+/** What the missing volumes of a series page get from ReadMeABook ([rmabBrowse]). */
+@Immutable
+class RmabBrowse(
+    /** Status by ASIN; the missing tile shows a small symbol for it. */
+    val statuses: Map<String, RmabStatus>,
+    /** The request button (or the status) below the details of a missing volume. */
+    val actions: @Composable (AudibleVolume) -> Unit,
+)
+
+private val NoRmabBrowse = RmabBrowse(emptyMap()) {}
+
+/**
+ * The series page's part of ReadMeABook. With the feature off ([LocalRmabEnabled], the build switch) it is empty and
+ * [viewModel] is never asked for: the missing volumes stay, without request button and status symbol.
+ */
 @Composable
-fun RmabSettingsSection(viewModel: RmabSettingsViewModel = hiltViewModel()) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    RmabSettingsContent(state, viewModel::openDialog, viewModel::disconnect, viewModel::closeDialog, viewModel::connect, viewModel::confirmCleartext, viewModel::dismissCleartext)
+fun rmabBrowse(viewModel: @Composable () -> RmabViewModel = { hiltViewModel() }): RmabBrowse {
+    if (!LocalRmabEnabled.current) return NoRmabBrowse
+    val vm = viewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+    return RmabBrowse(if (state.connected) state.statuses else emptyMap()) { RmabMissingActions(it, state, vm::request) }
+}
+
+/**
+ * Settings section "ReadMeABook" (a slot in the settings screen). With the feature off ([LocalRmabEnabled], the build
+ * switch) there is no section and [viewModel] is never asked for.
+ */
+@Composable
+fun RmabSettingsSection(viewModel: @Composable () -> RmabSettingsViewModel = { hiltViewModel() }) {
+    if (!LocalRmabEnabled.current) return
+    val vm = viewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+    RmabSettingsContent(state, vm::openDialog, vm::disconnect, vm::closeDialog, vm::connect, vm::confirmCleartext, vm::dismissCleartext)
 }
 
 @Composable

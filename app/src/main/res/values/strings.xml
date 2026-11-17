@@ -79,6 +79,8 @@
     <string name="detail_continue">Continue</string>
     <string name="detail_listen_again">Listen again</string>
     <string name="detail_series_band">%1$s · Book %2$s</string>
+    <string name="detail_series_line">Series: %1$s</string>
+    <string name="detail_series_open">Show all books in the series</string>
     <string name="detail_quick_length">Length: %1$s</string>
     <string name="detail_quick_narrator">Read by %1$s</string>
     <string name="detail_quick_year">Published: %1$s</string>
@@ -820,12 +822,28 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_6_1">
+        <item>Maintenance: a bundled library (Guava) is up to date</item>
+        <item>The security advisory for the older version did not affect the app; nothing changes in how you use it</item>
+    </string-array>
+    <string-array name="whatsnew_0_6_0">
+        <item>Server addresses by QR code: a signed-in device shows them under “Connection status”, a new one scans them during setup</item>
+        <item>The QR code holds only the addresses, no account and no password; the camera is used for scanning only</item>
+        <item>A pause shortly before the end no longer marks a long book as finished</item>
+        <item>One title the server refuses no longer holds up the sync of all the others</item>
+        <item>Headset, car and widget continue at the newer, synced position</item>
+        <item>A stream that breaks off starts again by itself</item>
+        <item>A single hiccup of the device\'s key store no longer signs every profile out</item>
+    </string-array>
+    <string-array name="whatsnew_0_5_2">
+        <item>In the book details the series now sits right under the title, a tap shows all its books</item>
+    </string-array>
     <string-array name="whatsnew_0_5_1">
-        <item>When signing in, the eye next to the password shows what you typed, in the RMAB dialog too</item>
+        <item>When signing in, the eye next to the password shows what you typed</item>
     </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
-        <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
+        <item>Progress, downloads and recent searches stay with their profile; a switch deletes nothing</item>
         <item>A switch pauses playback and saves your progress, and nothing starts by itself</item>
         <item>Add a profile: the server address is already filled in, handy for a family on one server</item>
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
@@ -1140,4 +1158,23 @@
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
     </plurals>
+    <string name="server_qr_show">Server addresses as QR code</string>
+    <string name="server_qr_show_hint">For setting up another device</string>
+    <string name="server_qr_title">Server addresses</string>
+    <string name="server_qr_description">QR code with the server addresses</string>
+    <string name="server_qr_only_addresses">Contains only the server addresses, no account and no password.</string>
+    <string name="server_qr_how">On the new device, tap “Scan QR code” during setup.</string>
+    <string name="server_qr_close">Close</string>
+    <string name="server_qr_scan">Scan QR code</string>
+    <string name="server_qr_scan_close">Close camera</string>
+    <string name="server_qr_scan_hint">Point the camera at the QR code another device shows under Settings → Connection status.</string>
+    <string name="server_qr_scan_no_camera">The camera cannot be used. Close this page and type the addresses.</string>
+    <string name="server_qr_note_filled">Addresses taken from the QR code. Check them before you sign in.</string>
+    <string name="server_qr_note_camera_refused">Without camera access you can still type the addresses.</string>
+    <string name="server_qr_error_not_a_code">That is not a Lauschig server code.</string>
+    <string name="server_qr_error_version">This code comes from another version of Lauschig.</string>
+    <string name="server_qr_error_no_address">The code contains no server address.</string>
+    <string name="server_qr_error_bad_address">The code contains no valid server address.</string>
+    <string name="server_qr_error_credentials">The code has sign-in data inside an address. It is not used.</string>
+    <string name="server_qr_error_too_long">The code is too long.</string>
 </resources>

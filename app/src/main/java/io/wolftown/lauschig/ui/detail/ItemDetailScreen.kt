@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -331,6 +333,7 @@ private fun HeaderTexts(state: ItemDetailUiState, titleTop: Dp, marks: HeaderMar
     state.subtitle?.let {
         Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
     }
+    SeriesLine(state, onOpenBrowse)
     QuickBar(state, onOpenBrowse)
     Chips(state, onOpenBrowse)
     PlayAndDownload(state, onPrimary, onDownload, onPause, onDelete)
@@ -422,15 +425,47 @@ private fun QuickFact(icon: ImageVector, text: String, description: String, onCl
     }
 }
 
-/** One chip per author, the series and each genre; all open the matching entity page. The narrator is in the [QuickBar]. */
+/**
+ * The series as its own line under the title: symbol, name and book, an arrow; a tap opens the series' page (the series
+ * chip was easy to miss). The state carries one series, the first; none, no line. A device title's series is shown but
+ * leads nowhere, like its chips. The touch target is 48 dp high.
+ */
+@Composable
+private fun SeriesLine(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -> Unit) {
+    val name = state.seriesName ?: return
+    val label = state.seriesSequence?.let { stringResource(R.string.detail_series_band, name, it) } ?: name
+    val description = stringResource(R.string.detail_series_line, label)
+    val openLabel = stringResource(R.string.detail_series_open)
+    val link = if (state.isLocal) {
+        Modifier
+    } else {
+        Modifier.clickable(onClickLabel = openLabel, role = Role.Button) { onOpenBrowse(BrowseKind.SERIES, name) }
+    }
+    val color = if (state.isLocal) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+    Row(
+        // The whole row is the target, at least 48 dp high (not only an invisible margin around the text).
+        Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).then(link)
+            .semantics(mergeDescendants = true) { contentDescription = description }.testTag("seriesLine"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Rounded.CollectionsBookmark, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Text(
+            label, style = MaterialTheme.typography.titleSmall, color = color,
+            // The arrow follows the text (on a wide screen it would otherwise sit far away from it).
+            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+        )
+        if (!state.isLocal) {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** One chip per author and each genre; all open the matching entity page. Series and narrator have their own lines. */
 @Composable
 private fun Chips(state: ItemDetailUiState, onOpenBrowse: (BrowseKind, String) -> Unit) {
-    val seriesLabel = state.seriesName?.let { name ->
-        state.seriesSequence?.let { stringResource(R.string.detail_series_band, name, it) } ?: name
-    }
     val specs = buildList {
         people.splitPeople(state.author).forEach { add(ChipSpec(it, BrowseKind.AUTHOR to it)) }
-        state.seriesName?.let { add(ChipSpec(seriesLabel ?: it, BrowseKind.SERIES to it)) }
         state.genres.map { it.trim() }.filter { it.isNotEmpty() }.distinct().forEach { add(ChipSpec(it, BrowseKind.GENRE to it)) }
     }
     if (specs.isEmpty()) return

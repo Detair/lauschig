@@ -14,6 +14,12 @@ import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.net.FakeAccountStore
+import io.wolftown.lauschig.serverqr.QrCode
+import io.wolftown.lauschig.serverqr.QrFrameDecoder
+import io.wolftown.lauschig.serverqr.decode
+import io.wolftown.lauschig.serverqr.qrFrame
+import io.wolftown.lauschig.serverqr.ServerQr
+import io.wolftown.lauschig.serverqr.ServerQrError
 import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.ui.nav.SetupMode
 import androidx.lifecycle.viewModelScope
@@ -953,5 +959,142 @@ class SetupViewModelTest {
         assertEquals(null, v.state.value.nobodyActive)
         read.complete(null)
         assertEquals(true, v.state.value.nobodyActive)
+    }
+
+    // Server addresses from a QR code (docs/server-qr-code.md): a scan fills the two address fields, as if typed, and
+    // does nothing else. Nobody is signed in by it.
+
+    private val serverCode = "lauschig://server?v=1&local=http%3A%2F%2F192.168.1.20%3A13378&public=https%3A%2F%2Fabs.example.org%2Faudiobookshelf"
+
+    @Test fun aScannedCode_fillsTheTwoAddressFields_andNothingElse() {
+        val v = vm()
+        v.onUsernameChanged("fabian"); v.onPasswordChanged("secret")
+        val before = v.state.value
+        v.onQrScanned(serverCode)
+        assertEquals(
+            before.copy(local = "http://192.168.1.20:13378", public = "https://abs.example.org/audiobookshelf", scanNote = SetupScanNote.Filled),
+            v.state.value,
+        )
+    }
+
+    @Test fun aScannedCode_signsNobodyIn_evenWithACompleteForm() {
+        val v = vm()
+        v.fill(public = "https://old.example.org")
+        v.onQrScanned(serverCode)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue("the form could be sent", v.state.value.canLogin)
+        assertEquals("but nobody sent it", emptyList<HttpUrl>(), login.calls)
+        assertFalse(v.state.value.loading)
+        assertFalse(v.state.value.done)
+        assertNull(store.acc.value)
+        assertEquals(0, sync.count)
+        assertEquals(emptyList<HttpUrl>(), oidc.started)
+    }
+
+    @Test fun aScannedCode_withOneAddress_emptiesTheOtherField() {
+        val v = vm()
+        v.fill(local = "http://192.168.1.5:13378", public = "https://old.example.org")
+        v.onQrScanned("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org")
+        assertEquals("", v.state.value.local)
+        assertEquals("https://abs.example.org", v.state.value.public)
+    }
+
+    @Test fun scannedAddresses_areCheckedLikeTypedOnes_forSso() {
+        val asked = mutableListOf<HttpUrl>()
+        login.statusResult = { asked += it; StatusResponse("2.37.1", listOf("local", "openid"), AuthFormData(authOpenIDButtonText = "Mit Authentik")) }
+        val v = vm()
+        v.onQrScanned("lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf("https://abs.example.org/".toHttpUrl()), asked)
+        assertTrue(v.state.value.ssoAvailable)
+    }
+
+    @Test fun aScannedHttpAddress_isNotAskedBeforeTheUsersOk_andLoginStillAsksForIt() {
+        val asked = mutableListOf<HttpUrl>()
+        login.statusResult = { asked += it; throw IOException("no status") }
+        val v = vm()
+        v.onQrScanned("lauschig://server?v=1&local=http%3A%2F%2F192.168.1.20%3A13378")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals("plain http is asked nothing before the confirmation", emptyList<HttpUrl>(), asked)
+        v.onUsernameChanged("fabian"); v.onPasswordChanged("secret")
+        v.login()
+        assertEquals(listOf("http://192.168.1.20:13378"), v.state.value.cleartextPrompt)
+        assertEquals(emptyList<HttpUrl>(), login.calls)
+    }
+
+    @Test fun aRefusedCode_changesNoField_andSaysWhy() {
+        val v = vm()
+        v.fill(local = "http://192.168.1.5:13378", public = "https://old.example.org")
+        val refused = listOf(
+            "https://example.org/" to ServerQrError.NOT_A_SERVER_CODE,
+            "lauschig://server?v=2&public=https%3A%2F%2Fabs.example.org" to ServerQrError.UNKNOWN_VERSION,
+            "lauschig://server?v=1" to ServerQrError.NO_ADDRESS,
+            "lauschig://server?v=1&public=ftp%3A%2F%2Fabs.example.org" to ServerQrError.BAD_ADDRESS,
+            "lauschig://server?v=1&public=https%3A%2F%2Ffabi%3Ageheim%40abs.example.org" to ServerQrError.CREDENTIALS,
+            "lauschig://server?v=1&public=https%3A%2F%2Fabs.example.org&x=" + "a".repeat(ServerQr.MAX_LENGTH) to ServerQrError.TOO_LONG,
+        )
+        for ((text, reason) in refused) {
+            v.onQrScanned(text)
+            assertEquals(text.take(60), SetupScanNote.Refused(reason), v.state.value.scanNote)
+            assertEquals("http://192.168.1.5:13378", v.state.value.local)
+            assertEquals("https://old.example.org", v.state.value.public)
+        }
+        assertEquals(emptyList<HttpUrl>(), login.calls)
+    }
+
+    @Test fun typingAnAddress_takesTheScanNoteAway() {
+        val v = vm()
+        v.onQrScanned(serverCode)
+        assertEquals(SetupScanNote.Filled, v.state.value.scanNote)
+        v.onPublicChanged("https://abs.example.org/audiobookshelf2")
+        assertNull(v.state.value.scanNote)
+        v.onQrScanned("nothing")
+        assertEquals(SetupScanNote.Refused(ServerQrError.NOT_A_SERVER_CODE), v.state.value.scanNote)
+        v.onLocalChanged("http://192.168.1.5:13378")
+        assertNull(v.state.value.scanNote)
+    }
+
+    @Test fun aRefusedCamera_saysSo_andChangesNoField() {
+        val v = vm()
+        v.fill(public = "https://old.example.org")
+        val before = v.state.value
+        v.onCameraRefused()
+        assertEquals(before.copy(scanNote = SetupScanNote.CameraRefused), v.state.value)
+    }
+
+    /** Found on the tablet: "no camera access" stayed on the form after the camera was allowed on a second try. */
+    @Test fun openingTheCamera_takesAnOlderNoteAway_andChangesNoField() {
+        val v = vm()
+        v.fill(public = "https://old.example.org")
+        val before = v.state.value
+        v.onCameraRefused()
+        v.onScanStarted()
+        assertEquals(before, v.state.value)
+        v.onQrScanned("nothing")
+        v.onScanStarted()
+        assertEquals(before, v.state.value)
+    }
+
+    @Test fun onTheWayOfAForgottenPin_aScanChangesNothing() {
+        signedInAsFabian()
+        store.aside.value = listOf(FakeAccountStore.Aside(kindAtHome, "a", "r", false))
+        val v = unlockVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        val before = v.state.value
+        assertTrue(before.addressesFixed)
+        v.onQrScanned(serverCode)
+        assertEquals(before, v.state.value)
+    }
+
+    /** The whole way: one device's account → the code it shows → a camera frame of it → the other device's form. */
+    @Test fun fromOneDevicesAccount_throughThePicture_intoTheOtherDevicesForm() {
+        val shown = ServerAddresses("http://192.168.1.20:13378/".toHttpUrl(), "https://abs.example.org/audiobookshelf/".toHttpUrl(), setOf("Heimnetz"))
+        val picture = qrFrame(QrCode.modules(ServerQr.code(shown)!!.text))
+        val seen = QrFrameDecoder().decode(picture)!!
+        val v = vm()
+        v.onQrScanned(seen)
+        assertEquals("http://192.168.1.20:13378", v.state.value.local)
+        assertEquals("https://abs.example.org/audiobookshelf", v.state.value.public)
+        assertEquals("only where the server is: no name, no Wi-Fi", SetupUiState(local = v.state.value.local, public = v.state.value.public, scanNote = SetupScanNote.Filled), v.state.value)
     }
 }

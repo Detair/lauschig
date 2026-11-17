@@ -21,6 +21,16 @@ val linkHosts: List<String> = (providers.gradleProperty("lauschig.linkHosts").or
     .split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct()
     .onEach { require(Regex("[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*").matches(it)) { "lauschig.linkHosts: not a host name: $it" } }
 
+// ReadMeABook (requesting missing volumes, package `rmab`) is switched off for the launch: the code stays, the build
+// leaves it out. `-Plauschig.rmab=true` builds it in. Off, the app shows nothing of it, never calls a ReadMeABook server
+// and removes the connections an earlier build stored (see rmab/RmabFeature.kt).
+val rmabAsked: String? = providers.gradleProperty("lauschig.rmab").orNull?.trim()
+val rmabEnabled: Boolean = when (rmabAsked) {
+    null, "", "false" -> false
+    "true" -> true
+    else -> throw GradleException("lauschig.rmab: true or false, not \"$rmabAsked\"")
+}
+
 /** Writes the VIEW intent filter for [hosts] into a manifest overlay that is merged into MainActivity. */
 abstract class LinkManifestTask : DefaultTask() {
     @get:Input abstract val hosts: ListProperty<String>
@@ -82,11 +92,12 @@ android {
         applicationId = "io.wolftown.lauschig"
         minSdk = 28
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 9
+        versionName = "0.6.1"
         // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LINK_HOSTS", "\"${linkHosts.joinToString(",")}\"")
+        buildConfigField("boolean", "RMAB", rmabEnabled.toString())
     }
 
     if (hasReleaseSigning) {
@@ -124,6 +135,8 @@ android {
         // Robolectric (SDK 36+) reflects into JDK internals (FileDescriptor).
         // A hanging test must fail fast instead of spinning forever.
         unitTests.all { it.timeout.set(Duration.ofMinutes(10)); it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED") }
+        // What the build was asked for, so a test can hold BuildConfig.RMAB against it (rmab/RmabTextsTest).
+        unitTests.all { it.systemProperty("lauschig.rmab.asked", rmabAsked.orEmpty()) }
     }
 }
 
@@ -183,6 +196,12 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.datasource.okhttp)
+    constraints {
+        // Guava comes in with Media3, which still asks for 33.3.1. Up to 33.7.1 a crafted Java object stream makes
+        // Guava's collections allocate without limit (GHSA-xxph-c9ww-hj94). Lauschig reads no object streams, but the
+        // fixed version costs nothing. Drop this once Media3 asks for 33.7.2 or newer itself.
+        implementation(libs.guava) { because("GHSA-xxph-c9ww-hj94 is fixed in 33.7.2") }
+    }
 
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
@@ -198,6 +217,10 @@ dependencies {
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.layout)
     implementation(libs.androidx.palette)
+    implementation(libs.zxing.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit)

@@ -142,6 +142,7 @@ class PlaybackService : MediaLibraryService() {
     private var bridge: PlaybackProgressBridge? = null
     private var connectionJob: Job? = null
     private var monitorJob: Job? = null
+    private var streamRecovery: StreamRecovery? = null
     private var comfort: PlaybackComfort? = null
     private var chapters: ChapterTracker? = null
     private var carPlayer: CarSafePlayer? = null
@@ -210,8 +211,21 @@ class PlaybackService : MediaLibraryService() {
             .setSeekBackIncrementMs(PlaybackSettings.DEFAULT_SEEK_BACK * 1000L)
             .setSeekForwardIncrementMs(PlaybackSettings.DEFAULT_SEEK_FORWARD * 1000L)
             .build()
+        val recovery = StreamRecovery(
+            object : StreamRecovery.Host {
+                override fun waitsToStream() = exo.playWhenReady && exo.playbackState == Player.STATE_IDLE && isStream(exo.currentMediaItem)
+                override fun title(): Any? = currentKey(exo)
+                override fun prepare() = exo.prepare()
+            },
+            api.connection.map { it is ConnectionState.Online },
+            scope,
+        ).also { streamRecovery = it }
         exo.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) { Log.w(TAG, "playback error ${error.errorCodeName}", error) }
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w(TAG, "playback error ${error.errorCodeName}", error)
+                recovery.onError(StreamRecovery.cures(error))
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) recovery.onPlaying() }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 Log.i(TAG, "playWhenReady=$playWhenReady reason=$reason")
                 if (playWhenReady) watchStream(exo)
@@ -679,6 +693,8 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         connectionJob?.cancel()
         monitorJob?.cancel()
+        streamRecovery?.release()
+        streamRecovery = null
         streamMonitor.update(active = false, playing = false, buffering = false, bufferedAheadMs = 0)
         // Capture the position and detach the listener before release; the final save outlives the service scope.
         val final = bridge?.currentGlobalSec()

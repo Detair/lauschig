@@ -9,6 +9,7 @@ import io.wolftown.lauschig.db.LauschigDatabase
 import io.wolftown.lauschig.db.dao.ItemWithDetails
 import io.wolftown.lauschig.db.entities.AudioFileEntity
 import io.wolftown.lauschig.db.entities.ItemEntity
+import io.wolftown.lauschig.db.entities.ProgressEntity
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -33,8 +34,15 @@ private class FakePlayerState {
     var playing = false
     var state = Player.STATE_READY
 
-    val player: Player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, m, _ ->
+    /** Every `seekTo(index, positionMs)` the bridge asked for. */
+    val seeks = mutableListOf<Pair<Int, Long>>()
+
+    val player: Player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, m, args ->
         when (m.name) {
+            "seekTo" -> {
+                if (args?.size == 2 && args[0] is Int) { index = args[0] as Int; positionMs = args[1] as Long; seeks += index to positionMs }
+                null
+            }
             "getCurrentMediaItem" -> items.getOrNull(index)
             "getCurrentMediaItemIndex" -> index
             "getCurrentPosition" -> positionMs
@@ -100,6 +108,95 @@ class PlaybackProgressBridgeTest {
         val old = positionInfo()
         items = factory.build(b, null); index = 0; positionMs = 899_000; playing = false; state = Player.STATE_BUFFERING
         return old
+    }
+
+    /** A is loaded and paused at 800 s, saved there. */
+    private suspend fun TestScope.pausedA(): Pair<FakePlayerState, PlaybackProgressBridge> {
+        val (p, br) = playingA()
+        p.playing = false
+        br.onIsPlayingChanged(false); runCurrent()
+        assertEquals(800.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+        return p to br
+    }
+
+    /**
+     * The title waits paused in the player while sync merges what another device heard. A play key that reaches the player
+     * without passing the app (headset, car, widget, notification) continues there, and the stale position is never saved.
+     */
+    @Test fun playKey_afterSyncMovedThePausedTitle_continuesAtTheSyncedPosition() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 100.0, 900.0, false, currentTime + 1)))
+
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+
+        assertEquals(listOf(0 to 100_000L), p.seeks)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(100.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
+    /** Less than the jump threshold apart (the server rounds, a rewind after the pause): the player's own position stays. */
+    @Test fun playKey_withTheSavedPositionCloseBy_doesNotSeek() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 790.0, 900.0, false, currentTime + 1)))
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(emptyList<Pair<Int, Long>>(), p.seeks)
+    }
+
+    /** What the user did to the paused title is not "moved by someone else": a seek while paused stays where it went. */
+    @Test fun playKey_afterASeekWhilePaused_staysWhereTheUserSeeked() = runTest {
+        val (p, br) = pausedA()
+        val old = p.positionInfo()
+        p.index = 0; p.positionMs = 300_000
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_SEEK); runCurrent()
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(emptyList<Pair<Int, Long>>(), p.seeks)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(300.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
+    /** The paused title started again somewhere else on purpose (a chapter, a bookmark: a fresh queue) is not pulled back. */
+    @Test fun startingThePausedTitleElsewhere_isNotPulledBackToTheSavedPosition() = runTest {
+        val (p, br) = pausedA()
+        val old = p.positionInfo()
+        p.items = factory.build(a, null); p.index = 0; p.positionMs = 50_000
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_REMOVE)
+        br.onMediaItemTransition(p.items[0], Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED); runCurrent()
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(emptyList<Pair<Int, Long>>(), p.seeks)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(50.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
+    /**
+     * Sync moved the paused title AND the user then starts it somewhere else on purpose (a fresh queue at a chapter): the
+     * place the user chose wins. Only a title that still sits where it was paused is taken to the moved position.
+     */
+    @Test fun startingThePausedTitleElsewhere_afterSyncMovedIt_staysWhereItWasStarted() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 100.0, 900.0, false, currentTime + 1)))
+        val old = p.positionInfo()
+        p.items = factory.build(a, null); p.index = 0; p.positionMs = 400_000
+        br.onPositionDiscontinuity(old, p.positionInfo(), Player.DISCONTINUITY_REASON_REMOVE)
+        br.onMediaItemTransition(p.items[0], Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED); runCurrent()
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(emptyList<Pair<Int, Long>>(), p.seeks)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(400.0, db.progressDao().get(s, "A")!!.currentTimeSec, 0.0)
+    }
+
+    /** The rewind after a pause (at most 30 s) has already moved the player a little: still a plain resume. */
+    @Test fun playKey_afterSyncMovedThePausedTitle_andTheRewindAfterThePause_continuesAtTheSyncedPosition() = runTest {
+        val (p, br) = pausedA()
+        db.progressDao().mergeFromServer(listOf(ProgressEntity(s, "A", 100.0, 900.0, false, currentTime + 1)))
+        p.positionMs -= 30_000 // PlaybackComfort's rewind, done before the bridge hears of the start
+        p.playing = true
+        br.onIsPlayingChanged(true); runCurrent()
+        assertEquals(listOf(0 to 100_000L), p.seeks)
     }
 
     @Test fun switchingBook_whilePlaying_savesOldBookAtItsOwnPosition_notAtNewQueueOffset() = runTest {

@@ -53,9 +53,9 @@ import coil3.compose.AsyncImage
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.db.entities.LibraryKind
 import io.wolftown.lauschig.external.MissingVolume
-import io.wolftown.lauschig.rmab.RmabMissingActions
+import io.wolftown.lauschig.rmab.RmabBrowse
 import io.wolftown.lauschig.rmab.RmabStatus
-import io.wolftown.lauschig.rmab.RmabViewModel
+import io.wolftown.lauschig.rmab.rmabBrowse
 import io.wolftown.lauschig.rmab.label
 import io.wolftown.lauschig.rmab.tileIcon
 import io.wolftown.lauschig.ui.common.CoverArt
@@ -82,16 +82,16 @@ fun BrowseRoute(
     modifier: Modifier = Modifier,
     viewModel: BrowseViewModel = hiltViewModel(),
     actions: ItemActionsViewModel = hiltViewModel(),
-    rmab: RmabViewModel = hiltViewModel(),
+    /** Request button and status of the missing volumes; nothing in a build without ReadMeABook. */
+    rmab: RmabBrowse = rmabBrowse(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<ItemSummary?>(null) }
-    val rmabState by rmab.state.collectAsStateWithLifecycle()
     BrowseScreen(
         state, onBack, viewModel::setKinds, onOpenItem, onOpenBrowse, modifier,
         onPlay = actions::play, onMenu = { menuFor = it },
-        missingActions = { RmabMissingActions(it.volume, rmabState, rmab::request) },
-        missingStatuses = if (rmabState.connected) rmabState.statuses else emptyMap(),
+        missingActions = { rmab.actions(it.volume) },
+        missingStatuses = rmab.statuses,
         onAnswerMissingVolumes = viewModel::answerMissingVolumes,
     )
     menuFor?.let { ItemActionsSheet(it, onDismiss = { menuFor = null }, onOpenDetails = onOpenItem, viewModel = actions) }

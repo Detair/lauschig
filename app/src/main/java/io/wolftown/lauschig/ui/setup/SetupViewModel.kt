@@ -15,6 +15,9 @@ import io.wolftown.lauschig.account.ServerLogout
 import io.wolftown.lauschig.account.cleartextKey
 import io.wolftown.lauschig.connection.NetworkInfo
 import io.wolftown.lauschig.connection.ServerAddresses
+import io.wolftown.lauschig.serverqr.ServerQr
+import io.wolftown.lauschig.serverqr.ServerQrError
+import io.wolftown.lauschig.serverqr.ServerQrResult
 import io.wolftown.lauschig.sync.SyncTrigger
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.SetupMode
@@ -40,6 +43,18 @@ import retrofit2.HttpException
 import javax.inject.Inject
 
 enum class SetupError { INVALID_ADDRESS, UNREACHABLE, WRONG_LOGIN, SERVER_TOO_OLD, SAVE_FAILED, SSO_REDIRECT_NOT_ALLOWED, SSO_FAILED, UNLOCK_OTHER_ACCOUNT }
+
+/** What the form says about the last try to scan a server QR code ([SetupViewModel.onQrScanned]). */
+sealed interface SetupScanNote {
+    /** The two address fields come from a code: the user should look at them before signing in. */
+    data object Filled : SetupScanNote
+
+    /** No camera permission: the addresses can still be typed. */
+    data object CameraRefused : SetupScanNote
+
+    /** The code was not taken, and why; no field changed. */
+    data class Refused(val reason: ServerQrError) : SetupScanNote
+}
 
 data class SetupUiState(
     val local: String = "",
@@ -71,6 +86,8 @@ data class SetupUiState(
     val unlockServerId: String? = null,
     /** Its name, once read. */
     val unlockName: String? = null,
+    /** About the last scan of a server QR code; gone once an address is typed. */
+    val scanNote: SetupScanNote? = null,
 ) {
     /** The way of a forgotten PIN asks the account's own server: another address could answer anything. */
     val addressesFixed: Boolean
@@ -182,15 +199,38 @@ class SetupViewModel(
 
     fun onLocalChanged(v: String) {
         if (_state.value.addressesFixed) return
-        _state.update { it.copy(local = v, error = null) }
+        _state.update { it.copy(local = v, error = null, scanNote = null) }
         checkStatus()
     }
 
     fun onPublicChanged(v: String) {
         if (_state.value.addressesFixed) return
-        _state.update { it.copy(public = v, error = null) }
+        _state.update { it.copy(public = v, error = null, scanNote = null) }
         checkStatus()
     }
+
+    /**
+     * The text of a scanned QR code (docs/server-qr-code.md). A server code fills the two address fields, as if typed, and
+     * nothing else: the form is not sent and nobody is signed in by it. After that everything is as with typed addresses
+     * (the check for SSO, the question before plain http). Any other code changes no field. Not on the way of a forgotten
+     * PIN, where the addresses are the account's. The text is kept nowhere and never logged.
+     */
+    fun onQrScanned(text: String) {
+        if (_state.value.addressesFixed) return
+        when (val result = ServerQr.read(text)) {
+            is ServerQrResult.Addresses -> {
+                _state.update { it.copy(local = result.local, public = result.public, error = null, scanNote = SetupScanNote.Filled) }
+                checkStatus()
+            }
+            is ServerQrResult.Rejected -> _state.update { it.copy(scanNote = SetupScanNote.Refused(result.reason)) }
+        }
+    }
+
+    /** The camera page opens for a new try: what the form said about the last one goes. */
+    fun onScanStarted() = _state.update { it.copy(scanNote = null) }
+
+    /** The camera permission was refused: the form says that typing still works. */
+    fun onCameraRefused() = _state.update { it.copy(scanNote = SetupScanNote.CameraRefused) }
 
     fun onUsernameChanged(v: String) = _state.update { it.copy(username = v, error = null) }
     fun onPasswordChanged(v: String) = _state.update { it.copy(password = v, error = null) }
