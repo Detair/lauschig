@@ -13,6 +13,9 @@ import androidx.tv.material3.Text
 import io.wolftown.lauschig.AppPages
 import io.wolftown.lauschig.tv.nav.TvHome
 import io.wolftown.lauschig.tv.nav.TvProfiles
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.composable
+import io.wolftown.lauschig.ui.nav.AccountNavHost
 import io.wolftown.lauschig.ui.nav.AccountPagesScope
 import io.wolftown.lauschig.ui.nav.ProfilePicker
 import io.wolftown.lauschig.ui.nav.Start
@@ -99,5 +102,32 @@ class TvRootTest {
         pages = AppPages("bbbb", Start)
         rule.waitForIdle()
         shows("bbbb", TvHome)
+    }
+
+    /**
+     * As it happens: asked, chosen, now on the start page; then the activity is recreated. The start page stays, the question
+     * does not come back, and the profile chosen next starts on its start page too.
+     */
+    @Test fun aRecreation_afterTheQuestion_staysOnThePageWentTo() {
+        lateinit var nav: NavHostController
+        val tester = StateRestorationTester(rule)
+        tester.setContent {
+            TvAccountPages(pages, count, scope) { account, start ->
+                AccountNavHost(account, start) {
+                    composable<TvProfiles> { Text("${pages.owner} who is listening") }
+                    composable<TvHome> { Text("${pages.owner} home") }
+                }
+                nav = account.controller
+            }
+        }
+        rule.onNodeWithText("aaaa who is listening").assertExists()
+        rule.runOnIdle { nav.navigate(TvHome) { popUpTo<TvProfiles> { inclusive = true } } }
+        rule.onNodeWithText("aaaa home").assertExists()
+        tester.emulateSavedInstanceStateRestore()
+        rule.onNodeWithText("aaaa home").assertExists()
+        rule.onNodeWithText("aaaa who is listening").assertDoesNotExist()
+        pages = AppPages("bbbb", Start)
+        rule.waitForIdle()
+        rule.onNodeWithText("bbbb home").assertExists()
     }
 }
