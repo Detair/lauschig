@@ -822,6 +822,10 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_6_1">
+        <item>Wartung: Eine mitgelieferte Bibliothek (Guava) ist auf dem neuesten Stand</item>
+        <item>Die Sicherheitsmeldung zur älteren Fassung betraf die App nicht; an der Bedienung ändert sich nichts</item>
+    </string-array>
     <string-array name="whatsnew_0_6_0">
         <item>Server-Adressen per QR-Code: Ein angemeldetes Gerät zeigt sie unter „Verbindungsstatus“, ein neues scannt sie bei der Einrichtung</item>
         <item>Im QR-Code stehen nur die Adressen, kein Konto und kein Passwort; die Kamera dient nur zum Scannen</item>
