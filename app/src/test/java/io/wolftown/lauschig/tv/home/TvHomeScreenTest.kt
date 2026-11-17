@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -229,5 +230,21 @@ class TvHomeScreenTest {
         rule.onNodeWithTag(TAG_RAIL + TvSection.Home.name).assertIsFocused()
         press(Key.DirectionRight)
         rule.onNode(isFocused() and hasTestTag(cardTag("c1")) or (isFocused() and hasTestTag(cardTag("n1")))).assertExists()
+    }
+
+    /**
+     * As at a fresh launch: inside the rail's frame the loading message goes, the rows come. The focus goes to the first card
+     * and the rail stays closed; the frame must not hand the focus that the message took along to the rail.
+     */
+    @Test fun atLaunch_theLibraryArrives_theFocusGoesToTheFirstCard_notIntoTheRail() {
+        var state by mutableStateOf(StartUiState(loading = true))
+        rule.setContent {
+            TvTheme { TvShell(TvSection.Home, onSection = {}) { TvHomeScreen(state, emptyList(), true, {}, {}, {}) } }
+        }
+        rule.onNodeWithTag(TAG_MESSAGE).assertIsFocused()
+        state = full
+        rule.waitForIdle()
+        rule.onNodeWithTag(cardTag("c1")).assertIsFocused()
+        rule.onNodeWithText(context.getString(R.string.nav_library)).assertIsNotDisplayed()
     }
 }

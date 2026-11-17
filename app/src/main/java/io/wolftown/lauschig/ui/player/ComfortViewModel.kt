@@ -60,6 +60,8 @@ class ComfortViewModel @Inject constructor(
 
     fun startSleep(mode: SleepMode) = timer.start(mode)
     fun cancelSleep() = timer.cancel()
+    /** Extends a timer in its last minute like a shake (the TV's OK); nothing otherwise. */
+    fun extendSleep() { timer.extend() }
     fun setSkipSilence(on: Boolean) { viewModelScope.launch { settings.setSkipSilence(on) } }
     fun setSleepChime(on: Boolean) { viewModelScope.launch { settings.setSleepChime(on) } }
     fun setCompressor(on: Boolean) { viewModelScope.launch { settings.setSpeechCompressor(on) } }

@@ -79,8 +79,16 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
                     .padding(start = TvDimens.overscanHorizontal / 2, end = 8.dp, top = TvDimens.overscanVertical, bottom = TvDimens.overscanVertical)
                     .selectableGroup()
                     .onFocusChanged { railHasFocus = it.hasFocus }
-                    // Into the rail on the page one is on, not on the item that happens to be level with the focus.
-                    .focusProperties { onEnter = { currentItem.requestFocus(FocusDirection.Enter) } }
+                    // Into the rail only by left from the content, and then on the page one is on, not on the item that happens
+                    // to be level with the focus. When the content's focused element goes (a loading message replaced by the
+                    // rows), Android hands the focus back to the window, and Compose would give it to the first thing it finds:
+                    // the rail, which then opens by itself and keeps the rows from taking the focus.
+                    .focusProperties {
+                        onEnter = {
+                            if (requestedFocusDirection == FocusDirection.Left) currentItem.requestFocus(FocusDirection.Enter)
+                            else cancelFocusChange()
+                        }
+                    }
                     .focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {

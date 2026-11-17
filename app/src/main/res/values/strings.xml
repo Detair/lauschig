@@ -1199,4 +1199,13 @@
     <string name="tv_browse_empty">Nothing here.</string>
     <string name="tv_browse_offline">The server cannot be reached, and nothing of this is on this TV yet.</string>
     <string name="tv_search_searching">Searching…</string>
+    <string name="tv_player_nothing">Nothing is playing.</string>
+    <string name="tv_back">Back</string>
+    <string name="tv_player_playing">Playing</string>
+    <string name="tv_player_paused">Paused</string>
+    <string name="tv_player_book_left">%1$s left in the book</string>
+    <string name="tv_player_extend_hint">Press OK to keep listening</string>
+    <string name="tv_player_slower">Slower</string>
+    <string name="tv_player_faster">Faster</string>
+    <string name="tv_player_more_hint">Down: chapters, speed and sleep timer</string>
 </resources>

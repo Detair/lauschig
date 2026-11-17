@@ -5,6 +5,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import io.wolftown.lauschig.ui.nav.Setup
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -15,8 +22,10 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import io.wolftown.lauschig.AppPages
+import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.tv.nav.TvNavHost
+import io.wolftown.lauschig.tv.nav.openPlayer
 import io.wolftown.lauschig.tv.nav.TvProfiles
 import io.wolftown.lauschig.tv.nav.tvStart
 import io.wolftown.lauschig.ui.AppViewModel
@@ -35,8 +44,9 @@ import androidx.compose.material3.LocalContentColor as Material3ContentColor
  * The TV interface's frame: what the pages read from above (the server for covers, whether to dim what needs it), the theme,
  * and the pages of the account on screen.
  *
- * [openRequest] comes from a notification or the media session ([io.wolftown.lauschig.MainActivity.EXTRA_OPEN]). The TV has no
- * page for it yet, so it is let go at once instead of waiting to fire later.
+ * [openRequest] comes from the media session or the launcher's now-playing card
+ * ([io.wolftown.lauschig.MainActivity.EXTRA_OPEN]): "player" opens the player once "who is listening?" is answered (see
+ * [TvOpenRequest]); anything else has no page on the TV and is let go.
  */
 @Composable
 fun TvRoot(
@@ -56,14 +66,20 @@ fun TvRoot(
     // A switch or an unlock that worked shows itself: the next profile's pages are there. Taken off here, as the page that
     // started it is gone by then; a failure stays for "who is listening?" to show.
     LaunchedEffect(outcome) { outcome?.takeIf { it.kind in SHOWN_BY_THEIR_PAGES }?.let(profiles::shown) }
-    LaunchedEffect(openRequest) { if (openRequest != null) onOpenHandled() }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         TvTheme {
             WindowBackground()
             // Opaque, and the content colour for both kinds of components: text without its own colour would be black.
             Surface(Modifier.fillMaxSize(), colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background)) {
                 CompositionLocalProvider(Material3ContentColor provides MaterialTheme.colorScheme.onBackground) {
-                    TvAccountPages(pages, rows?.size, pagesScope) { account, start -> TvNavHost(account, start) }
+                    TvAccountPages(pages, rows?.size, pagesScope) { account, start ->
+                        TvNavHost(account, start)
+                        TvOpenRequest(account.controller, openRequest, onOpenHandled) {
+                            // As on the phone: the service may hold a title this process has not seen yet.
+                            viewModel.player.adoptFromService()
+                            withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
+                        }
+                    }
                 }
             }
         }
@@ -95,3 +111,26 @@ internal fun TvAccountPages(
 }
 
 private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOutcome.Kind.UNLOCKED, ProfileOutcome.Kind.REMOVED)
+
+/**
+ * Carries out [request] on the pages [nav] shows. The player ([MainActivity.OPEN_PLAYER]) waits while "who is listening?" or
+ * the sign-in is on screen: it must not jump over the question (TV spec E8), and it opens on top of whatever page comes
+ * after it, so Back leads there; opened at the start, that is the start page (review focus 3). It opens only if a title is
+ * loaded ([playerLoaded]), as on the phone. A request the TV has no page for is let go.
+ */
+@Composable
+internal fun TvOpenRequest(nav: NavHostController, request: String?, onHandled: () -> Unit, playerLoaded: suspend () -> Boolean) {
+    val entry by nav.currentBackStackEntryAsState()
+    val destination = entry?.destination
+    val handled by rememberUpdatedState(onHandled)
+    val loaded by rememberUpdatedState(playerLoaded)
+    LaunchedEffect(request, destination) {
+        if (request == null || destination == null) return@LaunchedEffect
+        if (request != MainActivity.OPEN_PLAYER) return@LaunchedEffect handled()
+        if (destination.hasRoute<TvProfiles>() || destination.hasRoute<Setup>()) return@LaunchedEffect
+        if (loaded()) nav.openPlayer()
+        handled()
+    }
+}
+
+private const val PLAYER_OPEN_WAIT_MS = 2_000L
