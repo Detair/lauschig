@@ -12,7 +12,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import io.wolftown.lauschig.MainViewModel
 import io.wolftown.lauschig.auto.VoicePlayer
-import io.wolftown.lauschig.isLauncherStart
 import io.wolftown.lauschig.links.IncomingIntents
 import io.wolftown.lauschig.ui.profiles.AndroidDeviceLockPrompter
 import io.wolftown.lauschig.ui.profiles.LocalDeviceLockPrompter
@@ -38,8 +37,8 @@ class TvActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // Here and not later: the prompt's answer can come right after a recreation (see AndroidDeviceLockPrompter).
         val deviceLock = AndroidDeviceLockPrompter(this)
-        // Before handleOpen strips the extras it consumes.
-        if (isLauncherStart(intent, recreated = savedInstanceState != null)) viewModel.continueOnLauncherStart()
+        // No "continue on start" here, unlike the phone: a TV belongs to everyone in the room, and it must not play the last
+        // title of a profile, perhaps a protected one, before "who is listening?" has been answered (TV spec E8).
         handleOpen(intent, replay = IncomingIntents.isReplay(intent, recreated = savedInstanceState != null))
         setContent {
             // Not with the lifecycle: the first frame after a pause must already belong to the account that is active now.

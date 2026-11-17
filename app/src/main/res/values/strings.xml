@@ -1179,4 +1179,14 @@
     <string name="server_qr_error_too_long">The code is too long.</string>
     <!-- Google TV -->
     <string name="tv_home_loading">Loading your library…</string>
+    <string name="tv_placeholder">This page follows in a later version.</string>
+    <string name="tv_home_empty">Your library is empty. Titles added on the server appear here.</string>
+    <string name="tv_home_offline">The server cannot be reached, and nothing of your library is on this TV yet.</string>
+    <string name="tv_retry">Try again</string>
+    <string name="tv_pin_delete">Delete</string>
+    <plurals name="tv_pin_entered">
+        <item quantity="one">%d digit entered</item>
+        <item quantity="other">%d digits entered</item>
+    </plurals>
+    <string name="tv_profiles_device_lock">%1$s is protected by the device lock, which the TV does not use. Sign in with this account and the protection is removed.</string>
 </resources>

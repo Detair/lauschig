@@ -525,6 +525,54 @@ class ProfileGateTest {
         assertTrue(passedTheSwitch(vm))
     }
 
+    // --- The TV asks at every start, the active profile too (TV spec E8) ---
+
+    @Test fun theActiveProfile_unprotected_isEnteredAtOnce_withoutASwitch() {
+        val vm = vm()
+        assertFalse(vm.enteredActive.value)
+        vm.enterActive()
+        assertNull(vm.gatePrompt.value)
+        assertTrue(vm.enteredActive.value)
+        assertTrue(profiles.calls.isEmpty())
+        assertEquals(fabian, store.acc.value)
+    }
+
+    @Test fun theActiveProfile_withAPin_isEnteredOnlyWithTheRightOne() {
+        locks.pin(fabian.serverId)
+        val vm = vm()
+        vm.enterActive()
+        assertEquals("Fabian", (vm.gatePrompt.value as GatePrompt.Pin).row.name)
+        assertFalse(vm.enteredActive.value)
+
+        vm.submitPin("9999")
+        assertEquals(PinNotice.Wrong(4), (vm.gatePrompt.value as GatePrompt.Pin).notice)
+        assertFalse(vm.enteredActive.value)
+
+        vm.submitPin("1234")
+        assertNull(vm.gatePrompt.value)
+        assertTrue(vm.enteredActive.value)
+        assertTrue("it is already the active one", profiles.calls.isEmpty())
+    }
+
+    @Test fun theActiveProfile_cancelled_isNotEntered() {
+        locks.pin(fabian.serverId)
+        val vm = vm()
+        vm.enterActive()
+        vm.cancelGate()
+        vm.submitPin("1234")
+        assertNull(vm.gatePrompt.value)
+        assertFalse(vm.enteredActive.value)
+    }
+
+    @Test fun nobodyActive_thereIsNothingToEnter() {
+        store.acc.value = null
+        store.aside.value = listOf(fabian, kind).map { FakeAccountStore.Aside(it, "acc", "ref", false) }
+        val vm = vm()
+        vm.enterActive()
+        assertNull(vm.gatePrompt.value)
+        assertFalse(vm.enteredActive.value)
+    }
+
     // --- 3.2, the setting ---
 
     @Test fun theRows_sayWhatIsProtected() {
