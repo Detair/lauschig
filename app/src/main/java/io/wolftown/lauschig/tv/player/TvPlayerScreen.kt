@@ -447,10 +447,14 @@ private fun Status(state: PlayerScreenState, sleep: SleepTimerUi?, sleepEnding: 
 @Composable
 private fun Progress(fraction: Float, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
-    // Said as a progress bar; the times beside it say the rest.
+    // Said as a progress bar with its name; the times beside it say the rest.
+    val label = stringResource(R.string.tv_player_chapter_progress)
     Box(
         modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(scheme.surfaceVariant)
-            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(fraction.coerceIn(0f, 1f), 0f..1f) }
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction.coerceIn(0f, 1f), 0f..1f)
+                contentDescription = label
+            }
             .testTag(TAG_PROGRESS),
     ) {
         Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(6.dp).background(scheme.primary))

@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination
@@ -57,9 +58,10 @@ fun TvRoot(
     pages: AppPages,
     openRequest: String?,
     onOpenHandled: () -> Unit,
-    voiceRequest: VoiceRequest? = null,
-    onVoiceHandled: () -> Unit = {},
+    voice: TvVoice? = null,
+    onVoiceDone: (TvVoice) -> Unit = {},
     playVoice: (VoiceRequest) -> Unit = {},
+    questions: TvQuestions = remember { TvQuestions() },
     viewModel: AppViewModel = hiltViewModel(),
     pagesScope: AccountPagesScope = hiltViewModel(),
     profiles: ProfilesViewModel = hiltViewModel(),
@@ -78,15 +80,15 @@ fun TvRoot(
             WindowBackground()
             // Opaque, and the content colour for both kinds of components: text without its own colour would be black.
             Surface(Modifier.fillMaxSize(), colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background)) {
-                CompositionLocalProvider(Material3ContentColor provides MaterialTheme.colorScheme.onBackground) {
+                CompositionLocalProvider(Material3ContentColor provides MaterialTheme.colorScheme.onBackground, LocalTvQuestions provides questions) {
                     TvAccountPages(pages, rows?.size, pagesScope) { account, start ->
                         TvNavHost(account, start)
-                        TvOpenRequest(account.controller, openRequest, onOpenHandled) {
+                        TvOpenRequest(account.controller, openRequest, onOpenHandled, questionOpen = questions.open) {
                             // As on the phone: the service may hold a title this process has not seen yet.
                             viewModel.player.adoptFromService()
                             withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
                         }
-                        TvVoiceRequest(account.controller, voiceRequest, onVoiceHandled, playVoice)
+                        TvVoiceRequest(account.controller, voice, questions, onVoiceDone, playVoice)
                     }
                     TvUnlockedNotice(outcome, profiles::shown)
                 }
@@ -139,15 +141,22 @@ private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOu
  * loaded ([playerLoaded]), as on the phone. A request the TV has no page for is let go.
  */
 @Composable
-internal fun TvOpenRequest(nav: NavHostController, request: String?, onHandled: () -> Unit, playerLoaded: suspend () -> Boolean) {
+internal fun TvOpenRequest(
+    nav: NavHostController,
+    request: String?,
+    onHandled: () -> Unit,
+    /** A PIN or protection step is open inside a page ([TvQuestions.open]): the player waits for it too. */
+    questionOpen: Boolean = false,
+    playerLoaded: suspend () -> Boolean,
+) {
     val entry by nav.currentBackStackEntryAsState()
     val destination = entry?.destination
     val handled by rememberUpdatedState(onHandled)
     val loaded by rememberUpdatedState(playerLoaded)
-    LaunchedEffect(request, destination) {
+    LaunchedEffect(request, destination, questionOpen) {
         if (request == null || destination == null) return@LaunchedEffect
         if (request != MainActivity.OPEN_PLAYER) return@LaunchedEffect handled()
-        if (waitsForAnAnswer(destination)) return@LaunchedEffect
+        if (waitsForAnAnswer(destination) || questionOpen) return@LaunchedEffect
         if (loaded()) nav.openPlayer()
         handled()
     }
@@ -157,21 +166,35 @@ internal fun TvOpenRequest(nav: NavHostController, request: String?, onHandled: 
 private fun waitsForAnAnswer(destination: NavDestination): Boolean = destination.hasRoute<TvProfiles>() || destination.hasRoute<Setup>()
 
 /**
- * "Play X in Lauschig" from the Assistant ([MainActivity] hands it on to the TV). Like the player request it waits while "who
- * is listening?" or the sign-in is on screen, so that a voice cannot play a protected profile's titles before its PIN; then
- * [play] runs it once ([io.wolftown.lauschig.auto.VoicePlayer], which also opens the player once something plays).
+ * "Play X in Lauschig" from the Assistant ([MainActivity] hands it on to the TV), decided by [voiceStep]: it waits while "who
+ * is listening?" or the sign-in is on screen, or a PIN or protection step is open in a page, so that a voice neither plays a
+ * protected profile's titles before its PIN nor throws someone typing a PIN into the player; it is let go when "who is
+ * listening?" is left without an answer after it came. Then [play] runs it once ([io.wolftown.lauschig.auto.VoicePlayer],
+ * which also opens the player once something plays). [onDone] takes it off either way; [TvVoiceInbox] ends one that waits too
+ * long.
  */
 @Composable
-internal fun TvVoiceRequest(nav: NavHostController, request: VoiceRequest?, onHandled: () -> Unit, play: (VoiceRequest) -> Unit) {
+internal fun TvVoiceRequest(nav: NavHostController, voice: TvVoice?, questions: TvQuestions, onDone: (TvVoice) -> Unit, play: (VoiceRequest) -> Unit) {
     val entry by nav.currentBackStackEntryAsState()
     val destination = entry?.destination
-    val handled by rememberUpdatedState(onHandled)
+    val done by rememberUpdatedState(onDone)
     val run by rememberUpdatedState(play)
-    LaunchedEffect(request, destination) {
-        if (request == null || destination == null || waitsForAnAnswer(destination)) return@LaunchedEffect
-        // Taken off first: whatever comes of it, it runs once.
-        handled()
-        run(request)
+    if (voice == null) return
+    val step = voiceStep(
+        onQuestionPage = destination == null || waitsForAnAnswer(destination),
+        questionOpen = questions.open,
+        cancelledSinceRequest = questions.cancelledAt >= voice.receivedAt,
+    )
+    LaunchedEffect(voice, step) {
+        when (step) {
+            VoiceStep.WAIT -> Unit
+            VoiceStep.DROP -> done(voice)
+            VoiceStep.RUN -> {
+                // Taken off first: whatever comes of it, it runs once.
+                done(voice)
+                run(voice.request)
+            }
+        }
     }
 }
 

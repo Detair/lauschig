@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.tv.home
 
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -236,6 +239,7 @@ private class Pending {
 
 internal const val TAG_REAUTH = "tvReauth"
 internal const val TAG_REAUTH_SIGN_IN = "tvReauthSignIn"
+internal const val TAG_REAUTH_TEXT = "tvReauthText"
 
 /** "Session expired", as the phone's banner says, with the button to the sign-in of this account. */
 @Composable
@@ -245,7 +249,11 @@ private fun ReauthHint(onSignIn: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(stringResource(R.string.reauth_banner), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+        // Read out when it appears: the focus stays on the rows, so a screen reader would not come by it otherwise.
+        Text(
+            stringResource(R.string.reauth_banner), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag(TAG_REAUTH_TEXT),
+        )
         Button(onClick = onSignIn, modifier = Modifier.testTag(TAG_REAUTH_SIGN_IN)) { Text(stringResource(R.string.reauth_action)) }
     }
 }

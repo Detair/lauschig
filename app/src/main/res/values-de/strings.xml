@@ -1225,4 +1225,8 @@
     <string name="tv_settings_sign_out_hint">Meldet dieses Profil auf diesem Fernseher ab</string>
     <string name="tv_settings_version">Version %1$s (%2$d)</string>
     <string name="tv_card_progress">%1$d %% gehört</string>
+    <string name="tv_settings_reconnect_offline">Keine Adresse hat geantwortet.</string>
+    <string name="tv_sign_out_message_no_host">Dieser Fernseher wird abgemeldet.</string>
+    <string name="tv_settings_pin_saving">PIN wird gespeichert …</string>
+    <string name="tv_player_chapter_progress">Fortschritt im Kapitel</string>
 </resources>

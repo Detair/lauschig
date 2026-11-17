@@ -92,13 +92,21 @@ private val TileShape = RoundedCornerShape(16.dp)
  * passes the same gate. [onChosen] once the active one is in; a switch brings the other profile's pages by itself.
  */
 @Composable
-fun TvProfilesRoute(onChosen: () -> Unit, onAdd: () -> Unit, onSignIn: (String) -> Unit, viewModel: ProfilesViewModel = hiltViewModel()) {
+fun TvProfilesRoute(
+    onChosen: () -> Unit,
+    onAdd: () -> Unit,
+    onSignIn: (String) -> Unit,
+    /** A switch to another profile has started: the question is answered, the next profile's pages follow. */
+    onSwitching: () -> Unit = {},
+    viewModel: ProfilesViewModel = hiltViewModel(),
+) {
     val rows by viewModel.profiles.collectAsStateWithLifecycle()
     val gate by viewModel.gatePrompt.collectAsStateWithLifecycle()
     val entered by viewModel.enteredActive.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     LaunchedEffect(entered) { if (entered) onChosen() }
+    LaunchedEffect(busy) { if (busy is ProfileWork.Switching) onSwitching() }
     val list = rows ?: return
     TvProfilesScreen(
         rows = list,

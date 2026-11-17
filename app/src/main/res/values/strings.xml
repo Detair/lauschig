@@ -1225,4 +1225,8 @@
     <string name="tv_settings_sign_out_hint">Signs this profile out of this TV</string>
     <string name="tv_settings_version">Version %1$s (%2$d)</string>
     <string name="tv_card_progress">%1$d %% heard</string>
+    <string name="tv_settings_reconnect_offline">No address answered.</string>
+    <string name="tv_sign_out_message_no_host">This TV will be signed out.</string>
+    <string name="tv_settings_pin_saving">Saving the PIN …</string>
+    <string name="tv_player_chapter_progress">Progress in the chapter</string>
 </resources>

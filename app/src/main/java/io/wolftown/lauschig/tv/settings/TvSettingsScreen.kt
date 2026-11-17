@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -63,10 +64,13 @@ import io.wolftown.lauschig.tv.rememberTvSettings
 import io.wolftown.lauschig.ui.AppViewModel
 import io.wolftown.lauschig.ui.connection.ConnectionStatusViewModel
 import io.wolftown.lauschig.ui.profiles.ProfilesViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import io.wolftown.lauschig.account.ProfileLockKind
 import io.wolftown.lauschig.settings.SignOutStep
+import io.wolftown.lauschig.tv.HoldsAQuestion
 import io.wolftown.lauschig.tv.TvDimens
+import io.wolftown.lauschig.tv.nav.KeepRailClosed
 import io.wolftown.lauschig.tv.common.requestFocusWhenPlaced
 import io.wolftown.lauschig.tv.nav.LocalRailHasFocus
 import io.wolftown.lauschig.tv.profiles.PinPage
@@ -100,6 +104,8 @@ internal const val TAG_SIGN_OUT_DIALOG = "tvSignOutDialog"
 internal const val TAG_SIGN_OUT_CONFIRM = "tvSignOutConfirm"
 internal const val TAG_SIGN_OUT_CANCEL = "tvSignOutCancel"
 internal const val TAG_SIGN_OUT_UNSYNCED = "tvSignOutUnsynced"
+internal const val TAG_RECONNECT_RESULT = "tvReconnectResult"
+internal const val TAG_NEW_PIN_SAVING = "tvNewPinSaving"
 
 /** "Screen off after": never (0), or after so many minutes without a key press. */
 internal val SCREEN_OFF_CHOICES = listOf(0, 1, 5, 15)
@@ -116,6 +122,8 @@ data class TvSettingsState(
     val screenOffMinutes: Int,
     val versionName: String,
     val versionCode: Int,
+    /** "Reconnect" ran or runs: its result is said once more, also when the connection was up before. */
+    val reconnect: ReconnectState? = null,
 ) {
     /** As on the phone: one profile needs no protection, but one that has it can still take it off. */
     val showsProtection: Boolean get() = moreProfiles || protection != ProfileLockKind.NONE
@@ -152,6 +160,9 @@ fun TvSettingsScreen(
     onCancelProtection: () -> Unit = {},
 ) {
     var choosingScreenOff by rememberSaveable { mutableStateOf(false) }
+    // A PIN or protection step: requests from outside (voice, the player) wait for it, and the rail stays shut while a PIN is typed.
+    HoldsAQuestion(gate != null || protectionStep != null)
+    KeepRailClosed(gate is GatePrompt.Pin || protectionStep is ProtectionStep.NewPin)
     // Kept above the list, which leaves while a PIN page is on: back from it, the focus is on the row it came from.
     val rowFocus = RowFocus(rememberSaveable { mutableStateOf(ROW_PROFILE) }, rememberSaveable { mutableIntStateOf(0) })
     when {
@@ -199,16 +210,14 @@ fun TvSettingsRoute(
     val settings = rememberTvSettings()
     val screenOff by settings.screenOffMinutes.collectAsStateWithLifecycle(TvSettingsStore.DEFAULT_SCREEN_OFF_MINUTES)
     val scope = rememberCoroutineScope()
-    val cancelProtection = {
-        profiles.cancelGate()
-        profiles.cancelProtection()
-    }
+    val cancelProtection = { endProtection(profiles) }
     TvSettingsScreen(
         state = TvSettingsState(
             profileName = info?.username,
             host = info?.host,
             online = online is ConnectionState.Online,
             checking = firstCheck || status.reconnect == ReconnectState.Running,
+            reconnect = status.reconnect,
             protection = rows?.firstOrNull { it.active }?.protection ?: ProfileLockKind.NONE,
             moreProfiles = (rows?.size ?: 0) > 1,
             screenOffMinutes = screenOff,
@@ -219,7 +228,7 @@ fun TvSettingsRoute(
         onSwitchProfile = onSwitchProfile,
         onSetPin = profiles::setNewPin,
         onRemovePin = { profiles.chooseProtection(ProfileLockKind.NONE) },
-        onScreenOff = { minutes -> scope.launch { settings.setScreenOffMinutes(minutes) } },
+        onScreenOff = screenOffSetter(settings, scope),
         onReconnect = connection::reconnect,
         onSignOut = account::startSignOut,
         onConfirmSignOut = account::confirm,
@@ -229,12 +238,26 @@ fun TvSettingsRoute(
         onProtect = profiles::changeProtection,
         onChoosePin = { profiles.chooseProtection(ProfileLockKind.PIN) },
         onGatePin = profiles::submitPin,
-        onSignIn = { serverId ->
-            cancelProtection()
-            onSignIn(serverId)
-        },
+        onSignIn = { serverId -> leaveForSignIn(profiles, serverId, onSignIn) },
         onCancelProtection = cancelProtection,
     )
+}
+
+/** Ends the protection flow wherever it stands: the current PIN's question or the steps after it. */
+internal fun endProtection(profiles: ProfilesViewModel) {
+    profiles.cancelGate()
+    profiles.cancelProtection()
+}
+
+/** To the sign-in of [serverId] (a forgotten PIN): the flow ends first, so nothing of it waits behind the sign-in. */
+internal fun leaveForSignIn(profiles: ProfilesViewModel, serverId: String, onSignIn: (String) -> Unit) {
+    endProtection(profiles)
+    onSignIn(serverId)
+}
+
+/** "Screen off after": the minutes chosen go to the TV's settings, where the player reads them. */
+internal fun screenOffSetter(settings: TvSettingsStore, scope: CoroutineScope): (Int) -> Unit = { minutes ->
+    scope.launch { settings.setScreenOffMinutes(minutes) }
 }
 
 /** Which row had the focus last, by key and by place. */
@@ -321,6 +344,20 @@ private fun SettingsRows(
                     }
                     .testTag(TAG_SETTINGS_ROW + row.key),
             )
+            if (row.key == ROW_CONNECTION) {
+                // Always there, so that a new result is read out (AnnouncedLine), even if the line above did not change.
+                AnnouncedLine(
+                    when (val r = state.reconnect) {
+                        null -> null
+                        ReconnectState.Running -> stringResource(R.string.connection_reconnecting)
+                        is ReconnectState.Done -> stringResource(if (r.online) R.string.connection_reconnect_online else R.string.tv_settings_reconnect_offline)
+                    },
+                    tag = TAG_RECONNECT_RESULT,
+                    modifier = Modifier.widthIn(max = 720.dp).padding(start = 72.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -346,7 +383,9 @@ private fun ScreenOffDialog(current: Int, onChoose: (Int) -> Unit, onCancel: () 
                         selected = minutes == current,
                         onClick = { onChoose(minutes) },
                         headlineContent = { Text(screenOffText(minutes)) },
+                        // Said, not only seen: which of them applies now.
                         modifier = Modifier
+                            .semantics { selected = minutes == current }
                             .then(if (i == start) Modifier.focusRequester(focus) else Modifier)
                             .testTag(TAG_SCREEN_OFF_OPTION + minutes),
                     )
@@ -446,6 +485,12 @@ private fun NewPinPage(step: ProtectionStep.NewPin, onDone: (String) -> Unit, on
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (step.saving) CircularProgressIndicator(Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary)
+            // Why the pad does not answer while it saves.
+            AnnouncedLine(
+                if (step.saving) stringResource(R.string.tv_settings_pin_saving) else null,
+                tag = TAG_NEW_PIN_SAVING,
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             TvPinPad(
@@ -477,7 +522,10 @@ private fun SignOutDialog(step: SignOutStep, host: String?, onConfirm: () -> Uni
                 SignOutStep.Checking -> Busy(stringResource(R.string.sign_out_syncing))
                 SignOutStep.SigningOut -> Busy(null)
                 is SignOutStep.Confirm -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.sign_out_message, host.orEmpty()), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (host.isNullOrBlank()) stringResource(R.string.tv_sign_out_message_no_host) else stringResource(R.string.sign_out_message, host),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
                     val unsynced = step.unsynced
                     if (unsynced == null || unsynced > 0) {
                         Text(

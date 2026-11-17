@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.tv.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
@@ -12,6 +14,7 @@ import io.wolftown.lauschig.tv.home.TvHomeRoute
 import io.wolftown.lauschig.tv.player.TvPlayerRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
 import io.wolftown.lauschig.tv.settings.TvSettingsRoute
+import io.wolftown.lauschig.tv.LocalTvQuestions
 import io.wolftown.lauschig.tv.setup.TvSetupRoute
 import io.wolftown.lauschig.ui.nav.AccountNavHost
 import io.wolftown.lauschig.ui.nav.AccountNavigation
@@ -76,10 +79,25 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
         composable<Browse> { TvBrowseRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Setup> { TvSetupRoute(onDone = { navController.finishSetup(TvHome) }) }
         composable<TvProfiles> {
+            // Left without an answer (Back), the question takes a waiting voice request with it (see TvQuestions). Every
+            // other way out answers it or leads on to a sign-in, which is a question of its own.
+            val questions = LocalTvQuestions.current
+            val answered = remember { Answered() }
+            DisposableEffect(Unit) { onDispose { if (!answered.value) questions.cancelled() } }
             TvProfilesRoute(
-                onChosen = { navController.leaveProfiles() },
-                onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
-                onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
+                onChosen = {
+                    answered.value = true
+                    navController.leaveProfiles()
+                },
+                onAdd = {
+                    answered.value = true
+                    navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true }
+                },
+                onSignIn = {
+                    answered.value = true
+                    navController.navigate(Setup.unlock(it)) { launchSingleTop = true }
+                },
+                onSwitching = { answered.value = true },
             )
         }
     }
@@ -116,3 +134,8 @@ internal fun NavHostController.openSection(section: TvSection) {
 
 /** To the player; a second call while it is on top adds no second one. */
 internal fun NavHostController.openPlayer() = navigate(TvPlayer) { launchSingleTop = true }
+
+/** Whether "who is listening?" was answered before it left; a plain field, read once when it goes. */
+private class Answered {
+    var value = false
+}

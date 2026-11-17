@@ -11,6 +11,10 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isFocused
@@ -65,14 +69,26 @@ class TvSettingsScreenTest {
     private var gate by mutableStateOf<GatePrompt?>(null)
     private var step by mutableStateOf<ProtectionStep?>(null)
 
-    private fun show() = rule.setContent {
+    private var onScreenOffHandler: (Int) -> Unit = { screenOff += it }
+    private var questions = io.wolftown.lauschig.tv.TvQuestions()
+
+    private fun show(inShell: Boolean = false) = rule.setContent {
         TvTheme {
+            androidx.compose.runtime.CompositionLocalProvider(io.wolftown.lauschig.tv.LocalTvQuestions provides questions) {
+                if (inShell) io.wolftown.lauschig.tv.nav.TvShell(io.wolftown.lauschig.tv.nav.TvSection.Settings, onSection = { calls += "section:$it" }) { Screen() }
+                else Screen()
+            }
+        }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun Screen() {
             TvSettingsScreen(
                 state, signOut,
                 onSwitchProfile = { calls += "switch" },
                 onSetPin = { pins += it },
                 onRemovePin = { calls += "removePin" },
-                onScreenOff = { screenOff += it },
+                onScreenOff = { onScreenOffHandler(it) },
                 onReconnect = { calls += "reconnect" },
                 onSignOut = { calls += "signOut" },
                 onConfirmSignOut = { calls += "confirmSignOut" },
@@ -85,7 +101,6 @@ class TvSettingsScreenTest {
                 onSignIn = { calls += "signIn:$it" },
                 onCancelProtection = { calls += "cancelProtection" },
             )
-        }
     }
 
     private fun press(key: Key, times: Int = 1) = repeat(times) {
@@ -121,7 +136,15 @@ class TvSettingsScreenTest {
         press(Key.DirectionCenter) // reconnect
         press(Key.DirectionDown)
         press(Key.DirectionCenter) // sign out
+        press(Key.DirectionDown)
+        row(ROW_ABOUT).assertIsFocused()
+        press(Key.DirectionCenter) // about: nothing to do, the focus stays
+        row(ROW_ABOUT).assertIsFocused()
         assertEquals(listOf("switch", "protect", "reconnect", "signOut"), calls)
+        press(Key.DirectionUp, times = 3)
+        row(ROW_SCREEN_OFF).assertIsFocused()
+        press(Key.DirectionCenter) // screen off: its choice opens
+        rule.onNodeWithTag(TAG_SCREEN_OFF_DIALOG).assertExists()
     }
 
     @Test fun oneProfileWithoutProtection_hasNoProtectionRow_butCanSwitch() {
@@ -222,7 +245,7 @@ class TvSettingsScreenTest {
         signOut = SignOutStep.Checking
         show()
         rule.onNodeWithText(context.getString(R.string.sign_out_syncing)).assertExists()
-        rule.onNodeWithTag(TAG_SIGN_OUT_CONFIRM).assertExists()
+        rule.onNodeWithTag(TAG_SIGN_OUT_CONFIRM).assertIsNotEnabled()
         rule.onNodeWithTag(TAG_SIGN_OUT_CANCEL).assertIsFocused()
         pressInDialog(Key.DirectionRight)
         pressInDialog(Key.DirectionCenter)
@@ -344,5 +367,102 @@ class TvSettingsScreenTest {
         '7' -> Key.Seven
         '8' -> Key.Eight
         else -> Key.Nine
+    }
+
+    @Test fun signOut_withoutAKnownServer_saysSoWithoutAGap() {
+        state = base.copy(host = null)
+        signOut = SignOutStep.Confirm(unsynced = 0, downloadBytes = 0)
+        show()
+        rule.onNodeWithText(context.getString(R.string.tv_sign_out_message_no_host)).assertExists()
+    }
+
+    @Test fun screenOff_theCurrentChoice_isSaidToBeSelected() {
+        show()
+        press(Key.DirectionDown, times = 2)
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag(TAG_SCREEN_OFF_OPTION + 5).assertIsSelected()
+        rule.onNodeWithTag(TAG_SCREEN_OFF_OPTION + 15).assertIsNotSelected()
+    }
+
+    /** Each choice reaches the TV's settings store as its minutes. */
+    @Test fun screenOff_everyChoice_reachesTheStore() = kotlinx.coroutines.runBlocking {
+        val store = object : io.wolftown.lauschig.tv.TvSettingsStore {
+            val written = mutableListOf<Int>()
+            override val screenOffMinutes = kotlinx.coroutines.flow.MutableStateFlow(5)
+            override suspend fun setScreenOffMinutes(minutes: Int) { written += minutes; screenOffMinutes.value = minutes }
+        }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+        onScreenOffHandler = screenOffSetter(store, scope)
+        show()
+        press(Key.DirectionDown, times = 2)
+        // The state here stays at 5, so each time the list opens on 5 and the choice is so many steps up or down from it.
+        listOf(0, 1, 5, 15).forEach { minutes ->
+            press(Key.DirectionCenter)
+            val steps = SCREEN_OFF_CHOICES.indexOf(minutes) - SCREEN_OFF_CHOICES.indexOf(5)
+            if (steps < 0) pressInDialog(Key.DirectionUp, times = -steps)
+            if (steps > 0) pressInDialog(Key.DirectionDown, times = steps)
+            rule.onNodeWithTag(TAG_SCREEN_OFF_OPTION + minutes).assertIsFocused()
+            pressInDialog(Key.DirectionCenter)
+        }
+        assertEquals(listOf(0, 1, 5, 15), store.written)
+    }
+
+    /** "Reconnect" says its result, also when the connection was up before; in a line a screen reader reads out. */
+    @Test fun reconnect_saysItsResult() {
+        state = base.copy(reconnect = io.wolftown.lauschig.connection.ReconnectState.Running)
+        show()
+        rule.onNodeWithTag(TAG_RECONNECT_RESULT).assertContentDescriptionEquals(context.getString(R.string.connection_reconnecting))
+        state = base.copy(reconnect = io.wolftown.lauschig.connection.ReconnectState.Done(online = true))
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_RECONNECT_RESULT).assertContentDescriptionEquals(context.getString(R.string.connection_reconnect_online))
+        state = base.copy(reconnect = io.wolftown.lauschig.connection.ReconnectState.Done(online = false))
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_RECONNECT_RESULT).assertContentDescriptionEquals(context.getString(R.string.tv_settings_reconnect_offline))
+    }
+
+    @Test fun aNewPin_whileSaving_saysSo() {
+        step = ProtectionStep.NewPin(anna, saving = true)
+        show()
+        rule.onNodeWithTag(TAG_NEW_PIN_SAVING).assertContentDescriptionEquals(context.getString(R.string.tv_settings_pin_saving))
+    }
+
+    /** On the list, left opens the rail as everywhere. */
+    @Test fun inTheShell_leftOpensTheRail_fromTheList() {
+        show(inShell = true)
+        row(ROW_PROFILE).assertIsFocused()
+        press(Key.DirectionLeft)
+        rule.onNodeWithTag(io.wolftown.lauschig.tv.nav.TAG_RAIL + "Settings").assertIsFocused()
+    }
+
+    /** While a new PIN is typed, left at the pad's edge stays on the pad: the rail would end the flow and lose the first entry. */
+    @Test fun inTheShell_aNewPin_keepsTheRailShut() {
+        step = ProtectionStep.NewPin(anna)
+        show(inShell = true)
+        rule.onNodeWithTag(TAG_PIN_DIGIT + '5').assertIsFocused()
+        press(Key.DirectionLeft, times = 3)
+        rule.onNodeWithTag(TAG_PIN_DIGIT + '4').assertIsFocused()
+        rule.onNodeWithTag(io.wolftown.lauschig.tv.nav.TAG_RAIL + "Settings").assertIsNotFocused()
+    }
+
+    /** The current PIN's page: left reaches "forgot your PIN?", and stops there. */
+    @Test fun inTheShell_theCurrentPin_keepsTheRailShut() {
+        gate = GatePrompt.Pin(anna)
+        show(inShell = true)
+        press(Key.DirectionLeft, times = 4)
+        rule.onNodeWithTag(io.wolftown.lauschig.tv.profiles.TAG_PIN_FORGOT).assertIsFocused()
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("section:") })
+    }
+
+    /** A PIN or protection step tells requests from outside (voice, the player) to wait; the list does not. */
+    @Test fun aPinStep_holdsRequestsFromOutside() {
+        show()
+        rule.runOnIdle { assertFalse(questions.open) }
+        gate = GatePrompt.Pin(anna)
+        rule.runOnIdle { assertTrue(questions.open) }
+        gate = null
+        step = ProtectionStep.Choose(anna, ProfileLockKind.NONE, deviceLockAvailable = false)
+        rule.runOnIdle { assertTrue(questions.open) }
+        step = null
+        rule.runOnIdle { assertFalse(questions.open) }
     }
 }
