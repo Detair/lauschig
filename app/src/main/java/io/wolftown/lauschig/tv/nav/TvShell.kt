@@ -17,6 +17,9 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -59,6 +62,28 @@ enum class TvSection(@StringRes val label: Int, val icon: ImageVector) {
  */
 internal val LocalRailHasFocus = staticCompositionLocalOf<() -> Boolean> { { false } }
 
+/** Content that must keep the focus (a PIN being typed) closes the rail while it is on screen ([KeepRailClosed]). */
+@Stable
+internal class RailLock {
+    var holders by mutableIntStateOf(0)
+}
+
+internal val LocalRailLock = staticCompositionLocalOf<RailLock?> { null }
+
+/**
+ * While [active], the rail does not open: Left at the edge stays where it is. A section chosen there would end a PIN half typed,
+ * and the first of two entries with it.
+ */
+@Composable
+internal fun KeepRailClosed(active: Boolean) {
+    if (!active) return
+    val lock = LocalRailLock.current ?: return
+    DisposableEffect(lock) {
+        lock.holders++
+        onDispose { lock.holders-- }
+    }
+}
+
 /**
  * A top-level page with the rail on its left. The rail shows only its symbols until the focus comes in: left from the content
  * opens it on the [current] section, with the names. Right, OK on the current section, or Back goes back to where the focus
@@ -69,6 +94,7 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
     val focusManager = LocalFocusManager.current
     val currentItem = remember { FocusRequester() }
     var railHasFocus by remember { mutableStateOf(false) }
+    val lock = remember { RailLock() }
     // Back closes the open rail, as on other TV apps, instead of leaving the page behind it.
     BackHandler(enabled = railHasFocus) { focusManager.moveFocus(FocusDirection.Right) }
     NavigationDrawer(
@@ -85,7 +111,7 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
                     // the rail, which then opens by itself and keeps the rows from taking the focus.
                     .focusProperties {
                         onEnter = {
-                            if (requestedFocusDirection == FocusDirection.Left) currentItem.requestFocus(FocusDirection.Enter)
+                            if (requestedFocusDirection == FocusDirection.Left && lock.holders == 0) currentItem.requestFocus(FocusDirection.Enter)
                             else cancelFocusChange()
                         }
                     }
@@ -116,7 +142,7 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
                 .focusRestorer()
                 .focusGroup(),
         ) {
-            CompositionLocalProvider(LocalRailHasFocus provides { railHasFocus }, content = content)
+            CompositionLocalProvider(LocalRailHasFocus provides { railHasFocus }, LocalRailLock provides lock, content = content)
         }
     }
 }

@@ -29,9 +29,10 @@ class TvNavHostTest {
 
     private lateinit var nav: NavHostController
 
-    private fun show() = rule.setContent {
+    private fun show(start: Any = TvHome) = rule.setContent {
         nav = rememberNavController()
-        NavHost(nav, startDestination = TvHome) {
+        NavHost(nav, startDestination = start) {
+            composable<TvProfiles> { Text("profiles") }
             composable<TvHome> { Text("home") }
             composable<TvLibrary> { Text("library") }
             composable<TvSearch> { Text("search") }
@@ -45,6 +46,7 @@ class TvNavHostTest {
     private fun stack(): List<String> = nav.currentBackStack.value.mapNotNull { entry ->
         val d = entry.destination
         when {
+            d.hasRoute<TvProfiles>() -> "profiles"
             d.hasRoute<TvHome>() -> "home"
             d.hasRoute<TvLibrary>() -> "library"
             d.hasRoute<TvSearch>() -> "search"
@@ -97,5 +99,23 @@ class TvNavHostTest {
         }
         rule.waitForIdle()
         assertEquals(listOf("home", "item", "browse", "player"), stack())
+    }
+
+    @Test fun whoIsListening_atTheStart_givesWayToTheStartPage() {
+        show(start = TvProfiles)
+        rule.runOnIdle { nav.leaveProfiles() }
+        rule.waitForIdle()
+        assertEquals(listOf("home"), stack())
+    }
+
+    @Test fun whoIsListening_fromTheSettings_leadsBackToTheStartPage_notOnTopOfIt() {
+        show()
+        open(TvSection.Settings)
+        rule.runOnIdle { nav.navigate(TvProfiles) }
+        rule.waitForIdle()
+        assertEquals(listOf("home", "settings", "profiles"), stack())
+        rule.runOnIdle { nav.leaveProfiles() }
+        rule.waitForIdle()
+        assertEquals(listOf("home"), stack())
     }
 }

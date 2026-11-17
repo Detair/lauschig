@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.tv.browse
 
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -212,7 +213,7 @@ private fun ItemContent(
         ) {
             CoverArt(
                 coverModel(LocalServerBaseUrl.current, state.itemId, state.coverPath, state.coverVersion), state.title,
-                Modifier.width(COVER_SIZE).aspectRatio(1f), shape = RoundedCornerShape(12.dp),
+                Modifier.width(COVER_SIZE).aspectRatio(1f).clearAndSetSemantics {}, shape = RoundedCornerShape(12.dp),
             )
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(state.title, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)

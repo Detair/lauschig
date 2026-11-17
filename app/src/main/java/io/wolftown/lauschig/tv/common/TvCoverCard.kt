@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.tv.common
 
+import kotlin.math.roundToInt
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -68,6 +71,7 @@ internal const val TAG_CARD = "tvCard:"
 internal const val TAG_MESSAGE = "tvMessage"
 internal const val TAG_FINISHED = "tvCardFinished"
 internal const val TAG_MESSAGE_ACTION = "tvMessageAction"
+internal const val TAG_CARD_PROGRESS = "tvCardProgress"
 
 private val CardShape = RoundedCornerShape(12.dp)
 
@@ -132,9 +136,15 @@ private fun TvCard(title: String, subtitle: String?, cover: Any?, progress: Floa
         border = CardDefaults.border(focusedBorder = Border(BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface), shape = CardShape)),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            CoverArt(cover, title, Modifier.fillMaxSize(), shape = RectangleShape)
+            // The title is said below; the cover's initials would only repeat it.
+            CoverArt(cover, title, Modifier.fillMaxSize().clearAndSetSemantics {}, shape = RectangleShape)
             progress?.let { p ->
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))) {
+                val heard = stringResource(R.string.tv_card_progress, (p.coerceIn(0f, 1f) * 100).roundToInt())
+                Box(
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
+                        .semantics { contentDescription = heard }
+                        .testTag(TAG_CARD_PROGRESS),
+                ) {
                     Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(4.dp).background(MaterialTheme.colorScheme.primary))
                 }
             }

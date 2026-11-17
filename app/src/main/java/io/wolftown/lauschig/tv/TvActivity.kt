@@ -10,9 +10,11 @@ import androidx.compose.runtime.getValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.MainViewModel
 import io.wolftown.lauschig.auto.VoicePlayer
 import io.wolftown.lauschig.links.IncomingIntents
+import androidx.lifecycle.lifecycleScope
 import io.wolftown.lauschig.ui.profiles.AndroidDeviceLockPrompter
 import io.wolftown.lauschig.ui.profiles.LocalDeviceLockPrompter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +35,9 @@ class TvActivity : FragmentActivity() {
     /** A request to show a page (the media session's "open the player"); TvRoot takes it once and clears it. */
     private val openRequest = MutableStateFlow<String?>(null)
 
+    /** "Play X in Lauschig", until TvRoot runs it: not before "who is listening?" is answered (TV spec E8). */
+    private val voiceInbox = TvVoiceInbox(lifecycleScope)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Here and not later: the prompt's answer can come right after a recreation (see AndroidDeviceLockPrompter).
@@ -44,8 +49,19 @@ class TvActivity : FragmentActivity() {
             // Not with the lifecycle: the first frame after a pause must already belong to the account that is active now.
             val pages by viewModel.pages.collectAsState()
             val open by openRequest.collectAsStateWithLifecycle()
+            val voice by voiceInbox.pending.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalDeviceLockPrompter provides deviceLock) {
-                pages?.let { TvRoot(pages = it, openRequest = open, onOpenHandled = { openRequest.value = null }) }
+                pages?.let {
+                    TvRoot(
+                        pages = it,
+                        openRequest = open,
+                        onOpenHandled = { openRequest.value = null },
+                        voice = voice,
+                        onVoiceDone = voiceInbox::done,
+                        // Once a title plays, its player page opens, as from the now-playing card.
+                        playVoice = { v -> voicePlayer.playFromSearch(v.query, v.extras) { openRequest.value = MainActivity.OPEN_PLAYER } },
+                    )
+                }
             }
         }
     }
@@ -62,7 +78,7 @@ class TvActivity : FragmentActivity() {
     private fun handleOpen(intent: Intent?, replay: Boolean = false) {
         val incoming = IncomingIntents.consume(intent, replay)
         incoming.open?.let { openRequest.value = it }
-        // "Spiel X in Lauschig" (Assistant): plays without a page of its own.
-        incoming.voice?.let { voicePlayer.playFromSearch(it.query, it.extras) }
+        // "Spiel X in Lauschig" (Assistant): TvRoot runs it once "who is listening?" is answered.
+        incoming.voice?.let(voiceInbox::offer)
     }
 }

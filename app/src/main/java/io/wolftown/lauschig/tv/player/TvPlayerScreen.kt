@@ -1,5 +1,8 @@
 package io.wolftown.lauschig.tv.player
 
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -77,6 +80,7 @@ import kotlinx.coroutines.launch
 internal const val TAG_STAGE = "tvPlayerStage"
 internal const val TAG_SCREEN_OFF = "tvPlayerScreenOff"
 internal const val TAG_EXTEND_HINT = "tvPlayerExtendHint"
+internal const val TAG_PROGRESS = "tvPlayerProgress"
 
 /** Not playing for this long is a pause, which brings the picture back; shorter is buffering. */
 internal const val PAUSE_WAKES_MS = 3_000L
@@ -385,7 +389,7 @@ private fun Stage(state: PlayerScreenState, sleep: SleepTimerUi?, sleepEnding: B
         }
         CoverArt(
             art, state.title,
-            Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true), shape = RoundedCornerShape(12.dp),
+            Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).clearAndSetSemantics {}, shape = RoundedCornerShape(12.dp),
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(state.title, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -443,7 +447,16 @@ private fun Status(state: PlayerScreenState, sleep: SleepTimerUi?, sleepEnding: 
 @Composable
 private fun Progress(fraction: Float, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Box(modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(scheme.surfaceVariant)) {
+    // Said as a progress bar with its name; the times beside it say the rest.
+    val label = stringResource(R.string.tv_player_chapter_progress)
+    Box(
+        modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(scheme.surfaceVariant)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(fraction.coerceIn(0f, 1f), 0f..1f)
+                contentDescription = label
+            }
+            .testTag(TAG_PROGRESS),
+    ) {
         Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(6.dp).background(scheme.primary))
     }
 }

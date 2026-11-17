@@ -1,19 +1,20 @@
 package io.wolftown.lauschig.tv.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
-import io.wolftown.lauschig.R
 import io.wolftown.lauschig.tv.browse.TvBrowseRoute
 import io.wolftown.lauschig.tv.browse.TvItemRoute
 import io.wolftown.lauschig.tv.browse.TvLibraryRoute
 import io.wolftown.lauschig.tv.browse.TvSearchRoute
-import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.home.TvHomeRoute
 import io.wolftown.lauschig.tv.player.TvPlayerRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
+import io.wolftown.lauschig.tv.settings.TvSettingsRoute
+import io.wolftown.lauschig.tv.LocalTvQuestions
 import io.wolftown.lauschig.tv.setup.TvSetupRoute
 import io.wolftown.lauschig.ui.nav.AccountNavHost
 import io.wolftown.lauschig.ui.nav.AccountNavigation
@@ -38,6 +39,7 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 TvHomeRoute(
                     onOpenItem = { navController.navigate(ItemDetail(it)) },
                     onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
                 )
             }
         }
@@ -57,8 +59,14 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 )
             }
         }
-        // Until its page comes (Task 5).
-        composable<TvSettings> { TvShell(TvSection.Settings, openSection) { Placeholder() } }
+        composable<TvSettings> {
+            TvShell(TvSection.Settings, openSection) {
+                TvSettingsRoute(
+                    onSwitchProfile = { navController.navigate(TvProfiles) { launchSingleTop = true } },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
+                )
+            }
+        }
         // Full screen, without the rail: the remote's keys belong to the player there.
         composable<TvPlayer> { TvPlayerRoute(onBack = { navController.popBackStack() }) }
         // The phone's route classes: their view models read them from their SavedStateHandle.
@@ -71,17 +79,37 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
         composable<Browse> { TvBrowseRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Setup> { TvSetupRoute(onDone = { navController.finishSetup(TvHome) }) }
         composable<TvProfiles> {
+            // Left without an answer (Back), the question takes a waiting voice request with it (see TvQuestions). Every
+            // other way out answers it or leads on to a sign-in, which is a question of its own.
+            val questions = LocalTvQuestions.current
+            val answered = remember { Answered() }
+            DisposableEffect(Unit) { onDispose { if (!answered.value) questions.cancelled() } }
             TvProfilesRoute(
-                onChosen = { navController.navigate(TvHome) { popUpTo<TvProfiles> { inclusive = true } } },
-                onAdd = { navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true } },
-                onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
+                onChosen = {
+                    answered.value = true
+                    navController.leaveProfiles()
+                },
+                onAdd = {
+                    answered.value = true
+                    navController.navigate(Setup(SetupMode.ADD_PROFILE)) { launchSingleTop = true }
+                },
+                onSignIn = {
+                    answered.value = true
+                    navController.navigate(Setup.unlock(it)) { launchSingleTop = true }
+                },
+                onSwitching = { answered.value = true },
             )
         }
     }
 }
 
-@Composable
-private fun Placeholder() = TvMessage(stringResource(R.string.tv_placeholder))
+/**
+ * From "who is listening?" to the start page. Asked at the start it is the first page and gives way to the start page; opened
+ * from the settings, the start page is below it, and the way goes back there instead of stacking a second one.
+ */
+internal fun NavHostController.leaveProfiles() {
+    if (!popBackStack<TvHome>(inclusive = false)) navigate(TvHome) { popUpTo<TvProfiles> { inclusive = true } }
+}
 
 /**
  * To a section of the rail. Each one stands right on the start page, so Back from any of them leads there, and from there out
@@ -106,3 +134,8 @@ internal fun NavHostController.openSection(section: TvSection) {
 
 /** To the player; a second call while it is on top adds no second one. */
 internal fun NavHostController.openPlayer() = navigate(TvPlayer) { launchSingleTop = true }
+
+/** Whether "who is listening?" was answered before it left; a plain field, read once when it goes. */
+private class Answered {
+    var value = false
+}

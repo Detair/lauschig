@@ -5,8 +5,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import io.wolftown.lauschig.ui.nav.Setup
@@ -24,6 +26,9 @@ import androidx.tv.material3.SurfaceDefaults
 import io.wolftown.lauschig.AppPages
 import io.wolftown.lauschig.MainActivity
 import io.wolftown.lauschig.connection.ConnectionState
+import io.wolftown.lauschig.links.VoiceRequest
+import io.wolftown.lauschig.tv.profiles.TvNoticeDialog
+import io.wolftown.lauschig.ui.profiles.profileOutcomeText
 import io.wolftown.lauschig.tv.nav.TvNavHost
 import io.wolftown.lauschig.tv.nav.openPlayer
 import io.wolftown.lauschig.tv.nav.TvProfiles
@@ -53,6 +58,10 @@ fun TvRoot(
     pages: AppPages,
     openRequest: String?,
     onOpenHandled: () -> Unit,
+    voice: TvVoice? = null,
+    onVoiceDone: (TvVoice) -> Unit = {},
+    playVoice: (VoiceRequest) -> Unit = {},
+    questions: TvQuestions = remember { TvQuestions() },
     viewModel: AppViewModel = hiltViewModel(),
     pagesScope: AccountPagesScope = hiltViewModel(),
     profiles: ProfilesViewModel = hiltViewModel(),
@@ -63,26 +72,39 @@ fun TvRoot(
     val dimOffline = rememberSettledOffline(connection, checking)
     val rows by profiles.profiles.collectAsStateWithLifecycle()
     val outcome by profiles.outcome.collectAsStateWithLifecycle()
-    // A switch or an unlock that worked shows itself: the next profile's pages are there. Taken off here, as the page that
-    // started it is gone by then; a failure stays for "who is listening?" to show.
+    // A switch that worked shows itself: the next profile's pages are there. Taken off here, as the page that started it is
+    // gone by then; a failure stays for "who is listening?" to show, an unlock is said below (its protection is off now).
     LaunchedEffect(outcome) { outcome?.takeIf { it.kind in SHOWN_BY_THEIR_PAGES }?.let(profiles::shown) }
     CompositionLocalProvider(LocalServerBaseUrl provides baseUrl, LocalOfflineDimming provides dimOffline) {
         TvTheme {
             WindowBackground()
             // Opaque, and the content colour for both kinds of components: text without its own colour would be black.
             Surface(Modifier.fillMaxSize(), colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background)) {
-                CompositionLocalProvider(Material3ContentColor provides MaterialTheme.colorScheme.onBackground) {
+                CompositionLocalProvider(Material3ContentColor provides MaterialTheme.colorScheme.onBackground, LocalTvQuestions provides questions) {
                     TvAccountPages(pages, rows?.size, pagesScope) { account, start ->
                         TvNavHost(account, start)
-                        TvOpenRequest(account.controller, openRequest, onOpenHandled) {
+                        TvOpenRequest(account.controller, openRequest, onOpenHandled, questionOpen = questions.open) {
                             // As on the phone: the service may hold a title this process has not seen yet.
                             viewModel.player.adoptFromService()
                             withTimeoutOrNull(PLAYER_OPEN_WAIT_MS) { viewModel.player.state.first { it.itemId != null } } != null
                         }
+                        TvVoiceRequest(account.controller, voice, questions, onVoiceDone, playVoice)
                     }
+                    TvUnlockedNotice(outcome, profiles::shown)
                 }
             }
         }
+    }
+}
+
+/**
+ * An unlock through the sign-in (a forgotten PIN) took the profile's protection off: said once, as the phone does, as that
+ * is not what anybody sees on the pages.
+ */
+@Composable
+internal fun TvUnlockedNotice(outcome: ProfileOutcome?, onShown: (ProfileOutcome) -> Unit) {
+    outcome?.takeIf { it.kind == ProfileOutcome.Kind.UNLOCKED }?.let { unlocked ->
+        TvNoticeDialog(profileOutcomeText(unlocked), onOk = { onShown(unlocked) })
     }
 }
 
@@ -110,7 +132,7 @@ internal fun TvAccountPages(
     }
 }
 
-private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOutcome.Kind.UNLOCKED, ProfileOutcome.Kind.REMOVED)
+private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOutcome.Kind.REMOVED)
 
 /**
  * Carries out [request] on the pages [nav] shows. The player ([MainActivity.OPEN_PLAYER]) waits while "who is listening?" or
@@ -119,17 +141,60 @@ private val SHOWN_BY_THEIR_PAGES = setOf(ProfileOutcome.Kind.SWITCHED, ProfileOu
  * loaded ([playerLoaded]), as on the phone. A request the TV has no page for is let go.
  */
 @Composable
-internal fun TvOpenRequest(nav: NavHostController, request: String?, onHandled: () -> Unit, playerLoaded: suspend () -> Boolean) {
+internal fun TvOpenRequest(
+    nav: NavHostController,
+    request: String?,
+    onHandled: () -> Unit,
+    /** A PIN or protection step is open inside a page ([TvQuestions.open]): the player waits for it too. */
+    questionOpen: Boolean = false,
+    playerLoaded: suspend () -> Boolean,
+) {
     val entry by nav.currentBackStackEntryAsState()
     val destination = entry?.destination
     val handled by rememberUpdatedState(onHandled)
     val loaded by rememberUpdatedState(playerLoaded)
-    LaunchedEffect(request, destination) {
+    LaunchedEffect(request, destination, questionOpen) {
         if (request == null || destination == null) return@LaunchedEffect
         if (request != MainActivity.OPEN_PLAYER) return@LaunchedEffect handled()
-        if (destination.hasRoute<TvProfiles>() || destination.hasRoute<Setup>()) return@LaunchedEffect
+        if (waitsForAnAnswer(destination) || questionOpen) return@LaunchedEffect
         if (loaded()) nav.openPlayer()
         handled()
+    }
+}
+
+/** "Who is listening?" or the sign-in is on screen: nothing may jump over them (TV spec E8). */
+private fun waitsForAnAnswer(destination: NavDestination): Boolean = destination.hasRoute<TvProfiles>() || destination.hasRoute<Setup>()
+
+/**
+ * "Play X in Lauschig" from the Assistant ([MainActivity] hands it on to the TV), decided by [voiceStep]: it waits while "who
+ * is listening?" or the sign-in is on screen, or a PIN or protection step is open in a page, so that a voice neither plays a
+ * protected profile's titles before its PIN nor throws someone typing a PIN into the player; it is let go when "who is
+ * listening?" is left without an answer after it came. Then [play] runs it once ([io.wolftown.lauschig.auto.VoicePlayer],
+ * which also opens the player once something plays). [onDone] takes it off either way; [TvVoiceInbox] ends one that waits too
+ * long.
+ */
+@Composable
+internal fun TvVoiceRequest(nav: NavHostController, voice: TvVoice?, questions: TvQuestions, onDone: (TvVoice) -> Unit, play: (VoiceRequest) -> Unit) {
+    val entry by nav.currentBackStackEntryAsState()
+    val destination = entry?.destination
+    val done by rememberUpdatedState(onDone)
+    val run by rememberUpdatedState(play)
+    if (voice == null) return
+    val step = voiceStep(
+        onQuestionPage = destination == null || waitsForAnAnswer(destination),
+        questionOpen = questions.open,
+        cancelledSinceRequest = questions.cancelledAt >= voice.receivedAt,
+    )
+    LaunchedEffect(voice, step) {
+        when (step) {
+            VoiceStep.WAIT -> Unit
+            VoiceStep.DROP -> done(voice)
+            VoiceStep.RUN -> {
+                // Taken off first: whatever comes of it, it runs once.
+                done(voice)
+                run(voice.request)
+            }
+        }
     }
 }
 
