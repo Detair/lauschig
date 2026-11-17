@@ -224,6 +224,36 @@ Android-Features nutzen:
   gibt es einen Hinweis bzw. Shortcut auf die geräteeigene Funktion „Bild aus“.
 - Die Phase kommt nach den Handy-Zielen aus Abschnitt 2.
 
+### 2.9 Geplant, noch zu brainstormen (Fabian, 2026-11-15)
+
+**Merklisten / Playlists**
+- Mehrere eigene Listen für verschiedene Zwecke (Beispiele offen, etwa „Als Nächstes“,
+  „Zum Einschlafen“, „Autofahrt“, „für die Kinder“).
+- Listen unterscheiden zwischen **Büchern** und **Hörspielen**. Ob das eine Eigenschaft der
+  Liste ist, ein Filter in der Liste oder ein Merkmal am Titel, ist noch offen.
+- Vor dem Umsetzen gemeinsam brainstormen. Fragen für das Brainstorming (Claudes Vorschlag):
+  1. Abgrenzung zur bestehenden Warteschlange (Phase 3b): Ersetzt eine Liste die Warteschlange,
+     oder lässt sich eine Liste in die Warteschlange übernehmen?
+  2. ABS kennt schon *Collections* (pro Bibliothek, für alle sichtbar) und *Playlists*
+     (pro Benutzer, auch mit Podcast-Folgen). Darauf aufsetzen und synchronisieren, oder
+     nur lokal speichern? Offline muss beides funktionieren (2.1). Ungeprüft, ob die
+     ABS-API alles Nötige hergibt.
+  3. Woran erkennt die App „Hörspiel“ gegenüber „Buch“: an Genre/Tags aus ABS, an der
+     Bibliothek oder an einer eigenen Markierung?
+  4. Gehört eine Liste dem Profil (2.7d)? Teilen zwischen Profilen ja oder nein?
+  5. Wo erscheinen Listen: eigener Tab, Abschnitt auf dem Start, Filter in der Bibliothek?
+     Und wie kommt ein Titel hinein (Detailansicht, langes Drücken, Player)?
+  6. Automatische Listen nach Regeln (z. B. „alle ungehörten Hörspiele“) oder nur von Hand?
+
+**Einstellungen besser erreichbar**
+- Problem: Die Einstellungen sind nur über das Zahnrad auf dem Startbildschirm erreichbar
+  (`StartScreen.kt`, `onOpenSettings`). Von Bibliothek, Entdecken oder Player aus findet man
+  sie nicht.
+- Lösung offen. Möglichkeiten: das Zahnrad (oder ein Profil-/Kontomenü) in die Kopfzeile
+  jedes Haupt-Tabs, ein Eintrag im Überlaufmenü, ein eigener Tab, oder auf dem Start
+  sichtbarer machen. Zusammen mit den Navigations-Einstellungen (`NavigationSettings`)
+  entscheiden, weil Tabs dort abschaltbar sind.
+
 ## 3. Nicht-Ziele
 - Kein iOS, kein Desktop, keine Web-App.
 - Kein eigener Backend-Server für Lauschig. Die App spricht nur mit ABS, optional mit
