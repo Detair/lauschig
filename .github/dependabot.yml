@@ -18,6 +18,9 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # Instrumented tests only, and it has to be the version media3-session brings in (see gradle/libs.versions.toml).
+      - dependency-name: androidx.media:media
     groups:
       gradle-minor-and-patch:
         update-types:
