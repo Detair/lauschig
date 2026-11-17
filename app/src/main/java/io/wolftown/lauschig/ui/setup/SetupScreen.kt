@@ -278,7 +278,8 @@ private fun SetupScanNote.message(): Int = when (this) {
     }
 }
 
-private fun SetupError.message(): Int = when (this) {
+/** The words for [this]; the TV form shows the same. */
+internal fun SetupError.message(): Int = when (this) {
     SetupError.INVALID_ADDRESS -> R.string.setup_error_invalid_address
     SetupError.UNREACHABLE -> R.string.setup_error_unreachable
     SetupError.WRONG_LOGIN -> R.string.setup_error_wrong_login
