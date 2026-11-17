@@ -156,6 +156,8 @@ internal fun <T> TvCardRow(
     LaunchedEffect(keys) {
         if (lostFocus.set && items.isNotEmpty()) {
             lostFocus.set = false
+            // A lazy list drops the card that went when it lays itself out, and the focus with it: ask after that.
+            withFrameNanos { }
             listState.bringIntoReach(target)
             focusRequester.requestFocusWhenPlaced()
         }
