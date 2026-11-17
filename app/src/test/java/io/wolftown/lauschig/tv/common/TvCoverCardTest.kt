@@ -142,4 +142,14 @@ class TvCoverCardTest {
         press(Key.DirectionCenter)
         assertEquals(1, retries)
     }
+
+    /** What a screen reader says of a card: the title, the author and how far, not the cover's initials. */
+    @Test fun aCard_saysTitleAuthorAndProgress_notTheInitials() {
+        rule.setContent { TvTheme { TvCoverCard(tvItem("a", title = "Der Schimmelreiter", progress = 0.37f), onClick = {}) } }
+        val node = rule.onNodeWithTag(cardTag("a")).fetchSemanticsNode()
+        val said = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }.map { it.text } +
+            node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { emptyList() }
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        assertEquals(listOf(context.getString(io.wolftown.lauschig.R.string.tv_card_progress, 37), "Der Schimmelreiter", "Author").sorted(), said.sorted())
+    }
 }

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.tv.profiles
 
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.focusable
@@ -247,7 +248,8 @@ private fun ProfileTile(row: ProfileRow, onClick: () -> Unit, modifier: Modifier
         stringResource(R.string.profiles_protected).takeIf { row.protection != ProfileLockKind.NONE },
     )
     Tile(onClick, modifier, row.name, detail = (listOfNotNull(row.host) + status).joinToString(" · ").ifEmpty { null }) {
-        Text(row.name.take(1).uppercase(), style = MaterialTheme.typography.displaySmall)
+        // The name is said below the sign; its first letter would only repeat it.
+        Text(row.name.take(1).uppercase(), style = MaterialTheme.typography.displaySmall, modifier = Modifier.clearAndSetSemantics {})
         if (row.protection != ProfileLockKind.NONE) {
             Icon(
                 Icons.Rounded.Lock, contentDescription = null,

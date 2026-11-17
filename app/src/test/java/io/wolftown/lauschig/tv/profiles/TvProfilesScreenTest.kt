@@ -228,4 +228,12 @@ class TvProfilesScreenTest {
         rule.onNodeWithTag(TAG_OUTCOME_DIALOG).assertDoesNotExist()
         rule.onNodeWithTag(TAG_PROFILE + ben.serverId).assertIsFocused()
     }
+
+    /** A tile says the name and its status once; the large first letter is not read out on its own. */
+    @Test fun aTile_saysTheName_notItsFirstLetter() {
+        show()
+        val node = rule.onNodeWithTag(TAG_PROFILE + ben.serverId).fetchSemanticsNode()
+        val texts = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }.map { it.text }
+        assertEquals(listOf("Ben", listOf(context.getString(R.string.profiles_active), context.getString(R.string.profiles_protected)).joinToString(" · ")), texts)
+    }
 }

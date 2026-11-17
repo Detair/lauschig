@@ -563,4 +563,15 @@ class TvPlayerScreenTest {
         rule.onNodeWithTag(TAG_SCREEN_OFF).assertDoesNotExist()
         rule.onNodeWithTag(TAG_STAGE).assertExists()
     }
+
+    /** The chapter's bar is said as a progress bar (screen readers), not as a silent stripe. */
+    @Test fun theChaptersProgress_isAProgressBarForScreenReaders() {
+        show()
+        rule.onNodeWithTag(TAG_PROGRESS).assert(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
+                androidx.compose.ui.semantics.ProgressBarRangeInfo(0.05f, 0f..1f),
+            ),
+        )
+    }
 }
