@@ -17,7 +17,13 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.ui.res.stringResource
+import androidx.tv.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,6 +66,7 @@ import io.wolftown.lauschig.ui.discover.SeriesTile
 /** A card's tag is this plus its key ([ItemSummary.key], or the series name). */
 internal const val TAG_CARD = "tvCard:"
 internal const val TAG_MESSAGE = "tvMessage"
+internal const val TAG_FINISHED = "tvCardFinished"
 internal const val TAG_MESSAGE_ACTION = "tvMessageAction"
 
 private val CardShape = RoundedCornerShape(12.dp)
@@ -74,6 +81,23 @@ fun TvCoverCard(item: ItemSummary, onClick: () -> Unit, modifier: Modifier = Mod
         progress = item.progress.takeIf { !item.isFinished && it > 0f },
         onClick = onClick,
         modifier = modifier.testTag(TAG_CARD + item.key),
+        finished = item.isFinished,
+    )
+}
+
+/**
+ * A name from the catalog as a card (a series, author or narrator of a search): the cover of one of its titles, the name
+ * and [subtitle] (how many). [tag] follows [TAG_CARD].
+ */
+@Composable
+internal fun TvFacetCard(name: String, subtitle: String, coverItemId: String?, tag: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    TvCard(
+        title = name,
+        subtitle = subtitle,
+        cover = coverItemId?.let { coverModel(LocalServerBaseUrl.current, it, null, 0L) },
+        progress = null,
+        onClick = onClick,
+        modifier = modifier.testTag(TAG_CARD + tag),
     )
 }
 
@@ -91,7 +115,8 @@ internal fun TvSeriesCard(tile: SeriesTile, onClick: () -> Unit, modifier: Modif
 }
 
 @Composable
-private fun TvCard(title: String, subtitle: String?, cover: Any?, progress: Float?, onClick: () -> Unit, modifier: Modifier) {
+private fun TvCard(title: String, subtitle: String?, cover: Any?, progress: Float?, onClick: () -> Unit, modifier: Modifier, finished: Boolean = false) {
+    val heard = if (finished) stringResource(R.string.library_tab_finished) else null
     Card(
         onClick = onClick,
         modifier = modifier.width(TvDimens.cardWidth),
@@ -112,6 +137,16 @@ private fun TvCard(title: String, subtitle: String?, cover: Any?, progress: Floa
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))) {
                     Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(4.dp).background(MaterialTheme.colorScheme.primary))
                 }
+            }
+            // Heard titles are marked (TV spec: a series shows which volumes are done).
+            heard?.let { label ->
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape).testTag(TAG_FINISHED),
+                )
             }
         }
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {

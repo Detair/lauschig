@@ -6,6 +6,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.tv.browse.TvBrowseRoute
+import io.wolftown.lauschig.tv.browse.TvItemRoute
+import io.wolftown.lauschig.tv.browse.TvLibraryRoute
+import io.wolftown.lauschig.tv.browse.TvSearchRoute
 import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.home.TvHomeRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
@@ -36,13 +40,33 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 )
             }
         }
-        // Until their pages come (Task 3 and 5).
-        composable<TvLibrary> { TvShell(TvSection.Library, openSection) { Placeholder() } }
-        composable<TvSearch> { TvShell(TvSection.Search, openSection) { Placeholder() } }
+        composable<TvLibrary> {
+            TvShell(TvSection.Library, openSection) {
+                TvLibraryRoute(
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
+                )
+            }
+        }
+        composable<TvSearch> {
+            TvShell(TvSection.Search, openSection) {
+                TvSearchRoute(
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+                )
+            }
+        }
+        // Until their pages come (Task 5 and 4).
         composable<TvSettings> { TvShell(TvSection.Settings, openSection) { Placeholder() } }
+        composable<TvPlayer> { Placeholder() }
         // The phone's route classes: their view models read them from their SavedStateHandle.
-        composable<ItemDetail> { Placeholder() }
-        composable<Browse> { Placeholder() }
+        composable<ItemDetail> {
+            TvItemRoute(
+                onPlay = { navController.openPlayer() },
+                onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
+            )
+        }
+        composable<Browse> { TvBrowseRoute(onOpenItem = { navController.navigate(ItemDetail(it)) }) }
         composable<Setup> { TvSetupRoute(onDone = { navController.finishSetup(TvHome) }) }
         composable<TvProfiles> {
             TvProfilesRoute(
@@ -77,3 +101,6 @@ internal fun NavHostController.openSection(section: TvSection) {
         launchSingleTop = true
     }
 }
+
+/** To the player; a second call while it is on top adds no second one. */
+internal fun NavHostController.openPlayer() = navigate(TvPlayer) { launchSingleTop = true }

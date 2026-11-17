@@ -1189,4 +1189,14 @@
         <item quantity="other">%d digits entered</item>
     </plurals>
     <string name="tv_profiles_device_lock">%1$s is protected by the device lock, which the TV does not use. Sign in with this account and the protection is removed.</string>
+    <string name="tv_loading">Loading…</string>
+    <string name="tv_library_show">Show</string>
+    <string name="tv_library_sort">Sort by</string>
+    <string name="tv_item_from_start">From the start</string>
+    <string name="tv_item_offline">The server cannot be reached. On the TV, titles play only while it can.</string>
+    <string name="tv_item_podcast">Podcasts are not on the TV yet. Listen to them on your phone.</string>
+    <string name="tv_item_description">Description</string>
+    <string name="tv_browse_empty">Nothing here.</string>
+    <string name="tv_browse_offline">The server cannot be reached, and nothing of this is on this TV yet.</string>
+    <string name="tv_search_searching">Searching…</string>
 </resources>

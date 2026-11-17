@@ -267,6 +267,15 @@ class ItemDetailViewModel(
         }
     }
 
+    /**
+     * "From the start" (TV): plays from 0 without resetting the progress first, so a mistaken press loses nothing until
+     * the player saves the new place.
+     */
+    fun playFromStart() {
+        val sid = serverId ?: return
+        player.play(sid, itemId, 0.0)
+    }
+
     fun onChapter(index: Int) {
         val sid = serverId ?: return
         if (player.state.value.itemId == itemId) {

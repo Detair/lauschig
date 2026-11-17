@@ -1189,4 +1189,14 @@
         <item quantity="other">%d Ziffern eingegeben</item>
     </plurals>
     <string name="tv_profiles_device_lock">%1$s ist mit der Gerätesperre geschützt, die der Fernseher nicht nutzt. Melde dich mit diesem Konto an, dann wird der Schutz entfernt.</string>
+    <string name="tv_loading">Wird geladen …</string>
+    <string name="tv_library_show">Zeigen</string>
+    <string name="tv_library_sort">Sortieren nach</string>
+    <string name="tv_item_from_start">Von vorn</string>
+    <string name="tv_item_offline">Der Server ist nicht erreichbar. Am Fernseher spielen Titel nur mit Verbindung.</string>
+    <string name="tv_item_podcast">Podcasts gibt es am Fernseher noch nicht. Hör sie auf dem Handy.</string>
+    <string name="tv_item_description">Beschreibung</string>
+    <string name="tv_browse_empty">Hier ist nichts.</string>
+    <string name="tv_browse_offline">Der Server ist nicht erreichbar, und davon ist noch nichts auf diesem Fernseher.</string>
+    <string name="tv_search_searching">Suche läuft …</string>
 </resources>

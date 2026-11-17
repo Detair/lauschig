@@ -1,6 +1,11 @@
 package io.wolftown.lauschig.tv.nav
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.navigation.toRoute
+import io.wolftown.lauschig.ui.nav.Browse
+import io.wolftown.lauschig.ui.nav.BrowseKind
+import io.wolftown.lauschig.ui.nav.ItemDetail
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -31,6 +36,9 @@ class TvNavHostTest {
             composable<TvLibrary> { Text("library") }
             composable<TvSearch> { Text("search") }
             composable<TvSettings> { Text("settings") }
+            composable<TvPlayer> { Text("player") }
+            composable<ItemDetail> { entry -> Text("item:" + entry.savedStateHandle.toRoute<ItemDetail>().itemId) }
+            composable<Browse> { entry -> entry.savedStateHandle.toRoute<Browse>().let { Text("browse:${it.kind}:${it.name}") } }
         }
     }
 
@@ -41,6 +49,9 @@ class TvNavHostTest {
             d.hasRoute<TvLibrary>() -> "library"
             d.hasRoute<TvSearch>() -> "search"
             d.hasRoute<TvSettings>() -> "settings"
+            d.hasRoute<TvPlayer>() -> "player"
+            d.hasRoute<ItemDetail>() -> "item"
+            d.hasRoute<Browse>() -> "browse"
             else -> null
         }
     }
@@ -67,5 +78,24 @@ class TvNavHostTest {
         assertEquals(listOf("home"), stack())
         // Nothing below it: the host lets Back go to the activity, which ends.
         rule.runOnIdle { assertNull(nav.previousBackStackEntry) }
+    }
+
+    /**
+     * The phone's route classes carry their arguments to where the view models read them (`toRoute` on the entry's
+     * SavedStateHandle), and starting twice adds one player. The real pages bind their view models with Hilt; that part is
+     * left to the emulator.
+     */
+    @Test fun aTitleAndASeries_getTheirArguments_andThePlayerComesOnce() {
+        show()
+        rule.runOnIdle { nav.navigate(ItemDetail("b1")) }
+        rule.onNodeWithText("item:b1").assertExists()
+        rule.runOnIdle { nav.navigate(Browse(BrowseKind.SERIES, "Die drei")) }
+        rule.onNodeWithText("browse:SERIES:Die drei").assertExists()
+        rule.runOnIdle {
+            nav.openPlayer()
+            nav.openPlayer()
+        }
+        rule.waitForIdle()
+        assertEquals(listOf("home", "item", "browse", "player"), stack())
     }
 }
