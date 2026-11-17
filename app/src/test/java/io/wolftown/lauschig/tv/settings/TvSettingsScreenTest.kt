@@ -329,9 +329,8 @@ class TvSettingsScreenTest {
         press(Key.DirectionDown, times = 2)
         press(Key.DirectionRight)
         press(Key.DirectionCenter)
-        // Back to the 5 for the next entry.
-        press(Key.DirectionLeft)
-        press(Key.DirectionUp, times = 2)
+        // The pad puts the focus back on the 5 for the next entry.
+        rule.onNodeWithTag(TAG_PIN_DIGIT + '5').assertIsFocused()
     }
 
     private fun digitKey(d: Char): Key = when (d) {

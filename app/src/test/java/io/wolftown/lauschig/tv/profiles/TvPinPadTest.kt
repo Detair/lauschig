@@ -12,6 +12,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import io.wolftown.lauschig.tv.TV_QUALIFIERS
 import io.wolftown.lauschig.tv.TvTheme
 import org.junit.Assert.assertEquals
@@ -125,5 +128,49 @@ class TvPinPadTest {
         rule.waitForIdle()
         assertEquals(1, cancelled)
         assertEquals(emptyList<String>(), submitted)
+    }
+
+    /** OK on a whole entry empties the pad, and OK would do nothing more: the focus goes back to the 5, where OK types again. */
+    @Test fun afterAnEntry_theFocusIsOnTheFive_andOkTypesAgain() {
+        show()
+        press(Key.One); press(Key.Two); press(Key.Three); press(Key.Four)
+        press(Key.DirectionDown, times = 2)
+        press(Key.DirectionRight)
+        rule.onNodeWithTag(TAG_PIN_OK).assertIsFocused()
+        press(Key.DirectionCenter)
+        assertEquals(listOf("1234"), submitted)
+        rule.onNodeWithTag(TAG_PIN_DIGIT + '5').assertIsFocused()
+        press(Key.DirectionCenter)
+        entered(1)
+    }
+
+    /** A check that ends (a wrong PIN) or a wait that is over opens the pad again with the focus on the 5. */
+    @Test fun whenThePadOpensAgain_theFocusIsOnTheFive() {
+        var checking by androidx.compose.runtime.mutableStateOf(false)
+        rule.setContent { TvTheme { TvPinPad(null, 0, checking, onSubmit = { submitted += it; checking = true }, onCancel = {}) } }
+        press(Key.One); press(Key.Two); press(Key.Three); press(Key.Four)
+        press(Key.DirectionDown, times = 2)
+        press(Key.DirectionRight)
+        press(Key.DirectionCenter)
+        // Somewhere else while checking: the person moved on to the delete key.
+        rule.onNodeWithTag(TAG_PIN_DELETE).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        checking = false
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_PIN_DIGIT + '5').assertIsFocused()
+        press(Key.DirectionCenter)
+        entered(1)
+    }
+
+    /** The labels sit in the middle of their round keys. */
+    @Test fun theLabels_areCentredInTheirKeys() {
+        show()
+        listOf(TAG_PIN_DIGIT + '5', TAG_PIN_DIGIT + '0', TAG_PIN_OK, TAG_PIN_DELETE).forEach { tag ->
+            val key = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            // The innermost node below the key: the text or the icon.
+            val label = rule.onAllNodes(androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(tag)), useUnmergedTree = true)
+                .fetchSemanticsNodes().last().boundsInRoot
+            assertEquals("$tag x", key.center.x, label.center.x, 1.5f)
+            assertEquals("$tag y", key.center.y, label.center.y, 1.5f)
+        }
     }
 }

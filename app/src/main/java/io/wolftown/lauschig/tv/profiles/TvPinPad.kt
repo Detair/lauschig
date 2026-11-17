@@ -6,7 +6,9 @@ import android.view.KeyEvent.KEYCODE_NUMPAD_0
 import android.view.KeyEvent.KEYCODE_NUMPAD_9
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,6 +46,7 @@ import androidx.tv.material3.Text
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.account.PIN_LENGTHS
 import io.wolftown.lauschig.account.isValidPin
+import io.wolftown.lauschig.tv.common.requestFocusWhenPlaced
 import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.profiles.pinCountdown
 
@@ -67,13 +71,19 @@ fun TvPinPad(notice: String?, waitMs: Long, checking: Boolean, onSubmit: (String
     var digits by remember { mutableStateOf("") }
     val locked = checking || waitMs > 0
     val five = remember { FocusRequester() }
-    LaunchedEffect(Unit) { five.requestFocus() }
+    // Counts the entries handed on: each one empties the pad.
+    var handedOn by remember { mutableIntStateOf(0) }
+    // To the 5 at the start and whenever the pad starts over: after an entry (the next step, a wrong PIN), and when it opens
+    // again after a check or a wait. Otherwise the focus stays on OK, which is off with an empty entry: on a TV nothing would
+    // show where the focus is, and OK would do nothing.
+    LaunchedEffect(handedOn, locked) { five.requestFocusWhenPlaced() }
     val type = { d: Char -> if (!locked && digits.length < PIN_LENGTHS.last) digits += d }
     val delete = { if (!locked) digits = digits.dropLast(1) }
     val submit = {
         if (!locked && isValidPin(digits)) {
             val entered = digits
             digits = ""
+            handedOn++
             onSubmit(entered)
         }
     }
@@ -118,7 +128,7 @@ fun TvPinPad(notice: String?, waitMs: Long, checking: Boolean, onSubmit: (String
                 modifier = Modifier.size(KeySize).testTag(TAG_PIN_DELETE),
                 contentPadding = PaddingValues(0.dp),
             ) {
-                Icon(Icons.AutoMirrored.Rounded.Backspace, contentDescription = stringResource(R.string.tv_pin_delete))
+                KeyFace { Icon(Icons.AutoMirrored.Rounded.Backspace, contentDescription = stringResource(R.string.tv_pin_delete)) }
             }
             DigitKey('0', enabled = !locked, onClick = { type('0') })
             Button(
@@ -127,7 +137,7 @@ fun TvPinPad(notice: String?, waitMs: Long, checking: Boolean, onSubmit: (String
                 modifier = Modifier.size(KeySize).testTag(TAG_PIN_OK),
                 contentPadding = PaddingValues(0.dp),
             ) {
-                Text(stringResource(R.string.pin_ok), style = MaterialTheme.typography.titleMedium)
+                KeyFace { Text(stringResource(R.string.pin_ok), style = MaterialTheme.typography.titleMedium) }
             }
         }
         // Always there, so that its new words are read out (AnnouncedLine).
@@ -156,6 +166,12 @@ private fun DigitKey(digit: Char, enabled: Boolean, onClick: () -> Unit, modifie
         modifier = modifier.size(KeySize).testTag(TAG_PIN_DIGIT + digit),
         contentPadding = PaddingValues(0.dp),
     ) {
-        Text(digit.toString(), style = MaterialTheme.typography.headlineSmall)
+        KeyFace { Text(digit.toString(), style = MaterialTheme.typography.headlineSmall) }
     }
+}
+
+/** A key's label in the middle of the round key: the button itself puts its content at the top left of its size. */
+@Composable
+private fun KeyFace(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
