@@ -121,4 +121,21 @@ class TvBrowseScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag(TAG_MESSAGE).assertIsFocused()
     }
+
+    /** As after Back from a title: the page comes again, and the focus is on the volume it was on. */
+    @Test fun comingBackFromATitle_landsOnTheSameVolume() {
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+            TvTheme { if (shown) pages.SaveableStateProvider("browse") { TvBrowseScreen(series, { opened += it }) } }
+        }
+        press(Key.DirectionRight)
+        press(Key.DirectionCenter)
+        assertEquals(listOf("v3"), opened)
+        shown = false
+        rule.waitForIdle()
+        shown = true
+        rule.waitForIdle()
+        rule.onNodeWithTag(cardTag("v3")).assertIsFocused()
+    }
 }

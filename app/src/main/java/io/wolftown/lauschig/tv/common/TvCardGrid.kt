@@ -2,6 +2,7 @@ package io.wolftown.lauschig.tv.common
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -47,11 +48,13 @@ internal fun <T> TvCardGrid(
     var rememberedKey by rememberSaveable { mutableStateOf<String?>(null) }
     var rememberedIndex by rememberSaveable { mutableIntStateOf(0) }
     var holdsFocus by remember { mutableStateOf(false) }
-    val keys = items.map(key)
-    val target = keys.indexOf(rememberedKey).takeIf { it >= 0 } ?: rememberedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+    // Once per list, not per move: every move of the focus recomposes the grid (the remembered card is state).
+    val keys = remember(items) { items.map(key) }
+    val indexOfKey = remember(keys) { HashMap<String, Int>(keys.size * 2).apply { keys.forEachIndexed { i, k -> put(k, i) } } }
+    val target = rememberedKey?.let { indexOfKey[it] } ?: rememberedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
     // Decided while composing the new items, before the old card leaves: after that the focus is already gone.
     val lostFocus = remember { GridFlag() }
-    if (holdsFocus && rememberedKey != null && rememberedKey !in keys) lostFocus.set = true
+    if (holdsFocus && rememberedKey != null && rememberedKey !in indexOfKey) lostFocus.set = true
     val railHasFocus = LocalRailHasFocus.current
     LaunchedEffect(Unit) {
         if (takeFocus && items.isNotEmpty() && !railHasFocus()) {
@@ -59,6 +62,7 @@ internal fun <T> TvCardGrid(
             focusRequester.requestFocusWhenPlaced()
         }
     }
+    // Keyed on the remembered list itself: the same instance on a move, compared by reference.
     LaunchedEffect(keys) {
         if (lostFocus.set && items.isNotEmpty()) {
             lostFocus.set = false
@@ -69,8 +73,8 @@ internal fun <T> TvCardGrid(
         }
     }
     LazyVerticalGrid(
-        // The cards have a fixed width; as many columns as fit.
-        columns = GridCells.FixedSize(TvDimens.cardWidth),
+        // As many columns as fit at the cards' width, then the cards widen to fill the row (no empty strip on the right).
+        columns = GridCells.Adaptive(TvDimens.cardWidth),
         modifier = modifier
             .onFocusChanged { holdsFocus = it.hasFocus }
             // Into the grid from above: to the remembered card, not to the one nearest on screen.
@@ -82,10 +86,11 @@ internal fun <T> TvCardGrid(
         verticalArrangement = Arrangement.spacedBy(TvDimens.gap),
     ) {
         itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
-            val cardKey = key(item)
+            val cardKey = keys[index]
             card(
                 item,
                 Modifier
+                    .fillMaxWidth()
                     .then(if (index == target) Modifier.focusRequester(focusRequester) else Modifier)
                     .onFocusChanged {
                         if (it.isFocused) {
