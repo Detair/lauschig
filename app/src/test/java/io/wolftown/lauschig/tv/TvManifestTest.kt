@@ -41,6 +41,15 @@ class TvManifestTest {
         }
     }
 
+    /** FLAG_KEEP_SCREEN_ON, Modifier.keepScreenOn(), View.setKeepScreenOn(…), android:keepScreenOn – in any spelling. */
+    private val KEEP_SCREEN_ON = Regex("keep_?screen_?on", RegexOption.IGNORE_CASE)
+
+    @Test fun theSearch_findsEverySpelling() {
+        for (code in listOf("window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)", "view.setKeepScreenOn(true)", "Modifier.keepScreenOn()")) {
+            assertTrue(code, KEEP_SCREEN_ON.containsMatchIn(code))
+        }
+    }
+
     @Test fun theAppHasABanner() = assertNotEquals(0, context.applicationInfo.banner)
 
     /**
@@ -51,7 +60,7 @@ class TvManifestTest {
         val sources = File("src/main/java/io/wolftown/lauschig/tv")
         assertTrue("TV sources found at ${sources.absolutePath}", sources.isDirectory)
         val offenders = sources.walkTopDown().filter { it.isFile && it.extension == "kt" }
-            .filter { file -> file.readText().let { "FLAG_KEEP_SCREEN_ON" in it || "keepScreenOn" in it } }
+            .filter { file -> KEEP_SCREEN_ON.containsMatchIn(file.readText()) }
             .map { it.name }.toList()
         assertEquals(emptyList<String>(), offenders)
     }

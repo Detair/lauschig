@@ -21,7 +21,7 @@ import io.wolftown.lauschig.auto.VoicePlayer
 import io.wolftown.lauschig.links.IncomingIntents
 import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.FontScaleBoot
-import io.wolftown.lauschig.tv.TvActivity
+import io.wolftown.lauschig.tv.tvForwardIntent
 import io.wolftown.lauschig.tv.isTelevision
 import io.wolftown.lauschig.ui.AppRoot
 import io.wolftown.lauschig.ui.isDarkTheme
@@ -107,14 +107,12 @@ class MainActivity : FragmentActivity() {
      * takes over with the same request, and this one ends before it draws anything.
      */
     private fun forwardToTv(savedInstanceState: Bundle?) {
-        // The window shows for a moment: dark like the TV's, not the phone's light splash.
+        // The window this activity still gets is dark like the TV's. On Android 12+ the system may already have drawn the
+        // phone's splash before onCreate (any start but the TV launcher's); that cannot be prevented from here.
         setTheme(R.style.Theme_Lauschig_Tv)
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) {
-            val tv = Intent(this, TvActivity::class.java).setAction(intent.action).setData(intent.data)
-            intent.categories?.forEach(tv::addCategory)
-            intent.extras?.let(tv::putExtras)
-            startActivity(tv)
+            startActivity(tvForwardIntent(this, intent))
         }
         finish()
     }

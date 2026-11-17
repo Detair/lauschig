@@ -1,6 +1,9 @@
 package io.wolftown.lauschig.tv.setup
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -112,6 +115,24 @@ class TvSetupScreenTest {
         rule.onNodeWithTag(TAG_LOGIN).assertIsFocused()
     }
 
+    @Test fun upOnTheFirstField_keepsTheFocusThere() {
+        show(SetupUiState())
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(TAG_LOCAL).assertIsFocused()
+        // Also while typing in it.
+        press(Key.DirectionCenter)
+        press(Key.DirectionUp)
+        rule.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag(TAG_LOCAL))).assertIsFocused()
+        press(Key.DirectionDown)
+        rule.onNodeWithTag(TAG_PUBLIC).assertIsFocused()
+    }
+
+    @Test fun theField_isNamedForTalkBack() {
+        show(SetupUiState(username = "anna"))
+        rule.onNodeWithTag(TAG_LOCAL).assertContentDescriptionEquals(context.getString(R.string.setup_local_address))
+        rule.onNodeWithTag(TAG_USERNAME).assertContentDescriptionEquals(context.getString(R.string.setup_username) + ": anna")
+    }
+
     @Test fun signIn_isOffWithoutCanLogin_andOkDoesNothing() {
         show(SetupUiState())
         press(Key.DirectionDown, times = 4)
@@ -156,9 +177,33 @@ class TvSetupScreenTest {
 
     @Test fun theCleartextQuestion_cancels() {
         show(filled.copy(cleartextPrompt = listOf("http://abs.example.org:13378")))
+        rule.onNodeWithTag(TAG_CLEARTEXT_CANCEL).assertIsFocused()
         pressInDialog(Key.DirectionCenter)
         assertEquals(1, dismissed)
         assertEquals(0, confirmed)
+    }
+
+    /** As it happens: the question comes after "Sign in", over a form that already has the focus. */
+    @Test fun theCleartextQuestion_arrivingLater_takesTheFocus() {
+        var state by mutableStateOf(filled)
+        rule.setContent {
+            TvTheme {
+                TvSetupScreen(
+                    state = state, onLocal = {}, onPublic = {}, onUsername = {}, onPassword = {},
+                    onLogin = { state = state.copy(cleartextPrompt = listOf("http://abs.example.org:13378")) },
+                    onConfirmCleartext = { confirmed++ }, onDismissCleartext = { dismissed++; state = state.copy(cleartextPrompt = null) },
+                )
+            }
+        }
+        rule.onNodeWithTag(TAG_LOGIN).assertIsFocused()
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag(TAG_CLEARTEXT_CANCEL).assertIsFocused()
+        pressInDialog(Key.DirectionRight)
+        rule.onNodeWithTag(TAG_CLEARTEXT_CONFIRM).assertIsFocused()
+        pressInDialog(Key.DirectionLeft)
+        pressInDialog(Key.DirectionCenter)
+        assertEquals(1, dismissed)
+        rule.onNodeWithTag(TAG_CLEARTEXT_CANCEL).assertDoesNotExist()
     }
 
     @Test fun thereIsNeitherSsoNorScan() {

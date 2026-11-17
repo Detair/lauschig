@@ -46,6 +46,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -246,6 +248,8 @@ private fun TvTextField(
     val password = keyboardType == KeyboardType.Password
     Box(
         Modifier.fillMaxWidth()
+            // The wrapper is what TalkBack lands on; the text inside keeps its own node (not merged) for typing.
+            .semantics { contentDescription = if (value.isEmpty() || password) label else "$label: $value" }
             .focusRequester(focusRequester)
             .onFocusChanged { if (!it.hasFocus && editing) onEditingChange(false) }
             .onPreviewKeyEvent { event ->
@@ -290,10 +294,11 @@ private fun CleartextDialog(hosts: List<String>, onConfirm: () -> Unit, onDismis
             Button(onClick = onConfirm, modifier = Modifier.testTag(TAG_CLEARTEXT_CONFIRM)) { Text(stringResource(R.string.setup_cleartext_confirm)) }
         },
         dismissButton = {
+            // Here, in the dialog's own composition: only once the button exists can the focus be asked for.
+            LaunchedEffect(Unit) { cancelFocus.requestFocus() }
             OutlinedButton(onClick = onDismiss, modifier = Modifier.focusRequester(cancelFocus).testTag(TAG_CLEARTEXT_CANCEL)) {
                 Text(stringResource(R.string.setup_cancel))
             }
         },
     )
-    LaunchedEffect(Unit) { cancelFocus.requestFocus() }
 }

@@ -9,7 +9,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import android.content.pm.PackageManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class)
@@ -21,6 +23,13 @@ class TvDeviceTest {
 
     @Test
     fun aPhone_isNoTelevision() = assertFalse(context.isTelevision())
+
+    /** A box or projector that runs the TV launcher but reports a normal UI mode. */
+    @Test
+    fun theTvLauncherFeatureAlone_makesATelevision() {
+        shadowOf(context.packageManager).setSystemFeature(PackageManager.FEATURE_LEANBACK, true)
+        assertTrue(context.isTelevision())
+    }
 
     @Test @Config(qualifiers = TV_QUALIFIERS)
     fun onATelevision_thePlayerOpensInTheTvActivity() {
