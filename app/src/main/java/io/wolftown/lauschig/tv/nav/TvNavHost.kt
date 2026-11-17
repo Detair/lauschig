@@ -6,6 +6,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import io.wolftown.lauschig.R
+import io.wolftown.lauschig.tv.browse.TvLibraryRoute
 import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.home.TvHomeRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
@@ -36,8 +37,15 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 )
             }
         }
+        composable<TvLibrary> {
+            TvShell(TvSection.Library, openSection) {
+                TvLibraryRoute(
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
+                )
+            }
+        }
         // Until their pages come (Task 3 and 5).
-        composable<TvLibrary> { TvShell(TvSection.Library, openSection) { Placeholder() } }
         composable<TvSearch> { TvShell(TvSection.Search, openSection) { Placeholder() } }
         composable<TvSettings> { TvShell(TvSection.Settings, openSection) { Placeholder() } }
         // The phone's route classes: their view models read them from their SavedStateHandle.

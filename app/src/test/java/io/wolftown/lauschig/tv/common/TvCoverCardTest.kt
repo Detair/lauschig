@@ -51,6 +51,19 @@ class TvCoverCardTest {
         assertEquals(1, clicks)
     }
 
+    @Test fun aHeardTitle_isMarked_andOneInProgressIsNot() {
+        rule.setContent {
+            TvTheme {
+                Column {
+                    TvCoverCard(tvItem("done").copy(isFinished = true, progress = 1f), onClick = {})
+                    TvCoverCard(tvItem("half", progress = 0.5f), onClick = {})
+                }
+            }
+        }
+        rule.onNode(androidx.compose.ui.test.hasTestTag(TAG_FINISHED) and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(cardTag("done"))), useUnmergedTree = true).assertExists()
+        rule.onNode(androidx.compose.ui.test.hasTestTag(TAG_FINISHED) and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag(cardTag("half"))), useUnmergedTree = true).assertDoesNotExist()
+    }
+
     private val five = (1..5).map { tvItem("$it") }
 
     /** A button above the row, to leave it and come back. */
