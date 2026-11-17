@@ -5,8 +5,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.Binds
@@ -16,12 +18,19 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.wolftown.lauschig.diagnostics.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.tvSettingsDataStore by preferencesDataStore(name = "tv_settings")
+private val Context.tvSettingsDataStore by preferencesDataStore(name = "tv_settings", corruptionHandler = tvSettingsCorruptionHandler())
+
+/** A damaged file starts empty, so the defaults apply: a setting of the TV is not worth a crash of the player. */
+internal fun tvSettingsCorruptionHandler() = ReplaceFileCorruptionHandler { e ->
+    Log.w("TvSettings", "TV settings were damaged; back to the defaults", e)
+    emptyPreferences()
+}
 
 /** Settings only the TV interface has. Device-local: a TV is one device, whoever listens. */
 interface TvSettingsStore {

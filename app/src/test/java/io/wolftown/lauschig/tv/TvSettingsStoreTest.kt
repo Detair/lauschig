@@ -12,7 +12,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// Robolectric for the damaged file: the handler logs through android.util.Log.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = android.app.Application::class)
 class TvSettingsStoreTest {
     @get:Rule val tmp = TemporaryFolder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -30,5 +36,11 @@ class TvSettingsStoreTest {
         assertEquals(15, DataStoreTvSettings(store).screenOffMinutes.first())
         DataStoreTvSettings(store).setScreenOffMinutes(0)
         assertEquals(0, DataStoreTvSettings(store).screenOffMinutes.first())
+    }
+
+    @Test fun aDamagedFile_fallsBackToTheDefault() = runTest {
+        val file = tmp.newFile("damaged.preferences_pb").apply { writeBytes(byteArrayOf(0x0a, 0x7f, 0x01, 0x02)) }
+        val damaged = PreferenceDataStoreFactory.create(corruptionHandler = tvSettingsCorruptionHandler(), scope = scope) { file }
+        assertEquals(5, DataStoreTvSettings(damaged).screenOffMinutes.first())
     }
 }
