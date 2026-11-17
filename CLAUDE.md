@@ -5,11 +5,10 @@ Native Android client for Audiobookshelf. Kotlin, Jetpack Compose, Hilt, Room, M
 ## Commands
 
 ```sh
-# What CI runs on every pull request
-./gradlew lint testDebugUnitTest :abs-api:test :core:model:test assembleDebug
-
-# Release build with R8; without the LAUSCHIG_* variables it is built unsigned
-./gradlew :app:assembleRelease
+# What CI runs on every pull request, as three parallel jobs (test, lint, build)
+./gradlew testDebugUnitTest :abs-api:test :core:model:test
+./gradlew lint
+./gradlew assembleDebug assembleRelease   # the release is built with R8; without the LAUSCHIG_* variables unsigned
 ```
 
 Wrap Gradle runs in `timeout`, a hung daemon otherwise blocks the session.
@@ -33,9 +32,9 @@ Wrap Gradle runs in `timeout`, a hung daemon otherwise blocks the session.
 - **ReadMeABook is switched off for the launch.** The code in package `rmab` stays, the build leaves it out; `-Plauschig.rmab=true` builds it in. `RmabTextsTest` fails if any string outside `rmab_*` names "RMAB" or "ReadMeABook", so in-app texts such as "What's new" must not mention it. Release notes may.
 - **User-facing texts exist in English (`values/`) and German (`values-de/`).** Add both when adding a string.
 - **Never commit a keystore or signing values.** Signing comes from the environment only.
-- **Pull-request CI builds debug only.** Before tagging a release, build `:app:assembleRelease` locally so R8 problems show up before the tag.
-- **Work in a worktree, not in the main checkout**, and merge through a pull request.
-- A tag `v*` runs the release workflow and builds the signed bundle. Tagging and publishing a release need Fabian's OK. The steps are in `docs/release-anleitung.md`.
+- **Work in a worktree, not in the main checkout.** `main` only takes pull requests, and only with green `test`, `lint` and `build`.
+- **A tag `v*` on `main` is a release.** The release workflow repeats tests, lint and builds on the tagged commit, then signs the bundle and the APK and publishes the GitHub release. Tags cannot be moved or deleted, so check version, "What's new" and `docs/release-notes/v<version>.md` before tagging. Tagging needs Fabian's OK. The steps are in `docs/release-anleitung.md`.
+- **Workflows pin every action by commit hash.** The repository rejects anything else.
 
 ## Where things are
 
