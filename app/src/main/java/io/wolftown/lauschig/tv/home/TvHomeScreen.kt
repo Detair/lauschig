@@ -12,6 +12,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -32,8 +33,10 @@ import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.common.TvSeriesCard
 import io.wolftown.lauschig.tv.common.bringIntoReach
 import io.wolftown.lauschig.tv.common.requestFocusWhenPlaced
+import io.wolftown.lauschig.tv.nav.LocalRailHasFocus
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.LocalOfflineDimming
+import io.wolftown.lauschig.ui.connection.ConnectionStatusViewModel
 import io.wolftown.lauschig.ui.discover.DiscoverViewModel
 import io.wolftown.lauschig.ui.discover.SeriesTile
 import io.wolftown.lauschig.ui.start.StartUiState
@@ -52,23 +55,50 @@ fun TvHomeRoute(
     onOpenSeries: (String) -> Unit,
     start: StartViewModel = hiltViewModel(),
     discover: DiscoverViewModel = hiltViewModel(),
+    connection: ConnectionStatusViewModel = hiltViewModel(),
 ) {
     val state by start.state.collectAsStateWithLifecycle()
     val discoverState by discover.state.collectAsStateWithLifecycle()
+    val syncing by discover.syncing.collectAsStateWithLifecycle()
     // "Continue" may have moved on while the page was away, as on the phone.
     LifecycleResumeEffect(start) {
         start.onResume()
         onPauseOrDispose {}
     }
+    val online = !LocalOfflineDimming.current
     TvHomeScreen(
         state = state,
         series = discoverState.series,
-        online = !LocalOfflineDimming.current,
-        onRetry = discover::refreshLibrary,
+        online = online,
+        onRetry = rememberReconnectThenRefresh(online, connection::reconnect, discover::refreshLibrary),
         // An episode's tile opens its podcast, as on the phone.
         onOpenItem = { onOpenItem(PlayableKey.parse(it).libraryItemId) },
         onOpenSeries = onOpenSeries,
+        syncing = syncing,
     )
+}
+
+/**
+ * "Try again" while offline: probe the server's addresses now (as "Reconnect" on the connection page does), and once it
+ * answers, fetch the library. A sync started while still offline would only wait for the network.
+ */
+@Composable
+internal fun rememberReconnectThenRefresh(online: Boolean, reconnect: () -> Unit, refresh: () -> Unit): () -> Unit {
+    var waiting by remember { mutableStateOf(false) }
+    val currentRefresh by rememberUpdatedState(refresh)
+    LaunchedEffect(online, waiting) {
+        if (online && waiting) {
+            waiting = false
+            currentRefresh()
+        }
+    }
+    val currentReconnect by rememberUpdatedState(reconnect)
+    return remember {
+        {
+            currentReconnect()
+            waiting = true
+        }
+    }
 }
 
 /** One row of the start page. */
@@ -87,6 +117,8 @@ fun TvHomeScreen(
     onRetry: () -> Unit,
     onOpenItem: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
+    /** A library sync is waiting or running: with nothing to show yet, the library is not empty but on its way. */
+    syncing: Boolean = false,
 ) {
     val itemRow = { key: String, title: Int, items: List<ItemSummary> ->
         HomeRow(key) { modifier, focus ->
@@ -108,8 +140,10 @@ fun TvHomeScreen(
     when {
         state.loading -> TvMessage(stringResource(R.string.tv_home_loading))
         rows.isNotEmpty() -> HomeRows(rows)
-        online -> TvMessage(stringResource(R.string.tv_home_empty))
-        else -> TvMessage(stringResource(R.string.tv_home_offline), stringResource(R.string.tv_retry), onRetry)
+        // Offline first: a sync waits for the network then and would never end the loading.
+        !online -> TvMessage(stringResource(R.string.tv_home_offline), stringResource(R.string.tv_retry), onRetry)
+        syncing -> TvMessage(stringResource(R.string.tv_home_loading))
+        else -> TvMessage(stringResource(R.string.tv_home_empty))
     }
 }
 
@@ -131,6 +165,7 @@ private fun HomeRows(rows: List<HomeRow>) {
         pending.refocus = keys.getOrNull(pending.shown.indexOf(focusedRow).coerceIn(0, keys.lastIndex))
     }
     SideEffect { pending.shown = keys }
+    val railHasFocus = LocalRailHasFocus.current
     LaunchedEffect(keys) {
         if (pending.entered && pending.refocus == null) return@LaunchedEffect
         // A lazy list drops the row that went when it lays itself out, and the focus with it: ask after that.
@@ -138,6 +173,8 @@ private fun HomeRows(rows: List<HomeRow>) {
         val key = pending.refocus ?: focusedRow?.takeIf { it in keys } ?: keys.first()
         pending.entered = true
         pending.refocus = null
+        // Rows that arrive while the person is in the rail wait there: right comes back into them.
+        if (railHasFocus()) return@LaunchedEffect
         columnState.bringIntoReach(keys.indexOf(key))
         requesters.of(key).requestFocusWhenPlaced()
     }

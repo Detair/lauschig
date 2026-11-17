@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -22,6 +23,9 @@ import io.wolftown.lauschig.tv.common.TAG_MESSAGE
 import io.wolftown.lauschig.tv.common.TAG_MESSAGE_ACTION
 import io.wolftown.lauschig.tv.common.cardTag
 import io.wolftown.lauschig.tv.common.tvItem
+import io.wolftown.lauschig.tv.nav.TAG_RAIL
+import io.wolftown.lauschig.tv.nav.TvSection
+import io.wolftown.lauschig.tv.nav.TvShell
 import io.wolftown.lauschig.ui.discover.SeriesTile
 import io.wolftown.lauschig.ui.start.StartUiState
 import org.junit.Assert.assertEquals
@@ -173,5 +177,57 @@ class TvHomeScreenTest {
         state = full.copy(continueItems = listOf(tvItem("c1")))
         rule.waitForIdle()
         rule.onNodeWithTag(cardTag("c1")).assertIsFocused()
+    }
+
+    /** A fresh account: the first sync has not brought anything yet, the library is not empty. */
+    @Test fun whileTheFirstSyncRuns_itLoads_insteadOfSayingEmpty() {
+        var syncing by mutableStateOf(true)
+        rule.setContent { TvTheme { TvHomeScreen(StartUiState(), emptyList(), true, {}, {}, {}, syncing = syncing) } }
+        rule.onNodeWithText(context.getString(R.string.tv_home_loading)).assertExists()
+        rule.onNodeWithText(context.getString(R.string.tv_home_empty)).assertDoesNotExist()
+        syncing = false
+        rule.waitForIdle()
+        rule.onNodeWithText(context.getString(R.string.tv_home_empty)).assertExists()
+    }
+
+    /** Offline a sync only waits for the network: "cannot be reached" and the way to try again win. */
+    @Test fun offline_aWaitingSync_doesNotHideTheRetry() {
+        rule.setContent { TvTheme { TvHomeScreen(StartUiState(), emptyList(), false, { retries++ }, {}, {}, syncing = true) } }
+        rule.onNodeWithText(context.getString(R.string.tv_home_offline)).assertExists()
+        rule.onNodeWithTag(TAG_MESSAGE_ACTION).assertIsFocused()
+    }
+
+    /** Review focus 2: "Try again" probes the server now, and fetches the library once it answers. */
+    @Test fun retry_reconnectsFirst_thenRefreshesOnceOnline() {
+        var online by mutableStateOf(false)
+        val calls = mutableListOf<String>()
+        rule.setContent {
+            val retry = rememberReconnectThenRefresh(online, reconnect = { calls += "reconnect" }, refresh = { calls += "refresh" })
+            TvTheme { TvHomeScreen(StartUiState(), emptyList(), online, retry, {}, {}) }
+        }
+        press(Key.DirectionCenter)
+        assertEquals(listOf("reconnect"), calls)
+        online = true
+        rule.waitForIdle()
+        assertEquals(listOf("reconnect", "refresh"), calls)
+        online = false
+        online = true
+        rule.waitForIdle()
+        assertEquals("only once per try", listOf("reconnect", "refresh"), calls)
+    }
+
+    @Test fun rowsThatArriveWhileTheRailIsOpen_leaveTheFocusThere() {
+        var state by mutableStateOf(StartUiState(loading = true))
+        rule.setContent {
+            TvTheme { TvShell(TvSection.Home, onSection = {}) { TvHomeScreen(state, emptyList(), true, {}, {}, {}) } }
+        }
+        rule.onNodeWithTag(TAG_MESSAGE).assertIsFocused()
+        press(Key.DirectionLeft)
+        rule.onNodeWithTag(TAG_RAIL + TvSection.Home.name).assertIsFocused()
+        state = full
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_RAIL + TvSection.Home.name).assertIsFocused()
+        press(Key.DirectionRight)
+        rule.onNode(isFocused() and hasTestTag(cardTag("c1")) or (isFocused() and hasTestTag(cardTag("n1")))).assertExists()
     }
 }
