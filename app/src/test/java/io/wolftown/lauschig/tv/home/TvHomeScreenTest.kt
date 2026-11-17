@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -267,6 +268,12 @@ class TvHomeScreenTest {
     @Test fun signInAgain_aboveTheRows_reachedByUp_withoutTakingTheFocusFirst() {
         showWithHint(needsReauth = true)
         rule.onNodeWithText(context.getString(R.string.reauth_banner)).assertExists()
+        // Read out when it appears, as the focus stays on the rows.
+        rule.onNodeWithTag(TAG_REAUTH_TEXT).assert(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.LiveRegion, androidx.compose.ui.semantics.LiveRegionMode.Polite,
+            ),
+        )
         rule.onNodeWithTag(cardTag("c1")).assertIsFocused()
         press(Key.DirectionUp)
         rule.onNodeWithTag(TAG_REAUTH_SIGN_IN).assertIsFocused()

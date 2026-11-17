@@ -573,5 +573,11 @@ class TvPlayerScreenTest {
                 androidx.compose.ui.semantics.ProgressBarRangeInfo(0.05f, 0f..1f),
             ),
         )
+        rule.onNodeWithTag(TAG_PROGRESS).assert(
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.ContentDescription,
+                listOf(context.getString(io.wolftown.lauschig.R.string.tv_player_chapter_progress)),
+            ),
+        )
     }
 }
