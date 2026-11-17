@@ -822,6 +822,10 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_6_1">
+        <item>Maintenance: a bundled library (Guava) is up to date</item>
+        <item>The security advisory for the older version did not affect the app; nothing changes in how you use it</item>
+    </string-array>
     <string-array name="whatsnew_0_6_0">
         <item>Server addresses by QR code: a signed-in device shows them under “Connection status”, a new one scans them during setup</item>
         <item>The QR code holds only the addresses, no account and no password; the camera is used for scanning only</item>
