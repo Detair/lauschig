@@ -38,6 +38,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.catalog.Facet
+import io.wolftown.lauschig.tv.common.HidePodcasts
 import io.wolftown.lauschig.tv.common.TvCardRow
 import io.wolftown.lauschig.tv.common.TvCoverCard
 import io.wolftown.lauschig.tv.common.TvFacetCard
@@ -68,6 +69,7 @@ fun TvSearchRoute(
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    HidePodcasts(state.availableKinds, state.selectedKinds, viewModel::setKinds)
     TvSearchScreen(
         state = state,
         onQuery = viewModel::setQuery,
