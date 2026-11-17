@@ -14,7 +14,13 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +29,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -47,14 +54,23 @@ enum class TvSection(@StringRes val label: Int, val icon: ImageVector) {
 }
 
 /**
+ * Whether the rail of the page has the focus right now. Content that takes the focus by itself when it appears (a message,
+ * rows that arrive) leaves it alone then: the person is choosing a section.
+ */
+internal val LocalRailHasFocus = staticCompositionLocalOf<() -> Boolean> { { false } }
+
+/**
  * A top-level page with the rail on its left. The rail shows only its symbols until the focus comes in: left from the content
- * opens it on the [current] section, with the names. Right, or OK on the current section, goes back to where the focus was in
- * the content; OK on another section calls [onSection].
+ * opens it on the [current] section, with the names. Right, OK on the current section, or Back goes back to where the focus
+ * was in the content; OK on another section calls [onSection].
  */
 @Composable
 fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Composable () -> Unit) {
     val focusManager = LocalFocusManager.current
     val currentItem = remember { FocusRequester() }
+    var railHasFocus by remember { mutableStateOf(false) }
+    // Back closes the open rail, as on other TV apps, instead of leaving the page behind it.
+    BackHandler(enabled = railHasFocus) { focusManager.moveFocus(FocusDirection.Right) }
     NavigationDrawer(
         drawerContent = {
             Column(
@@ -62,6 +78,7 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
                     .fillMaxHeight()
                     .padding(start = TvDimens.overscanHorizontal / 2, end = 8.dp, top = TvDimens.overscanVertical, bottom = TvDimens.overscanVertical)
                     .selectableGroup()
+                    .onFocusChanged { railHasFocus = it.hasFocus }
                     // Into the rail on the page one is on, not on the item that happens to be level with the focus.
                     .focusProperties { onEnter = { currentItem.requestFocus(FocusDirection.Enter) } }
                     .focusGroup(),
@@ -91,7 +108,7 @@ fun TvShell(current: TvSection, onSection: (TvSection) -> Unit, content: @Compos
                 .focusRestorer()
                 .focusGroup(),
         ) {
-            content()
+            CompositionLocalProvider(LocalRailHasFocus provides { railHasFocus }, content = content)
         }
     }
 }

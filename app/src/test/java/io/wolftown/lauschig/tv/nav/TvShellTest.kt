@@ -9,7 +9,11 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.isFocused
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
@@ -21,7 +25,10 @@ import androidx.tv.material3.Text
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.tv.TV_QUALIFIERS
 import io.wolftown.lauschig.tv.TvTheme
+import io.wolftown.lauschig.tv.common.TAG_MESSAGE
+import io.wolftown.lauschig.tv.common.TvMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,7 +39,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class, qualifiers = TV_QUALIFIERS)
 class TvShellTest {
-    @get:Rule val rule = createComposeRule()
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val chosen = mutableListOf<TvSection>()
@@ -88,5 +95,33 @@ class TvShellTest {
         press(Key.DirectionCenter)
         rule.onNodeWithTag("second").assertIsFocused()
         assertEquals(emptyList<TvSection>(), chosen)
+    }
+
+    @Test fun back_withTheRailOpen_closesIt_andStaysOnThePage() {
+        show()
+        rule.onNodeWithTag("second").requestFocus()
+        press(Key.DirectionLeft)
+        rule.onNodeWithTag(TAG_RAIL + TvSection.Home.name).assertIsFocused()
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+        rule.onNodeWithTag("second").assertIsFocused()
+        assertFalse(rule.activity.isFinishing)
+    }
+
+    @Test fun aMessageThatAppears_leavesTheFocusInTheOpenRail() {
+        var loaded by mutableStateOf(true)
+        rule.setContent {
+            TvTheme {
+                TvShell(TvSection.Home, onSection = {}) {
+                    if (loaded) Button(onClick = {}, modifier = Modifier.testTag("first")) { Text("First") } else TvMessage("Loading")
+                }
+            }
+        }
+        rule.onNodeWithTag("first").requestFocus()
+        press(Key.DirectionLeft)
+        loaded = false
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_MESSAGE).assertExists()
+        rule.onNodeWithTag(TAG_RAIL + TvSection.Home.name).assertIsFocused()
     }
 }

@@ -50,6 +50,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.tv.TvDimens
+import io.wolftown.lauschig.tv.nav.LocalRailHasFocus
 import io.wolftown.lauschig.ui.common.CoverArt
 import io.wolftown.lauschig.ui.common.ItemSummary
 import io.wolftown.lauschig.ui.common.LocalServerBaseUrl
@@ -221,13 +222,14 @@ internal suspend fun LazyListState.bringIntoReach(index: Int) {
 }
 
 /**
- * A page's message: loading, empty, offline, or a page still to come. It takes the focus when it appears, so a page with only
- * a message has one thing in focus too: the [action], or else the text.
+ * A page's message: loading, empty, offline, or a page still to come. It takes the focus when it appears (unless the rail has
+ * it), so a page with only a message has one thing in focus too: the [action], or else the text.
  */
 @Composable
 fun TvMessage(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    val railHasFocus = LocalRailHasFocus.current
+    LaunchedEffect(Unit) { if (!railHasFocus()) focus.requestFocus() }
     val withAction = action != null && onAction != null
     Column(
         Modifier.fillMaxSize().padding(horizontal = TvDimens.overscanHorizontal, vertical = TvDimens.overscanVertical),

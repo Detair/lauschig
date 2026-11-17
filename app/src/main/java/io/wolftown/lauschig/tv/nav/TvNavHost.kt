@@ -61,7 +61,7 @@ private fun Placeholder() = TvMessage(stringResource(R.string.tv_placeholder))
  * To a section of the rail. Each one stands right on the start page, so Back from any of them leads there, and from there out
  * of the app.
  */
-private fun NavHostController.openSection(section: TvSection) {
+internal fun NavHostController.openSection(section: TvSection) {
     if (section == TvSection.Home) {
         if (!popBackStack<TvHome>(inclusive = false)) navigate(TvHome) { launchSingleTop = true }
         return
