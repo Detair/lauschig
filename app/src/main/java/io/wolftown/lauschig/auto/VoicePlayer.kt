@@ -30,7 +30,8 @@ class VoicePlayer @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    fun playFromSearch(query: String?, extras: Bundle?) {
+    /** [onPlaying]: once a title was found and handed to the player (the TV then opens its player page); not when nothing was. */
+    fun playFromSearch(query: String?, extras: Bundle?, onPlaying: () -> Unit = {}) {
         scope.launch {
             // Like the player: wait for the first connection check, so a streamed title is not taken for offline.
             val online = awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS)
@@ -43,6 +44,7 @@ class VoicePlayer @Inject constructor(
                 return@launch
             }
             player.play(title.serverId, title.key)
+            onPlaying()
         }
     }
 
