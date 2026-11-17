@@ -8,4 +8,9 @@
         <item name="postSplashScreenTheme">@style/Theme.Lauschig</item>
         <item name="windowSplashScreenBackground">#FFFFFF</item>
     </style>
+
+    <!-- The TV interface (TvActivity): always the app's night blue, from the first frame on; no light splash. -->
+    <style name="Theme.Lauschig.Tv" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/tv_window</item>
+    </style>
 </resources>

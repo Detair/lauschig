@@ -23,4 +23,11 @@ class LauncherStartTest {
         assertFalse(isLauncherStart(Intent(Intent.ACTION_MAIN), recreated = false))
         assertFalse(isLauncherStart(null, recreated = false))
     }
+
+    @Test fun theTvLauncher_countsToo() {
+        val tvLauncher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+        assertTrue(isLauncherStart(tvLauncher, recreated = false))
+        assertFalse(isLauncherStart(tvLauncher, recreated = true))
+        assertFalse(isLauncherStart(Intent(tvLauncher).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_PLAYER), recreated = false))
+    }
 }

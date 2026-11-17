@@ -1177,4 +1177,6 @@
     <string name="server_qr_error_bad_address">The code contains no valid server address.</string>
     <string name="server_qr_error_credentials">The code has sign-in data inside an address. It is not used.</string>
     <string name="server_qr_error_too_long">The code is too long.</string>
+    <!-- Google TV -->
+    <string name="tv_home_loading">Loading your library…</string>
 </resources>

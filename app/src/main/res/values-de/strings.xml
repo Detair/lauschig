@@ -1177,4 +1177,6 @@
     <string name="server_qr_error_bad_address">Der Code enthält keine gültige Server-Adresse.</string>
     <string name="server_qr_error_credentials">Der Code enthält Zugangsdaten in der Adresse. Er wird nicht übernommen.</string>
     <string name="server_qr_error_too_long">Der Code ist zu lang.</string>
+    <!-- Google TV -->
+    <string name="tv_home_loading">Deine Bibliothek wird geladen…</string>
 </resources>
