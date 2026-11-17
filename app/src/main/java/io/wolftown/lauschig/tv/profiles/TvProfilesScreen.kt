@@ -151,28 +151,8 @@ fun TvProfilesScreen(
             ProfileChoice(rows, target, onFocused = { focused = it }, onChoose, onAdd)
         }
     }
-    when (gate) {
-        is GatePrompt.SignIn -> SignInDialog(
-            stringResource(
-                when (gate.reason) {
-                    SignInReason.DEVICE_LOCK_GONE -> R.string.profiles_signin_device_gone
-                    SignInReason.DEVICE_LOCK_FAILED -> R.string.profiles_signin_device_failed
-                    SignInReason.UNREADABLE -> R.string.profiles_signin_unreadable
-                },
-                gate.row.name,
-            ),
-            onSignIn = { onSignIn(gate.row.serverId) },
-            onCancel = onCancelGate,
-        )
-        // The system's prompt is not shown on a TV: the way in is the sign-in, as when the lock is gone.
-        is GatePrompt.Device -> SignInDialog(
-            stringResource(R.string.tv_profiles_device_lock, gate.row.name),
-            onSignIn = { onSignIn(gate.row.serverId) },
-            onCancel = onCancelGate,
-        )
-        else -> Unit
-    }
-    outcome?.takeIf { it.kind in FAILURES }?.let { failed -> FailedDialog(profileOutcomeText(failed), onOk = { onOutcomeShown(failed) }) }
+    TvSignInDialogs(gate, onSignIn, onCancelGate)
+    outcome?.takeIf { it.kind in FAILURES }?.let { failed -> TvNoticeDialog(profileOutcomeText(failed), onOk = { onOutcomeShown(failed) }) }
 }
 
 private val FAILURES = setOf(ProfileOutcome.Kind.SWITCH_FAILED, ProfileOutcome.Kind.REMOVE_FAILED)
@@ -213,9 +193,9 @@ private fun BusyState(work: ProfileWork) {
     }
 }
 
-/** A failed switch: what happened, and one button to go on. */
+/** How an operation ended (a failed switch, an unlock): what happened, and one button to go on. */
 @Composable
-private fun FailedDialog(text: String, onOk: () -> Unit) {
+internal fun TvNoticeDialog(text: String, onOk: () -> Unit) {
     val okFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onOk,
@@ -305,8 +285,9 @@ private fun Tile(onClick: () -> Unit, modifier: Modifier, label: String, detail:
     }
 }
 
+/** The PIN asked of [prompt]'s profile, on a page of its own: the title and the way of a forgotten PIN left, the pad right. */
 @Composable
-private fun PinPage(prompt: GatePrompt.Pin, onPin: (String) -> Unit, onCancel: () -> Unit, onForgot: () -> Unit) {
+internal fun PinPage(prompt: GatePrompt.Pin, onPin: (String) -> Unit, onCancel: () -> Unit, onForgot: () -> Unit) {
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(TvDimens.overscanHorizontal), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             Text(
@@ -325,7 +306,7 @@ private fun PinPage(prompt: GatePrompt.Pin, onPin: (String) -> Unit, onCancel: (
 
 /** No way in but this account's sign-in. The focus on "Sign in": it is the only way on. */
 @Composable
-private fun SignInDialog(text: String, onSignIn: () -> Unit, onCancel: () -> Unit) {
+internal fun SignInDialog(text: String, onSignIn: () -> Unit, onCancel: () -> Unit) {
     val signInFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onCancel,
@@ -341,4 +322,30 @@ private fun SignInDialog(text: String, onSignIn: () -> Unit, onCancel: () -> Uni
         },
         modifier = Modifier.testTag(TAG_SIGN_IN_DIALOG),
     )
+}
+
+/** The gate's questions that only the account's sign-in answers; a PIN is the caller's, on a page of its own. */
+@Composable
+internal fun TvSignInDialogs(gate: GatePrompt?, onSignIn: (String) -> Unit, onCancel: () -> Unit) {
+    when (gate) {
+        is GatePrompt.SignIn -> SignInDialog(
+            stringResource(
+                when (gate.reason) {
+                    SignInReason.DEVICE_LOCK_GONE -> R.string.profiles_signin_device_gone
+                    SignInReason.DEVICE_LOCK_FAILED -> R.string.profiles_signin_device_failed
+                    SignInReason.UNREADABLE -> R.string.profiles_signin_unreadable
+                },
+                gate.row.name,
+            ),
+            onSignIn = { onSignIn(gate.row.serverId) },
+            onCancel = onCancel,
+        )
+        // The system's prompt is not shown on a TV: the way in is the sign-in, as when the lock is gone.
+        is GatePrompt.Device -> SignInDialog(
+            stringResource(R.string.tv_profiles_device_lock, gate.row.name),
+            onSignIn = { onSignIn(gate.row.serverId) },
+            onCancel = onCancel,
+        )
+        else -> Unit
+    }
 }

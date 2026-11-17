@@ -1179,7 +1179,6 @@
     <string name="server_qr_error_too_long">Der Code ist zu lang.</string>
     <!-- Google TV -->
     <string name="tv_home_loading">Deine Bibliothek wird geladen…</string>
-    <string name="tv_placeholder">Diese Seite folgt in einer späteren Version.</string>
     <string name="tv_home_empty">Deine Bibliothek ist leer. Titel, die auf dem Server dazukommen, erscheinen hier.</string>
     <string name="tv_home_offline">Der Server ist nicht erreichbar, und von deiner Bibliothek ist noch nichts auf diesem Fernseher.</string>
     <string name="tv_retry">Erneut versuchen</string>
@@ -1208,4 +1207,22 @@
     <string name="tv_player_slower">Langsamer</string>
     <string name="tv_player_faster">Schneller</string>
     <string name="tv_player_more_hint">Runter: Kapitel, Tempo und Schlaf-Timer</string>
+    <string name="tv_settings_switch_profile">Profil wechseln</string>
+    <string name="tv_settings_profile_active">Aktiv: %1$s</string>
+    <string name="tv_settings_profile_hint">Wer hört? Auch zum Hinzufügen eines Profils</string>
+    <string name="tv_settings_set_pin">PIN festlegen</string>
+    <string name="tv_settings_change_pin">PIN ändern</string>
+    <string name="tv_settings_remove_pin">PIN entfernen</string>
+    <string name="tv_settings_screen_off">Bild aus nach</string>
+    <string name="tv_settings_screen_off_never">Nie</string>
+    <plurals name="tv_settings_screen_off_minutes">
+        <item quantity="one">%1$d Minute</item>
+        <item quantity="other">%1$d Minuten</item>
+    </plurals>
+    <string name="tv_settings_screen_off_hint">Der Player wird schwarz, wenn keine Taste gedrückt wird. Jede Taste holt ihn zurück.</string>
+    <string name="tv_settings_connected">Verbunden</string>
+    <string name="tv_settings_connection_line">%1$s · %2$s</string>
+    <string name="tv_settings_sign_out_hint">Meldet dieses Profil auf diesem Fernseher ab</string>
+    <string name="tv_settings_version">Version %1$s (%2$d)</string>
+    <string name="tv_card_progress">%1$d %% gehört</string>
 </resources>
