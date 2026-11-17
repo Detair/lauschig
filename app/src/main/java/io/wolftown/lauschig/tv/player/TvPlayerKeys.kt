@@ -18,12 +18,14 @@ sealed interface TvPlayerAction {
 internal val OK_KEYS = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
 
 /**
- * The action of [key] on the stage, or null when the stage leaves it alone. While the screen is off ([screenOff]) every key
- * only wakes it. While the sleep timer ends ([sleepEnding]: its last minute, the hint tone and the fade) OK extends it
- * instead of pausing: whoever presses it is awake. The media keys are not here: the media session handles them.
+ * The action of [key] on the stage, or null when the stage leaves it alone. While the sleep timer ends ([sleepEnding]: its
+ * last minute, the hint tone and the fade) OK extends it instead of pausing: whoever presses it is awake. While the screen is
+ * off ([screenOff]) every key only wakes it, except OK while the timer ends: that extends it and the screen stays black, as
+ * someone lying in the dark who hears the fade wants to keep listening, not to light up the room. The media keys are not
+ * here: the media session handles them.
  */
 fun tvPlayerAction(key: Key, screenOff: Boolean, sleepEnding: Boolean, seekBackSec: Int, seekForwardSec: Int): TvPlayerAction? = when {
-    screenOff -> TvPlayerAction.Wake
+    screenOff -> if (sleepEnding && key in OK_KEYS) TvPlayerAction.ExtendSleep else TvPlayerAction.Wake
     key in OK_KEYS -> if (sleepEnding) TvPlayerAction.ExtendSleep else TvPlayerAction.Toggle
     key == Key.DirectionLeft -> TvPlayerAction.SeekBy(-seekBackSec)
     key == Key.DirectionRight -> TvPlayerAction.SeekBy(seekForwardSec)

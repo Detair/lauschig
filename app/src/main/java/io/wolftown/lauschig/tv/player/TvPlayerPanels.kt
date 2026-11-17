@@ -63,6 +63,9 @@ internal const val TAG_SLEEP_OPTION = "tvPlayerSleepOption:"
 /** The sleep timer's choices on the TV, as on the phone: minutes, the end of the chapter, off (null). */
 internal val SLEEP_OPTIONS: List<SleepMode?> = listOf(15, 30, 45, 60).map { SleepMode.Minutes(it) } + SleepMode.EndOfChapter + null
 
+/** Where the sleep list opens for the running [current] timer (see [TvSleepPanel]). */
+internal fun sleepPanelStart(current: SleepMode?): Int = SLEEP_OPTIONS.indexOf(current).takeIf { it >= 0 } ?: SLEEP_OPTIONS.lastIndex
+
 internal fun sleepOptionKey(mode: SleepMode?): String = when (mode) {
     is SleepMode.Minutes -> mode.minutes.toString()
     SleepMode.EndOfChapter -> "chapter"
@@ -157,12 +160,15 @@ private fun BarButton(text: String, icon: ImageVector, onClick: () -> Unit, modi
 }
 
 /**
- * The sleep timer's choices as a list on the right, like the chapters. It opens on the running choice (on "Off" without a
- * timer); OK sets it. The focus stays inside while it is open.
+ * The sleep timer's choices as a list on the right, like the chapters. It opens on the running choice, also when that one is
+ * partly over (the choice is the mode, not the time left). Without a timer, or with one the TV does not offer (the phone
+ * also has 5, 10 and 90 minutes), it opens on "Off": nothing in the list is that timer, and turning it off is the one thing
+ * the list can do with it; the bar's button shows how long it still runs. OK sets a choice. The focus stays inside while it
+ * is open.
  */
 @Composable
 internal fun TvSleepPanel(current: SleepMode?, onSleep: (SleepMode?) -> Unit, modifier: Modifier = Modifier) {
-    val start = SLEEP_OPTIONS.indexOf(current).coerceAtLeast(0)
+    val start = sleepPanelStart(current)
     val target = remember { FocusRequester() }
     LaunchedEffect(Unit) { target.requestFocusWhenPlaced() }
     Surface(

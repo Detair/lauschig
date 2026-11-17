@@ -24,12 +24,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -76,6 +77,11 @@ import kotlinx.coroutines.launch
 internal const val TAG_STAGE = "tvPlayerStage"
 internal const val TAG_SCREEN_OFF = "tvPlayerScreenOff"
 internal const val TAG_EXTEND_HINT = "tvPlayerExtendHint"
+
+/** Not playing for this long is a pause, which brings the picture back; shorter is buffering. */
+internal const val PAUSE_WAKES_MS = 3_000L
+
+private const val FOCUS_SETTLE_FRAMES = 3
 
 /** Held left or right seeks at most this often: five times a second, not with every repeat of the remote (review focus 4). */
 internal const val SEEK_REPEAT_MS = 200L
@@ -120,8 +126,10 @@ fun TvPlayerRoute(
  * closes it again. While the sleep timer ends, OK extends it.
  *
  * "Screen off" (TV spec 2.8): after [screenOffMinutes] without a key press while playing, the page turns black, with no text
- * and nothing that moves; the next key only brings it back. 0 never. A pause brings it back too, and the TV's own screen
- * saver may then take over: the app never holds the screen awake (TV spec E7).
+ * and nothing that moves; the next key only brings it back, except OK while the sleep timer ends, which extends it in the dark.
+ * 0 never. A pause of more than [PAUSE_WAKES_MS] brings it back too (buffering does not), and the TV's own screen saver may
+ * then take over: the app never holds the screen awake (TV spec E7). Coming back to the page (after HOME) starts the wait
+ * again on a lit page.
  *
  * Nothing loaded: a hint, and [onBack] to leave.
  */
@@ -147,13 +155,31 @@ fun TvPlayerScreen(
     var presses by remember { mutableIntStateOf(0) }
     // The key that woke the screen: its repeats and its release are swallowed too, so holding it does nothing more.
     var swallowing by remember { mutableStateOf<Key?>(null) }
+    val sleepEnding = sleep?.shakeToExtend == true
+    // Paused for real, not just buffering: Media3 reports "not playing" during every stall, file switch and seek, and that
+    // must not light up a dark room.
+    var paused by remember { mutableStateOf(!state.isPlaying) }
     val playing = state.isPlaying
-    LaunchedEffect(presses, playing, screenOffMinutes, screenOff) {
+    LaunchedEffect(playing) {
+        if (playing) paused = false
+        else {
+            delay(PAUSE_WAKES_MS)
+            paused = true
+        }
+    }
+    // The wait counts only while the page is on screen: after HOME the person comes back to the picture, not to black.
+    var resumed by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        resumed = true
+        screenOff = false
+        onPauseOrDispose { resumed = false }
+    }
+    LaunchedEffect(presses, paused, screenOffMinutes, screenOff, resumed) {
         if (screenOff) {
-            if (!playing) screenOff = false
+            if (paused) screenOff = false
             return@LaunchedEffect
         }
-        if (!playing || screenOffMinutes <= 0) return@LaunchedEffect
+        if (!resumed || paused || screenOffMinutes <= 0) return@LaunchedEffect
         delay(screenOffMinutes * 60_000L)
         screenOff = true
     }
@@ -171,14 +197,20 @@ fun TvPlayerScreen(
                 }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 presses++
-                if (tvPlayerAction(key, screenOff, sleepEnding = false, 0, 0) != TvPlayerAction.Wake) return@onPreviewKeyEvent false
-                screenOff = false
-                if (key in SYSTEM_KEYS) return@onPreviewKeyEvent false
+                if (!screenOff) return@onPreviewKeyEvent false
+                when (tvPlayerAction(key, screenOff = true, sleepEnding, 0, 0)) {
+                    // In the dark: on with the listening, and the room stays dark.
+                    TvPlayerAction.ExtendSleep -> onExtendSleep()
+                    else -> {
+                        screenOff = false
+                        if (key in SYSTEM_KEYS) return@onPreviewKeyEvent false
+                    }
+                }
                 swallowing = key
                 true
             },
     ) {
-        if (screenOff) ScreenOff() else Player(state, sleep, onToggle, onSeekBy, onChapter, onSpeed, onSleep, onExtendSleep)
+        if (screenOff) ScreenOff() else Player(state, sleep, sleepEnding, onToggle, onSeekBy, onChapter, onSpeed, onSleep, onExtendSleep)
     }
 }
 
@@ -194,6 +226,7 @@ private fun ScreenOff() {
 private fun Player(
     state: PlayerScreenState,
     sleep: SleepTimerUi?,
+    sleepEnding: Boolean,
     onToggle: () -> Unit,
     onSeekBy: (Int) -> Unit,
     onChapter: (Int) -> Unit,
@@ -209,8 +242,10 @@ private fun Player(
     var controls by rememberSaveable { mutableStateOf(false) }
     var panel by rememberSaveable { mutableStateOf(TvPlayerPanel.None) }
     var stageFocused by remember { mutableStateOf(false) }
-    var lastSeekAt by remember { mutableLongStateOf(Long.MIN_VALUE) }
-    val sleepEnding = sleep?.shakeToExtend == true
+    // When the last seek of the stage was (key event time); none yet: the first repeat seeks too.
+    var lastSeekAt by remember { mutableStateOf<Long?>(null) }
+    var pageHasFocus by remember { mutableStateOf(false) }
+    val hasChapters = state.chapters.isNotEmpty()
 
     LaunchedEffect(Unit) {
         when {
@@ -228,10 +263,32 @@ private fun Player(
         panel = TvPlayerPanel.None
         scope.launch { back.requestFocusWhenPlaced() }
     }
+    // The timer's last minute: OK must extend it wherever the focus was, so the bar and any list make way for the stage.
+    LaunchedEffect(sleepEnding) {
+        if (!sleepEnding) return@LaunchedEffect
+        controls = false
+        panel = TvPlayerPanel.None
+        stage.requestFocusWhenPlaced()
+    }
+    // Another title without chapters: their list has nothing left to show.
+    LaunchedEffect(hasChapters) { if (!hasChapters && panel == TvPlayerPanel.Chapters) panel = TvPlayerPanel.None }
+    // The bar's focused button went (the "Chapters" button of a title without chapters): Compose hands the focus to the stage
+    // around it, where left and right would seek under an open bar. On to the bar's first button instead.
+    LaunchedEffect(stageFocused, controls, panel) {
+        if (stageFocused && controls && panel == TvPlayerPanel.None) firstControl.requestFocusWhenPlaced()
+    }
+    // The focused element went with nothing around it to take the focus (a list that closed by itself): it would be on
+    // nothing. Given a few frames first, as closing a list moves the focus back to its button by itself.
+    LaunchedEffect(pageHasFocus) {
+        if (pageHasFocus) return@LaunchedEffect
+        repeat(FOCUS_SETTLE_FRAMES) { withFrameNanos { } }
+        if (pageHasFocus) return@LaunchedEffect
+        if (controls && panel == TvPlayerPanel.None) firstControl.requestFocusWhenPlaced() else stage.requestFocusWhenPlaced()
+    }
     BackHandler(enabled = panel != TvPlayerPanel.None) { closePanel() }
     BackHandler(enabled = controls && panel == TvPlayerPanel.None) { hideControls() }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().onFocusChanged { pageHasFocus = it.hasFocus }) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -246,7 +303,8 @@ private fun Player(
                     when (action) {
                         is TvPlayerAction.SeekBy -> {
                             val now = event.nativeKeyEvent.eventTime
-                            if (!repeat || now - lastSeekAt >= SEEK_REPEAT_MS) {
+                            val last = lastSeekAt
+                            if (!repeat || last == null || now - last >= SEEK_REPEAT_MS) {
                                 lastSeekAt = now
                                 onSeekBy(action.sec)
                             }
@@ -271,7 +329,7 @@ private fun Player(
                 TvControlBar(
                     speed = state.speed,
                     sleep = sleep,
-                    hasChapters = state.chapters.isNotEmpty(),
+                    hasChapters = hasChapters,
                     first = firstControl,
                     chaptersButton = chaptersButton,
                     sleepButton = sleepButton,

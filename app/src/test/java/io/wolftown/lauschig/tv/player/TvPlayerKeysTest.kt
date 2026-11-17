@@ -16,9 +16,13 @@ class TvPlayerKeysTest {
         tvPlayerAction(key, screenOff, sleepEnding, seekBackSec = 10, seekForwardSec = 30)
 
     @Test fun screenOff_everyKeyOnlyWakes() {
-        for (key in all) for (ending in listOf(false, true)) {
-            assertEquals("$key ending=$ending", TvPlayerAction.Wake, action(key, screenOff = true, sleepEnding = ending))
-        }
+        for (key in all) assertEquals(key.toString(), TvPlayerAction.Wake, action(key, screenOff = true))
+    }
+
+    /** In the dark while the timer fades: OK extends it and the screen stays black; every other key only wakes. */
+    @Test fun screenOff_whileTheSleepTimerEnds_okExtends_otherKeysWake() {
+        for (key in ok) assertEquals(key.toString(), TvPlayerAction.ExtendSleep, action(key, screenOff = true, sleepEnding = true))
+        for (key in all - ok.toSet()) assertEquals(key.toString(), TvPlayerAction.Wake, action(key, screenOff = true, sleepEnding = true))
     }
 
     @Test fun ok_toggles() {
