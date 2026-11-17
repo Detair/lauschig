@@ -62,7 +62,7 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
         // The phone's route classes: their view models read them from their SavedStateHandle.
         composable<ItemDetail> {
             TvItemRoute(
-                onPlay = { navController.navigate(TvPlayer) { launchSingleTop = true } },
+                onPlay = { navController.openPlayer() },
                 onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
             )
         }
@@ -101,3 +101,6 @@ internal fun NavHostController.openSection(section: TvSection) {
         launchSingleTop = true
     }
 }
+
+/** To the player; a second call while it is on top adds no second one. */
+internal fun NavHostController.openPlayer() = navigate(TvPlayer) { launchSingleTop = true }

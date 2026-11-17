@@ -229,4 +229,20 @@ class TvItemScreenTest {
         ).fetchSemanticsNode()
         return node.config[SemanticsProperties.VerticalScrollAxisRange].value()
     }
+
+    /** A second OK before the page has changed starts nothing more. */
+    @Test fun aSecondOk_beforeThePageChanges_startsNoSecondPlayback() {
+        var starts = 0
+        var players = 0
+        rule.setContent {
+            val once = rememberPlayOnce(onPlay = { players++ })
+            TvTheme { TvItemScreen(book, false, onPrimary = { once { starts++ } }, onFromStart = { once { starts++ } }, onChapter = {}, onOpenSeries = {}) }
+        }
+        press(Key.DirectionCenter)
+        press(Key.DirectionCenter)
+        press(Key.DirectionRight)
+        press(Key.DirectionCenter)
+        assertEquals(1, starts)
+        assertEquals(1, players)
+    }
 }

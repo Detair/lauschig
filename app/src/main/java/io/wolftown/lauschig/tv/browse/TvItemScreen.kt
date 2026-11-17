@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -117,15 +119,40 @@ fun TvItemRoute(
     val isPodcast by kind.isPodcast.collectAsStateWithLifecycle()
     // Not known yet: neither the book's page nor the podcast's hint, which could not take it back.
     val podcast = isPodcast ?: return TvMessage(stringResource(R.string.tv_loading))
+    val once = rememberPlayOnce(onPlay)
     TvItemScreen(
         state = state,
         isPodcast = podcast,
-        onPrimary = { viewModel.onPrimary(); onPlay() },
-        onFromStart = { viewModel.playFromStart(); onPlay() },
-        onChapter = { viewModel.onChapter(it); onPlay() },
+        onPrimary = { once { viewModel.onPrimary() } },
+        onFromStart = { once { viewModel.playFromStart() } },
+        onChapter = { once { viewModel.onChapter(it) } },
         onOpenSeries = onOpenSeries,
         onRetry = connection::reconnect,
     )
+}
+
+/**
+ * Starts playing at most once until the page shows again: a second OK while the page is still on its way to the player
+ * would otherwise start the title twice. [onPlay] follows the start.
+ */
+@Composable
+internal fun rememberPlayOnce(onPlay: () -> Unit): (start: () -> Unit) -> Unit {
+    val started = remember { Holder() }
+    val currentOnPlay by rememberUpdatedState(onPlay)
+    // Back from the player, the page can start again.
+    LifecycleResumeEffect(Unit) {
+        started.value = false
+        onPauseOrDispose {}
+    }
+    return remember {
+        { start ->
+            if (!started.value) {
+                started.value = true
+                start()
+                currentOnPlay()
+            }
+        }
+    }
 }
 
 /**
