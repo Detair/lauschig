@@ -247,4 +247,31 @@ class TvHomeScreenTest {
         rule.onNodeWithTag(cardTag("c1")).assertIsFocused()
         rule.onNodeWithText(context.getString(R.string.nav_library)).assertIsNotDisplayed()
     }
+
+    private var signIns = 0
+
+    private fun showWithHint(needsReauth: Boolean) = rule.setContent {
+        TvTheme {
+            TvHomeScreen(
+                full, series, online = true, onRetry = {}, onOpenItem = { openedItems += it }, onOpenSeries = {},
+                needsReauth = needsReauth, onSignInAgain = { signIns++ },
+            )
+        }
+    }
+
+    @Test fun signInAgain_isHintedOnlyWhenNeeded() {
+        showWithHint(needsReauth = false)
+        rule.onNodeWithTag(TAG_REAUTH).assertDoesNotExist()
+    }
+
+    @Test fun signInAgain_aboveTheRows_reachedByUp_withoutTakingTheFocusFirst() {
+        showWithHint(needsReauth = true)
+        rule.onNodeWithText(context.getString(R.string.reauth_banner)).assertExists()
+        rule.onNodeWithTag(cardTag("c1")).assertIsFocused()
+        press(Key.DirectionUp)
+        rule.onNodeWithTag(TAG_REAUTH_SIGN_IN).assertIsFocused()
+        press(Key.DirectionCenter)
+        assertEquals(1, signIns)
+        assertEquals(emptyList<String>(), openedItems)
+    }
 }

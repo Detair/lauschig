@@ -36,6 +36,7 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 TvHomeRoute(
                     onOpenItem = { navController.navigate(ItemDetail(it)) },
                     onOpenSeries = { navController.navigate(Browse(BrowseKind.SERIES, it)) },
+                    onSignIn = { navController.navigate(Setup.unlock(it)) { launchSingleTop = true } },
                 )
             }
         }

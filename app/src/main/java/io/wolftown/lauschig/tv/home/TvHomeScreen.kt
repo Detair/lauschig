@@ -1,6 +1,16 @@
 package io.wolftown.lauschig.tv.home
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.tv.material3.Button
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import io.wolftown.lauschig.ui.AppViewModel
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
@@ -53,6 +63,8 @@ internal const val TAG_ROW = "tvRow:"
 fun TvHomeRoute(
     onOpenItem: (String) -> Unit,
     onOpenSeries: (String) -> Unit,
+    onSignIn: (serverId: String) -> Unit = {},
+    app: AppViewModel = hiltViewModel(),
     start: StartViewModel = hiltViewModel(),
     discover: DiscoverViewModel = hiltViewModel(),
     connection: ConnectionStatusViewModel = hiltViewModel(),
@@ -60,6 +72,8 @@ fun TvHomeRoute(
     val state by start.state.collectAsStateWithLifecycle()
     val discoverState by discover.state.collectAsStateWithLifecycle()
     val syncing by discover.syncing.collectAsStateWithLifecycle()
+    val needsReauth by app.needsReauth.collectAsStateWithLifecycle()
+    val serverId by app.serverId.collectAsStateWithLifecycle()
     // "Continue" may have moved on while the page was away, as on the phone.
     LifecycleResumeEffect(start) {
         start.onResume()
@@ -75,6 +89,8 @@ fun TvHomeRoute(
         onOpenItem = { onOpenItem(PlayableKey.parse(it).libraryItemId) },
         onOpenSeries = onOpenSeries,
         syncing = syncing,
+        needsReauth = needsReauth && serverId != null,
+        onSignInAgain = { serverId?.let(onSignIn) },
     )
 }
 
@@ -119,6 +135,9 @@ fun TvHomeScreen(
     onOpenSeries: (String) -> Unit,
     /** A library sync is waiting or running: with nothing to show yet, the library is not empty but on its way. */
     syncing: Boolean = false,
+    /** The server turned the session down: a hint on top, with the way to [onSignInAgain]. The page stays usable below it. */
+    needsReauth: Boolean = false,
+    onSignInAgain: () -> Unit = {},
 ) {
     val itemRow = { key: String, title: Int, items: List<ItemSummary> ->
         HomeRow(key) { modifier, focus ->
@@ -137,13 +156,19 @@ fun TvHomeScreen(
             }
         }.takeIf { series.isNotEmpty() },
     )
-    when {
-        state.loading -> TvMessage(stringResource(R.string.tv_home_loading))
-        rows.isNotEmpty() -> HomeRows(rows)
-        // Offline first: a sync waits for the network then and would never end the loading.
-        !online -> TvMessage(stringResource(R.string.tv_home_offline), stringResource(R.string.tv_retry), onRetry)
-        syncing -> TvMessage(stringResource(R.string.tv_home_loading))
-        else -> TvMessage(stringResource(R.string.tv_home_empty))
+    Column(Modifier.fillMaxSize()) {
+        // Above the rows and not in the focus at first: the person may just want to listen. Up from the first row reaches it.
+        if (needsReauth) ReauthHint(onSignInAgain)
+        Box(Modifier.weight(1f)) {
+            when {
+                state.loading -> TvMessage(stringResource(R.string.tv_home_loading))
+                rows.isNotEmpty() -> HomeRows(rows)
+                // Offline first: a sync waits for the network then and would never end the loading.
+                !online -> TvMessage(stringResource(R.string.tv_home_offline), stringResource(R.string.tv_retry), onRetry)
+                syncing -> TvMessage(stringResource(R.string.tv_home_loading))
+                else -> TvMessage(stringResource(R.string.tv_home_empty))
+            }
+        }
     }
 }
 
@@ -207,4 +232,20 @@ private class Pending {
     var refocus: String? = null
     /** The rows as last shown. */
     var shown: List<String> = emptyList()
+}
+
+internal const val TAG_REAUTH = "tvReauth"
+internal const val TAG_REAUTH_SIGN_IN = "tvReauthSignIn"
+
+/** "Session expired", as the phone's banner says, with the button to the sign-in of this account. */
+@Composable
+private fun ReauthHint(onSignIn: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 8.dp).testTag(TAG_REAUTH),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(R.string.reauth_banner), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+        Button(onClick = onSignIn, modifier = Modifier.testTag(TAG_REAUTH_SIGN_IN)) { Text(stringResource(R.string.reauth_action)) }
+    }
 }
