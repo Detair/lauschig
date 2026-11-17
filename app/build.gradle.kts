@@ -92,8 +92,8 @@ android {
         applicationId = "io.wolftown.lauschig"
         minSdk = 28
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.6.0"
+        versionCode = 9
+        versionName = "0.6.1"
         // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LINK_HOSTS", "\"${linkHosts.joinToString(",")}\"")
@@ -196,6 +196,12 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.datasource.okhttp)
+    constraints {
+        // Guava comes in with Media3, which still asks for 33.3.1. Up to 33.7.1 a crafted Java object stream makes
+        // Guava's collections allocate without limit (GHSA-xxph-c9ww-hj94). Lauschig reads no object streams, but the
+        // fixed version costs nothing. Drop this once Media3 asks for 33.7.2 or newer itself.
+        implementation(libs.guava) { because("GHSA-xxph-c9ww-hj94 is fixed in 33.7.2") }
+    }
 
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
