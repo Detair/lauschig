@@ -822,6 +822,12 @@
         <item quantity="other">%1$d days in a row</item>
     </plurals>
     <string name="stats_card_open">Open statistics</string>
+    <string-array name="whatsnew_0_7_0">
+        <item>New: Lauschig also runs on Google TV and Android TV, with its own interface for the remote</item>
+        <item>On the TV: start page, library, search and a player with chapters, speed and sleep timer</item>
+        <item>First TV test version: setup is typed with the remote, and the TV always plays from the server</item>
+        <item>Nothing changes on phones and tablets</item>
+    </string-array>
     <string-array name="whatsnew_0_6_1">
         <item>Maintenance: a bundled library (Guava) is up to date</item>
         <item>The security advisory for the older version did not affect the app; nothing changes in how you use it</item>
