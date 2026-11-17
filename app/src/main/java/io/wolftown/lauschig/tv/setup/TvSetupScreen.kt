@@ -2,13 +2,9 @@ package io.wolftown.lauschig.tv.setup
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.tv.material3.Icon
 import androidx.tv.material3.IconButton
 import androidx.compose.foundation.layout.Column
@@ -18,15 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,24 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,6 +46,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.tv.TvDimens
+import io.wolftown.lauschig.tv.common.TvTextField
 import io.wolftown.lauschig.ui.common.AnnouncedLine
 import io.wolftown.lauschig.ui.setup.SetupUiState
 import io.wolftown.lauschig.ui.setup.SetupViewModel
@@ -172,7 +155,7 @@ fun TvSetupScreen(
                     value = value, onValueChange = typed(onChange), label = stringResource(label), tag = tag,
                     focusRequester = focus.getValue(field), editing = editing == field,
                     onEditingChange = { on -> editing = if (on) field else editing?.takeIf { it != field } },
-                    onNext = { next(field) }, last = field == fields.last(),
+                    imeAction = if (field == fields.last()) ImeAction.Done else ImeAction.Next, onImeAction = { next(field) },
                     placeholder = placeholder?.let { stringResource(it) }, keyboardType = type, shown = passwordShown,
                 )
             if (!state.addressesFixed) {
@@ -215,71 +198,6 @@ fun TvSetupScreen(
     }
 
     state.cleartextPrompt?.let { hosts -> CleartextDialog(hosts, onConfirmCleartext, onDismissCleartext) }
-}
-
-/**
- * A text field for the remote. As a whole it takes the focus like a button; only OK puts the focus into the text, and the TV's
- * keyboard opens. (The TV keyboard opens whenever a text input gets the focus, so moving through the form would otherwise
- * cover it at every step.) Up and down always leave it for the field above or below, also while typing, as the text would
- * otherwise keep them to move its cursor. Back closes the keyboard; the focus stays in the text until up or down.
- */
-@Composable
-private fun TvTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    tag: String,
-    focusRequester: FocusRequester,
-    editing: Boolean,
-    onEditingChange: (Boolean) -> Unit,
-    onNext: () -> Unit,
-    last: Boolean,
-    placeholder: String? = null,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    /** A password field shows its text (the button beside it). */
-    shown: Boolean = false,
-) {
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val text = remember { FocusRequester() }
-    // One source for the frame and the text: the field looks focused while either of them has the focus.
-    val interaction = remember { MutableInteractionSource() }
-    LaunchedEffect(editing) { if (editing) text.requestFocus() }
-    val password = keyboardType == KeyboardType.Password
-    Box(
-        Modifier.fillMaxWidth()
-            // The wrapper is what TalkBack lands on; the text inside keeps its own node (not merged) for typing.
-            .semantics { contentDescription = if (value.isEmpty() || password) label else "$label: $value" }
-            .focusRequester(focusRequester)
-            .onFocusChanged { if (!it.hasFocus && editing) onEditingChange(false) }
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
-                    // Only once the focus has gone: the text must not lose the ability to hold it while it still has it.
-                    Key.DirectionDown -> { if (focusManager.moveFocus(FocusDirection.Down)) onEditingChange(false); true }
-                    Key.DirectionUp -> { if (focusManager.moveFocus(FocusDirection.Up)) onEditingChange(false); true }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        if (editing) keyboard?.show() else onEditingChange(true)
-                        true
-                    }
-                    else -> false
-                }
-            }
-            .focusable(interactionSource = interaction)
-            .testTag(tag),
-    ) {
-        OutlinedTextField(
-            value, onValueChange,
-            Modifier.fillMaxWidth().focusRequester(text).focusProperties { canFocus = editing },
-            singleLine = true,
-            label = { androidx.compose.material3.Text(label) },
-            placeholder = placeholder?.let { { androidx.compose.material3.Text(it) } },
-            visualTransformation = if (password && !shown) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = if (last) ImeAction.Done else ImeAction.Next),
-            keyboardActions = KeyboardActions(onNext = { onNext() }, onDone = { onNext() }),
-            interactionSource = interaction,
-        )
-    }
 }
 
 /** The phone's question about an unencrypted server, with the focus on the safe answer. */
