@@ -9,6 +9,7 @@ import io.wolftown.lauschig.R
 import io.wolftown.lauschig.tv.browse.TvBrowseRoute
 import io.wolftown.lauschig.tv.browse.TvItemRoute
 import io.wolftown.lauschig.tv.browse.TvLibraryRoute
+import io.wolftown.lauschig.tv.browse.TvSearchRoute
 import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.home.TvHomeRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
@@ -47,8 +48,15 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 )
             }
         }
-        // Until their pages come (Task 3 and 5).
-        composable<TvSearch> { TvShell(TvSection.Search, openSection) { Placeholder() } }
+        composable<TvSearch> {
+            TvShell(TvSection.Search, openSection) {
+                TvSearchRoute(
+                    onOpenItem = { navController.navigate(ItemDetail(it)) },
+                    onOpenBrowse = { kind, name -> navController.navigate(Browse(kind, name)) },
+                )
+            }
+        }
+        // Until their pages come (Task 5 and 4).
         composable<TvSettings> { TvShell(TvSection.Settings, openSection) { Placeholder() } }
         composable<TvPlayer> { Placeholder() }
         // The phone's route classes: their view models read them from their SavedStateHandle.
