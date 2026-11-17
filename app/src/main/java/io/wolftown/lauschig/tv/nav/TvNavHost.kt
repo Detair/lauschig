@@ -12,6 +12,7 @@ import io.wolftown.lauschig.tv.browse.TvLibraryRoute
 import io.wolftown.lauschig.tv.browse.TvSearchRoute
 import io.wolftown.lauschig.tv.common.TvMessage
 import io.wolftown.lauschig.tv.home.TvHomeRoute
+import io.wolftown.lauschig.tv.player.TvPlayerRoute
 import io.wolftown.lauschig.tv.profiles.TvProfilesRoute
 import io.wolftown.lauschig.tv.setup.TvSetupRoute
 import io.wolftown.lauschig.ui.nav.AccountNavHost
@@ -56,9 +57,10 @@ fun TvNavHost(pages: AccountNavigation, startDestination: Any, modifier: Modifie
                 )
             }
         }
-        // Until their pages come (Task 5 and 4).
+        // Until its page comes (Task 5).
         composable<TvSettings> { TvShell(TvSection.Settings, openSection) { Placeholder() } }
-        composable<TvPlayer> { Placeholder() }
+        // Full screen, without the rail: the remote's keys belong to the player there.
+        composable<TvPlayer> { TvPlayerRoute(onBack = { navController.popBackStack() }) }
         // The phone's route classes: their view models read them from their SavedStateHandle.
         composable<ItemDetail> {
             TvItemRoute(

@@ -1199,4 +1199,13 @@
     <string name="tv_browse_empty">Hier ist nichts.</string>
     <string name="tv_browse_offline">Der Server ist nicht erreichbar, und davon ist noch nichts auf diesem Fernseher.</string>
     <string name="tv_search_searching">Suche läuft …</string>
+    <string name="tv_player_nothing">Gerade läuft nichts.</string>
+    <string name="tv_back">Zurück</string>
+    <string name="tv_player_playing">Läuft</string>
+    <string name="tv_player_paused">Pausiert</string>
+    <string name="tv_player_book_left">Noch %1$s im Buch</string>
+    <string name="tv_player_extend_hint">OK drücken zum Weiterhören</string>
+    <string name="tv_player_slower">Langsamer</string>
+    <string name="tv_player_faster">Schneller</string>
+    <string name="tv_player_more_hint">Runter: Kapitel, Tempo und Schlaf-Timer</string>
 </resources>

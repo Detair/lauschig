@@ -370,10 +370,11 @@ private fun Description(text: String, up: FocusRequester, modifier: Modifier) {
 
 /**
  * The chapters as a list on the right (TV spec: a side panel instead of the phone's sheet). It opens on the current chapter;
- * OK on one plays it; Back closes the list. The focus stays inside while it is open.
+ * OK on one plays it; Back closes the list (the page's handler). The focus stays inside while it is open. The title page and
+ * the player share it.
  */
 @Composable
-private fun ChapterPanel(chapters: List<ChapterRow>, onChapter: (Int) -> Unit, modifier: Modifier) {
+internal fun ChapterPanel(chapters: List<ChapterRow>, onChapter: (Int) -> Unit, modifier: Modifier) {
     val current = chapters.indexOfFirst { it.isCurrent }.coerceAtLeast(0)
     val target = remember { FocusRequester() }
     val list = rememberLazyListState()
@@ -412,7 +413,7 @@ private fun ChapterPanel(chapters: List<ChapterRow>, onChapter: (Int) -> Unit, m
     }
 }
 
-private val PANEL_WIDTH = 440.dp
+internal val PANEL_WIDTH = 440.dp
 
 /** A plain flag, read and written outside of snapshots. */
 private class Holder {
