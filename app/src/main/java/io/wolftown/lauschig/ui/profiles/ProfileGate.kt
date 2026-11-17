@@ -143,6 +143,10 @@ internal fun deviceLockPromptInfo(title: String, subtitle: String): BiometricPro
 /**
  * Made in the activity's `onCreate`, as the library asks: then an answer that comes in after a recreation reaches this one, and
  * waits in [result] until the screen is there again.
+ *
+ * The answer is taken as it comes, no key is bound to it (code scanning calls that "insecure local authentication"). That is
+ * the design: the lock keeps a child on a shared tablet out of another profile, it does not protect data at rest. Every
+ * profile stays signed in and syncs in the background, so its token cannot sit behind a key that needs this prompt.
  */
 class AndroidDeviceLockPrompter(activity: FragmentActivity) : DeviceLockPrompter {
     private val _result = MutableStateFlow<DeviceLockResult?>(null)
