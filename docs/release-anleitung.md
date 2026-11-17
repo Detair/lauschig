@@ -71,45 +71,65 @@ keytool -list -v -keystore ~/keys/lauschig-release.jks -alias lauschig | grep SH
 
 ## 4. GitHub-Secrets setzen
 
+Die vier Werte liegen in der Umgebung `release` des Repos, nicht bei den allgemeinen Repo-Secrets. Nur ein Lauf für einen Tag `v*` darf diese Umgebung benutzen. Ein Lauf von einem beliebigen Branch kommt an die Werte nicht heran.
+
 `gh secret set` fragt den Wert interaktiv ab – so landet das Passwort nicht in der Shell-History.
 
 ```bash
-base64 -w0 ~/keys/lauschig-release.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig
+base64 -w0 ~/keys/lauschig-release.jks | gh secret set LAUSCHIG_KEYSTORE_BASE64 --repo Detair/lauschig --env release
 ```
 ```bash
-gh secret set LAUSCHIG_KEYSTORE_PASSWORD --repo Detair/lauschig
+gh secret set LAUSCHIG_KEYSTORE_PASSWORD --repo Detair/lauschig --env release
 ```
 ```bash
-gh secret set LAUSCHIG_KEY_PASSWORD --repo Detair/lauschig
+gh secret set LAUSCHIG_KEY_PASSWORD --repo Detair/lauschig --env release
 ```
 (beide Male dasselbe Passwort aus Schritt 3)
 ```bash
-printf lauschig | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig
+printf lauschig | gh secret set LAUSCHIG_KEY_ALIAS --repo Detair/lauschig --env release
 ```
 Prüfen:
 ```bash
-gh secret list --repo Detair/lauschig
+gh secret list --repo Detair/lauschig --env release
 ```
 Es müssen genau die vier `LAUSCHIG_*`-Einträge erscheinen.
 
+Liegen die vier Werte noch zusätzlich bei den allgemeinen Repo-Secrets (Stand vor dem 2026-11-16), dort löschen, sobald sie in der Umgebung stehen:
+```bash
+gh secret list --repo Detair/lauschig
+```
+```bash
+for s in LAUSCHIG_KEYSTORE_BASE64 LAUSCHIG_KEYSTORE_PASSWORD LAUSCHIG_KEY_ALIAS LAUSCHIG_KEY_PASSWORD; do gh secret delete "$s" --repo Detair/lauschig; done
+```
+
 ## 5. Release bauen (per Tag)
 
-Probelauf ohne Veröffentlichung: baut und prüft `.aab` und APK, legt aber kein Release an.
+Der Workflow „Release“ läuft in vier Schritten:
+
+1. **Vorprüfung** (Sekunden): Der Tag passt zu `versionName`, der Tag liegt auf `main`, `docs/release-notes/<tag>.md` ist da.
+2. **Prüfen:** dieselben Tests, derselbe Lint und dieselben Builds wie bei jedem PR, auf genau dem Commit des Tags.
+3. **Signiert bauen:** `.aab` und APK mit den Werten aus der Umgebung `release`. Der Lauf bricht ab, wenn die APK debug-signiert oder unsigniert ist, wenn die Version nicht zum Tag passt oder wenn sie mit einem anderen Zertifikat signiert ist als alle Releases davor.
+4. **Veröffentlichen:** GitHub-Release mit APK, Prüfsumme und Zertifikats-Fingerabdruck. Tags `v0.*` werden Vorabversionen.
+
+Probelauf: Er macht die Schritte 1 und 2 und baut das Release unsigniert. Er signiert nichts und veröffentlicht nichts.
 ```bash
 gh workflow run Release --repo Detair/lauschig --ref main
 ```
 
 Das echte Release:
 ```bash
-git tag -a v0.6.0 -m "Lauschig 0.6.0" && git push origin v0.6.0
+git tag -a v0.6.1 -m "Lauschig 0.6.1" && git push origin v0.6.1
 ```
-Der Workflow „Release“ baut das signierte `.aab` und die signierte APK. Er bricht ab, wenn die APK debug-signiert oder unsigniert ist, wenn der Tag nicht zu `versionName` passt oder wenn `docs/release-notes/<tag>.md` fehlt. Dann legt er das GitHub-Release mit `lauschig-<version>.apk`, der SHA-256-Prüfsumme und dem Fingerprint des Zertifikats an. Bis 1.0 ist jedes Release als Vorabversion markiert. Fortschritt:
 ```bash
 gh run list --repo Detair/lauschig --workflow Release --limit 1
 ```
+Scheitert Schritt 3 an einem falschen Secret: den Wert in der Umgebung `release` korrigieren (Schritt 4 dieser Anleitung) und nur die fehlgeschlagenen Jobs neu starten. Der Tag bleibt, wo er ist.
+```bash
+gh run rerun <Lauf-Nummer> --repo Detair/lauschig --failed
+```
 Das `.aab` für Play herunterladen, wenn grün:
 ```bash
-gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.6.0
+gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.6.1
 ```
 
 **Für jede weitere Version** muss `versionCode` in `app/build.gradle.kts` steigen und `versionName` angepasst werden, dazu kommt `docs/release-notes/v<version>.md`. Das mache ich beim nächsten Release mit.
@@ -119,6 +139,21 @@ Alternative ohne GitHub (lokal signieren):
 LAUSCHIG_KEYSTORE=~/keys/lauschig-release.jks LAUSCHIG_KEY_ALIAS=lauschig LAUSCHIG_KEYSTORE_PASSWORD='…' LAUSCHIG_KEY_PASSWORD='…' timeout 20m ./gradlew :app:bundleRelease
 ```
 (Passwörter landen dabei in der History – Variante über Tag bevorzugen.)
+
+### CI und Schutzregeln (Stand 2026-11-16)
+
+| Was | Wie |
+|---|---|
+| Prüfung je PR | Workflow „CI“ mit drei Jobs nebeneinander: `test` (Unit-Tests), `lint`, `build` (Debug-Build und unsignierter Release-Build mit R8). Ein neuer Push bricht den alten Lauf desselben PRs ab. |
+| Nach dem Merge | Dieselben drei Jobs auf `main`, dazu `test-rmab` (alle Tests mit `-Plauschig.rmab=true`) und der Workflow „Dependency graph“. |
+| Berichte | Scheitert ein Job, hängen Test- und Lint-Berichte 14 Tage am Lauf (`gh run download`). |
+| `main` | Nur über einen PR, und nur wenn `test`, `lint` und `build` grün sind. Kein Force-Push, kein Löschen. |
+| Tags `v*` | Lassen sich nicht löschen und nicht verschieben. |
+| Actions | Nur mit festem Commit-Hash. Dependabot schlägt neue Versionen vor. |
+| Abhängigkeiten | Dependabot warnt bei bekannten Lücken und öffnet Sicherheits-Updates sofort; normale Gradle-Updates einmal im Monat gebündelt. |
+| Code-Scanning | CodeQL für Kotlin und die Workflow-Dateien, Funde im Reiter „Security“. |
+
+Die Regeln für `main` und die Tags stehen unter Settings → Rules → Rulesets. Für einen Notfall lässt sich ein Regelsatz dort abschalten.
 
 ## 6. Play Console einrichten
 
@@ -157,8 +192,8 @@ Antworten stehen in `docs/play-store/data-safety.md`. Kurzfassung:
 1. Testen → **Interner Test** → Tab „Tester“ → „E-Mail-Liste erstellen“, Name „Familie“, die Google-Konten der Familie eintragen (die im Play Store des jeweiligen Handys angemeldet sind) → speichern, Liste anhaken.
 2. „Feedback-URL / E-Mail“: `https://github.com/Detair/lauschig/issues` oder deine Mail.
 3. Tab „Releases“ → „Neuen Release erstellen“. Bietet die Console den Schlüsselwechsel aus 6.5 schon jetzt an, mach ihn vorher.
-   - `.aab` aus `~/lauschig-release/v0.6.0/` hochladen.
-   - Release-Name: `0.6.0`, Versionshinweise (de-DE): *Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync, mehrere Profile.*
+   - `.aab` aus `~/lauschig-release/v0.6.1/` hochladen.
+   - Release-Name: `0.6.1`, Versionshinweise (de-DE): *Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync, mehrere Profile.*
    - Speichern → Überprüfen → **Einführung starten**.
 4. Unter „Tester“ den **Link zur Teilnahme** kopieren und der Familie schicken. Jeder öffnet ihn am Handy (mit dem eingetragenen Google-Konto), tippt „Tester werden“ und installiert dann über den Play-Store-Link.
 
@@ -177,7 +212,7 @@ Ohne dein Zutun signiert Play neue Apps mit Schlüsseln, die Google erzeugt. Dan
 2. **Schlüssel ändern** („Change key“) → **eine Kopie deines App-Signaturschlüssels bereitstellen** („Provide a copy of your app signing key“) und den Anweisungen folgen, mit `~/keys/lauschig-release.jks` und dem Alias `lauschig` aus Schritt 3.
 3. **Fragt die Console nach einem eigenen Upload-Schlüssel**, sag mir Bescheid. Google empfiehlt, Upload- und App-Signaturschlüssel zu trennen. Dann bekommt die CI einen zweiten Schlüssel nur fürs Hochladen.
 4. **Hybrid-Signatur prüfen:** Neue Apps nimmt Play automatisch in eine „quantensichere“ Hybrid-Signatur auf. Google dokumentiert nicht, wie sie mit einem eigenen Schlüssel zusammenspielt. Schau, was die Seite nach dem Wechsel anzeigt, und schick mir einen Screenshot.
-5. **Der eigentliche Beweis:** Auf einem Handy die Play-Version aus dem internen Test installieren, dann die GitHub-APK derselben oder einer höheren Version darüber (`adb install -r lauschig-0.6.0.apk`). Meldet Android „App nicht installiert“ oder adb `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, passen die Signaturen nicht. Am besten einmal auf Android 17 (dort prüft Android die neue Signatur v3.2) und einmal auf einem älteren Android. Erst danach sagen wir den Testern, dass sie ohne Neuinstallation wechseln können.
+5. **Der eigentliche Beweis:** Auf einem Handy die Play-Version aus dem internen Test installieren, dann die GitHub-APK derselben oder einer höheren Version darüber (`adb install -r lauschig-0.6.1.apk`). Meldet Android „App nicht installiert“ oder adb `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, passen die Signaturen nicht. Am besten einmal auf Android 17 (dort prüft Android die neue Signatur v3.2) und einmal auf einem älteren Android. Erst danach sagen wir den Testern, dass sie ohne Neuinstallation wechseln können.
 
 ### 6.6 Später: öffentliche Veröffentlichung
 Neue private Entwicklerkonten müssen vor der Produktion einen **geschlossenen Test** mit mindestens 12 Testern über 14 Tage durchführen (Stand meines Wissens – in der Console unter „Produktion“ steht die aktuelle Anforderung). Für die Familie ist das nicht nötig; der interne Test hat keine solche Hürde.
@@ -235,7 +270,7 @@ Treffer in Klasse 9 oder 41 mit gleichem oder sehr ähnlichem Namen → mir Besc
 - [ ] 2 Baseline Profile erzeugt (optional)
 - [ ] 3 Signaturschlüssel angelegt und an zwei Orten gesichert
 - [ ] 4 Vier GitHub-Secrets gesetzt
-- [ ] 5 Probelauf grün, Tag `v0.6.0` → GitHub-Release mit APK, signiertes `.aab` heruntergeladen
+- [ ] 5 Probelauf grün, Tag `v0.6.1` → GitHub-Release mit APK, signiertes `.aab` heruntergeladen
 - [ ] 6 Play Console: App, App-Inhalte, Store-Eintrag, interner Test, Familie eingeladen
 - [ ] 6.5 Eigener App-Signaturschlüssel in Play hinterlegt, Wechsel GitHub → Play auf einem Handy geprüft
 - [ ] 7 Markenprüfung ohne Konflikt

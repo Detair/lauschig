@@ -32,7 +32,7 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.6.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
+Version 0.6.1, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
 [Releases](https://github.com/Detair/lauschig/releases) page as signed APKs. What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
@@ -74,8 +74,10 @@ Modules: `:app` (UI, playback, sync, downloads), `:core:database` (Room entities
 
 Signing is read from the environment (or Gradle properties): `LAUSCHIG_KEYSTORE`, `LAUSCHIG_KEYSTORE_PASSWORD`,
 `LAUSCHIG_KEY_ALIAS`, `LAUSCHIG_KEY_PASSWORD`. Without them the bundle is built **unsigned** and a warning is printed.
-Never commit a keystore. Pushing a tag `v*` runs `.github/workflows/release.yml`, which builds the signed AAB from
-repository secrets (`LAUSCHIG_KEYSTORE_BASE64` plus the three values above); uploading to Play is manual. CI uses environment variables only (no Gradle properties files).
+Never commit a keystore. Pushing a tag `v*` on `main` runs `.github/workflows/release.yml`: it first runs the same
+tests, lint and builds as every pull request, then builds the signed AAB and APK from the secrets of the GitHub
+environment `release` (`LAUSCHIG_KEYSTORE_BASE64` plus the three values above), which only tags `v*` may use.
+Uploading to Play is manual. CI uses environment variables only (no Gradle properties files).
 
 ## Baseline profile and startup benchmark
 
