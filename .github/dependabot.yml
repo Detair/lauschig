@@ -1,8 +1,28 @@
 version: 2
 updates:
+  # The actions the workflows use, pinned by commit: one pull request per action, so a risky major update does not
+  # hold back the others.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+
+  # Gradle libraries and plugins (gradle/libs.versions.toml): once a month, minor and patch updates in one pull
+  # request, each major update in its own. Security updates come at once, outside this schedule.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    ignore:
+      # Instrumented tests only, and it has to be the version media3-session brings in (see gradle/libs.versions.toml).
+      - dependency-name: androidx.media:media
+    groups:
+      gradle-minor-and-patch:
+        update-types:
+          - minor
+          - patch

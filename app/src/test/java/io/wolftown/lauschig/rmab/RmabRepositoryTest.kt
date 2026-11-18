@@ -71,7 +71,7 @@ class RmabRepositoryTest {
 
     private fun newRepo(): RmabRepository {
         store = PreferenceDataStoreFactory.create(scope = scope) { storeFile }
-        return RmabRepository(store, cipher, { "Pixel 9" }, active, nowMs = { now })
+        return RmabRepository(store, cipher, { "Pixel 9" }, active, enabled = true, nowMs = { now })
     }
 
     @After fun tearDown() {

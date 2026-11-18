@@ -21,10 +21,27 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
     <!-- Short buzz when a shake extends the sleep timer (normal permission, no prompt). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Only for scanning another device's server QR code in the setup form (docs/server-qr-code.md); asked for when the
+         user taps "QR-Code scannen", never before. Pictures are neither stored nor sent. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- No camera is needed: a device without one gets the app without the scan button. The permission alone would make
+         Google Play require a camera with autofocus, so every camera feature is named as optional. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Google TV and Android TV get their own interface (TvActivity). A TV has no touchscreen; Wi-Fi and location only serve
+         the home-network binding of the phone's sign-in, which the TV does not offer, and many TVs have neither. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
 
     <application
         android:name=".LauschigApp"
         android:allowBackup="false"
+        android:banner="@drawable/tv_banner"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -139,6 +156,18 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lauschig" android:host="oauth" />
+            </intent-filter>
+        </activity>
+
+        <!-- The interface for the remote, from the TV launcher. MainActivity hands over to it on a TV. -->
+        <activity
+            android:name=".tv.TvActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Lauschig.Tv">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
     </application>

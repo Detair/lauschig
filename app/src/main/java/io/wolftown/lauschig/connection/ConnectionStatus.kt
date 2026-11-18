@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.connection
 
 import io.wolftown.lauschig.account.Account
+import io.wolftown.lauschig.serverqr.ServerQr
+import io.wolftown.lauschig.serverqr.ServerQrCode
 import okhttp3.HttpUrl
 import java.time.Instant
 import java.time.ZoneId
@@ -44,6 +46,8 @@ data class ConnectionStatusUi(
     val lastCheckAt: Long? = null,
     val sync: SyncInfo? = null,
     val reconnect: ReconnectState? = null,
+    /** "Server-Adressen als QR-Code": the code of the account's server, or null without one. */
+    val serverQr: ServerQrCode? = null,
 )
 
 object ConnectionStatusMapper {
@@ -91,6 +95,7 @@ object ConnectionStatusMapper {
             lastCheckAt = log.resolvedAt,
             sync = sync,
             reconnect = reconnect,
+            serverQr = a?.let(ServerQr::code),
         )
     }
 }

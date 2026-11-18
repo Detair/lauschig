@@ -1,22 +1,24 @@
 # Privacy Policy / Datenschutzerklärung — Lauschig
 
-Last updated / Stand: 2026-11-06 (Version 0.5.0)
+Last updated / Stand: 2026-11-15
+
+Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.com/Detair/lauschig/blob/v0.5.2/docs/privacy-policy.md). / For versions up to 0.5.2 the [version of 2026-11-06](https://github.com/Detair/lauschig/blob/v0.5.2/docs/privacy-policy.md) applies.
 
 ## Deutsch
 
 **Lauschig** ist ein Android-Client für Audiobookshelf-Server. Die App wird als Open-Source-Projekt (GPL-3.0-or-later) entwickelt.
 
-**Mit wem spricht die App?** Mit dem Audiobookshelf-Server, dessen Adresse du bei der Einrichtung selbst einträgst. Dazu kommen zwei optionale Dienste, die unten beschrieben sind: der öffentliche Audible-Katalog und ein von dir eingetragener ReadMeABook-Server (RMAB). Auf Geräten mit den Google-Play-Diensten kommt Googles Cast-Framework hinzu, sobald du den großen Player öffnest (siehe „Chromecast“). Es gibt keinen Server des Entwicklers, mit dem die App kommuniziert. Betreibt jemand anderes deinen Audiobookshelf-Server, ist diese Person für die dort gespeicherten Daten zuständig.
+**Mit wem spricht die App?** Mit dem Audiobookshelf-Server, dessen Adresse du bei der Einrichtung selbst einträgst. Dazu kommt ein optionaler Dienst, der unten beschrieben ist: der öffentliche Audible-Katalog. Auf Geräten mit den Google-Play-Diensten kommt Googles Cast-Framework hinzu, sobald du den großen Player öffnest (siehe „Chromecast“). Es gibt keinen Server des Entwicklers, mit dem die App kommuniziert. Betreibt jemand anderes deinen Audiobookshelf-Server, ist diese Person für die dort gespeicherten Daten zuständig.
 
 **Anmeldung per SSO.** Bietet dein Server eine Anmeldung über einen externen Anbieter an und du wählst sie, öffnet die App dafür den Browser. Die Anmeldung läuft dann zwischen dir, deinem Server und diesem Anbieter; die App erhält am Ende nur die Token deines Servers. Wenn du ein Profil hinzufügst, eine vergessene PIN aufhebst oder weitere Profile auf dem Gerät sind, bittet die App den Anbieter um eine neue Anmeldung: Er soll nach deinen Zugangsdaten fragen, auch wenn der Browser dort noch angemeldet ist. Ob er das tut, entscheidet der Anbieter.
 
-**Mehrere Profile.** Auf einem Gerät können mehrere Konten angemeldet sein. Jedes hat seine eigenen Daten: Fortschritt, Downloads, Lesezeichen, die RMAB-Verbindung und letzte Suchen bleiben bei ihm, ein Wechsel löscht nichts. Die App spricht für jedes Profil nur mit dessen Server.
+**Mehrere Profile.** Auf einem Gerät können mehrere Konten angemeldet sein. Jedes hat seine eigenen Daten: Fortschritt, Downloads, Lesezeichen und letzte Suchen bleiben bei ihm, ein Wechsel löscht nichts. Die App spricht für jedes Profil nur mit dessen Server.
 
 **Schutz eines Profils (optional, standardmäßig aus).** Ein Profil lässt sich mit einer eigenen PIN oder der Gerätesperre schützen. Die PIN liegt nur auf dem Gerät, als gesalzener Hash und verschlüsselt, und verlässt es nicht. Die Gerätesperre fragt Android mit seiner eigenen Abfrage ab: Die App erfährt nur, ob sie bestanden wurde, und sieht weder einen Fingerabdruck noch den Code der Sperre. Der Schutz soll Kinder vom Wechsel abhalten; gegen jemanden mit vollem Zugriff auf das Gerät schützt er nicht.
 
 **Audible-Katalog (optional, standardmäßig aus).** Fehlende Bände einer Serie schlägt die App nur nach, wenn du zustimmst, und zwar jedes Profil für sich: Die Serienseite fragt jedes Profil einmal, und in den Einstellungen lässt sich das unter „Fehlende Bände von Audible ergänzen“ jederzeit ändern. Beim Abmelden und beim Entfernen des Profils endet die Zustimmung. Mit deiner Zustimmung fragt die App auf Serienseiten online den öffentlichen Audible-Katalog (api.audible.*, Region in den Einstellungen wählbar) nach den Bänden der Serie; kennt dieser einen Titel nicht, fragt sie auch den Katalog einer zweiten Region. Dabei gehen die ASINs deiner Bücher und, wie bei jeder Verbindung, deine IP-Adresse an Audible, aber keine Kontodaten, keine Server-Adresse und kein Hörfortschritt. Die Antworten speichert die App lokal und fragt nach spätestens sieben Tagen neu; sie verlassen das Gerät nicht. Cover fehlender Bände lädt sie über https von den Bilder-Servern, die Audible in seinen Antworten nennt (Amazon). Ohne Zustimmung unterbleibt jede Anfrage.
 
-**ReadMeABook (RMAB, optional).** Nur wenn du einen RMAB-Server einträgst, verbindet sich die App mit ihm. Dein Passwort wird nur bei der Anmeldung gesendet und nicht gespeichert; gespeichert wird ein verschlüsseltes API-Token. Wenn du einen fehlenden Band anfragst, gehen dessen Angaben (ASIN, Titel, Autor, Sprecher, Cover-Adresse) an diesen Server. Außerdem liest die App dort deine eigenen Anfragen.
+**Server-Adressen als QR-Code (optional).** Ein angemeldetes Gerät kann die Adressen deines Servers als QR-Code anzeigen, damit ein weiteres Gerät sie bei der Einrichtung scannt. Im Code stehen nur die lokale und die öffentliche Adresse, kein Benutzername, kein Passwort, kein Token und kein WLAN-Name. Der Code entsteht auf dem Gerät. Zum Scannen nutzt die App die Kamera: Die Bilder wertet sie nur auf dem Gerät und nur in diesem Moment aus, sie werden weder gespeichert noch gesendet. Der Scan füllt nur die zwei Adressfelder; angemeldet wird dadurch niemand.
 
 **Welche Daten werden verarbeitet?** Zugangsdaten (Zugriffs- und Aktualisierungs-Token), Bibliothek, Hörfortschritt, Hörsitzungen, Lesezeichen, heruntergeladene Hörbücher und Einstellungen. Diese Daten liegen auf deinem Gerät. Die Token werden verschlüsselt gespeichert. Hörfortschritt, Sitzungen und Lesezeichen werden nur an deinen eigenen Server übertragen. Statistik und Erfolge berechnet die App auf dem Gerät. Den WLAN-Namen (SSID) liest die App nur, wenn du das Heimnetz-Verhalten einrichtest, und verarbeitet ihn nur lokal auf dem Gerät. Die App-Daten sind von der Android-Sicherung ausgenommen.
 
@@ -43,6 +45,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 - Vordergrunddienste: Wiedergabe und Downloads im Hintergrund.
 - Vibration: kurze Rückmeldung, wenn du den Sleep-Timer durch Schütteln verlängerst.
 - Biometrie und Gerätesperre: die Abfrage des Systems, nur wenn du ein Profil mit der Gerätesperre schützt.
+- Kamera: nur zum Scannen eines QR-Codes mit Server-Adressen bei der Einrichtung. Die App fragt erst, wenn du „QR-Code scannen“ antippst; ohne die Berechtigung tippst du die Adressen von Hand.
 - Chromecast braucht keine weitere Berechtigung: Googles Framework bringt keine neue mit, und die App fragt dafür nichts ab.
 
 **Bewegungssensor.** In der letzten Minute eines Sleep-Timers wertet die App den Beschleunigungssensor aus, um ein Schütteln zu erkennen. Die Werte werden nicht gespeichert und nicht übertragen.
@@ -57,17 +60,17 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 
 **Lauschig** is an Android client for Audiobookshelf servers, developed as an open-source project (GPL-3.0-or-later).
 
-**Who does the app talk to?** The Audiobookshelf server whose address you enter during setup. In addition there are two optional services, described below: the public Audible catalog and a ReadMeABook (RMAB) server you configure. On devices with Google Play services, Google's Cast framework joins them once you open the full player (see "Chromecast"). There is no developer-operated server that the app communicates with. If someone else runs your Audiobookshelf server, that person is responsible for the data stored there.
+**Who does the app talk to?** The Audiobookshelf server whose address you enter during setup. In addition there is one optional service, described below: the public Audible catalog. On devices with Google Play services, Google's Cast framework joins it once you open the full player (see "Chromecast"). There is no developer-operated server that the app communicates with. If someone else runs your Audiobookshelf server, that person is responsible for the data stored there.
 
 **Single sign-on.** If your server offers sign-in through an external provider and you choose it, the app opens the browser for it. The sign-in then takes place between you, your server and that provider; in the end the app receives only your server's tokens. When you add a profile, lift a forgotten PIN or have other profiles on the device, the app asks the provider for a fresh login: it should ask for your credentials even if the browser is still signed in there. Whether it does is up to the provider.
 
-**Several profiles.** Several accounts can be signed in on one device. Each has its own data: progress, downloads, bookmarks, the RMAB connection and recent searches stay with it, and a switch deletes nothing. For each profile the app talks only to that profile's server.
+**Several profiles.** Several accounts can be signed in on one device. Each has its own data: progress, downloads, bookmarks and recent searches stay with it, and a switch deletes nothing. For each profile the app talks only to that profile's server.
 
 **Protecting a profile (optional, off by default).** A profile can be protected by a PIN of its own or by the device lock. The PIN stays on the device only, as a salted hash and encrypted, and does not leave it. The device lock is asked for by Android with its own prompt: the app learns only whether it was passed, and sees neither a fingerprint nor the lock's code. The protection is meant to keep children from switching; it does not protect against someone with full access to the device.
 
 **Audible catalog (optional, off by default).** The app looks up missing volumes of a series only if you agree, each profile for itself: the series page asks each profile once, and you can change it at any time in settings under "Add missing volumes from Audible". Signing out or removing the profile ends the consent. With your consent, on series pages the app queries the public Audible catalog (api.audible.*, region selectable in settings) for the volumes of the series while online; if it does not know a title, the app also asks the catalog of a second region. The ASINs of your books and, as with any connection, your IP address go to Audible, but no account data, server address or listening progress. The app keeps the answers locally and asks again after seven days at the latest; they do not leave the device. Covers of missing volumes are loaded over https from the image servers Audible names in its answers (Amazon). Without your consent, no request is made.
 
-**ReadMeABook (RMAB, optional).** The app connects to an RMAB server only if you add one. Your password is sent only when signing in and is not stored; an encrypted API token is stored instead. When you request a missing volume, its details (ASIN, title, author, narrator, cover address) go to that server. The app also reads your own requests there.
+**Server addresses as a QR code (optional).** A signed-in device can show your server's addresses as a QR code so that another device can scan them during setup. The code contains only the local and the public address, no user name, password, token or Wi-Fi name. It is made on the device. For scanning, the app uses the camera: it analyses the pictures on the device and only at that moment; they are neither stored nor sent. A scan fills only the two address fields; nobody is signed in by it.
 
 **What data is processed?** Credentials (access and refresh tokens), library data, listening progress, listening sessions, bookmarks, downloaded audiobooks and settings. This data stays on your device. Tokens are stored encrypted. Listening progress, sessions and bookmarks are sent only to your own server. Statistics and achievements are computed on the device. The app reads the Wi-Fi name (SSID) only if you set up home-network behavior, and processes it only locally on the device. App data is excluded from Android backup.
 
@@ -94,6 +97,7 @@ Last updated / Stand: 2026-11-06 (Version 0.5.0)
 - Foreground services: playback and downloads in the background.
 - Vibration: a short signal when you extend the sleep timer by shaking.
 - Biometrics and device lock: the system's prompt, only if you protect a profile with the device lock.
+- Camera: only for scanning a QR code with server addresses during setup. The app asks when you tap "Scan QR code", not before; without the permission you type the addresses.
 - Chromecast needs no further permission: Google's framework brings no new one, and the app asks for nothing for it.
 
 **Motion sensor.** During the last minute of a sleep timer the app reads the accelerometer to detect a shake. The values are neither stored nor transmitted.

@@ -179,6 +179,36 @@ class DaoTest {
         assertEquals(false, p.dirty)
     }
 
+    /** The phone's clock may run behind the server's: a local write is still newer than the row it replaces. */
+    @Test fun saveLocal_neverStampsOlderThanTheRowItReplaces() = runTest {
+        db.progressDao().mergeFromServer(listOf(progress("m", 10.0, last = 100)))
+        db.progressDao().saveLocal(s, "m", 20.0, 100.0, false, 50)
+        val p = db.progressDao().get(s, "m")!!
+        assertEquals(20.0, p.currentTimeSec, 0.0)
+        assertEquals(101L, p.lastUpdate)
+        assertEquals(true, p.dirty)
+        // A later clock is taken as it is.
+        db.progressDao().saveLocal(s, "m", 30.0, 100.0, false, 500)
+        assertEquals(500L, db.progressDao().get(s, "m")!!.lastUpdate)
+    }
+
+    @Test fun saveUserAction_neverStampsOlderThanTheRowItReplaces() = runTest {
+        db.progressDao().mergeFromServer(listOf(progress("m", 10.0, last = 100)))
+        db.progressDao().saveUserAction(progress("m", 0.0, fin = true, last = 50))
+        val p = db.progressDao().get(s, "m")!!
+        assertEquals(101L, p.lastUpdate)
+        assertEquals(true, p.isFinished)
+        assertEquals(true, p.dirty)
+    }
+
+    /** A server that went back to an older backup does not take this device's positions back with it. */
+    @Test fun mergeFromServer_keepsASyncedRow_againstAnOlderServerRow() = runTest {
+        db.progressDao().mergeFromServer(listOf(progress("m", 80.0, last = 100)))
+        val changes = db.progressDao().mergeFromServer(listOf(progress("m", 10.0, last = 50)))
+        assertEquals(emptyList<ProgressChange>(), changes)
+        assertEquals(80.0, db.progressDao().get(s, "m")!!.currentTimeSec, 0.0)
+    }
+
     @Test fun markSynced_ignoresIfNewerLocalWrite() = runTest {
         db.progressDao().saveLocal(s, "m", 1.0, 100.0, false, 10)
         db.progressDao().saveLocal(s, "m", 2.0, 100.0, false, 20)

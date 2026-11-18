@@ -34,6 +34,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -165,6 +166,16 @@ class DiscoverViewModelTest {
         running.value = true
         v.refreshLibrary()
         assertEquals(1, syncs)
+    }
+
+    @Test fun syncing_followsAnySync_notOnlyOneStartedHere() = runTest {
+        val running = MutableStateFlow(false)
+        val v = vm(syncRunning = running)
+        assertFalse(v.syncing.first())
+        running.value = true // e.g. the first sync after a sign-in
+        v.syncing.first { it }
+        running.value = false
+        v.syncing.first { !it }
     }
 
     @Test fun discover_isLoading_untilTheFirstCatalogIsRead_thenEmpty() = runTest {

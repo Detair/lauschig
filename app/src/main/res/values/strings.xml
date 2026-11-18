@@ -34,6 +34,8 @@
     <string name="setup_ssid_unreadable">The current Wi-Fi network could not be read. Allow location access and connect to your home Wi-Fi to use this option.</string>
     <string name="setup_username">Username</string>
     <string name="setup_password">Password</string>
+    <string name="password_show">Show password</string>
+    <string name="password_hide">Hide password</string>
     <string name="setup_login">Sign in</string>
     <string name="setup_cancel">Cancel</string>
     <string name="setup_cleartext_title">Unencrypted connection</string>
@@ -77,6 +79,8 @@
     <string name="detail_continue">Continue</string>
     <string name="detail_listen_again">Listen again</string>
     <string name="detail_series_band">%1$s · Book %2$s</string>
+    <string name="detail_series_line">Series: %1$s</string>
+    <string name="detail_series_open">Show all books in the series</string>
     <string name="detail_quick_length">Length: %1$s</string>
     <string name="detail_quick_narrator">Read by %1$s</string>
     <string name="detail_quick_year">Published: %1$s</string>
@@ -248,6 +252,8 @@
     <string name="rmab_username">Username</string>
     <string name="rmab_password">Password</string>
     <string name="rmab_token">API token</string>
+    <string name="token_show">Show token</string>
+    <string name="token_hide">Hide token</string>
     <string name="rmab_use_token">Enter an API token instead</string>
     <string name="rmab_use_login">Sign in with username and password instead</string>
     <string name="rmab_error_wrong_login">Wrong username, password or token.</string>
@@ -846,9 +852,34 @@
     <string name="cast_sound_unavailable_description">Sound: not available while casting</string>
     <string name="cast_speed_limit">Cast devices play at 2× at most.</string>
     <string name="cast_understood">Got it</string>
+    <string-array name="whatsnew_0_7_0">
+        <item>New: Lauschig also runs on Google TV and Android TV, with its own interface for the remote</item>
+        <item>On the TV: start page, library, search and a player with chapters, speed and sleep timer</item>
+        <item>First TV test version: setup is typed with the remote, and the TV always plays from the server</item>
+        <item>Nothing changes on phones and tablets</item>
+    </string-array>
+    <string-array name="whatsnew_0_6_1">
+        <item>Maintenance: a bundled library (Guava) is up to date</item>
+        <item>The security advisory for the older version did not affect the app; nothing changes in how you use it</item>
+    </string-array>
+    <string-array name="whatsnew_0_6_0">
+        <item>Server addresses by QR code: a signed-in device shows them under “Connection status”, a new one scans them during setup</item>
+        <item>The QR code holds only the addresses, no account and no password; the camera is used for scanning only</item>
+        <item>A pause shortly before the end no longer marks a long book as finished</item>
+        <item>One title the server refuses no longer holds up the sync of all the others</item>
+        <item>Headset, car and widget continue at the newer, synced position</item>
+        <item>A stream that breaks off starts again by itself</item>
+        <item>A single hiccup of the device\'s key store no longer signs every profile out</item>
+    </string-array>
+    <string-array name="whatsnew_0_5_2">
+        <item>In the book details the series now sits right under the title, a tap shows all its books</item>
+    </string-array>
+    <string-array name="whatsnew_0_5_1">
+        <item>When signing in, the eye next to the password shows what you typed</item>
+    </string-array>
     <string-array name="whatsnew_0_5_0">
         <item>Several profiles on one device: switch between accounts in the settings without signing out</item>
-        <item>Progress, downloads, the RMAB connection and recent searches stay with their profile; a switch deletes nothing</item>
+        <item>Progress, downloads and recent searches stay with their profile; a switch deletes nothing</item>
         <item>A switch pauses playback and saves your progress, and nothing starts by itself</item>
         <item>Add a profile: the server address is already filled in, handy for a family on one server</item>
         <item>After signing out the app asks “Who\'s listening?” if there are other profiles</item>
@@ -1164,4 +1195,75 @@
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
     </plurals>
+    <string name="server_qr_show">Server addresses as QR code</string>
+    <string name="server_qr_show_hint">For setting up another device</string>
+    <string name="server_qr_title">Server addresses</string>
+    <string name="server_qr_description">QR code with the server addresses</string>
+    <string name="server_qr_only_addresses">Contains only the server addresses, no account and no password.</string>
+    <string name="server_qr_how">On the new device, tap “Scan QR code” during setup.</string>
+    <string name="server_qr_close">Close</string>
+    <string name="server_qr_scan">Scan QR code</string>
+    <string name="server_qr_scan_close">Close camera</string>
+    <string name="server_qr_scan_hint">Point the camera at the QR code another device shows under Settings → Connection status.</string>
+    <string name="server_qr_scan_no_camera">The camera cannot be used. Close this page and type the addresses.</string>
+    <string name="server_qr_note_filled">Addresses taken from the QR code. Check them before you sign in.</string>
+    <string name="server_qr_note_camera_refused">Without camera access you can still type the addresses.</string>
+    <string name="server_qr_error_not_a_code">That is not a Lauschig server code.</string>
+    <string name="server_qr_error_version">This code comes from another version of Lauschig.</string>
+    <string name="server_qr_error_no_address">The code contains no server address.</string>
+    <string name="server_qr_error_bad_address">The code contains no valid server address.</string>
+    <string name="server_qr_error_credentials">The code has sign-in data inside an address. It is not used.</string>
+    <string name="server_qr_error_too_long">The code is too long.</string>
+    <!-- Google TV -->
+    <string name="tv_home_loading">Loading your library…</string>
+    <string name="tv_home_empty">Your library is empty. Titles added on the server appear here.</string>
+    <string name="tv_home_offline">The server cannot be reached, and nothing of your library is on this TV yet.</string>
+    <string name="tv_retry">Try again</string>
+    <string name="tv_pin_delete">Delete</string>
+    <plurals name="tv_pin_entered">
+        <item quantity="one">%d digit entered</item>
+        <item quantity="other">%d digits entered</item>
+    </plurals>
+    <string name="tv_profiles_device_lock">%1$s is protected by the device lock, which the TV does not use. Sign in with this account and the protection is removed.</string>
+    <string name="tv_loading">Loading…</string>
+    <string name="tv_library_show">Show</string>
+    <string name="tv_library_sort">Sort by</string>
+    <string name="tv_item_from_start">From the start</string>
+    <string name="tv_item_offline">The server cannot be reached. On the TV, titles play only while it can.</string>
+    <string name="tv_item_podcast">Podcasts are not on the TV yet. Listen to them on your phone.</string>
+    <string name="tv_item_description">Description</string>
+    <string name="tv_browse_empty">Nothing here.</string>
+    <string name="tv_browse_offline">The server cannot be reached, and nothing of this is on this TV yet.</string>
+    <string name="tv_search_searching">Searching…</string>
+    <string name="tv_player_nothing">Nothing is playing.</string>
+    <string name="tv_back">Back</string>
+    <string name="tv_player_playing">Playing</string>
+    <string name="tv_player_paused">Paused</string>
+    <string name="tv_player_book_left">%1$s left in the book</string>
+    <string name="tv_player_extend_hint">Press OK to keep listening</string>
+    <string name="tv_player_slower">Slower</string>
+    <string name="tv_player_faster">Faster</string>
+    <string name="tv_player_more_hint">Down: chapters, speed and sleep timer</string>
+    <string name="tv_settings_switch_profile">Switch profile</string>
+    <string name="tv_settings_profile_active">Active: %1$s</string>
+    <string name="tv_settings_profile_hint">Who is listening? Also to add a profile</string>
+    <string name="tv_settings_set_pin">Set PIN</string>
+    <string name="tv_settings_change_pin">Change PIN</string>
+    <string name="tv_settings_remove_pin">Remove PIN</string>
+    <string name="tv_settings_screen_off">Screen off after</string>
+    <string name="tv_settings_screen_off_never">Never</string>
+    <plurals name="tv_settings_screen_off_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="tv_settings_screen_off_hint">The player goes black when no key is pressed. Any key brings it back.</string>
+    <string name="tv_settings_connected">Connected</string>
+    <string name="tv_settings_connection_line">%1$s · %2$s</string>
+    <string name="tv_settings_sign_out_hint">Signs this profile out of this TV</string>
+    <string name="tv_settings_version">Version %1$s (%2$d)</string>
+    <string name="tv_card_progress">%1$d %% heard</string>
+    <string name="tv_settings_reconnect_offline">No address answered.</string>
+    <string name="tv_sign_out_message_no_host">This TV will be signed out.</string>
+    <string name="tv_settings_pin_saving">Saving the PIN …</string>
+    <string name="tv_player_chapter_progress">Progress in the chapter</string>
 </resources>

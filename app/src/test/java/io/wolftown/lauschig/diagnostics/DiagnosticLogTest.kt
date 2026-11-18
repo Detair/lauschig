@@ -223,7 +223,7 @@ class DiagnosticLogTest {
                 override fun decrypt(encrypted: String) = encrypted
             }
             val active = kotlinx.coroutines.flow.MutableStateFlow<String?>("bbbbbbbbbbbbbbbb")
-            val repo = io.wolftown.lauschig.rmab.RmabRepository(store, cipher, { "Pixel" }, active)
+            val repo = io.wolftown.lauschig.rmab.RmabRepository(store, cipher, { "Pixel" }, active, enabled = true)
             DiagnosticSecrets(flowOf(null), flowOf(emptyList()), repo.allConfigs).start(scope)
             withTimeout(5_000) { while (LogMasker.mask("papa ist da") == "papa ist da") delay(10) }
             Log.i("Rmab", "papa ist da")

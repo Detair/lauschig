@@ -165,12 +165,20 @@ class SleepTimer(
         publish()
     }
 
+    /**
+     * Extends the timer during its last minute, as a shake does: by the chosen minutes or by one chapter. The TV calls it
+     * for OK, as a television is not shaken. True if it extended.
+     */
+    fun extend(): Boolean {
+        if (!machine.shake(input())) return false
+        onExtended()
+        setVolume(machine.volumeFor(machine.remainingMs(input()) ?: Long.MAX_VALUE))
+        publish()
+        return true
+    }
+
     private fun shaken() {
-        if (machine.shake(input())) {
-            onExtended()
-            setVolume(machine.volumeFor(machine.remainingMs(input()) ?: Long.MAX_VALUE))
-            publish()
-        }
+        extend()
     }
 
     private fun finish() {

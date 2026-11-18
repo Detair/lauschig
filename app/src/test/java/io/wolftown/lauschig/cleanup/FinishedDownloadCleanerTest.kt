@@ -135,13 +135,16 @@ class FinishedDownloadCleanerTest {
 
     // --- the rules
 
-    @Test fun reallyFinished_isTheEndOrAnExplicitMark_notTheTrackersLastHalfPercent() {
+    @Test fun reallyFinished_isTheEndOrAnExplicitMark_notAPauseInTheTrackersLastMinute() {
         assertTrue("played to the end", AutoDeleteRules.reallyFinished(100.0, 100.0))
         assertTrue("saved a moment before the end", AutoDeleteRules.reallyFinished(98.5, 100.0))
         assertTrue("marked finished in the middle", AutoDeleteRules.reallyFinished(40.0, 100.0))
         assertTrue("marked finished without a position", AutoDeleteRules.reallyFinished(0.0, 0.0))
-        // The tracker saves "finished" from 99.5 %: a pause there is no end.
-        assertFalse(AutoDeleteRules.reallyFinished(36_000 * 0.996, 36_000.0))
+        // The tracker saves "finished" in the last minute (the last half percent of a short title): a pause there is no end.
+        assertFalse(AutoDeleteRules.reallyFinished(36_000.0 - 30, 36_000.0))
+        assertFalse(AutoDeleteRules.reallyFinished(996.0, 1_000.0))
+        // Further from the end the tracker never says "finished": such a row was marked by hand.
+        assertTrue("marked finished minutes before the end", AutoDeleteRules.reallyFinished(36_000 * 0.996, 36_000.0))
     }
 
     @Test fun modes_countFromWhenTheDeviceSawTheTitleFinished() {

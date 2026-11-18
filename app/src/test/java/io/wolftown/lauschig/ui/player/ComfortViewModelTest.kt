@@ -10,6 +10,7 @@ import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.playback.PlayerController
 import io.wolftown.lauschig.playback.PlayerUiState
 import io.wolftown.lauschig.playback.ShakeSource
+import io.wolftown.lauschig.playback.SleepMode
 import io.wolftown.lauschig.playback.SleepTimer
 import io.wolftown.lauschig.settings.PlaybackSettings
 import kotlinx.coroutines.CoroutineScope
@@ -93,5 +94,14 @@ class ComfortViewModelTest {
         vm.setSleepChime(false)
         soon { vm.state.first { !it.sleepChime } }
         assertEquals(false, settings.sleepChime.first())
+    }
+
+    /** The TV's OK at the end of a sleep timer: the same extension as a shake on the phone. */
+    @Test fun extendSleep_extendsATimerInItsLastMinute() {
+        val timer = SleepTimer(player, shakes, CoroutineScope(UnconfinedTestDispatcher()))
+        val vm = viewModels.own(ComfortViewModel(timer, settings, db.titleAudioDao(), FakeAccountStore(), player))
+        vm.startSleep(SleepMode.Minutes(1))
+        vm.extendSleep()
+        assertEquals(120_000L, timer.state.value?.remainingMs)
     }
 }

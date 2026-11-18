@@ -41,7 +41,7 @@ class AccountStateCleanerTest {
     private val a = "aaaaaaaaaaaaaaaa"
     private val b = "bbbbbbbbbbbbbbbb"
     private val active = kotlinx.coroutines.flow.MutableStateFlow<String?>(a)
-    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" }, active)
+    private val rmab = RmabRepository(rmabStore, cipher, { "Pixel" }, active, enabled = true)
     private val oidc = OidcLogin(oidcStore, cipher, OkHttpClient())
     private val searches = RecentSearches(store("searches"), active)
     private val prompts = DownloadPrompts()
@@ -105,6 +105,42 @@ class AccountStateCleanerTest {
         val legacy = ctx.cacheDir.resolve("coil3_disk_cache").apply { mkdirs(); resolve("old-cover.1").writeText("x") }
         AccountStateCleaner(rmab, oidc, searches, prompts, ctx, io.wolftown.lauschig.sync.PositionJumpBus(), io.wolftown.lauschig.connection.ConnectionLog(), io.wolftown.lauschig.playback.FakeLastPlayedStore(), FakeProfileLocks(), io.wolftown.lauschig.settings.AppSettings(store("app"))).clear(a)
         assertEquals(false, legacy.exists())
+    }
+
+    // ReadMeABook switched off (build switch `lauschig.rmab`): what a build with it stored goes at the start; a sign-out
+    // and a profile switch do everything else as before.
+
+    private val rmabOff = RmabRepository(rmabStore, cipher, { "Pixel" }, active, enabled = false)
+
+    @Test fun rmabOff_theStart_removesTheConnectionOfEveryProfile_nothingElse() = runBlocking {
+        seed()
+        rmabStore.edit { it[stringPreferencesKey("url:$b")] = "https://other.example"; it[stringPreferencesKey("token:$b")] = "enc:o" }
+        AccountStateCleaner(rmabOff, oidc, searches, prompts, {}, {}).migrate(a)
+        assertTrue(rmabStore.data.first().asMap().isEmpty())
+        assertEquals(listOf("Die drei"), searches.queries.first())
+    }
+
+    @Test fun rmabOff_aSignOut_clearsEveryPartAsBefore() = runBlocking {
+        seed()
+        var images = 0
+        var notifications = 0
+        AccountStateCleaner(rmabOff, oidc, searches, prompts, { images++ }, { notifications++ }).clear(a)
+        assertTrue(rmabStore.data.first().asMap().isEmpty())
+        assertTrue(oidcStore.data.first().asMap().isEmpty())
+        assertEquals(emptyList<String>(), searches.queries.first())
+        assertNull(prompts.prompt.value)
+        assertEquals(1, images)
+        assertEquals(1, notifications)
+    }
+
+    @Test fun rmabOff_aSwitch_keepsTheSearches_clearsTheScreenAsBefore() = runBlocking {
+        seed()
+        var memory = 0; var notifications = 0; var diagnostics = 0; var moments = 0
+        AccountStateCleaner(rmabOff, oidc, searches, prompts, { error("covers on disk stay at a switch") }, { notifications++ }, { diagnostics++ }, { memory++ }, { moments++ }).setAside(a)
+        assertEquals(listOf("Die drei"), searches.queries.first())
+        assertTrue(oidcStore.data.first().asMap().isEmpty())
+        assertNull(prompts.prompt.value)
+        assertEquals(listOf(1, 1, 1, 1), listOf(memory, notifications, diagnostics, moments))
     }
 
     // Phase 7, Task 1.1: a switch keeps what is the account's and clears what must not stay on screen or in the log.

@@ -20,7 +20,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -29,13 +31,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import io.wolftown.lauschig.R
 import io.wolftown.lauschig.external.AudibleVolume
+import io.wolftown.lauschig.ui.common.PasswordField
 
 /** Small status symbol for a missing-volume tile; null when there is nothing to show (not requested, or a failed request). */
 fun RmabStatus.tileIcon(): ImageVector? = when (this) {
@@ -95,11 +97,39 @@ private fun Outcome(outcome: RmabOutcome?) {
     )
 }
 
-/** Settings section "ReadMeABook" (a slot in the settings screen). */
+/** What the missing volumes of a series page get from ReadMeABook ([rmabBrowse]). */
+@Immutable
+class RmabBrowse(
+    /** Status by ASIN; the missing tile shows a small symbol for it. */
+    val statuses: Map<String, RmabStatus>,
+    /** The request button (or the status) below the details of a missing volume. */
+    val actions: @Composable (AudibleVolume) -> Unit,
+)
+
+private val NoRmabBrowse = RmabBrowse(emptyMap()) {}
+
+/**
+ * The series page's part of ReadMeABook. With the feature off ([LocalRmabEnabled], the build switch) it is empty and
+ * [viewModel] is never asked for: the missing volumes stay, without request button and status symbol.
+ */
 @Composable
-fun RmabSettingsSection(viewModel: RmabSettingsViewModel = hiltViewModel()) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    RmabSettingsContent(state, viewModel::openDialog, viewModel::disconnect, viewModel::closeDialog, viewModel::connect, viewModel::confirmCleartext, viewModel::dismissCleartext)
+fun rmabBrowse(viewModel: @Composable () -> RmabViewModel = { hiltViewModel() }): RmabBrowse {
+    if (!LocalRmabEnabled.current) return NoRmabBrowse
+    val vm = viewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+    return RmabBrowse(if (state.connected) state.statuses else emptyMap()) { RmabMissingActions(it, state, vm::request) }
+}
+
+/**
+ * Settings section "ReadMeABook" (a slot in the settings screen). With the feature off ([LocalRmabEnabled], the build
+ * switch) there is no section and [viewModel] is never asked for.
+ */
+@Composable
+fun RmabSettingsSection(viewModel: @Composable () -> RmabSettingsViewModel = { hiltViewModel() }) {
+    if (!LocalRmabEnabled.current) return
+    val vm = viewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+    RmabSettingsContent(state, vm::openDialog, vm::disconnect, vm::closeDialog, vm::connect, vm::confirmCleartext, vm::dismissCleartext)
 }
 
 @Composable
@@ -191,13 +221,16 @@ private fun ConnectDialog(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabUser"),
                     )
                 }
-                OutlinedTextField(
-                    secret, { secret = it }, singleLine = true,
-                    label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
-                )
+                // A new mode is a new, empty field: it starts hidden again.
+                key(tokenMode) {
+                    PasswordField(
+                        secret, { secret = it },
+                        label = { Text(stringResource(if (tokenMode) R.string.rmab_token else R.string.rmab_password)) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("rmabSecret"),
+                        showDescription = if (tokenMode) R.string.token_show else R.string.password_show,
+                        hideDescription = if (tokenMode) R.string.token_hide else R.string.password_hide,
+                    )
+                }
                 TextButton(onClick = { tokenMode = !tokenMode; secret = "" }, modifier = Modifier.testTag("rmabToggleMode")) {
                     Text(stringResource(if (tokenMode) R.string.rmab_use_login else R.string.rmab_use_token))
                 }

@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import io.wolftown.lauschig.db.dao.ItemWithDetails
+import io.wolftown.lauschig.sync.ProgressSync
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
@@ -122,6 +123,18 @@ class PlaybackProgressBridge(
             c = Ctx(key.serverId, key.itemId, mapper.totalSec.takeIf { it > 0 } ?: item.item.durationSec, mapper).also { ctx = it }
         }
         val mapper = c.mapper
+        // The title sat paused here while its position was moved (another device, through sync): continue there. The app's
+        // own play button checks the same ([PlayerControllerImpl.resumeLoaded]); a play key of a headset, the car, the
+        // widget or the notification reaches the player without passing the app, and the tracker's next save would
+        // overwrite the newer position with the stale one.
+        val playerSec = mapper.toGlobal(player.currentMediaItemIndex, player.currentPosition)
+        tracker.movedWhilePaused(key.serverId, key.itemId, playerSec, ProgressSync.JUMP_THRESHOLD_SEC)?.let { sec ->
+            if (player.currentMediaItem?.key() == key) {
+                val (index, offsetMs) = mapper.toFile(sec)
+                Log.i(TAG, "continuing where the title was moved to while it was paused")
+                player.seekTo(index, offsetMs)
+            }
+        }
         tracker.onPlaying(key.serverId, key.itemId, c.duration) {
             // Never map another title's queue onto this title's timeline; the tracker falls back to its last position.
             check(player.currentMediaItem?.key() == key) { "queue holds another title" }

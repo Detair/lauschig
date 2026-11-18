@@ -32,7 +32,7 @@ local database as the source of truth and uses the network only in the backgroun
 
 ## Status
 
-Version 0.5.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
+Version 0.7.0, in daily use on our own devices; not on Google Play yet (a closed test is planned). Test builds are on the
 [Releases](https://github.com/Detair/lauschig/releases) page as signed APKs. What works:
 
 - Offline first: library, downloads, progress and listening sessions live on the device and sync in the background.
@@ -50,6 +50,12 @@ Version 0.5.0, in daily use on our own devices; not on Google Play yet (a closed
   screen, and take it back. Uses Google's proprietary Cast framework; without Google Play services the app plays as before.
 - Downloads on an SD card, optional automatic deletion of heard downloads (per account, off by default), and a
   diagnostic log you can share – with passwords, tokens and server addresses masked.
+- New in 0.6.0: a signed-in device shows its server addresses as a QR code and a new device scans it during setup.
+  The code holds the addresses only, never an account ([format](docs/server-qr-code.md)).
+- New in 0.7.0: a first test version for Google TV and Android TV, with its own interface for the remote: typed
+  setup, "Who is listening?" with an optional PIN, start page, library, search and a player with chapters, speed,
+  sleep timer and "screen off". It has only run in the emulator so far; testers find a checklist in the
+  [tester guide](docs/tester-anleitung.md) (German).
 
 The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
 
@@ -74,8 +80,10 @@ Modules: `:app` (UI, playback, sync, downloads), `:core:database` (Room entities
 
 Signing is read from the environment (or Gradle properties): `LAUSCHIG_KEYSTORE`, `LAUSCHIG_KEYSTORE_PASSWORD`,
 `LAUSCHIG_KEY_ALIAS`, `LAUSCHIG_KEY_PASSWORD`. Without them the bundle is built **unsigned** and a warning is printed.
-Never commit a keystore. Pushing a tag `v*` runs `.github/workflows/release.yml`, which builds the signed AAB from
-repository secrets (`LAUSCHIG_KEYSTORE_BASE64` plus the three values above); uploading to Play is manual. CI uses environment variables only (no Gradle properties files).
+Never commit a keystore. Pushing a tag `v*` on `main` runs `.github/workflows/release.yml`: it first runs the same
+tests, lint and builds as every pull request, then builds the signed AAB and APK from the secrets of the GitHub
+environment `release` (`LAUSCHIG_KEYSTORE_BASE64` plus the three values above), which only tags `v*` may use.
+Uploading to Play is manual. CI uses environment variables only (no Gradle properties files).
 
 ## Baseline profile and startup benchmark
 

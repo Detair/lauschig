@@ -151,7 +151,11 @@ abstract class ProgressDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     protected abstract suspend fun put(progress: ProgressEntity)
 
-    /** Newest-wins merge: a server row is applied only if its lastUpdate is strictly newer than the local one. */
+    /**
+     * Newest-wins merge: a server row is applied only if its lastUpdate is strictly newer than the local one. That also
+     * holds for a row without local changes: a server that went back to an older backup does not take the positions on
+     * this device back with it.
+     */
     @Transaction
     open suspend fun mergeFromServer(rows: List<ProgressEntity>): List<ProgressChange> {
         val changes = mutableListOf<ProgressChange>()
@@ -164,13 +168,26 @@ abstract class ProgressDao {
         return changes
     }
 
-    /** Local (player) write; always marks the row dirty. */
+    /** Local (player) write; always marks the row dirty. [lastUpdate] is the phone's clock, see [stamp]. */
+    @Transaction
     open suspend fun saveLocal(
         serverId: String, itemId: String, currentTimeSec: Double, durationSec: Double, isFinished: Boolean, lastUpdate: Long,
-    ) = put(ProgressEntity(serverId, itemId, currentTimeSec, durationSec, isFinished, lastUpdate, dirty = true))
+    ) = put(ProgressEntity(serverId, itemId, currentTimeSec, durationSec, isFinished, stamp(serverId, itemId, lastUpdate), dirty = true))
 
     /** Explicit user action (mark finished, start over, hide): written like a player save, so it syncs as newest. */
-    open suspend fun saveUserAction(row: ProgressEntity) = put(row.copy(dirty = true))
+    @Transaction
+    open suspend fun saveUserAction(row: ProgressEntity) =
+        put(row.copy(dirty = true, lastUpdate = stamp(row.serverId, row.itemId, row.lastUpdate)))
+
+    /**
+     * The stamp of a local write: the phone's clock ([now]), but always newer than the row it replaces. That row may carry
+     * the server's clock (after a push) while the phone's runs behind: stamped with a plain [now], the write would look
+     * older than what it replaces, would not be sent and would give way to the server's row at the next merge.
+     * (A phone clock that runs ahead is not covered: a row pushed with a stamp from the "future" hides what another device
+     * saves until the server's clock has caught up. That needs the two clocks compared, not a rule in this table.)
+     */
+    private suspend fun stamp(serverId: String, itemId: String, now: Long): Long =
+        get(serverId, itemId)?.let { maxOf(now, it.lastUpdate + 1) } ?: now
 
     /** "Fetch from server": takes the server row as-is, even if the local one is newer. */
     open suspend fun replaceFromServer(row: ProgressEntity) = put(row.copy(dirty = false))

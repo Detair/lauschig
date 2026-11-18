@@ -21,6 +21,8 @@ import io.wolftown.lauschig.auto.VoicePlayer
 import io.wolftown.lauschig.links.IncomingIntents
 import io.wolftown.lauschig.settings.Appearance
 import io.wolftown.lauschig.settings.FontScaleBoot
+import io.wolftown.lauschig.tv.tvForwardIntent
+import io.wolftown.lauschig.tv.isTelevision
 import io.wolftown.lauschig.ui.AppRoot
 import io.wolftown.lauschig.ui.isDarkTheme
 import io.wolftown.lauschig.ui.profiles.AndroidDeviceLockPrompter
@@ -50,6 +52,10 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (isTelevision()) {
+            forwardToTv(savedInstanceState)
+            return
+        }
         // Held only until the local account and appearance reads finish; these are the only things the start waits for.
         installSplashScreen().setKeepOnScreenCondition { viewModel.startDestination.value == null || viewModel.appearance.value == null }
         super.onCreate(savedInstanceState)
@@ -94,6 +100,21 @@ class MainActivity : FragmentActivity() {
             }
         }
         keepContentRootEdgeToEdge()
+    }
+
+    /**
+     * A TV opened the phone's interface (a notification, the widget's target, a phone launcher on the TV): the TV interface
+     * takes over with the same request, and this one ends before it draws anything.
+     */
+    private fun forwardToTv(savedInstanceState: Bundle?) {
+        // The window this activity still gets is dark like the TV's. On Android 12+ the system may already have drawn the
+        // phone's splash before onCreate (any start but the TV launcher's); that cannot be prevented from here.
+        setTheme(R.style.Theme_Lauschig_Tv)
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) {
+            startActivity(tvForwardIntent(this, intent))
+        }
+        finish()
     }
 
     /**

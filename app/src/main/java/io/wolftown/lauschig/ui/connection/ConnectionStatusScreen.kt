@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.os.Build
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,11 +35,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,6 +56,7 @@ import io.wolftown.lauschig.connection.ConnectionStatusUi
 import io.wolftown.lauschig.connection.LinkState
 import io.wolftown.lauschig.connection.NetworkDescription
 import io.wolftown.lauschig.connection.ReconnectState
+import io.wolftown.lauschig.serverqr.ServerQrDialog
 
 @Composable
 fun ConnectionStatusRoute(onBack: () -> Unit, viewModel: ConnectionStatusViewModel = hiltViewModel()) {
@@ -90,6 +97,17 @@ fun ConnectionStatusScreen(
             ListItem(headlineContent = { Text(stringResource(R.string.connection_not_signed_in)) })
         }
         state.addresses.forEach { AddressItem(it, state.homeSsids, now) }
+        // For setting up another device: where the server is, and nothing about who signs in. Only with a server.
+        state.serverQr?.let { code ->
+            var shown by rememberSaveable { mutableStateOf(false) }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.server_qr_show)) },
+                supportingContent = { Text(stringResource(R.string.server_qr_show_hint)) },
+                leadingContent = { Icon(Icons.Rounded.QrCode2, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { shown = true }.testTag("showServerQr"),
+            )
+            if (shown) ServerQrDialog(code.text, code.addresses, onClose = { shown = false })
+        }
 
         Section(R.string.connection_section_network)
         ListItem(headlineContent = { Text(networkText(state.network)) }, modifier = Modifier.testTag("connectionNetwork"))
