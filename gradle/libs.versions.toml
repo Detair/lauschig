@@ -8,7 +8,7 @@ hiltAndroidx = "1.4.0"
 room = "2.8.5"
 media3 = "1.11.1"
 # Only pins the Guava that Media3 brings along, see the constraint in app/build.gradle.kts.
-guava = "33.7.2-android"
+guava = "33.8.0-android"
 work = "2.12.0"
 datastore = "1.3.0"
 browser = "1.10.0"
