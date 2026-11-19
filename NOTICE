@@ -1,0 +1,31 @@
+ENTWURF / DRAFT: The wording below awaits the approval of the rights holder. This line goes when it is given.
+
+Lauschig
+Copyright (C) 2026 Fabian (Detair)
+
+Lauschig is free software, licensed under the GNU General Public License, version 3 or (at your
+option) any later version. See the file LICENSE.
+
+Additional permission under GNU GPL version 3 section 7
+
+This permission is given by the rights holder of Lauschig.
+
+If you modify this Program, or any covered work, by linking or combining it with the Google Cast
+framework for Android (com.google.android.gms:play-services-cast-framework, and the Google Play
+services libraries it requires, or a modified version of them), containing parts covered by the
+terms of their proprietary licenses, the licensors of this Program grant you additional permission
+to convey the resulting work. Corresponding Source for a non-source form of such a combination need
+not include the source code of these Google libraries; it must include that of every other part of
+the covered work.
+
+The permission covers only the Google libraries named above. You may remove it from your own
+version, as section 7 of the GPL allows; such a version may then not be conveyed together with these
+libraries. If you add your own code to a version of Lauschig, you may extend the permission to your
+code, but you are not obliged to.
+
+Third-party components
+
+The app includes androidx.media3 (media3-cast and others, Apache License 2.0) and, for Chromecast
+only, the Google Cast framework named above, which is proprietary and comes with its own terms. It
+runs only on devices with Google Play services. The app works without them, only without a Cast
+button.

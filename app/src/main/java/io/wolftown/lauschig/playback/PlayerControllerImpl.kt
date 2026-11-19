@@ -1,6 +1,8 @@
 package io.wolftown.lauschig.playback
 
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cast.CastActivity
+import io.wolftown.lauschig.cast.CastState
 import io.wolftown.lauschig.cleanup.TitleHandover
 import io.wolftown.lauschig.diagnostics.Log
 import io.wolftown.lauschig.R
@@ -82,6 +84,11 @@ class PlayerControllerImpl(
     private val seekSteps: Flow<Pair<Int, Int>> = emptyFlow(),
     /** Whether [serverId] is the signed-in account. */
     private val isSignedIn: suspend (serverId: String) -> Boolean = { true },
+    /** The Cast device that plays (null: this device). */
+    private val outputName: Flow<String?> = emptyFlow(),
+    /** What the player should say about a cast (why it ended or did not start). */
+    private val outputMessages: Flow<Int> = emptyFlow(),
+    private val outputActivity: Flow<CastActivity> = emptyFlow(),
 ) : PlayerController {
 
     @Inject constructor(
@@ -97,6 +104,7 @@ class PlayerControllerImpl(
         monitor: StreamMonitor,
         playbackSettings: PlaybackSettings,
         accounts: AccountStore,
+        cast: CastState,
     ) : this(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         facade = facade,
@@ -118,6 +126,9 @@ class PlayerControllerImpl(
         onlineBase = api.connection.map { (it as? ConnectionState.Online)?.baseUrl },
         seekSteps = combine(playbackSettings.seekBackSec, playbackSettings.seekForwardSec, ::Pair),
         isSignedIn = { sid -> accounts.account.first()?.serverId == sid },
+        outputName = cast.ui.map { it.deviceName },
+        outputMessages = cast.messages,
+        outputActivity = cast.ui.map { it.activity },
     )
 
     /** [base] is the server the streamed files of [items] point at (null when all are local). */
@@ -161,19 +172,25 @@ class PlayerControllerImpl(
     private var throttled = false
     private var seekBack = PlaybackSettings.DEFAULT_SEEK_BACK
     private var seekForward = PlaybackSettings.DEFAULT_SEEK_FORWARD
+    private var output: String? = null
+    private var activity = CastActivity.CONNECTED
+    /** [CAST_LOST]'s text stood while nothing wanted to play: a wish to play from now on is a press, from the notification or a key too. */
+    private var lostReasonSettled = false
 
     /** A fresh state for a new or no title; the settings it shows are kept. */
     private fun freshState(itemId: String? = null, title: String = "", isStreaming: Boolean = false, isLoading: Boolean = false) =
         PlayerUiState(
             itemId = itemId, title = title, isStreaming = isStreaming, isLoading = isLoading, downloadThrottled = throttled,
-            seekBackSec = seekBack, seekForwardSec = seekForward,
+            seekBackSec = seekBack, seekForwardSec = seekForward, outputName = output, outputActivity = activity,
         )
 
     init {
         facade.setOnChange { refresh() }
         facade.setOnError { code ->
             starting = false
-            _state.update { it.copy(isPlaying = false, isLoading = false, error = R.string.error_playback_failed) }
+            // A phone that lost its network also loses its stream once a dropped cast's title is back here: why it stopped is the reason it has,
+            // until the next press.
+            _state.update { it.copy(isPlaying = false, isLoading = false, error = it.error?.takeIf(CAST_LOST::contains) ?: R.string.error_playback_failed) }
             // A stream that ran dry at an old address (home LAN, now in the car): move to the new one. It plays on only
             // because ExoPlayer still wants to (playWhenReady survives the error); nothing here ever starts playback.
             if (code in IO_ERRORS && facade.streamBase() != null) applyPendingBase()
@@ -186,6 +203,19 @@ class PlayerControllerImpl(
             current = null
             starting = false
             _state.update { it.copy(isPlaying = false, isLoading = false, streamLoad = null) }
+        }
+        scope.launch { outputName.distinctUntilChanged().collect { name -> output = name; _state.update { it.copy(outputName = name) } } }
+        scope.launch { outputActivity.distinctUntilChanged().collect { a -> activity = a; _state.update { it.copy(outputActivity = a) } } }
+        scope.launch {
+            outputMessages.collect { message ->
+                lostReasonSettled = false
+                _state.update { it.copy(error = message) }
+                // It waits here, paused, whatever the play of this start asked: nothing is starting any more.
+                if (message == R.string.cast_suspended_title_here) {
+                    starting = false
+                    refresh()
+                }
+            }
         }
         // Only what the UI shows: a playing stream's stats change constantly but map to null.
         scope.launch { streamStats.map { it.toLoad() }.distinctUntilChanged().collect { load = it; if (current != null) refresh() } }
@@ -276,7 +306,8 @@ class PlayerControllerImpl(
             facade.play()
             refresh()
             watchDownloads(started)
-            if (!allLocal && !deviceTitle) onStreamStarted(serverId, itemId)
+            // A receiver loads from the server by itself: nothing here to download for it.
+            if (!allLocal && !deviceTitle && output == null) onStreamStarted(serverId, itemId)
         }
     }
 
@@ -313,7 +344,13 @@ class PlayerControllerImpl(
      */
     private suspend fun onOnlineBase(base: HttpUrl) {
         val c = current ?: return
-        val actual = facade.streamBase()?.toHttpUrlOrNull() ?: return
+        val actual = facade.streamBase()?.toHttpUrlOrNull()
+        if (actual == null) {
+            // Nothing streams in the player right now: a Cast receiver's queue, or all local. This collector will not offer the
+            // address again, so it is noted; the title's own files move when they are back ([refresh]).
+            pendingBase = base
+            return
+        }
         if (actual == base) {
             pendingBase = null
             return
@@ -331,6 +368,13 @@ class PlayerControllerImpl(
         val c = current ?: return
         pendingBase = null
         scope.launch { rebase(c, base) }
+    }
+
+    /** An address noted while nothing streamed: the title's streamed files are in the player again (a cast ended). */
+    private fun applyNotedBase() {
+        val noted = pendingBase ?: return
+        val actual = facade.streamBase()?.toHttpUrlOrNull() ?: return
+        if (actual == noted) pendingBase = null else applyPendingBase()
     }
 
     private suspend fun rebase(c: Current, base: HttpUrl) {
@@ -418,6 +462,8 @@ class PlayerControllerImpl(
             starting = false
             facade.pause(); refresh()
         } else {
+            // A failure from here on is this press's own.
+            _state.update { if (it.error in CAST_LOST) it.copy(error = null) else it }
             playJob?.cancel()
             playJob = scope.launch { resumeLoaded(c) }
         }
@@ -547,7 +593,7 @@ class PlayerControllerImpl(
         val snap = facade.snapshot()
         val stopped = wasPlaying && !snap.isPlaying
         wasPlaying = snap.isPlaying
-        if (stopped) applyPendingBase()
+        if (stopped) applyPendingBase() else if (!snap.isPlaying) applyNotedBase()
         if (snap.isPlaying) starting = false
         val playing = facade.currentKey()
         if (playing != null && !starting && playing.second != c.item.item.id) {
@@ -577,10 +623,18 @@ class PlayerControllerImpl(
                 isStreaming = c.streaming,
                 isLoading = loading,
                 streamLoad = if (loading && c.streaming) load else null,
-                error = if (snap.isPlaying) null else it.error,
+                error = errorAfter(snap, it.error),
             )
         }
         if (snap.isPlaying || starting) startPolling() else { pollJob?.cancel(); pollJob = null }
+    }
+
+    private fun errorAfter(snap: PlayerSnapshot, error: Int?): Int? {
+        if (snap.isPlaying) return null
+        if (error !in CAST_LOST) return error
+        // The state may still be behind the message (a masked player that looks as if it wanted to play), so it has to have stood first.
+        if (!snap.isBuffering) lostReasonSettled = true
+        return if (snap.isBuffering && lostReasonSettled) null else error
     }
 
     /**
@@ -633,5 +687,7 @@ class PlayerControllerImpl(
         const val STOP_SETTLE_MS = 300L
         /** `PlaybackException.ERROR_CODE_IO_*`: the source could not be read (network gone, address unreachable, 4xx/5xx). */
         val IO_ERRORS = 2000..2999
+        /** The messages of a cast that lost its connection. */
+        val CAST_LOST = setOf(R.string.cast_dropped, R.string.cast_suspended_title_here)
     }
 }

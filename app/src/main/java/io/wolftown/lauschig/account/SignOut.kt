@@ -5,6 +5,7 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import io.wolftown.lauschig.cast.CastSessions
 import io.wolftown.lauschig.connection.CONNECTION_ANSWER_WAIT_MS
 import io.wolftown.lauschig.connection.awaitConnectionAnswer
 import io.wolftown.lauschig.download.SwitchedDownloads
@@ -193,6 +194,7 @@ class SignOut(
         sync: SyncTrigger,
         lastTitle: LastTitleStarter,
         locks: ProfileLocks,
+        castSessions: CastSessions,
     ) : this(
         accounts, data, kept, work, lastPlayed,
         pausePlayback = {
@@ -204,7 +206,11 @@ class SignOut(
                 }
             }
         },
-        stopPlayback = stopping(player, sleepTimer),
+        stopPlayback = {
+            stopping(player, sleepTimer)()
+            // The stop ended a running cast. Its session on the server is closed while this account still has its token.
+            accounts.account.first()?.serverId?.let { castSessions.closeOpen(it) }
+        },
         pushes = listOf({ sid -> progressSync.sync(sid) }, { sid -> bookmarkSync.sync(sid) }),
         awaitOnline = { awaitConnectionAnswer(api.connection, api.checking, CONNECTION_ANSWER_WAIT_MS) },
         logout = serverLogout::logout,

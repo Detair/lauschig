@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.wolftown.lauschig.account.AccountStore
+import io.wolftown.lauschig.cast.CastActivity
 import io.wolftown.lauschig.db.dao.ItemDao
 import io.wolftown.lauschig.playback.PlayableKey
 import io.wolftown.lauschig.playback.PlayerController
@@ -76,6 +77,10 @@ data class PlayerScreenState(
     /** The seek steps of the settings, for the back / forward buttons. */
     val seekBackSec: Int = PlaybackSettings.DEFAULT_SEEK_BACK,
     val seekForwardSec: Int = PlaybackSettings.DEFAULT_SEEK_FORWARD,
+    /** The Cast device that plays; null while the sound comes from this device. */
+    val castDevice: String? = null,
+    /** What it is doing, for the line under the title. */
+    val castActivity: CastActivity = CastActivity.CONNECTED,
 )
 
 /** Maps the controller state to the player screen and exposes the player actions. */
@@ -169,6 +174,8 @@ class PlayerViewModel(
             coverVersion = m?.coverVersion,
             seekBackSec = p.seekBackSec,
             seekForwardSec = p.seekForwardSec,
+            castDevice = p.outputName,
+            castActivity = p.outputActivity,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerScreenState())
 

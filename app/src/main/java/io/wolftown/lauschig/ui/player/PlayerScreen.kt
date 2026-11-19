@@ -59,8 +59,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -119,6 +121,7 @@ fun PlayerRoute(
         onDownload = { itemId?.let { actions.download(it); askNotifications() } },
         onDeleteDownload = { itemId?.let(actions::deleteDownload) },
         topActions = { itemId?.let { ProgressMenuButton(it, viewModel = actions) } },
+        castControl = { CastControl(itemId) },
         finished = { itemId?.let { FinishedCard(it, { id -> onOpenDetails(PlayableKey.parse(id).libraryItemId) }, Modifier.padding(vertical = 8.dp), viewModel = actions) } },
         onToggle = viewModel::togglePlayPause,
         onSeekBy = viewModel::seekBy,
@@ -214,6 +217,8 @@ fun PlayerScreen(
     onDownload: () -> Unit = {},
     onDeleteDownload: () -> Unit = {},
     topActions: @Composable () -> Unit = {},
+    /** The Cast button ([CastControl]); it also starts Cast when the player opens, so it is there with or without a title. */
+    castControl: @Composable () -> Unit = {},
     finished: @Composable () -> Unit = {},
     /** The Sleep and Klang tiles ([ComfortButtons]) beside Tempo; shown only while a title is loaded. */
     comfort: @Composable RowScope.() -> Unit = {},
@@ -258,8 +263,10 @@ fun PlayerScreen(
             IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_close)) }
             // Where it plays from sits in the top bar's free middle, which keeps the title block short.
             Box(Modifier.weight(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                if (state.itemId != null) SourceIndicator(playSource(state.itemId, state.isStreaming))
+                // On a Cast device neither stream nor download is what plays; the line under the title says where it plays.
+                if (state.itemId != null && state.castDevice == null) SourceIndicator(playSource(state.itemId, state.isStreaming))
             }
+            castControl()
             if (state.itemId != null) {
                 if (!DeviceLibrary.isLocalKey(state.itemId)) DownloadIconButton(download, onDownload = onDownload, onDelete = onDeleteDownload)
                 IconButton(onClick = onOpenDetails, modifier = Modifier.testTag("playerDetails")) { Icon(Icons.Rounded.Info, detailsLabel) }
@@ -302,8 +309,12 @@ fun PlayerScreen(
                     textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
+            state.castDevice?.let { CastOutputLine(it, state.castActivity) }
             state.error?.let {
-                Text(stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                Text(
+                    stringResource(it), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }.testTag("playerError"),
+                )
             }
             state.streamLoad?.let { load ->
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp).testTag("streamLoad"), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -508,7 +519,7 @@ fun PlayerScreen(
     }
 
     if (showSpeed) {
-        ModalBottomSheet(onDismissRequest = { showSpeed = false }) { SpeedSheet(state.speed, onSpeed) }
+        ModalBottomSheet(onDismissRequest = { showSpeed = false }) { SpeedSheet(state.speed, onSpeed, casting = state.castDevice != null) }
     }
     contentsTab?.let { tab ->
         ContentsSheet(tab, state.chapters, onChapter, contents, onDismiss = { contentsTab = null }, titleKey = state.itemId)
@@ -571,7 +582,7 @@ private fun CoverFitColumn(
 }
 
 @Composable
-private fun SpeedSheet(speed: Float, onSpeed: (Float) -> Unit) {
+private fun SpeedSheet(speed: Float, onSpeed: (Float) -> Unit, casting: Boolean) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
         Text(stringResource(R.string.player_speed_title), style = MaterialTheme.typography.titleMedium)
         Text(formatSpeed(speed), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(vertical = 8.dp).testTag("speedValue"))
@@ -588,5 +599,13 @@ private fun SpeedSheet(speed: Float, onSpeed: (Float) -> Unit) {
             steps = steps,
             modifier = Modifier.testTag("speedSlider"),
         )
+        if (casting) {
+            Text(
+                stringResource(R.string.cast_speed_limit),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("castSpeedLimit"),
+            )
+        }
     }
 }

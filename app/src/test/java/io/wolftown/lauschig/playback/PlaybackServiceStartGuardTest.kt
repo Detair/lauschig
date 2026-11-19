@@ -106,4 +106,40 @@ class PlaybackServiceStartGuardTest {
         service.StartHost(exo).leavePlaceholder()
         assertEquals(7, shadowOf(service).stopSelfId)
     }
+
+    /** With a car, the sound stays on this device: a cast that is on ends. */
+    @Test fun aCarConnecting_endsARunningCast_andHidesTheButton() {
+        val ends = ArrayList<Boolean>()
+        val state = io.wolftown.lauschig.cast.CastState()
+        service.castState = state
+        service.castRuntime = object : io.wolftown.lauschig.cast.CastRuntime {
+            override val supported = true
+            override val started = kotlinx.coroutines.flow.MutableStateFlow(true)
+            override fun start() = Unit
+            override fun setDiscovery(on: Boolean) = Unit
+            override fun newCastPlayer(device: androidx.media3.common.Player, transfer: androidx.media3.cast.CastPlayer.TransferCallback) = device
+            override fun activity() = io.wolftown.lauschig.cast.ReceiverActivity.BUSY
+            override fun contentId(): String? = null
+            override fun isSuspended() = false
+            override fun requestStatus() = Unit
+            override fun endSession(stopReceiver: Boolean) { ends += stopReceiver }
+            override fun setReceiverListener(listener: io.wolftown.lauschig.cast.ReceiverListener?) = Unit
+        }
+        var local = false
+        service.output = object : PlaybackOutput {
+            override val player: androidx.media3.common.Player get() = exo
+            override val device: ExoPlayer get() = exo
+            override val isLocal: Boolean get() = local
+            override fun release() = Unit
+        }
+        service.carConnectionChanged(1)
+        assertEquals(listOf(true), ends)
+        assertTrue(state.ui.value.carConnected)
+        service.carConnectionChanged(0)
+        assertEquals(listOf(true), ends)
+        assertFalse(state.ui.value.carConnected)
+        local = true
+        service.carConnectionChanged(1)
+        assertEquals("nothing to end on this device", listOf(true), ends)
+    }
 }

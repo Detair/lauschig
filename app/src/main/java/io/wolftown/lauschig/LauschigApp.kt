@@ -50,6 +50,7 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
     @Inject lateinit var diagnosticSecrets: DiagnosticSecrets
     @Inject lateinit var accountState: io.wolftown.lauschig.account.AccountStateCleaner
     @Inject lateinit var switchedDownloads: io.wolftown.lauschig.download.SwitchedDownloads
+    @Inject lateinit var castSessions: io.wolftown.lauschig.cast.CastSessions
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -77,6 +78,16 @@ class LauschigApp : Application(), Configuration.Provider, SingletonImageLoader.
         scope.launch { localFolders.scanIfDue() }
         // Sign-out or another server: the homescreen widget forgets the old account's title.
         scope.launch { widgetAccounts.run() }
+        // What a process death left open for a Cast receiver on the server is closed (nothing is noted on most devices).
+        scope.launch {
+            try {
+                castSessions.closeLeftovers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                io.wolftown.lauschig.diagnostics.Log.w("LauschigApp", "open cast sessions not closed", e)
+            }
+        }
         // A purge that failed during a sign-out is finished; downloads nobody can reach any more go.
         scope.launch {
             try {

@@ -36,6 +36,8 @@ data class ComfortUiState(
     val sleepChime: Boolean = true,
     /** "Sprachfokus & Nacht-Kompression" (global). */
     val compressor: Boolean = false,
+    /** A Cast device makes the sound: boost, compressor and skipping silence do not reach it. */
+    val casting: Boolean = false,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -45,7 +47,7 @@ class ComfortViewModel @Inject constructor(
     private val settings: PlaybackSettings,
     private val titleAudio: TitleAudioDao,
     private val accounts: AccountStore,
-    player: PlayerController,
+    private val player: PlayerController,
 ) : ViewModel() {
     private val key = combine(accounts.account.map { it?.serverId }, player.state.map { it.itemId }) { s, i ->
         i?.let { id -> DeviceLibrary.serverFor(s, id)?.let { it to id } }
@@ -56,7 +58,9 @@ class ComfortViewModel @Inject constructor(
 
     val state: StateFlow<ComfortUiState> = combine(timer.state, settings.skipSilence, titleBoost, settings.defaultBoostDb, settings.sleepChime) { sleep, skip, boost, def, chime ->
         ComfortUiState(sleep, skip, boost, def, chime)
-    }.combine(settings.speechCompressor) { s, on -> s.copy(compressor = on) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ComfortUiState(sleep = timer.state.value))
+    }.combine(settings.speechCompressor) { s, on -> s.copy(compressor = on) }
+        .combine(player.state.map { it.outputName != null }.distinctUntilChanged()) { s, casting -> s.copy(casting = casting) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ComfortUiState(sleep = timer.state.value))
 
     fun startSleep(mode: SleepMode) = timer.start(mode)
     fun cancelSleep() = timer.cancel()
