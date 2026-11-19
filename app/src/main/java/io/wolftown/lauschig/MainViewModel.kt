@@ -164,8 +164,9 @@ class MainViewModel(
 /** Continue on start only after a pause shorter than this (an old title the next morning is fine, last week is not). */
 const val CONTINUE_MAX_AGE_MS = 12 * 60 * 60_000L
 
-/** A fresh launch from the launcher icon: no recreation, no deep link (SSO), no notification target. */
+/** A fresh launch from the launcher icon (the phone's or the TV's): no recreation, no deep link (SSO), no notification target. */
 fun isLauncherStart(intent: android.content.Intent?, recreated: Boolean): Boolean =
     !recreated && intent != null && intent.action == android.content.Intent.ACTION_MAIN &&
-        intent.hasCategory(android.content.Intent.CATEGORY_LAUNCHER) && intent.data == null &&
+        (intent.hasCategory(android.content.Intent.CATEGORY_LAUNCHER) || intent.hasCategory(android.content.Intent.CATEGORY_LEANBACK_LAUNCHER)) &&
+        intent.data == null &&
         intent.getStringExtra(MainActivity.EXTRA_OPEN) == null

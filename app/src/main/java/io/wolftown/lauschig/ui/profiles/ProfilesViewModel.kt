@@ -288,6 +288,22 @@ class ProfilesViewModel(
         throughGate(row) { operations.switchTo(row.serverId, row.name) }
     }
 
+    private val _enteredActive = MutableStateFlow(false)
+
+    /** The active profile was chosen and its protection passed ([enterActive]). */
+    val enteredActive: StateFlow<Boolean> = _enteredActive.asStateFlow()
+
+    /**
+     * The active profile chosen where the TV asks "who is listening?" at every start (TV spec E8). Its protection is asked
+     * like any other's: a TV belongs to everyone in the room, and a PIN that is never asked of the profile last used protects
+     * nothing there.
+     */
+    fun enterActive() {
+        val row = profiles.value?.firstOrNull { it.active } ?: return
+        if (operations.running.value != null) return
+        throughGate(row) { _enteredActive.value = true }
+    }
+
     /** "Entfernen": first the question with what it takes along. The active profile has „Abmelden“ instead. */
     fun askRemove(row: ProfileRow) {
         if (row.active || operations.running.value != null) return

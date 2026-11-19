@@ -114,6 +114,12 @@ class DiscoverViewModel(
         viewModelScope.launch { prefs.setKinds(SCREEN, kinds) }
     }
 
+    /**
+     * A library sync is waiting or running, whoever started it: also the first one after a sign-in, when the library is still
+     * empty only because nothing has arrived yet.
+     */
+    val syncing: StateFlow<Boolean> = syncRunning.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     private val _refreshing = MutableStateFlow(false)
 
     /** A refresh started here is under way: until the sync has run (or [REFRESH_TIMEOUT_MS], e.g. offline). */

@@ -117,7 +117,7 @@ private fun PinField(value: String, onValueChange: (String) -> Unit, enabled: Bo
 }
 
 @Composable
-private fun pinNoticeText(notice: PinNotice?): String? = when (notice) {
+internal fun pinNoticeText(notice: PinNotice?): String? = when (notice) {
     null -> null
     is PinNotice.Wrong -> pluralStringResource(R.plurals.pin_wrong, notice.triesBeforeWait, notice.triesBeforeWait)
     is PinNotice.Wait -> stringResource(R.string.pin_wait, pinWaitText(notice.ms))

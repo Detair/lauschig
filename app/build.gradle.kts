@@ -92,8 +92,8 @@ android {
         applicationId = "io.wolftown.lauschig"
         minSdk = 28
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.6.1"
+        versionCode = 10
+        versionName = "0.7.0"
         // Instrumented tests (app/src/androidTest): the media session as Android Auto and SystemUI see it.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LINK_HOSTS", "\"${linkHosts.joinToString(",")}\"")
@@ -216,6 +216,7 @@ dependencies {
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.compose.material3.adaptive)
     implementation(libs.androidx.compose.material3.adaptive.layout)
+    implementation(libs.androidx.tv.material)
     implementation(libs.androidx.palette)
     implementation(libs.zxing.core)
     implementation(libs.androidx.camera.camera2)

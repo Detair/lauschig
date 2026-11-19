@@ -59,6 +59,7 @@ import io.wolftown.lauschig.db.dao.EpisodeDao
 import io.wolftown.lauschig.db.dao.QueueDao
 import io.wolftown.lauschig.download.PlayDownloadStarter
 import io.wolftown.lauschig.local.DeviceLibrary
+import io.wolftown.lauschig.tv.playerScreenIntent
 import io.wolftown.lauschig.queue.QueueAdvancer
 import io.wolftown.lauschig.queue.queueEntryState
 import io.wolftown.lauschig.queue.queueOwner
@@ -258,11 +259,12 @@ class PlaybackService : MediaLibraryService() {
         // The position reaches the server soon after a pause or the end of a title, not only with the periodic sync.
         p.addListener(ProgressSyncOnPause({ currentKey(p) }, syncTrigger::syncProgress))
 
-        // Tapping the notification (or SystemUI's media controls) opens the player, like the widget, on top of whatever
-        // start screen the user chose. Its own request code: the cleanup notification's MainActivity intent differs only
-        // in its extras, and with FLAG_UPDATE_CURRENT the two would overwrite each other's target.
+        // Tapping the notification (or SystemUI's media controls, or the TV's now-playing card) opens the player, like the
+        // widget, on top of whatever start screen the user chose; on a TV in the TV interface. Its own request code: the
+        // cleanup notification's MainActivity intent differs only in its extras, and with FLAG_UPDATE_CURRENT the two would
+        // overwrite each other's target.
         val activity = PendingIntent.getActivity(
-            this, SESSION_ACTIVITY_REQUEST, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_PLAYER),
+            this, SESSION_ACTIVITY_REQUEST, playerScreenIntent(this),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // The session player: "previous"/"next" from a steering wheel or headset move by the seek steps of the settings,

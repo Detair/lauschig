@@ -822,6 +822,12 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_7_0">
+        <item>Neu: Lauschig läuft auch auf Google TV und Android TV, mit eigener Oberfläche für die Fernbedienung</item>
+        <item>Am Fernseher: Startseite, Bibliothek, Suche und ein Player mit Kapiteln, Tempo und Schlaf-Timer</item>
+        <item>Erste Testversion für den Fernseher: Eingerichtet wird durch Tippen, gespielt wird immer vom Server</item>
+        <item>Am Handy und Tablet ändert sich nichts</item>
+    </string-array>
     <string-array name="whatsnew_0_6_1">
         <item>Wartung: Eine mitgelieferte Bibliothek (Guava) ist auf dem neuesten Stand</item>
         <item>Die Sicherheitsmeldung zur älteren Fassung betraf die App nicht; an der Bedienung ändert sich nichts</item>
@@ -1177,4 +1183,56 @@
     <string name="server_qr_error_bad_address">Der Code enthält keine gültige Server-Adresse.</string>
     <string name="server_qr_error_credentials">Der Code enthält Zugangsdaten in der Adresse. Er wird nicht übernommen.</string>
     <string name="server_qr_error_too_long">Der Code ist zu lang.</string>
+    <!-- Google TV -->
+    <string name="tv_home_loading">Deine Bibliothek wird geladen…</string>
+    <string name="tv_home_empty">Deine Bibliothek ist leer. Titel, die auf dem Server dazukommen, erscheinen hier.</string>
+    <string name="tv_home_offline">Der Server ist nicht erreichbar, und von deiner Bibliothek ist noch nichts auf diesem Fernseher.</string>
+    <string name="tv_retry">Erneut versuchen</string>
+    <string name="tv_pin_delete">Löschen</string>
+    <plurals name="tv_pin_entered">
+        <item quantity="one">%d Ziffer eingegeben</item>
+        <item quantity="other">%d Ziffern eingegeben</item>
+    </plurals>
+    <string name="tv_profiles_device_lock">%1$s ist mit der Gerätesperre geschützt, die der Fernseher nicht nutzt. Melde dich mit diesem Konto an, dann wird der Schutz entfernt.</string>
+    <string name="tv_loading">Wird geladen …</string>
+    <string name="tv_library_show">Zeigen</string>
+    <string name="tv_library_sort">Sortieren nach</string>
+    <string name="tv_item_from_start">Von vorn</string>
+    <string name="tv_item_offline">Der Server ist nicht erreichbar. Am Fernseher spielen Titel nur mit Verbindung.</string>
+    <string name="tv_item_podcast">Podcasts gibt es am Fernseher noch nicht. Hör sie auf dem Handy.</string>
+    <string name="tv_item_description">Beschreibung</string>
+    <string name="tv_browse_empty">Hier ist nichts.</string>
+    <string name="tv_browse_offline">Der Server ist nicht erreichbar, und davon ist noch nichts auf diesem Fernseher.</string>
+    <string name="tv_search_searching">Suche läuft …</string>
+    <string name="tv_player_nothing">Gerade läuft nichts.</string>
+    <string name="tv_back">Zurück</string>
+    <string name="tv_player_playing">Läuft</string>
+    <string name="tv_player_paused">Pausiert</string>
+    <string name="tv_player_book_left">Noch %1$s im Buch</string>
+    <string name="tv_player_extend_hint">OK drücken zum Weiterhören</string>
+    <string name="tv_player_slower">Langsamer</string>
+    <string name="tv_player_faster">Schneller</string>
+    <string name="tv_player_more_hint">Runter: Kapitel, Tempo und Schlaf-Timer</string>
+    <string name="tv_settings_switch_profile">Profil wechseln</string>
+    <string name="tv_settings_profile_active">Aktiv: %1$s</string>
+    <string name="tv_settings_profile_hint">Wer hört? Auch zum Hinzufügen eines Profils</string>
+    <string name="tv_settings_set_pin">PIN festlegen</string>
+    <string name="tv_settings_change_pin">PIN ändern</string>
+    <string name="tv_settings_remove_pin">PIN entfernen</string>
+    <string name="tv_settings_screen_off">Bild aus nach</string>
+    <string name="tv_settings_screen_off_never">Nie</string>
+    <plurals name="tv_settings_screen_off_minutes">
+        <item quantity="one">%1$d Minute</item>
+        <item quantity="other">%1$d Minuten</item>
+    </plurals>
+    <string name="tv_settings_screen_off_hint">Der Player wird schwarz, wenn keine Taste gedrückt wird. Jede Taste holt ihn zurück.</string>
+    <string name="tv_settings_connected">Verbunden</string>
+    <string name="tv_settings_connection_line">%1$s · %2$s</string>
+    <string name="tv_settings_sign_out_hint">Meldet dieses Profil auf diesem Fernseher ab</string>
+    <string name="tv_settings_version">Version %1$s (%2$d)</string>
+    <string name="tv_card_progress">%1$d %% gehört</string>
+    <string name="tv_settings_reconnect_offline">Keine Adresse hat geantwortet.</string>
+    <string name="tv_sign_out_message_no_host">Dieser Fernseher wird abgemeldet.</string>
+    <string name="tv_settings_pin_saving">PIN wird gespeichert …</string>
+    <string name="tv_player_chapter_progress">Fortschritt im Kapitel</string>
 </resources>

@@ -149,6 +149,16 @@ class ItemDetailViewModelTest {
         assertEquals(Triple(sid, "b1", 0.0), player.plays.last())
     }
 
+    @Test fun playFromStart_startsAtZero_andKeepsTheSavedProgress() = runTest {
+        seed(progress = prog(120.0))
+        val v = vm()
+        v.await { it.primary is PrimaryAction.Continue }
+        v.playFromStart()
+        assertEquals(Triple(sid, "b1", 0.0), player.plays.last())
+        // Starting over is a choice for this listen only: the place reached stays until the player saves a new one.
+        assertEquals(120.0, db.progressDao().get(sid, "b1")!!.currentTimeSec, 0.0)
+    }
+
     @Test fun quickBarFacts_publishedYear_blankIsNone() = runTest {
         db.itemDao().upsertDetails(ItemEntity(serverId = sid, id = "b1", libraryId = "l", title = "Book", durationSec = 300.0, narrator = "Nick", publishedYear = "2024"))
         val s = vm().await { it.found }

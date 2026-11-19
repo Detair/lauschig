@@ -136,4 +136,23 @@ class SleepTimerTest {
         assertNull(timer.state.value)
         assertEquals(0, player.pauses)
     }
+
+    /** The TV has no shake: OK there extends through [SleepTimer.extend], which does what a shake does. */
+    @Test fun extend_inTheLastMinute_actsLikeAShake_andBeforeItDoesNothing() {
+        timer.start(SleepMode.Minutes(5))
+        assertFalse(timer.extend())
+        assertEquals(300_000L, timer.state.value!!.remainingMs)
+        timer.step(4 * 60_000L + 55_000)
+        assertTrue(timer.extend())
+        assertEquals(1, extended)
+        assertEquals(1f, player.volumes.last(), 0f)
+        assertEquals(305_000L, timer.state.value!!.remainingMs)
+        assertFalse(timer.state.value!!.shakeToExtend)
+    }
+
+    @Test fun extend_withoutATimer_doesNothing() {
+        assertFalse(timer.extend())
+        assertNull(timer.state.value)
+        assertEquals(0, extended)
+    }
 }
