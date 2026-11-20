@@ -16,6 +16,8 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 
 internal val LOOPBACK: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 
@@ -142,6 +144,59 @@ class HandoverListenerTest {
                 assertEquals(2, silent.getInputStream().read())
             }
             assertEquals(ListenResult.Finished(HandoverReply.SIGNED_IN), running.result.await())
+        }
+    }
+
+    @Test fun aTrickle_isCutOffAfterReadMsInTotal_notPerRead() = runBlocking {
+        withTimeout(10_000) {
+            val readMs = 600L
+            val running = start(HandoverLimits(openMs = 30_000, readMs = readMs, rejected = 20))
+            val code = running.code
+            Socket().use { trickle ->
+                trickle.connect(InetSocketAddress(LOOPBACK, code.port), 2_000)
+                val started = System.nanoTime()
+                // One byte every readMs / 3: each read gets data well within readMs, so only a deadline for the whole
+                // connection ends it. 2100 bytes at this pace would take minutes.
+                val writer = thread(isDaemon = true) {
+                    try {
+                        val output = trickle.getOutputStream()
+                        while (true) {
+                            output.write('L'.code)
+                            Thread.sleep(readMs / 3)
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                // A per-read timeout would never fire, and this read would time out instead of seeing the reply.
+                trickle.soTimeout = 5_000
+                assertEquals(2, trickle.getInputStream().read())
+                val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                assertTrue("cut off after $elapsedMs ms", elapsedMs < 3 * readMs)
+                trickle.close()
+                writer.join(2_000)
+            }
+            assertEquals(1, exchange(code, packet(code, handover)))
+            assertEquals(ListenResult.Finished(HandoverReply.SIGNED_IN), running.result.await())
+        }
+    }
+
+    @Test fun cancellingBetweenAcceptAndSignIn_endsThePhonesWaitAtOnce() = runBlocking {
+        withTimeout(10_000) {
+            val job = AtomicReference<Job>()
+            val ready = CompletableDeferred<TvSetupCode>()
+            val signIns = AtomicInteger()
+            val listener = HandoverListener(HandoverLimits(openMs = 30_000, readMs = 2_000, rejected = 20)) { job.get().cancel() }
+            val result = async(Dispatchers.Default) {
+                listener.listen(LOOPBACK, { ready.complete(it) }) { signIns.incrementAndGet(); HandoverReply.SIGNED_IN }
+            }
+            job.set(result)
+            val code = ready.await()
+            // exchange waits up to 10 s; the reply must come long before, and it must say "failed".
+            assertEquals(5, exchange(code, packet(code, handover)))
+            result.join()
+            assertTrue(result.isCancelled)
+            assertEquals(0, signIns.get())
+            refused(code.port)
         }
     }
 

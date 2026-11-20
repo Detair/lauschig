@@ -31,7 +31,13 @@ sealed interface ListenResult {
 }
 
 /** The TV's end: one port, one key and at most one accepted packet per [listen]. */
-class HandoverListener(private val limits: HandoverLimits) {
+class HandoverListener internal constructor(
+    private val limits: HandoverLimits,
+    // Lets a test cancel in the window between accepting a packet and signing in; the app never sets it.
+    private val afterAccept: () -> Unit,
+) {
+    constructor(limits: HandoverLimits) : this(limits, {})
+
     @Inject constructor() : this(HandoverLimits())
 
     /**
@@ -49,12 +55,20 @@ class HandoverListener(private val limits: HandoverLimits) {
             } catch (_: IOException) {
                 return@withContext ListenResult.Failed
             }
+            // The accepted connection, held outside the cancellable part so that no way out leaves it open.
+            var client: Socket? = null
+            var answered = false
             try {
                 val code = TvSetupCode(bind.hostAddress.orEmpty(), server.localPort, key!!.publicKey)
                 val outcome = closeOnCancel { sockets ->
                     sockets.add(server)
                     onReady(code)
-                    acceptOne(server, sockets, key!!, code)
+                    acceptOne(server, sockets, key!!, code).also {
+                        if (it is Outcome.Accepted) {
+                            client = it.socket
+                            afterAccept()
+                        }
+                    }
                 }
                 ensureActive()
                 val accepted = when (outcome) {
@@ -64,19 +78,24 @@ class HandoverListener(private val limits: HandoverLimits) {
                 // One packet per code: nobody else gets in, and the key cannot open a second one.
                 server.close()
                 key = null
-                accepted.socket.use { socket ->
-                    val reply = try {
-                        signIn(accepted.handover)
-                    } catch (_: Exception) {
-                        // Also a cancellation: the phone still learns that it did not work, the cancellation goes on below.
-                        HandoverReply.FAILED
-                    }
-                    answer(socket, reply)
-                    ensureActive()
-                    ListenResult.Finished(reply)
+                val reply = try {
+                    signIn(accepted.handover)
+                } catch (_: Exception) {
+                    // Also a cancellation: the phone still learns that it did not work, the cancellation goes on below.
+                    HandoverReply.FAILED
                 }
+                answered = true
+                answer(accepted.socket, reply)
+                ensureActive()
+                ListenResult.Finished(reply)
             } finally {
                 server.close()
+                client?.let { socket ->
+                    // Cancelled after the packet was taken but before sign-in: the phone hears "failed" now, not after
+                    // its own 30 s wait.
+                    if (!answered) answer(socket, HandoverReply.FAILED)
+                    socket.close()
+                }
             }
         }
 

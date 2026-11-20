@@ -105,6 +105,35 @@ class HandoverFormatTest {
         ).forEach { assertNull(it, HandoverFormat.decode(block(it))) }
     }
 
+    @Test fun addresses_comeOutInTheCheckedForm() {
+        val read = HandoverFormat.decode(block("""{"v":1,"local":"HTTP://192.168.1.20:13378/","public":"https://ABS.Example.org/","refresh":"r"}"""))!!
+        assertEquals("http://192.168.1.20:13378", read.local)
+        assertEquals("https://abs.example.org", read.public)
+        assertEquals("https://abs.example.org", HandoverFormat.decode(block("""{"v":1,"public":"https://abs.example.org/","refresh":"r"}"""))!!.public)
+    }
+
+    @Test fun hostileNesting_isNull_withoutParsing() {
+        // Deep enough that a recursive parser would overflow the stack if it ever saw it.
+        val deep = 1000
+        // Five characters per object level; 300 levels still fit into the 2046 bytes of JSON.
+        val objects = 300
+        listOf(
+            "[".repeat(deep),
+            "[".repeat(deep) + "]".repeat(deep),
+            """{"v":1,"public":"https://abs.example.org","refresh":"r","x":""" + """{"a":""".repeat(objects) + "1" + "}".repeat(objects + 1),
+            "{\"a\":".repeat(objects),
+        ).forEach { assertNull(it.take(40), HandoverFormat.decode(block(it))) }
+        val shallow = """{"v":1,"public":"https://abs.example.org","refresh":"r","x":{"a":[{"b":1}]}}"""
+        assertEquals("depth 4 is still read", PhoneHandover(public = "https://abs.example.org", refresh = "r"), HandoverFormat.decode(block(shallow)))
+    }
+
+    @Test fun bracketsInsideStrings_doNotCountAsNesting() {
+        val token = "[[[[[{{{{{\\\"[[[[[" // a quote escaped inside the token must not end the string for the scan
+        val read = HandoverFormat.decode(block("""{"v":1,"public":"https://abs.example.org/[[[[[[","refresh":"$token"}"""))!!
+        assertEquals("[[[[[{{{{{\"[[[[[", read.refresh)
+        assertEquals(handover.copyWithRefresh("{{{{{{[[[[[[\"]]"), HandoverFormat.decode(HandoverFormat.encode(handover.copyWithRefresh("{{{{{{[[[[[[\"]]"))!!))
+    }
+
     @Test fun bytesThatAreNoUtf8_areNull() {
         val plain = block("""{"v":1,"public":"https://abs.example.org","refresh":"r"}""")
         plain[30] = 0xC3.toByte()

@@ -67,6 +67,7 @@ object HandoverFormat {
         } catch (_: CharacterCodingException) {
             return null
         }
+        if (nestedTooDeep(text)) return null
         val handover = try {
             val element = json.parseToJsonElement(text).jsonObject
             // `v` must be there and be the number 1; the class default would otherwise let a missing one pass.
@@ -80,11 +81,41 @@ object HandoverFormat {
         }
         if (handover.local == null && handover.public == null) return null
         if (handover.refresh.isEmpty()) return null
-        // The same rules as the server QR code: http(s), no user, no query, no fragment.
-        if (handover.local != null && ServerQr.serverAddress(handover.local) == null) return null
-        if (handover.public != null && ServerQr.serverAddress(handover.public) == null) return null
-        return handover
+        // The same rules as the server QR code: http(s), no user, no query, no fragment. The TV goes on with the
+        // checked form of each address, not the text that came in.
+        val local = handover.local?.let { ServerQr.serverAddress(it) ?: return null }
+        val public = handover.public?.let { ServerQr.serverAddress(it) ?: return null }
+        return PhoneHandover(handover.v, local, public, handover.refresh)
     }
+
+    /**
+     * The parser recurses per bracket level, so a decrypted block of a thousand `[` would end in a StackOverflowError,
+     * which no `catch (Exception)` stops. A valid block has depth 1; anything beyond [MAX_DEPTH] is refused unparsed.
+     * Brackets inside string literals do not count, so a token or address containing them still passes.
+     */
+    private fun nestedTooDeep(text: String): Boolean {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (c in text) {
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+                continue
+            }
+            when (c) {
+                '"' -> inString = true
+                '[', '{' -> if (++depth > MAX_DEPTH) return true
+                ']', '}' -> depth--
+            }
+        }
+        return false
+    }
+
+    private const val MAX_DEPTH = 4
 }
 
 /** The TV's one-byte answer; the code is what goes over the wire. */
