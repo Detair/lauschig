@@ -1,6 +1,6 @@
 # Privacy Policy / Datenschutzerklärung — Lauschig
 
-Last updated / Stand: 2026-11-15
+Last updated / Stand: 2026-11-21
 
 Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.com/Detair/lauschig/blob/v0.5.2/docs/privacy-policy.md). / For versions up to 0.5.2 the [version of 2026-11-06](https://github.com/Detair/lauschig/blob/v0.5.2/docs/privacy-policy.md) applies.
 
@@ -20,6 +20,8 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 
 **Server-Adressen als QR-Code (optional).** Ein angemeldetes Gerät kann die Adressen deines Servers als QR-Code anzeigen, damit ein weiteres Gerät sie bei der Einrichtung scannt. Im Code stehen nur die lokale und die öffentliche Adresse, kein Benutzername, kein Passwort, kein Token und kein WLAN-Name. Der Code entsteht auf dem Gerät. Zum Scannen nutzt die App die Kamera: Die Bilder wertet sie nur auf dem Gerät und nur in diesem Moment aus, sie werden weder gespeichert noch gesendet. Der Scan füllt nur die zwei Adressfelder; angemeldet wird dadurch niemand.
 
+**Fernseher mit dem Handy einrichten (optional).** Unter „Fernseher einrichten“ scannt das Handy den QR-Code, den Lauschig auf deinem Fernseher zeigt. Danach meldet sich das Handy mit deinem Passwort bei deinem eigenen Server an und erhält dort eine neue Anmeldung nur für den Fernseher. Dein Passwort geht dabei nur an deinen Server. Zum Fernseher gehen nur die Adressen deines Servers und diese neue Anmeldung (ein Aktualisierungs-Token). Sie gehen verschlüsselt und direkt im Heimnetz vom Handy zum Fernseher, an niemanden sonst und nie über das Internet. Klappt die Einrichtung nicht, beendet das Handy die neue Anmeldung am Server wieder. Das Handy speichert nichts über den Fernseher.
+
 **Welche Daten werden verarbeitet?** Zugangsdaten (Zugriffs- und Aktualisierungs-Token), Bibliothek, Hörfortschritt, Hörsitzungen, Lesezeichen, heruntergeladene Hörbücher und Einstellungen. Diese Daten liegen auf deinem Gerät. Die Token werden verschlüsselt gespeichert. Hörfortschritt, Sitzungen und Lesezeichen werden nur an deinen eigenen Server übertragen. Statistik und Erfolge berechnet die App auf dem Gerät. Den WLAN-Namen (SSID) liest die App nur, wenn du das Heimnetz-Verhalten einrichtest, und verarbeitet ihn nur lokal auf dem Gerät. Die App-Daten sind von der Android-Sicherung ausgenommen.
 
 **Speicherort und eigene Ordner.** Downloads liegen im internen Speicher oder, wenn du das wählst, im App-Bereich einer SD-Karte. Ordner mit eigenen Hörbüchern gibst du über die Dateiauswahl von Android frei; die App liest nur diese Ordner, und ihre Titel und Dateien werden nicht an einen Server übertragen.
@@ -37,7 +39,7 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 - Vordergrunddienste: Wiedergabe und Downloads im Hintergrund.
 - Vibration: kurze Rückmeldung, wenn du den Sleep-Timer durch Schütteln verlängerst.
 - Biometrie und Gerätesperre: die Abfrage des Systems, nur wenn du ein Profil mit der Gerätesperre schützt.
-- Kamera: nur zum Scannen eines QR-Codes mit Server-Adressen bei der Einrichtung. Die App fragt erst, wenn du „QR-Code scannen“ antippst; ohne die Berechtigung tippst du die Adressen von Hand.
+- Kamera: nur zum Scannen eines QR-Codes: mit Server-Adressen bei der Einrichtung oder vom Fernseher unter „Fernseher einrichten“. Die App fragt erst, wenn du „QR-Code scannen“ oder „Code scannen“ antippst; ohne die Berechtigung tippst du die Adressen von Hand, am Fernseher mit der Fernbedienung.
 
 **Bewegungssensor.** In der letzten Minute eines Sleep-Timers wertet die App den Beschleunigungssensor aus, um ein Schütteln zu erkennen. Die Werte werden nicht gespeichert und nicht übertragen.
 
@@ -63,6 +65,8 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 
 **Server addresses as a QR code (optional).** A signed-in device can show your server's addresses as a QR code so that another device can scan them during setup. The code contains only the local and the public address, no user name, password, token or Wi-Fi name. It is made on the device. For scanning, the app uses the camera: it analyses the pictures on the device and only at that moment; they are neither stored nor sent. A scan fills only the two address fields; nobody is signed in by it.
 
+**Setting up a TV with the phone (optional).** Under "Set up TV" the phone scans the QR code that Lauschig shows on your TV. The phone then signs in to your own server with your password and receives a new sign-in there just for the TV. Your password goes only to your server. Only your server's addresses and this new sign-in (a refresh token) go to the TV. They go encrypted and directly within your home network from the phone to the TV, to no one else and never over the internet. If the setup fails, the phone ends the new sign-in at the server again. The phone stores nothing about the TV.
+
 **What data is processed?** Credentials (access and refresh tokens), library data, listening progress, listening sessions, bookmarks, downloaded audiobooks and settings. This data stays on your device. Tokens are stored encrypted. Listening progress, sessions and bookmarks are sent only to your own server. Statistics and achievements are computed on the device. The app reads the Wi-Fi name (SSID) only if you set up home-network behavior, and processes it only locally on the device. App data is excluded from Android backup.
 
 **Storage and your own folders.** Downloads are kept in internal storage or, if you choose so, in the app's area on an SD card. You share folders with your own audiobooks through Android's file picker; the app reads only those folders, and their titles and files are not sent to any server.
@@ -80,7 +84,7 @@ Für die Versionen bis 0.5.2 gilt die [Fassung vom 2026-11-06](https://github.co
 - Foreground services: playback and downloads in the background.
 - Vibration: a short signal when you extend the sleep timer by shaking.
 - Biometrics and device lock: the system's prompt, only if you protect a profile with the device lock.
-- Camera: only for scanning a QR code with server addresses during setup. The app asks when you tap "Scan QR code", not before; without the permission you type the addresses.
+- Camera: only for scanning a QR code: one with server addresses during setup, or the TV's code under "Set up TV". The app asks when you tap "Scan QR code" or "Scan code", not before; without the permission you type the addresses, on the TV with the remote.
 
 **Motion sensor.** During the last minute of a sleep timer the app reads the accelerometer to detect a shake. The values are neither stored nor transmitted.
 

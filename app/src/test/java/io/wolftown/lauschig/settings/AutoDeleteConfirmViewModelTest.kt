@@ -140,4 +140,11 @@ class AutoDeleteConfirmViewModelTest {
         assertEquals("uk", await { it.audibleRegion == "uk" }.audibleRegion)
         app.setAudibleRegion("de")
     }
+
+    /** „Fernseher einrichten“ needs someone signed in: the row follows the account. */
+    @Test fun theTvRow_followsTheAccount(): Unit = runBlocking {
+        await { it.signedIn }
+        accounts.acc.value = null
+        await { !it.signedIn }
+    }
 }

@@ -126,8 +126,11 @@ object ServerQr {
         return url.toString().trimEnd('/')
     }
 
-    /** Scheme, host, port and path, as the setup form shows an account's address; never a user, a query or a fragment. */
-    private fun plain(url: HttpUrl): String =
+    /**
+     * Scheme, host, port and path, as the setup form shows an account's address; never a user, a query or a fragment.
+     * Also what the phone hands a TV (`ui/tvsetup`), so both ways out write an account's address the same way.
+     */
+    internal fun plain(url: HttpUrl): String =
         url.newBuilder().username("").password("").query(null).fragment(null).build().toString().trimEnd('/')
 
     /** Percent-encodes everything but letters, digits and `-._~`. */

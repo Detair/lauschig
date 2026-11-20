@@ -48,6 +48,8 @@ enum class SetupMode {
 @Serializable data object Cleanup
 @Serializable data object Downloads
 @Serializable data object ConnectionStatus
+/** „Fernseher einrichten“ (Settings): hands a TV a session of the signed-in account. Only reached from Settings, never by a link. */
+@Serializable data object TvSetup
 @Serializable data object ServerAdmin
 /** Listening statistics (from Start and Settings). */
 @Serializable data object Stats

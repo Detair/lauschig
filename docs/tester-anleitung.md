@@ -1,6 +1,6 @@
 # Lauschig testen – Anleitung für Tester
 
-Stand: 2026-11-17. Teil A geht mit jeder Version ab 0.6.0. Teil B braucht Version 0.7.0 oder neuer.
+Stand: 2026-11-21. Teil A geht mit jeder Version ab 0.6.0. Teil B braucht Version 0.7.0 oder neuer. Der Abschnitt „Einrichten mit dem Handy“ braucht eine Version, die am Handy unter Einstellungen „Fernseher einrichten“ zeigt.
 
 Fehler und Auffälligkeiten bitte als [Issue auf GitHub](https://github.com/Detair/lauschig/issues) melden oder direkt an Fabian. Hilfreich: Gerät, Android-Version, was du getan hast, was du erwartet hast, was passiert ist. Am Handy dazu das Diagnose-Log (Einstellungen → Über → Diagnose-Log teilen).
 
@@ -41,7 +41,7 @@ Mit einem Rechner geht es auch über `adb install lauschig-0.7.0.apk`.
 
 ### Was die App am Fernseher können soll
 
-1. **Einrichten:** Adressen, Benutzername und Passwort mit der Fernbedienung tippen.
+1. **Einrichten:** mit dem Handy (siehe unten) oder Adressen, Benutzername und Passwort mit der Fernbedienung tippen.
 2. **Start:** Reihen „Weiterhören“, „Nächster Band“, „Neu hinzugefügt“, „Serien“.
 3. **Stöbern:** Bibliothek, Serie, Titelseite, Suche.
 4. **Player:** OK = Pause/Weiter, links/rechts = spulen, runter = Kapitel, Tempo, Schlaf-Timer.
@@ -69,8 +69,27 @@ Bitte jede Zeile kurz beantworten. Die ersten Fragen kann kein Emulator beantwor
 | 14 | Wirkt etwas zu klein, abgeschnitten oder am Rand zu knapp? Bitte ein Foto. | |
 | 15 | Stockt etwas (Rollen durch die Bibliothek, Cover laden)? Stürzt die App ab? | |
 
+### Einrichten mit dem Handy
+
+Du brauchst: den Fernseher, ein Android-Handy mit Lauschig und einem Konto mit Passwort (nicht SSO). Beide im selben Heimnetz.
+
+1. Am Fernseher Lauschig öffnen. Die Einrichtung zeigt einen QR-Code und eine vierstellige Zahl.
+2. Am Handy: Einstellungen → „Fernseher einrichten“ → „Code scannen“.
+3. Die Kamera auf den Code richten.
+4. Am Handy die Zahl mit der am Fernseher vergleichen, das Passwort tippen und „Fernseher einrichten“ antippen.
+
+Wie das funktioniert, steht in [`tv-einrichtung-mit-dem-handy.md`](tv-einrichtung-mit-dem-handy.md).
+
+| # | Prüfung | Ergebnis |
+|---|---|---|
+| H1 | Scan aus Sofa-Entfernung: Erkennt das Handy den Code am Fernseher aus zwei bis drei Metern? Wie schnell ungefähr? | |
+| H2 | Ist die Zahl am Handy dieselbe wie am Fernseher? | |
+| H3 | Falsches Passwort: Sagt das Handy „Das Passwort stimmt nicht.“ und ist das Feld danach leer? Klappt es danach mit dem richtigen Passwort, ohne neu zu scannen? | |
+| H4 | Getrennte Netze: Handy nur im Mobilfunk (WLAN aus) oder Handy in einem Gast-WLAN. Was sagt das Handy? Erwartet: Es sendet nichts und nennt den Grund. | |
+| H5 | Abgelaufener Code: Code scannen, dann mehr als 5 Minuten warten oder am Fernseher „Neuer Code“ wählen, dann senden. Erwartet: Der Fernseher meldet sich nicht an. Das Handy sagt, dass der Code abgelaufen ist oder es den Fernseher nicht erreicht, und rät zum neuen Scan. | |
+| H6 | Erfolg: Zeigt der Fernseher die Startseite und das Handy „Der Fernseher ist eingerichtet.“? | |
+
 ### Bekannte Grenzen der ersten TV-Version
 
-- Die Einrichtung mit dem Handy (QR-Code am Fernseher) kommt in der nächsten Version. Jetzt wird getippt.
-- Anmeldung über SSO geht am Fernseher noch nicht.
+- Anmeldung über SSO geht am Fernseher noch nicht, auch nicht über das Handy.
 - Keine Downloads, keine Podcasts, keine Statistik, kein Cast am Fernseher.
