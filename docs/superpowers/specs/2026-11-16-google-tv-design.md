@@ -171,6 +171,21 @@ Nach T5 ist die App am Fernseher benutzbar (mit Tippen). Nach T8 ist sie fertig 
 | E11 | Die TV-Oberfläche ist immer dunkel. | Helle Flächen blenden am Fernseher. |
 | E12 | Schutz am Fernseher gibt es nur per PIN. Die Gerätesperre wird nicht angeboten. | Fernseher haben in der Regel keine Gerätesperre. |
 
+## Einrichtung mit dem Handy – entschieden beim Bau (Claude, 2026-11-20; Fabian kann widersprechen)
+
+Diese Entscheidungen ersetzen die Zeilen „Inhalt bei Passwort“ und „Inhalt bei SSO“ der Tabelle oben. Der Umsetzungsplan steht in
+[`../plans/2026-11-20-tv-phone-setup.md`](../plans/2026-11-20-tv-phone-setup.md), das Format in `docs/tv-einrichtung-mit-dem-handy.md`.
+
+| # | Entscheidung | Grund | Kosten, falls falsch |
+|---|---|---|---|
+| E13 | Das Passwort verlässt das Handy nicht. Das Handy meldet sich mit dem getippten Passwort selbst am Server an und bekommt eine **neue, eigene Sitzung für den Fernseher**. Zum Fernseher wandern nur die Server-Adressen und das Refresh-Token dieser Sitzung. Der Fernseher tauscht es sofort gegen eigene Tokens. | Ein falscher QR-Code bekäme so höchstens eine Sitzung, die sich beenden lässt, nie das Passwort. Ein falsches Passwort fällt schon am Handy auf. E4 bleibt erfüllt: Die Sitzung des Handys selbst wandert nie. Geprüft am 2026-11-20 am Quelltext von Audiobookshelf (`Auth.js`, `TokenManager.js`): Ein Refresh-Token ist an kein Gerät gebunden; beim Tausch wird es erneuert, das alte gilt noch 10 Minuten weiter. | Ändert Audiobookshelf das, bleibt der Weg mit dem Passwort aus der ersten Fassung. |
+| E14 | SSO-Konten können den Fernseher in dieser Version nicht einrichten. | Der Weg über zwei Geräte ist ungeprüft (T0). Mit E13 gibt es später einen einfacheren Weg: Das Handy macht eine zweite SSO-Anmeldung und übergibt deren Sitzung. | SSO-Konten warten auf ein späteres Paket. |
+| E15 | Vor der Übergabe fragt das Handy keine Profil-PIN. | Es fragt das Passwort des Kontos, das ist die stärkere Frage. Kommt der SSO-Weg (ohne Passwort), muss die PIN-Frage dazu. | – |
+| E16 | Ein Code gilt für genau ein angenommenes Paket und höchstens fünf Minuten. Schlägt die Anmeldung danach fehl, zeigt der Fernseher einen neuen Code. | Einmal-Schlüssel, kein zweiter Versuch mit demselben Schlüssel. | Bei einem Fehler scannt man noch einmal. |
+| E17 | Der Fernseher fragt nach der Übergabe nicht noch einmal nach. Wer den Code am Fernseher sieht und im Heimnetz ist, kann den Fernseher anmelden. | Das entspricht dem, was jemand mit der Fernbedienung in der Hand auch kann. | Jemand im Wohnzimmer könnte den Fernseher an einem fremden Server anmelden. |
+| E18 | Der Code nennt eine IPv4-Adresse aus einem privaten Netz (10.x, 172.16–31.x, 192.168.x). Das Handy sendet nur über WLAN oder Kabel, nie über Mobilfunk oder ein VPN, und löst keinen Namen auf. | „Nur im Heimnetz“ soll eine Regel im Code sein, keine Absicht. | Reine IPv6-Netze bleiben beim Tippen. |
+| E19 | Die Antwort des Fernsehers an das Handy (angemeldet oder nicht) ist ein ungeschützter Hinweis. Was gilt, zeigt der Fernseher. Bei allem außer „angemeldet“ beendet das Handy die neue Sitzung am Server wieder. | Eine gefälschte Antwort ändert nichts an dem, was der Fernseher tut. | – |
+
 ## Offene Punkte
 
 - Wann kommen Podcasts, Lesezeichen und die Warteschlange auf den Fernseher?
