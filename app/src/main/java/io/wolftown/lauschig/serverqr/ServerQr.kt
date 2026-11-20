@@ -105,6 +105,18 @@ object ServerQr {
     private fun address(raw: String?): Any? {
         if (raw.isNullOrEmpty()) return null
         val decoded = decode(raw) ?: return ServerQrError.BAD_ADDRESS
+        return check(decoded)
+    }
+
+    /**
+     * The same rules for an address that comes as plain text, not percent-encoded (the TV setup packet,
+     * [io.wolftown.lauschig.tvsetup.HandoverFormat]): the address as the form writes it, or null when the code would
+     * refuse it. One rule set for both ways in, so a phone cannot hand the TV what the scanner would not take.
+     */
+    fun serverAddress(value: String): String? = check(value) as? String
+
+    /** A [String]: the address as the form writes it. A [ServerQrError]: not an address to take. */
+    private fun check(decoded: String): Any {
         if (decoded.any { it.isWhitespace() || it.isISOControl() }) return ServerQrError.BAD_ADDRESS
         val scheme = decoded.substringBefore("://", "").lowercase()
         if (scheme != "http" && scheme != "https") return ServerQrError.BAD_ADDRESS
