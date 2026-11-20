@@ -22,6 +22,9 @@ interface LoginClient {
 
     /** `GET /status` (no login): which sign-in methods the server offers. */
     suspend fun status(baseUrl: HttpUrl): StatusResponse
+
+    /** `POST /auth/refresh`: a session handed over by the phone becomes this device's own (new access and refresh token). */
+    suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse
 }
 
 /** Plain OkHttp client (no auth, no authenticator); 5 s overall per address so a dead local address falls through quickly. */
@@ -29,7 +32,7 @@ class AbsLoginClient @Inject constructor() : LoginClient {
     private val client = OkHttpClient.Builder()
         .callTimeout(5, TimeUnit.SECONDS)
         .connectTimeout(5, TimeUnit.SECONDS)
-        // Credentials are sent exactly once, to the typed address: a redirect (e.g. https -> http) is never followed.
+        // Credentials (a password or a refresh token) are sent exactly once, to the typed address: a redirect (e.g. https -> http) is never followed.
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
@@ -37,6 +40,9 @@ class AbsLoginClient @Inject constructor() : LoginClient {
     override suspend fun login(baseUrl: HttpUrl, request: LoginRequest): LoginResponse = api(baseUrl).login(request)
 
     override suspend fun status(baseUrl: HttpUrl): StatusResponse = api(baseUrl).status()
+
+    // The same client as the password: the token, like the password, goes once and only to the address it was meant for.
+    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse = api(baseUrl).refresh(refreshToken)
 
     private fun api(baseUrl: HttpUrl): AuthApi {
         // Plain HTTP only to the very address that was confirmed for this attempt.

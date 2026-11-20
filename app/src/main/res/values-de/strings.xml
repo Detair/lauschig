@@ -1235,4 +1235,20 @@
     <string name="tv_sign_out_message_no_host">Dieser Fernseher wird abgemeldet.</string>
     <string name="tv_settings_pin_saving">PIN wird gespeichert …</string>
     <string name="tv_player_chapter_progress">Fortschritt im Kapitel</string>
+    <string name="tv_phone_title">Mit dem Handy einrichten</string>
+    <string name="tv_phone_step_open">Öffne Lauschig am Handy. Geh zu Einstellungen, dann „Fernseher einrichten“.</string>
+    <string name="tv_phone_step_scan">Scanne diesen Code.</string>
+    <string name="tv_phone_step_compare">Vergleiche die Zahl. Dann tippe dein Passwort am Handy ein.</string>
+    <string name="tv_phone_same_network">Handy und Fernseher müssen im selben Heimnetz sein.</string>
+    <string name="tv_phone_type">Mit der Fernbedienung tippen</string>
+    <string name="tv_phone_new_code">Neuer Code</string>
+    <string name="tv_phone_signing_in">Der Fernseher meldet sich an …</string>
+    <string name="tv_phone_no_network">Der Fernseher ist nicht per WLAN oder Kabel im Heimnetz.</string>
+    <string name="tv_phone_expired">Der Code ist abgelaufen.</string>
+    <string name="tv_phone_too_many">Zu viele Fehlversuche. Dieser Code gilt nicht mehr.</string>
+    <string name="tv_phone_unreachable">Der Fernseher erreicht den Server nicht.</string>
+    <string name="tv_phone_refused">Der Server lehnt die Anmeldung ab.</string>
+    <string name="tv_phone_failed">Das hat nicht geklappt.</string>
+    <string name="tv_phone_qr_description">Code zum Scannen mit dem Handy</string>
+    <string name="tv_phone_number_description">Zahl zum Vergleichen: %1$s</string>
 </resources>

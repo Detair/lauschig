@@ -1235,4 +1235,20 @@
     <string name="tv_sign_out_message_no_host">This TV will be signed out.</string>
     <string name="tv_settings_pin_saving">Saving the PIN …</string>
     <string name="tv_player_chapter_progress">Progress in the chapter</string>
+    <string name="tv_phone_title">Set up with your phone</string>
+    <string name="tv_phone_step_open">Open Lauschig on your phone. Go to Settings, then “Set up TV”.</string>
+    <string name="tv_phone_step_scan">Scan this code.</string>
+    <string name="tv_phone_step_compare">Check that the number matches. Then enter your password on the phone.</string>
+    <string name="tv_phone_same_network">Your phone and TV must be on the same home network.</string>
+    <string name="tv_phone_type">Type with the remote</string>
+    <string name="tv_phone_new_code">New code</string>
+    <string name="tv_phone_signing_in">The TV is signing in …</string>
+    <string name="tv_phone_no_network">The TV is not on a home network by Wi-Fi or cable.</string>
+    <string name="tv_phone_expired">The code has expired.</string>
+    <string name="tv_phone_too_many">Too many failed attempts. This code no longer works.</string>
+    <string name="tv_phone_unreachable">The TV cannot reach the server.</string>
+    <string name="tv_phone_refused">The server refused the sign-in.</string>
+    <string name="tv_phone_failed">That did not work.</string>
+    <string name="tv_phone_qr_description">Code to scan with the phone</string>
+    <string name="tv_phone_number_description">Number to compare: %1$s</string>
 </resources>

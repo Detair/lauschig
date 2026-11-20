@@ -21,11 +21,20 @@ import io.wolftown.lauschig.serverqr.qrFrame
 import io.wolftown.lauschig.serverqr.ServerQr
 import io.wolftown.lauschig.serverqr.ServerQrError
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.tvsetup.HandoverReply
+import io.wolftown.lauschig.tvsetup.PhoneHandover
 import io.wolftown.lauschig.ui.nav.SetupMode
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -57,6 +66,13 @@ private class FakeLogin(var behaviour: (HttpUrl) -> LoginResponse) : LoginClient
         calls += baseUrl
         gate?.await()
         return behaviour(baseUrl)
+    }
+    /** The handed-over session's exchanges: address and the refresh token sent. */
+    val refreshes = mutableListOf<Pair<HttpUrl, String>>()
+    var refreshBehaviour: (HttpUrl) -> LoginResponse = { LoginResponse(AbsUser("u1", "fabian", "user", "tv-acc", "tv-ref")) }
+    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse {
+        refreshes += baseUrl to refreshToken
+        return refreshBehaviour(baseUrl)
     }
 }
 
@@ -1096,5 +1112,152 @@ class SetupViewModelTest {
         assertEquals("http://192.168.1.20:13378", v.state.value.local)
         assertEquals("https://abs.example.org/audiobookshelf", v.state.value.public)
         assertEquals("only where the server is: no name, no Wi-Fi", SetupUiState(local = v.state.value.local, public = v.state.value.public, scanNote = SetupScanNote.Filled), v.state.value)
+    }
+
+    // --- Setting up the TV with the phone: the handed-over session is exchanged and saved like any sign-in.
+
+    private fun handover(local: String? = "http://192.168.1.20:13378/", public: String? = "https://abs.example.org/") =
+        PhoneHandover(local = local, public = public, refresh = "phone-ref")
+
+    private fun refused(code: Int): (HttpUrl) -> LoginResponse = { throw HttpException(Response.error<Any>(code, "".toResponseBody(null))) }
+
+    @Test fun phone_savesTheHandedOverAddresses_andTheTokensOfTheAnswer() = runBlocking {
+        val v = vm()
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover()))
+        assertEquals(listOf("http://192.168.1.20:13378/".toHttpUrl() to "phone-ref"), login.refreshes)
+        val a = store.acc.value!!
+        assertEquals("http://192.168.1.20:13378/".toHttpUrl(), a.addresses.local)
+        assertEquals("https://abs.example.org/".toHttpUrl(), a.addresses.public)
+        assertEquals("tv-acc", store.access)
+        assertEquals("tv-ref", store.refresh)
+        assertEquals(1, sync.count)
+        assertTrue(v.state.value.done)
+        assertTrue("no password login", login.calls.isEmpty())
+    }
+
+    @Test fun phone_aPlainHttpAddress_countsAsConfirmed() = runBlocking {
+        val v = vm()
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover()))
+        assertNull("no question on the TV: the person saw it on the phone", v.state.value.cleartextPrompt)
+        assertEquals(setOf("http://192.168.1.20:13378/".toHttpUrl().cleartextKey()), store.acc.value!!.allowCleartext)
+    }
+
+    @Test fun phone_localDead_thePublicAddressAnswers() = runBlocking {
+        login.refreshBehaviour = { if (it.host == "192.168.1.20") throw IOException("timeout") else ok(access = "tv-acc", refresh = "tv-ref") }
+        val v = vm()
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover()))
+        assertEquals(listOf("192.168.1.20", "abs.example.org"), login.refreshes.map { it.first.host })
+        assertEquals("tv-ref", store.refresh)
+        assertTrue(v.state.value.done)
+    }
+
+    @Test fun phone_refused_isFinal_andNothingIsSaved() = runBlocking {
+        for (code in listOf(401, 403)) {
+            login.refreshes.clear()
+            login.refreshBehaviour = refused(code)
+            val v = vm()
+            assertEquals(HandoverReply.SIGN_IN_REFUSED, v.signInFromPhone(handover()))
+            assertEquals("the public address is not tried", 1, login.refreshes.size)
+            assertNull(store.acc.value)
+            assertFalse(v.state.value.done)
+            assertNull("the form shows nothing of it", v.state.value.error)
+        }
+    }
+
+    @Test fun phone_noAddressAnswers_serverUnreachable() = runBlocking {
+        login.refreshBehaviour = { if (it.host == "192.168.1.20") throw IOException("timeout") else refused(500)(it) }
+        val v = vm()
+        assertEquals(HandoverReply.SERVER_UNREACHABLE, v.signInFromPhone(handover()))
+        assertEquals(2, login.refreshes.size)
+        assertNull(store.acc.value)
+        assertFalse(v.state.value.loading)
+        assertNull(v.state.value.error)
+    }
+
+    @Test fun phone_serverTooOld_failed() = runBlocking {
+        login.refreshBehaviour = { ok(access = null, refresh = null) }
+        val v = vm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover(local = null)))
+        assertNull(store.acc.value)
+        assertFalse(v.state.value.done)
+        assertNull(v.state.value.error)
+    }
+
+    @Test fun phone_cannotBeSaved_failed() = runBlocking {
+        signedInAsFabian()
+        addFails = IOException("disk full")
+        val v = addVm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover()))
+        assertEquals(fabian, store.acc.value)
+        assertEquals(0, sync.count)
+        assertFalse(v.state.value.done)
+    }
+
+    @Test fun phone_addProfile_takesTheWayOfAnotherProfile() = runBlocking {
+        signedInAsFabian()
+        login.refreshBehaviour = { LoginResponse(AbsUser("u9", "kind", "user", "tv-acc", "tv-ref")) }
+        val v = addVm()
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover()))
+        assertEquals(listOf("kind"), added.map { it.username })
+        assertEquals(listOf(fabian), store.aside.value.map { it.account })
+        assertTrue("no sign-out of the old account", signOut.switched.isEmpty())
+        assertTrue(v.state.value.done)
+    }
+
+    @Test fun phone_onTheWayOfAForgottenPin_failsWithoutARequest() = runBlocking {
+        kindIsSaved()
+        val v = unlockVm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover()))
+        assertTrue(login.refreshes.isEmpty())
+        assertTrue(unlocked.isEmpty())
+        assertFalse(v.state.value.done)
+    }
+
+    @Test fun phone_anAddressThatIsNoUrl_failsWithoutARequest() = runBlocking {
+        val v = vm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover(local = "not an address")))
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover(local = null, public = null)))
+        assertTrue(login.refreshes.isEmpty())
+        assertNull(store.acc.value)
+    }
+
+    /**
+     * Review focus 5: the TV leaves the page the moment `done` is set, and the page's scope (the listener's) goes with it.
+     * Nothing may suspend between that and the answer, or the phone would hear "failed" from a TV that is signed in.
+     */
+    @Test fun phone_theCallerCancelledTheMomentItIsDone_stillAnswersSignedIn() = runBlocking {
+        val v = vm()
+        var reply: HandoverReply? = null
+        val caller = launch(Dispatchers.IO, start = CoroutineStart.LAZY) { reply = v.signInFromPhone(handover()) }
+        // Unconfined: runs inside the very update that sets `done`, as early as any navigation could.
+        val watcher = launch(Dispatchers.Unconfined) {
+            v.state.first { it.done }
+            caller.cancel()
+        }
+        caller.start()
+        caller.join()
+        watcher.join()
+        assertTrue(caller.isCancelled)
+        assertEquals(HandoverReply.SIGNED_IN, reply)
+    }
+
+    /** The save changes the active account, and on the TV the pages of the old one go at once, the caller's scope with them. */
+    @Test fun phone_theCallerCancelledDuringTheSave_stillAnswersSignedIn() = runBlocking {
+        signedInAsFabian()
+        lateinit var caller: Job
+        val v = viewModels.own(
+            SetupViewModel(store, login, net, sync, oidc, bus, signOut, addProfile = { a, acc, ref ->
+                store.add(a, acc, ref)
+                caller.cancel()
+                // A save that suspends after the switch, as the real one does.
+                withContext(Dispatchers.Default) { yield() }
+            }, mode = SetupMode.ADD_PROFILE),
+        )
+        var reply: HandoverReply? = null
+        caller = launch(Dispatchers.IO, start = CoroutineStart.LAZY) { reply = v.signInFromPhone(handover()) }
+        caller.start()
+        caller.join()
+        assertEquals(HandoverReply.SIGNED_IN, reply)
+        assertEquals(1, sync.count)
     }
 }

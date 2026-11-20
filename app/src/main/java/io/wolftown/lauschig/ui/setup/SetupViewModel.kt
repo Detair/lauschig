@@ -19,6 +19,8 @@ import io.wolftown.lauschig.serverqr.ServerQr
 import io.wolftown.lauschig.serverqr.ServerQrError
 import io.wolftown.lauschig.serverqr.ServerQrResult
 import io.wolftown.lauschig.sync.SyncTrigger
+import io.wolftown.lauschig.tvsetup.HandoverReply
+import io.wolftown.lauschig.tvsetup.PhoneHandover
 import io.wolftown.lauschig.ui.nav.Setup
 import io.wolftown.lauschig.ui.nav.SetupMode
 import io.wolftown.lauschig.ui.profiles.ProfileOperations
@@ -432,7 +434,7 @@ class SetupViewModel(
                 val s = _state.value.copy(
                     ssidBinding = f.ssidBinding, currentSsid = f.currentSsid, keptSsids = f.keptSsids, addProfile = f.addProfile, unlockServerId = f.unlockServerId,
                 )
-                complete(s, l, p, result.response)
+                complete(s, l, p, result.response)?.let(::fail)
             } finally {
                 ssoFinishing = false
             }
@@ -444,7 +446,7 @@ class SetupViewModel(
         var failure = SetupError.UNREACHABLE
         for (url in listOfNotNull(local, public)) {
             try {
-                complete(s, local, public, loginClient.login(url, request))
+                complete(s, local, public, loginClient.login(url, request))?.let(::fail)
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -458,12 +460,54 @@ class SetupViewModel(
         fail(failure)
     }
 
-    /** Shared by password and SSO login: validates the tokens, saves the account and finishes setup. */
-    private suspend fun complete(s: SetupUiState, local: HttpUrl?, public: HttpUrl?, response: LoginResponse) {
+    /**
+     * A session the phone handed over: exchanged at the server, then saved like any sign-in. Never in the mode of a forgotten
+     * PIN, where only that account's own password counts. The addresses were checked by the format and seen on the phone,
+     * plain http included, so nothing is asked here; the form shows nothing of it, the TV's code page says how it went.
+     */
+    suspend fun signInFromPhone(handover: PhoneHandover): HandoverReply {
+        val s = _state.value
+        if (s.addressesFixed || s.done) return HandoverReply.FAILED
+        val local = handover.local?.let { it.toHttpUrlOrNull() ?: return HandoverReply.FAILED }
+        val public = handover.public?.let { it.toHttpUrlOrNull() ?: return HandoverReply.FAILED }
+        if (local == null && public == null) return HandoverReply.FAILED
+        for (url in listOfNotNull(local, public)) {
+            val response = try {
+                loginClient.refresh(url, handover.refresh)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: HttpException) {
+                // The server answered: a session it refuses is refused at every address.
+                if (e.code() == 401 || e.code() == 403) return HandoverReply.SIGN_IN_REFUSED
+                continue
+            } catch (_: Exception) {
+                continue
+            }
+            // No SSID binding: the TV cannot read the Wi-Fi's name, and the handover carries none.
+            val error = try {
+                complete(s.copy(ssidBinding = false, keptSsids = emptySet(), currentSsid = null), local, public, response)
+            } catch (e: CancellationException) {
+                // Saving switches the active account, and on the TV the old account's pages go at once, the caller's scope
+                // with them. The account is in once `done` is set (inside the save), and the phone must hear so.
+                if (_state.value.done) return HandoverReply.SIGNED_IN
+                throw e
+            }
+            // Nothing between `done` (set in complete) and this answer may suspend: the page leaves at once, and the
+            // listener writes what this returns even when its scope is cancelled right after.
+            return if (error == null) HandoverReply.SIGNED_IN else HandoverReply.FAILED
+        }
+        return HandoverReply.SERVER_UNREACHABLE
+    }
+
+    /**
+     * Shared by every way of signing in: validates the tokens, saves the account and finishes setup. Null: done; otherwise
+     * what went wrong, for the caller to show or answer.
+     */
+    private suspend fun complete(s: SetupUiState, local: HttpUrl?, public: HttpUrl?, response: LoginResponse): SetupError? {
         val user = response.user
         val access = user.accessToken
         val refresh = user.refreshToken
-        if (access == null || refresh == null) return fail(SetupError.SERVER_TOO_OLD)
+        if (access == null || refresh == null) return SetupError.SERVER_TOO_OLD
         val addresses = ServerAddresses(
             local, public,
             if (s.ssidBinding && local != null) s.keptSsids + setOfNotNull(s.currentSsid) else emptySet(),
@@ -479,7 +523,7 @@ class SetupViewModel(
         // The way of a forgotten PIN: exactly this account, on the addresses it has. Anyone else changes nothing.
         if (s.unlockServerId != null && account.serverId != s.unlockServerId) {
             withContext(NonCancellable) { endSession(account, refresh) }
-            return fail(SetupError.UNLOCK_OTHER_ACCOUNT)
+            return SetupError.UNLOCK_OTHER_ACCOUNT
         }
         // The form is one of the pages of the account before: when the account changes it goes, this view model with it. The
         // sign-in has happened by then and goes through to the end.
@@ -499,11 +543,15 @@ class SetupViewModel(
             } catch (e: Exception) {
                 false
             }
-            if (stored) sync.syncNow() // not awaited; runs in WorkManager
+            if (stored) {
+                sync.syncNow() // not awaited; runs in WorkManager
+                // Here, with the save: should the page go during it, the sign-in still counts as done, and the phone's
+                // handover can tell so.
+                _state.update { it.copy(loading = false, password = "", done = true) }
+            }
             stored
         }
-        if (!saved) return fail(SetupError.SAVE_FAILED)
-        _state.update { it.copy(loading = false, password = "", done = true) }
+        return if (saved) null else SetupError.SAVE_FAILED
     }
 
     private fun fail(error: SetupError) = _state.update { it.copy(loading = false, error = error) }

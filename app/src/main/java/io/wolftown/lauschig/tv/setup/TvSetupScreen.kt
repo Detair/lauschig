@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.tv.setup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
@@ -63,23 +66,63 @@ internal const val TAG_CLEARTEXT_CONFIRM = "tvCleartextConfirm"
 internal const val TAG_CLEARTEXT_CANCEL = "tvCleartextCancel"
 
 /**
- * The sign-in on a TV: the phone's form without what a TV cannot do (SSO needs a browser, the scan a camera, the Wi-Fi
- * binding a location permission). [onDone] after a successful sign-in.
+ * The sign-in on a TV: first the code for the phone, then, on request, the phone's form without what a TV cannot do (SSO needs
+ * a browser, the scan a camera, the Wi-Fi binding a location permission). The way of a forgotten PIN has the form only: there
+ * the account's own password counts. [onDone] after a successful sign-in.
  */
 @Composable
-fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel()) {
+fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel(), phone: TvPhoneSetupViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.done) { if (state.done) onDone() }
-    TvSetupScreen(
-        state = state,
-        onLocal = viewModel::onLocalChanged,
-        onPublic = viewModel::onPublicChanged,
-        onUsername = viewModel::onUsernameChanged,
-        onPassword = viewModel::onPasswordChanged,
-        onLogin = viewModel::login,
-        onConfirmCleartext = viewModel::confirmCleartext,
-        onDismissCleartext = viewModel::dismissCleartext,
-    )
+    TvSetupPages(
+        // From the route, known from the first frame on: the page cannot change under the person once it is there.
+        phoneFirst = !state.addressesFixed,
+        onShow = { phone.show(viewModel::signInFromPhone) },
+        onHide = phone::hide,
+        phonePage = { onType ->
+            val phoneState by phone.state.collectAsStateWithLifecycle()
+            TvPhoneSetupScreen(phoneState, state.addProfile, onNewCode = phone::newCode, onType = onType)
+        },
+    ) {
+        TvSetupScreen(
+            state = state,
+            onLocal = viewModel::onLocalChanged,
+            onPublic = viewModel::onPublicChanged,
+            onUsername = viewModel::onUsernameChanged,
+            onPassword = viewModel::onPasswordChanged,
+            onLogin = viewModel::login,
+            onConfirmCleartext = viewModel::confirmCleartext,
+            onDismissCleartext = viewModel::dismissCleartext,
+        )
+    }
+}
+
+/**
+ * Which of the two pages shows. The choice is saved, so it survives a recreation. The code page's port is open only while it
+ * is on screen: [onShow] when it starts, [onHide] when it stops (the TV's Home button) or makes way for the form.
+ */
+@Composable
+internal fun TvSetupPages(
+    phoneFirst: Boolean,
+    onShow: () -> Unit,
+    onHide: () -> Unit,
+    phonePage: @Composable (onType: () -> Unit) -> Unit,
+    form: @Composable () -> Unit,
+) {
+    var typing by rememberSaveable { mutableStateOf(false) }
+    if (phoneFirst && !typing) {
+        val show by rememberUpdatedState(onShow)
+        val hide by rememberUpdatedState(onHide)
+        LifecycleStartEffect(Unit) {
+            show()
+            onStopOrDispose { hide() }
+        }
+        phonePage { typing = true }
+    } else {
+        // Back from the form leads to the code, not out of the sign-in.
+        BackHandler(enabled = phoneFirst) { typing = false }
+        form()
+    }
 }
 
 private enum class SetupFocus { LOCAL, PUBLIC, USERNAME, PASSWORD, LOGIN }
