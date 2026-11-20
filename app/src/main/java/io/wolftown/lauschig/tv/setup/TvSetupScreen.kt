@@ -75,7 +75,8 @@ fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.done) { if (state.done) onDone() }
     TvSetupPages(
-        // From the route, known from the first frame on: the page cannot change under the person once it is there.
+        // SetupViewModel takes unlockServerId from the route in its constructor, so its first state already says whether this
+        // is the way of a forgotten PIN: there the code page never composes, and no port opens, not even for a frame.
         phoneFirst = !state.addressesFixed,
         onShow = { phone.show(viewModel::signInFromPhone) },
         onHide = phone::hide,

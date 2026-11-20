@@ -70,8 +70,11 @@ private class FakeLogin(var behaviour: (HttpUrl) -> LoginResponse) : LoginClient
     /** The handed-over session's exchanges: address and the refresh token sent. */
     val refreshes = mutableListOf<Pair<HttpUrl, String>>()
     var refreshBehaviour: (HttpUrl) -> LoginResponse = { LoginResponse(AbsUser("u1", "fabian", "user", "tv-acc", "tv-ref")) }
+    /** A server that has not answered the exchange yet. */
+    var refreshGate: CompletableDeferred<Unit>? = null
     override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse {
         refreshes += baseUrl to refreshToken
+        refreshGate?.await()
         return refreshBehaviour(baseUrl)
     }
 }
@@ -1259,5 +1262,40 @@ class SetupViewModelTest {
         caller.join()
         assertEquals(HandoverReply.SIGNED_IN, reply)
         assertEquals(1, sync.count)
+    }
+
+    /** Home and back (or "New code") starts another listener while a sign-in still runs: a second packet must not start a second one. */
+    @Test fun phone_oneHandoverAtATime() = runBlocking {
+        val v = vm()
+        login.refreshGate = CompletableDeferred()
+        var first: HandoverReply? = null
+        val running = launch(start = CoroutineStart.UNDISPATCHED) { first = v.signInFromPhone(handover(local = null)) }
+        assertEquals(1, login.refreshes.size)
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover(local = null)))
+        assertEquals("no request for the second", 1, login.refreshes.size)
+        login.refreshGate!!.complete(Unit)
+        running.join()
+        assertEquals(HandoverReply.SIGNED_IN, first)
+        assertEquals("done: no further sign-in", HandoverReply.FAILED, v.signInFromPhone(handover(local = null)))
+        assertEquals(1, login.refreshes.size)
+    }
+
+    @Test fun phone_afterAFailedHandover_aNewOneWorks() = runBlocking {
+        login.refreshBehaviour = { throw IOException("timeout") }
+        val v = vm()
+        assertEquals(HandoverReply.SERVER_UNREACHABLE, v.signInFromPhone(handover(local = null)))
+        login.refreshBehaviour = { ok(access = "tv-acc", refresh = "tv-ref") }
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover(local = null)))
+        assertEquals(2, login.refreshes.size)
+    }
+
+    @Test fun phone_afterACancelledHandover_aNewOneWorks() = runBlocking {
+        val v = vm()
+        login.refreshGate = CompletableDeferred()
+        val running = launch(start = CoroutineStart.UNDISPATCHED) { v.signInFromPhone(handover(local = null)) }
+        running.cancel()
+        running.join()
+        login.refreshGate = null
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover(local = null)))
     }
 }

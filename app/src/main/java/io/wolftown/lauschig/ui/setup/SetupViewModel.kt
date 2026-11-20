@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 enum class SetupError { INVALID_ADDRESS, UNREACHABLE, WRONG_LOGIN, SERVER_TOO_OLD, SAVE_FAILED, SSO_REDIRECT_NOT_ALLOWED, SSO_FAILED, UNLOCK_OTHER_ACCOUNT }
@@ -138,6 +139,9 @@ class SetupViewModel(
     private var statusJob: Job? = null
     private var resumeJob: Job? = null
     private var ssoFinishing = false
+
+    /** A phone's handover is being signed in ([signInFromPhone]); called from the listener's IO thread. */
+    private val handingOver = AtomicBoolean(false)
 
     /** The Custom Tab is open and no callback has arrived yet. */
     private var awaitingCallback = false
@@ -466,6 +470,17 @@ class SetupViewModel(
      * plain http included, so nothing is asked here; the form shows nothing of it, the TV's code page says how it went.
      */
     suspend fun signInFromPhone(handover: PhoneHandover): HandoverReply {
+        // One at a time: Home and back, or "New code", opens another port while a sign-in may still run, and a second packet
+        // must not sign in alongside it. Released in finally, so neither a failure nor a cancellation leaves it taken.
+        if (!handingOver.compareAndSet(false, true)) return HandoverReply.FAILED
+        try {
+            return signInFromPhoneOnce(handover)
+        } finally {
+            handingOver.set(false)
+        }
+    }
+
+    private suspend fun signInFromPhoneOnce(handover: PhoneHandover): HandoverReply {
         val s = _state.value
         if (s.addressesFixed || s.done) return HandoverReply.FAILED
         val local = handover.local?.let { it.toHttpUrlOrNull() ?: return HandoverReply.FAILED }
