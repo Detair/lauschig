@@ -18,7 +18,9 @@ import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -55,11 +57,19 @@ class TvPhoneSetupScreenTest {
 
     private var newCodes = 0
     private var types = 0
+    private var confirms = 0
+    private var declines = 0
     private var state by mutableStateOf<TvPhoneSetupState>(TvPhoneSetupState.Starting)
 
     private fun show(initial: TvPhoneSetupState, addProfile: Boolean = false) {
         state = initial
-        rule.setContent { TvTheme { TvPhoneSetupScreen(state, addProfile, onNewCode = { newCodes++ }, onType = { types++ }) } }
+        rule.setContent {
+            TvTheme {
+                TvPhoneSetupScreen(
+                    state, addProfile, onNewCode = { newCodes++ }, onType = { types++ }, onConfirm = { confirms++ }, onDecline = { declines++ },
+                )
+            }
+        }
         rule.waitForIdle()
     }
 
@@ -138,6 +148,7 @@ class TvPhoneSetupScreenTest {
             TvPhoneSetupStop.SERVER_UNREACHABLE to R.string.tv_phone_unreachable,
             TvPhoneSetupStop.SIGN_IN_REFUSED to R.string.tv_phone_refused,
             TvPhoneSetupStop.FAILED to R.string.tv_phone_failed,
+            TvPhoneSetupStop.DECLINED to R.string.tv_phone_declined,
         )
         show(TvPhoneSetupState.Stopped(TvPhoneSetupStop.EXPIRED))
         for ((reason, sentence) in sentences) {
@@ -157,6 +168,7 @@ class TvPhoneSetupScreenTest {
             TvPhoneSetupState.Stopped(TvPhoneSetupStop.EXPIRED) to TAG_PHONE_AGAIN,
             TvPhoneSetupState.Starting to TAG_PHONE_TYPE,
             waiting to TAG_PHONE_TYPE,
+            asking to TAG_PHONE_CANCEL,
             TvPhoneSetupState.SigningIn to TAG_PHONE_STATUS,
             TvPhoneSetupState.Stopped(TvPhoneSetupStop.SERVER_UNREACHABLE) to TAG_PHONE_AGAIN,
             TvPhoneSetupState.NoHomeNetwork to TAG_PHONE_AGAIN,
@@ -166,6 +178,55 @@ class TvPhoneSetupScreenTest {
             change(next)
             rule.onNodeWithTag(tag).assertIsFocused()
         }
+    }
+
+    // --- The question before a packet is used (spec E17).
+
+    private val asking = TvPhoneSetupState.Confirming(
+        listOf(TvPhoneServer("http://192.168.1.20:13378", encrypted = false), TvPhoneServer("https://abs.example.org", encrypted = true)),
+    )
+
+    @Test fun confirming_listsTheAddressesInOrder_marksPlainHttp_noCode() {
+        show(asking)
+        rule.onNodeWithText(context.getString(R.string.tv_phone_confirm_title)).assertExists()
+        val lines = rule.onAllNodesWithTag(TAG_PHONE_SERVER).fetchSemanticsNodes().map { it.config[SemanticsProperties.Text].joinToString() }
+        assertEquals(
+            listOf("http://192.168.1.20:13378 " + context.getString(R.string.tv_phone_confirm_not_encrypted), "https://abs.example.org"),
+            lines,
+        )
+        rule.onNodeWithTag(TAG_PHONE_QR).assertDoesNotExist()
+        rule.onNodeWithTag(TAG_PHONE_NUMBER).assertDoesNotExist()
+        rule.onNodeWithTag(TAG_PHONE_TYPE).assertDoesNotExist()
+    }
+
+    @Test fun confirming_cancelHasTheFocus_andOkCancels() {
+        show(waiting)
+        change(asking)
+        rule.onNodeWithTag(TAG_PHONE_CANCEL).assertIsFocused()
+        ok()
+        assertEquals(1 to 0, declines to confirms)
+    }
+
+    @Test fun confirming_rightThenOk_setsUp() {
+        show(asking)
+        rule.onNode(isFocused()).performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_PHONE_CONFIRM).assertIsFocused()
+        ok()
+        assertEquals(0 to 1, declines to confirms)
+    }
+
+    @Test fun confirming_backIsANo() {
+        show(asking)
+        back()
+        assertEquals(1, declines)
+    }
+
+    @Test fun declined_saysSo_newCodeHasTheFocus() {
+        show(asking)
+        change(TvPhoneSetupState.Stopped(TvPhoneSetupStop.DECLINED))
+        rule.onNodeWithTag(TAG_PHONE_STATUS).assertTextEquals(context.getString(R.string.tv_phone_declined))
+        rule.onNodeWithTag(TAG_PHONE_AGAIN).assertIsFocused()
     }
 
     // --- Which page: the route's switch (TvSetupPages).
@@ -185,7 +246,7 @@ class TvPhoneSetupScreenTest {
                 TvTheme {
                     TvSetupPages(
                         phoneFirst = phoneFirst, onShow = { shown++ }, onHide = { hidden++ },
-                        phonePage = { onType -> TvPhoneSetupScreen(waiting, false, onNewCode = {}, onType = onType) },
+                        phonePage = { onType -> TvPhoneSetupScreen(waiting, false, onNewCode = {}, onType = onType, onConfirm = {}, onDecline = {}) },
                     ) { Text("form") }
                 }
             }

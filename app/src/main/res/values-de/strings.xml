@@ -1285,4 +1285,10 @@
     <string name="tvsetup_done">Der Fernseher ist eingerichtet.</string>
     <string name="tvsetup_done_button">Fertig</string>
     <string name="tvsetup_again">Noch einmal scannen</string>
+    <string name="tv_phone_confirm_title">Diesen Fernseher einrichten?</string>
+    <string name="tv_phone_confirm_intro">Ein Handy möchte diesen Fernseher mit diesem Server einrichten:</string>
+    <string name="tv_phone_confirm_not_encrypted">(unverschlüsselt)</string>
+    <string name="tv_phone_confirm_advice">Hast du das nicht gerade selbst am Handy gestartet, brich ab.</string>
+    <string name="tv_phone_confirm">Einrichten</string>
+    <string name="tv_phone_declined">Die Einrichtung wurde abgebrochen. Zum Server ging nichts.</string>
 </resources>

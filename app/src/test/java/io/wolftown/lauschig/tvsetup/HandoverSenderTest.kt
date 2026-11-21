@@ -90,7 +90,7 @@ class HandoverSenderTest {
     @Test fun eachReply_isPassedOn() = runBlocking {
         mapOf(
             1 to SendResult.SIGNED_IN, 2 to SendResult.NOT_ACCEPTED, 3 to SendResult.SERVER_UNREACHABLE,
-            4 to SendResult.SIGN_IN_REFUSED, 5 to SendResult.FAILED,
+            4 to SendResult.SIGN_IN_REFUSED, 5 to SendResult.FAILED, 6 to SendResult.DECLINED,
         ).forEach { (reply, expected) ->
             val server = fakeTv { socket, _ -> socket.getOutputStream().write(reply) }
             assertEquals(reply.toString(), expected, loopbackSender(CountingSockets()).send(TvSetupCode("127.0.0.1", server.localPort, key.publicKey), handover))

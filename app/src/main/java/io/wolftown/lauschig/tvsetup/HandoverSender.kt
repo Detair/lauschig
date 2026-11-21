@@ -8,7 +8,7 @@ import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.Socket
 
-enum class SendResult { SIGNED_IN, NOT_ACCEPTED, SERVER_UNREACHABLE, SIGN_IN_REFUSED, FAILED, NO_HOME_NETWORK, NOT_SENT, NO_REPLY }
+enum class SendResult { SIGNED_IN, NOT_ACCEPTED, SERVER_UNREACHABLE, SIGN_IN_REFUSED, FAILED, DECLINED, NO_HOME_NETWORK, NOT_SENT, NO_REPLY }
 
 /** An unconnected socket of a Wi-Fi or Ethernet network that is no VPN; null: there is none. */
 fun interface HomeSockets {
@@ -23,7 +23,8 @@ class HandoverSender internal constructor(
     // Tests on the loopback swap this; the app always uses the home-network rule.
     private val homeAddress: (String) -> Inet4Address?,
 ) {
-    constructor(sockets: HomeSockets, connectMs: Int = 5_000, replyMs: Int = 30_000) :
+    // The reply waits for a person: the TV asks before it signs in (spec E17), up to 60 s, and then signs in.
+    constructor(sockets: HomeSockets, connectMs: Int = 5_000, replyMs: Int = 90_000) :
         this(sockets, connectMs, replyMs, TvSetupCodes::homeAddress)
 
     suspend fun send(code: TvSetupCode, handover: PhoneHandover): SendResult = withContext(Dispatchers.IO) {
@@ -72,6 +73,7 @@ class HandoverSender internal constructor(
             HandoverReply.SERVER_UNREACHABLE -> SendResult.SERVER_UNREACHABLE
             HandoverReply.SIGN_IN_REFUSED -> SendResult.SIGN_IN_REFUSED
             HandoverReply.FAILED -> SendResult.FAILED
+            HandoverReply.DECLINED -> SendResult.DECLINED
             null -> SendResult.NO_REPLY
         }
     }

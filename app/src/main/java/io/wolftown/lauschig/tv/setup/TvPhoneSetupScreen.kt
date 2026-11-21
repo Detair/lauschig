@@ -21,6 +21,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -38,28 +39,42 @@ internal const val TAG_PHONE_TYPE = "tvPhoneType"
 internal const val TAG_PHONE_AGAIN = "tvPhoneAgain"
 internal const val TAG_PHONE_STATUS = "tvPhoneStatus"
 internal const val TAG_PHONE_PROGRESS = "tvPhoneProgress"
+internal const val TAG_PHONE_SERVER = "tvPhoneServer"
+internal const val TAG_PHONE_CANCEL = "tvPhoneCancel"
+internal const val TAG_PHONE_CONFIRM = "tvPhoneConfirm"
 
 /** Big enough to scan from the sofa; [QrCodeImage] keeps it black on white with its quiet zone. */
 private val QR_SIZE = 240.dp
 
-private enum class PhoneFocus { TYPE, AGAIN, STATUS }
+private enum class PhoneFocus { TYPE, AGAIN, STATUS, CANCEL }
 
 /**
- * Setting up the TV with the phone: the code to scan and the number to compare, or what stopped it. [onNewCode] is "New code"
- * and "Try again", [onType] the way to the remote's form.
+ * Setting up the TV with the phone: the code to scan and the number to compare, the question before a packet is used, or what
+ * stopped it. [onNewCode] is "New code" and "Try again", [onType] the way to the remote's form, [onConfirm] and [onDecline]
+ * the question's answers (Back is a no too).
  */
 @Composable
-fun TvPhoneSetupScreen(state: TvPhoneSetupState, addProfile: Boolean, onNewCode: () -> Unit, onType: () -> Unit) {
+fun TvPhoneSetupScreen(
+    state: TvPhoneSetupState,
+    addProfile: Boolean,
+    onNewCode: () -> Unit,
+    onType: () -> Unit,
+    onConfirm: () -> Unit,
+    onDecline: () -> Unit,
+) {
     val focus = remember { PhoneFocus.entries.associateWith { FocusRequester() } }
     val target = when (state) {
         TvPhoneSetupState.Starting, is TvPhoneSetupState.Waiting -> PhoneFocus.TYPE
         TvPhoneSetupState.NoHomeNetwork, is TvPhoneSetupState.Stopped -> PhoneFocus.AGAIN
         TvPhoneSetupState.SigningIn -> PhoneFocus.STATUS
+        // The safe answer, as in the TV's question about plain http.
+        is TvPhoneSetupState.Confirming -> PhoneFocus.CANCEL
     }
     // Each state has its own buttons: the one that leads on takes the focus, so it is never left on a button that went.
     LaunchedEffect(target) { focus.getValue(target).requestFocus() }
     // Leaving now would cut the sign-in off halfway; it ends on its own within seconds.
     BackHandler(enabled = state == TvPhoneSetupState.SigningIn) {}
+    BackHandler(enabled = state is TvPhoneSetupState.Confirming) { onDecline() }
 
     Row(
         Modifier.fillMaxSize().padding(horizontal = TvDimens.overscanHorizontal, vertical = TvDimens.overscanVertical),
@@ -67,7 +82,13 @@ fun TvPhoneSetupScreen(state: TvPhoneSetupState, addProfile: Boolean, onNewCode:
     ) {
         Column(Modifier.weight(1f).padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                stringResource(if (addProfile) R.string.profiles_add else R.string.tv_phone_title),
+                stringResource(
+                    when {
+                        state is TvPhoneSetupState.Confirming -> R.string.tv_phone_confirm_title
+                        addProfile -> R.string.profiles_add
+                        else -> R.string.tv_phone_title
+                    },
+                ),
                 style = MaterialTheme.typography.headlineMedium,
             )
             val body = MaterialTheme.typography.bodyLarge
@@ -94,8 +115,29 @@ fun TvPhoneSetupScreen(state: TvPhoneSetupState, addProfile: Boolean, onNewCode:
                 }
                 is TvPhoneSetupState.Stopped ->
                     Text(stringResource(state.reason.message()), style = body, modifier = Modifier.testTag(TAG_PHONE_STATUS))
+                is TvPhoneSetupState.Confirming -> {
+                    Text(stringResource(R.string.tv_phone_confirm_intro), style = body)
+                    val plain = stringResource(R.string.tv_phone_confirm_not_encrypted)
+                    state.servers.forEach { server ->
+                        Text(
+                            if (server.encrypted) server.address else "${server.address} $plain",
+                            style = body,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.testTag(TAG_PHONE_SERVER),
+                        )
+                    }
+                    Text(stringResource(R.string.tv_phone_confirm_advice), style = body, color = muted)
+                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = onDecline, modifier = Modifier.focusRequester(focus.getValue(PhoneFocus.CANCEL)).testTag(TAG_PHONE_CANCEL)) {
+                            Text(stringResource(R.string.setup_cancel))
+                        }
+                        Button(onClick = onConfirm, modifier = Modifier.testTag(TAG_PHONE_CONFIRM)) {
+                            Text(stringResource(R.string.tv_phone_confirm))
+                        }
+                    }
+                }
             }
-            if (state != TvPhoneSetupState.SigningIn) {
+            if (state != TvPhoneSetupState.SigningIn && state !is TvPhoneSetupState.Confirming) {
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (target == PhoneFocus.AGAIN) {
                         Button(onClick = onNewCode, modifier = Modifier.focusRequester(focus.getValue(PhoneFocus.AGAIN)).testTag(TAG_PHONE_AGAIN)) {
@@ -145,4 +187,5 @@ private fun TvPhoneSetupStop.message(): Int = when (this) {
     TvPhoneSetupStop.SERVER_UNREACHABLE -> R.string.tv_phone_unreachable
     TvPhoneSetupStop.SIGN_IN_REFUSED -> R.string.tv_phone_refused
     TvPhoneSetupStop.FAILED -> R.string.tv_phone_failed
+    TvPhoneSetupStop.DECLINED -> R.string.tv_phone_declined
 }

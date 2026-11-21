@@ -1285,4 +1285,10 @@
     <string name="tvsetup_done">The TV is set up.</string>
     <string name="tvsetup_done_button">Done</string>
     <string name="tvsetup_again">Scan again</string>
+    <string name="tv_phone_confirm_title">Set up this TV?</string>
+    <string name="tv_phone_confirm_intro">A phone wants to set up this TV with this server:</string>
+    <string name="tv_phone_confirm_not_encrypted">(not encrypted)</string>
+    <string name="tv_phone_confirm_advice">If you did not just start this on your phone, cancel.</string>
+    <string name="tv_phone_confirm">Set up</string>
+    <string name="tv_phone_declined">Setup was cancelled. Nothing was sent to the server.</string>
 </resources>

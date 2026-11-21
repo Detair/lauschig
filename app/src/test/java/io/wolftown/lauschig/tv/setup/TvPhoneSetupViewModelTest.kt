@@ -10,7 +10,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -62,7 +65,9 @@ class TvPhoneSetupViewModelTest {
     private var reply = HandoverReply.SIGNED_IN
     private val signIn: suspend (PhoneHandover) -> HandoverReply = { handedOver += it; reply }
 
-    @Before fun setUp() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
     private fun vm() = viewModels.own(TvPhoneSetupViewModel(network, listener::listen))
@@ -86,18 +91,99 @@ class TvPhoneSetupViewModelTest {
         assertEquals(TvPhoneSetupState.Waiting(c.text, c.number), v.state.value)
     }
 
-    @Test fun aPacket_signsIn_throughThePagesSignIn() = runBlocking {
+    private val handover = PhoneHandover(local = "http://192.168.1.20:13378/", public = "https://abs.example.org/", refresh = "r")
+
+    /** A packet arrives on run [index]: the listener calls signIn, which now waits for the question. */
+    private fun TestScope.packet(index: Int = 0) = async { listener.runs[index].signIn(handover) }
+
+    @Test fun aPacket_asksFirst_andNothingIsSignedInBeforeTheAnswer() = runTest(dispatcher) {
         val v = vm()
         v.show(signIn)
-        val run = listener.runs.single()
-        run.onReady(code(41234))
-        val handover = PhoneHandover(public = "https://abs.example.org/", refresh = "r")
-        var during: TvPhoneSetupState? = null
-        reply = HandoverReply.SIGNED_IN
-        val answer = run.signIn(handover).also { during = v.state.value }
-        assertEquals(HandoverReply.SIGNED_IN, answer)
-        assertEquals(TvPhoneSetupState.SigningIn, during)
+        listener.runs.single().onReady(code(41234))
+        val reply = packet()
+        assertEquals(
+            TvPhoneSetupState.Confirming(listOf(TvPhoneServer("http://192.168.1.20:13378", false), TvPhoneServer("https://abs.example.org", true))),
+            v.state.value,
+        )
+        advanceTimeBy(59_000)
+        assertTrue("no sign-in, so no request, before the answer", handedOver.isEmpty())
+        assertFalse(reply.isCompleted)
+        v.confirm()
+        assertEquals(HandoverReply.SIGNED_IN, reply.await())
         assertSame(handover, handedOver.single())
+    }
+
+    @Test fun confirm_showsSigningIn_whileTheSignInRuns() = runTest(dispatcher) {
+        val v = vm()
+        var during: TvPhoneSetupState? = null
+        v.show { during = v.state.value; HandoverReply.SIGNED_IN }
+        val reply = packet()
+        v.confirm()
+        assertEquals(HandoverReply.SIGNED_IN, reply.await())
+        assertEquals(TvPhoneSetupState.SigningIn, during)
+    }
+
+    @Test fun decline_answersDeclined_withoutASignIn() = runTest(dispatcher) {
+        val v = vm()
+        v.show(signIn)
+        val reply = packet()
+        v.decline()
+        assertEquals(HandoverReply.DECLINED, reply.await())
+        assertTrue(handedOver.isEmpty())
+        listener.runs.single().result.complete(ListenResult.Finished(HandoverReply.DECLINED))
+        assertEquals(TvPhoneSetupState.Stopped(TvPhoneSetupStop.DECLINED), v.state.value)
+    }
+
+    @Test fun noAnswerIn60Seconds_isANo() = runTest(dispatcher) {
+        val v = vm()
+        v.show(signIn)
+        val reply = packet()
+        advanceTimeBy(60_001)
+        assertEquals(HandoverReply.DECLINED, reply.await())
+        assertTrue(handedOver.isEmpty())
+        // A late answer changes nothing.
+        v.confirm()
+        assertTrue(handedOver.isEmpty())
+    }
+
+    @Test fun theWaitIsAParameter() = runTest(dispatcher) {
+        val v = viewModels.own(TvPhoneSetupViewModel(network, listener::listen, confirmMs = 1_000))
+        v.show(signIn)
+        val reply = packet()
+        advanceTimeBy(1_001)
+        assertEquals(HandoverReply.DECLINED, reply.await())
+    }
+
+    @Test fun hideWhileAsking_signsNothingIn_andShowGivesANewCode() = runTest(dispatcher) {
+        val v = vm()
+        v.show(signIn)
+        listener.runs[0].onReady(code(41234))
+        val reply = packet()
+        v.hide()
+        assertTrue(listener.runs[0].cancelled)
+        assertEquals(TvPhoneSetupState.Starting, v.state.value)
+        // The real listener's signIn runs in the cancelled coroutine; this fake's does not, and hears a no.
+        assertEquals(HandoverReply.DECLINED, reply.await())
+        v.confirm()
+        assertTrue(handedOver.isEmpty())
+        v.show(signIn)
+        assertEquals(2, listener.runs.size)
+        listener.runs[1].onReady(code(41235))
+        assertEquals(TvPhoneSetupState.Waiting(code(41235).text, code(41235).number), v.state.value)
+    }
+
+    @Test fun whileAsking_noSecondListener() = runTest(dispatcher) {
+        val v = vm()
+        v.show(signIn)
+        packet()
+        v.show(signIn)
+        assertEquals("the port of this code is closed and no other opens until the stop", 1, listener.runs.size)
+        v.decline()
+    }
+
+    @Test fun theQuestion_keepsTheAddressesOutOfItsText() {
+        val text = TvPhoneSetupState.Confirming(listOf(TvPhoneServer("http://192.168.1.20:13378", false))).toString()
+        assertFalse(text.contains("192.168"))
     }
 
     @Test fun everyEnd_hasItsState() {
@@ -107,6 +193,7 @@ class TvPhoneSetupViewModelTest {
             ListenResult.Finished(HandoverReply.SIGN_IN_REFUSED) to TvPhoneSetupState.Stopped(TvPhoneSetupStop.SIGN_IN_REFUSED),
             ListenResult.Finished(HandoverReply.FAILED) to TvPhoneSetupState.Stopped(TvPhoneSetupStop.FAILED),
             ListenResult.Finished(HandoverReply.NOT_ACCEPTED) to TvPhoneSetupState.Stopped(TvPhoneSetupStop.FAILED),
+            ListenResult.Finished(HandoverReply.DECLINED) to TvPhoneSetupState.Stopped(TvPhoneSetupStop.DECLINED),
             ListenResult.Expired to TvPhoneSetupState.Stopped(TvPhoneSetupStop.EXPIRED),
             ListenResult.TooManyAttempts to TvPhoneSetupState.Stopped(TvPhoneSetupStop.TOO_MANY_ATTEMPTS),
             ListenResult.Failed to TvPhoneSetupState.Stopped(TvPhoneSetupStop.FAILED),

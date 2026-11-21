@@ -146,7 +146,7 @@ class HandoverFormatTest {
     }
 
     @Test fun replies_haveTheProtocolCodes() {
-        assertEquals(listOf(1, 2, 3, 4, 5), HandoverReply.entries.map { it.code })
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), HandoverReply.entries.map { it.code })
     }
 
     private fun PhoneHandover.copyWithRefresh(refresh: String) = PhoneHandover(v, local, public, refresh)

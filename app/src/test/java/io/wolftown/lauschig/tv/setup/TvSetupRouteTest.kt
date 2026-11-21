@@ -33,7 +33,17 @@ import io.wolftown.lauschig.ui.setup.OidcResult
 import io.wolftown.lauschig.ui.setup.OidcSignIn
 import io.wolftown.lauschig.ui.setup.OidcStart
 import io.wolftown.lauschig.ui.setup.SetupViewModel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import io.wolftown.lauschig.tvsetup.ListenResult
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import okhttp3.HttpUrl
@@ -50,10 +60,15 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.Socket
 
+/** No server answers; [refreshes] counts what would have reached one. */
 private class NoServer : LoginClient {
+    var refreshes = 0
     override suspend fun login(baseUrl: HttpUrl, request: LoginRequest): LoginResponse = throw IOException("no server")
     override suspend fun status(baseUrl: HttpUrl): StatusResponse = throw IOException("no server")
-    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse = throw IOException("no server")
+    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse {
+        refreshes++
+        throw IOException("no server")
+    }
 }
 
 private class NoOidc : OidcSignIn {
@@ -71,6 +86,7 @@ private class NoSignOut : AccountSignOut {
     override suspend fun signIn(next: Account, accessToken: String, refreshToken: String) = error("not here")
 }
 
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTestApi::class)
 /** The route's own decision between code page and form, through the real [TvSetupRoute] and its view models. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = android.app.Application::class, qualifiers = TV_QUALIFIERS)
@@ -78,7 +94,12 @@ class TvSetupRouteTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private val store = ViewModelStore()
+    private val server = NoServer()
     private var listens = 0
+
+    /** When set, the fake listener receives this packet after the code is out, and records what the phone is told. */
+    private var packet: CompletableDeferred<PhoneHandover>? = null
+    private val replies = CompletableDeferred<HandoverReply>()
 
     @After fun tearDown() = store.clear()
 
@@ -87,7 +108,7 @@ class TvSetupRouteTest {
 
     private fun setup(mode: SetupMode, unlockTarget: String? = null) = own(
         SetupViewModel(
-            FakeAccountStore(), NoServer(), object : NetworkInfo {
+            FakeAccountStore(), server, object : NetworkInfo {
                 override val isConnected: Flow<Boolean> = flowOf(true)
                 override suspend fun currentSsid(): String? = null
             },
@@ -102,11 +123,15 @@ class TvSetupRouteTest {
                 override fun ownAddress(): Inet4Address = InetAddress.getByAddress(byteArrayOf(192.toByte(), 168.toByte(), 1, 50)) as Inet4Address
                 override fun open(): Socket? = null
             },
-        ) { _: InetAddress, onReady: (TvSetupCode) -> Unit, _: suspend (PhoneHandover) -> HandoverReply ->
-            listens++
-            onReady(TvSetupCode("192.168.1.50", 41234, ByteArray(32)))
-            awaitCancellation()
-        },
+            listen = { _, onReady, signIn ->
+                listens++
+                onReady(TvSetupCode("192.168.1.50", 41234, ByteArray(32)))
+                val arriving = packet ?: awaitCancellation()
+                val reply = signIn(arriving.await())
+                replies.complete(reply)
+                ListenResult.Finished(reply)
+            },
+        ),
     )
 
     private fun route(viewModel: SetupViewModel, phone: TvPhoneSetupViewModel) {
@@ -145,5 +170,52 @@ class TvSetupRouteTest {
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
         assertEquals(1, listens)
+    }
+
+    // --- Spec E17 through the route: nothing reaches a server before the person says yes.
+
+    private fun aPacketArrives() {
+        packet = CompletableDeferred()
+        route(setup(SetupMode.SIGN_IN), phone())
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        packet!!.complete(PhoneHandover(local = "http://192.168.1.20:13378/", refresh = "r"))
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag(TAG_PHONE_CANCEL).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun ok() {
+        rule.onNode(isFocused()).performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+    }
+
+    @Test fun aPacket_isAskedAbout_andCancelSendsNothing() {
+        aPacketArrives()
+        rule.onNodeWithTag(TAG_PHONE_CANCEL).assertIsFocused()
+        assertEquals(0, server.refreshes)
+        ok()
+        rule.waitUntil(5_000) { replies.isCompleted }
+        assertEquals(HandoverReply.DECLINED, replies.getCompleted())
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_PHONE_AGAIN).assertIsFocused()
+        assertEquals(0, server.refreshes)
+    }
+
+    @Test fun aPacket_backIsANo() {
+        aPacketArrives()
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitUntil(5_000) { replies.isCompleted }
+        assertEquals(HandoverReply.DECLINED, replies.getCompleted())
+        assertEquals(0, server.refreshes)
+    }
+
+    @Test fun aPacket_setUp_onlyThenTheServerIsAsked() {
+        aPacketArrives()
+        rule.onNode(isFocused()).performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(TAG_PHONE_CONFIRM).assertIsFocused()
+        ok()
+        rule.waitUntil(5_000) { replies.isCompleted }
+        assertEquals("no server answers here", HandoverReply.SERVER_UNREACHABLE, replies.getCompleted())
+        assertEquals(1, server.refreshes)
     }
 }

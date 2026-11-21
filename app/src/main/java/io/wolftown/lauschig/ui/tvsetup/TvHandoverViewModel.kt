@@ -174,6 +174,9 @@ class TvHandoverViewModel(
                 SendResult.NOT_SENT -> TvHandoverError.TV_UNREACHABLE
                 SendResult.NO_REPLY -> TvHandoverError.NO_REPLY
                 SendResult.FAILED, SendResult.SIGNED_IN -> TvHandoverError.FAILED
+                // TODO(tv-setup phone side): give DECLINED its own error and text ("cancelled on the TV"); FAILED only keeps
+                // this compiling until then.
+                SendResult.DECLINED -> TvHandoverError.FAILED
             },
         )
     }

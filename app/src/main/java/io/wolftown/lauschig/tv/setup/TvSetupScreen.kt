@@ -82,7 +82,9 @@ fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel()
         onHide = phone::hide,
         phonePage = { onType ->
             val phoneState by phone.state.collectAsStateWithLifecycle()
-            TvPhoneSetupScreen(phoneState, state.addProfile, onNewCode = phone::newCode, onType = onType)
+            TvPhoneSetupScreen(
+                phoneState, state.addProfile, onNewCode = phone::newCode, onType = onType, onConfirm = phone::confirm, onDecline = phone::decline,
+            )
         },
     ) {
         TvSetupScreen(

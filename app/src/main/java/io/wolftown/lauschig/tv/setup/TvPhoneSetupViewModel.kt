@@ -9,11 +9,13 @@ import io.wolftown.lauschig.tvsetup.HomeNetwork
 import io.wolftown.lauschig.tvsetup.ListenResult
 import io.wolftown.lauschig.tvsetup.PhoneHandover
 import io.wolftown.lauschig.tvsetup.TvSetupCode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetAddress
 import javax.inject.Inject
 
@@ -30,13 +32,27 @@ sealed interface TvPhoneSetupState {
         override fun toString(): String = "Waiting(…)"
     }
 
-    /** A packet came in; the TV is exchanging the session at the server. */
+    /**
+     * A packet came in, and the TV asks before it does anything with it (spec E17): nothing goes to a server until
+     * [TvPhoneSetupViewModel.confirm]. [servers] are the handover's addresses, local first.
+     */
+    data class Confirming(val servers: List<TvPhoneServer>) : TvPhoneSetupState {
+        // The addresses stay out of logs and crash reports.
+        override fun toString(): String = "Confirming(${servers.size})"
+    }
+
+    /** Confirmed; the TV is exchanging the session at the server. */
     data object SigningIn : TvPhoneSetupState
 
     data class Stopped(val reason: TvPhoneSetupStop) : TvPhoneSetupState
 }
 
-enum class TvPhoneSetupStop { EXPIRED, TOO_MANY_ATTEMPTS, SERVER_UNREACHABLE, SIGN_IN_REFUSED, FAILED }
+/** One address of a handover as the question shows it; [encrypted]: https. */
+data class TvPhoneServer(val address: String, val encrypted: Boolean) {
+    override fun toString(): String = "TvPhoneServer(encrypted=$encrypted)"
+}
+
+enum class TvPhoneSetupStop { EXPIRED, TOO_MANY_ATTEMPTS, SERVER_UNREACHABLE, SIGN_IN_REFUSED, FAILED, DECLINED }
 
 /** [HandoverListener.listen]'s shape, so that tests can stand in for the network. */
 typealias HandoverListen = suspend (bind: InetAddress, onReady: (TvSetupCode) -> Unit, signIn: suspend (PhoneHandover) -> HandoverReply) -> ListenResult
@@ -46,7 +62,12 @@ typealias HandoverListen = suspend (bind: InetAddress, onReady: (TvSetupCode) ->
  * and coming back gives a new one.
  */
 @HiltViewModel
-class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwork, private val listen: HandoverListen) : ViewModel() {
+class TvPhoneSetupViewModel internal constructor(
+    private val network: HomeNetwork,
+    private val listen: HandoverListen,
+    /** How long the question waits for the remote; then it counts as a no. */
+    private val confirmMs: Long = CONFIRM_MS,
+) : ViewModel() {
     @Inject constructor(network: HomeNetwork, listener: HandoverListener) : this(network, listener::listen)
 
     private val _state = MutableStateFlow<TvPhoneSetupState>(TvPhoneSetupState.Starting)
@@ -58,6 +79,9 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
     private var run = 0
     private var job: Job? = null
     private var signIn: (suspend (PhoneHandover) -> HandoverReply)? = null
+
+    /** The open question's answer, while [TvPhoneSetupState.Confirming] shows; under [lock]. */
+    private var answer: CompletableDeferred<Boolean>? = null
 
     /** The page is on screen: a new code. A second call without [hide] keeps the code that is there. */
     fun show(signIn: suspend (PhoneHandover) -> HandoverReply) {
@@ -78,6 +102,16 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
         start()
     }
 
+    /** "Set up" on the question: only now does the TV talk to the server. */
+    fun confirm() = answer(true)
+
+    /** "Cancel" or Back on the question: the phone hears so, and no server is asked. */
+    fun decline() = answer(false)
+
+    private fun answer(yes: Boolean) {
+        synchronized(lock) { answer }?.complete(yes)
+    }
+
     override fun onCleared() = hide()
 
     private fun stop() {
@@ -85,6 +119,9 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
         job = null
         synchronized(lock) {
             run++
+            // A question left open counts as a no; the cancelled listener tells the phone.
+            answer?.complete(false)
+            answer = null
             _state.value = TvPhoneSetupState.Starting
         }
     }
@@ -103,8 +140,12 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
                 address,
                 { code -> report(TvPhoneSetupState.Waiting(code.text, code.number)) },
                 { handover ->
-                    report(TvPhoneSetupState.SigningIn)
-                    signIn(handover)
+                    if (ask(mine, handover)) {
+                        report(TvPhoneSetupState.SigningIn)
+                        signIn(handover)
+                    } else {
+                        HandoverReply.DECLINED
+                    }
                 },
             )
             report(
@@ -114,6 +155,7 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
                         HandoverReply.SIGNED_IN -> TvPhoneSetupState.SigningIn
                         HandoverReply.SERVER_UNREACHABLE -> TvPhoneSetupState.Stopped(TvPhoneSetupStop.SERVER_UNREACHABLE)
                         HandoverReply.SIGN_IN_REFUSED -> TvPhoneSetupState.Stopped(TvPhoneSetupStop.SIGN_IN_REFUSED)
+                        HandoverReply.DECLINED -> TvPhoneSetupState.Stopped(TvPhoneSetupStop.DECLINED)
                         HandoverReply.NOT_ACCEPTED, HandoverReply.FAILED -> TvPhoneSetupState.Stopped(TvPhoneSetupStop.FAILED)
                     }
                     ListenResult.Expired -> TvPhoneSetupState.Stopped(TvPhoneSetupStop.EXPIRED)
@@ -122,5 +164,32 @@ class TvPhoneSetupViewModel internal constructor(private val network: HomeNetwor
                 },
             )
         }
+    }
+
+    /**
+     * The sender of a packet is not checked, so the person at the TV says yes before anything happens (spec E17): with a
+     * no, Back or no answer in [confirmMs], no server is asked. True: confirmed, for the run [mine].
+     */
+    private suspend fun ask(mine: Int, handover: PhoneHandover): Boolean {
+        val asked = CompletableDeferred<Boolean>()
+        val servers = listOfNotNull(handover.local, handover.public).map {
+            TvPhoneServer(it.removeSuffix("/"), encrypted = it.startsWith("https://", ignoreCase = true))
+        }
+        val open = synchronized(lock) {
+            (run == mine).also { current ->
+                if (current) {
+                    answer = asked
+                    _state.value = TvPhoneSetupState.Confirming(servers)
+                }
+            }
+        }
+        if (!open) return false
+        val yes = withTimeoutOrNull(confirmMs) { asked.await() } == true
+        synchronized(lock) { if (answer === asked) answer = null }
+        return yes
+    }
+
+    private companion object {
+        const val CONFIRM_MS = 60_000L
     }
 }

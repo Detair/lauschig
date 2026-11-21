@@ -125,6 +125,9 @@ enum class HandoverReply(val code: Int) {
     SERVER_UNREACHABLE(3),
     SIGN_IN_REFUSED(4),
     FAILED(5),
+
+    /** The person at the TV said no, or did not answer in time (spec E17): nothing went to the server. */
+    DECLINED(6),
     ;
 
     companion object {

@@ -259,6 +259,8 @@ class TvHandoverViewModelTest {
             SendResult.NOT_SENT to TvHandoverError.TV_UNREACHABLE,
             SendResult.NO_REPLY to TvHandoverError.NO_REPLY,
             SendResult.FAILED to TvHandoverError.FAILED,
+            // TODO(tv-setup phone side): DECLINED gets its own error; FAILED until the phone page has a text for it.
+            SendResult.DECLINED to TvHandoverError.FAILED,
         )
         assertEquals("every result but SIGNED_IN is covered", SendResult.entries.toSet() - SendResult.SIGNED_IN, expected.keys)
         for ((result, error) in expected) {
