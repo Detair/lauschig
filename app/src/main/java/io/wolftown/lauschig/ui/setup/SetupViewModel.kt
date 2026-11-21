@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.wolftown.lauschig.absapi.auth.AbsUser
 import io.wolftown.lauschig.absapi.auth.LoginRequest
 import io.wolftown.lauschig.absapi.auth.LoginResponse
 import io.wolftown.lauschig.absapi.auth.StatusResponse
@@ -499,19 +500,37 @@ class SetupViewModel(
                 continue
             }
             // No SSID binding: the TV cannot read the Wi-Fi's name, and the handover carries none.
+            val form = s.copy(ssidBinding = false, keptSsids = emptySet(), currentSsid = null)
             val error = try {
-                complete(s.copy(ssidBinding = false, keptSsids = emptySet(), currentSsid = null), local, public, response)
+                complete(form, local, public, response)
             } catch (e: CancellationException) {
                 // Saving switches the active account, and on the TV the old account's pages go at once, the caller's scope
                 // with them. The account is in once `done` is set (inside the save), and the phone must hear so.
                 if (_state.value.done) return HandoverReply.SIGNED_IN
+                endUnusedSession(form, local, public, response)
                 throw e
             }
             // Nothing between `done` (set in complete) and this answer may suspend: the page leaves at once, and the
             // listener writes what this returns even when its scope is cancelled right after.
-            return if (error == null) HandoverReply.SIGNED_IN else HandoverReply.FAILED
+            if (error == null) return HandoverReply.SIGNED_IN
+            endUnusedSession(form, local, public, response)
+            return HandoverReply.FAILED
         }
         return HandoverReply.SERVER_UNREACHABLE
+    }
+
+    /**
+     * The exchange worked but nothing was saved: the TV holds the only current token of a session nobody will use, so it is
+     * ended at the server with that new token. Best effort; without a refresh token there is nothing to end.
+     */
+    private suspend fun endUnusedSession(s: SetupUiState, local: HttpUrl?, public: HttpUrl?, response: LoginResponse) {
+        val refresh = response.user.refreshToken ?: return
+        withContext(NonCancellable) {
+            try {
+                endSession(accountFor(s, local, public, response.user), refresh)
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /**
@@ -523,18 +542,7 @@ class SetupViewModel(
         val access = user.accessToken
         val refresh = user.refreshToken
         if (access == null || refresh == null) return SetupError.SERVER_TOO_OLD
-        val addresses = ServerAddresses(
-            local, public,
-            if (s.ssidBinding && local != null) s.keptSsids + setOfNotNull(s.currentSsid) else emptySet(),
-        )
-        val account = Account(
-            serverId = Account.computeServerId(addresses, user.id),
-            userId = user.id,
-            username = user.username,
-            isAdmin = user.type == "admin" || user.type == "root",
-            addresses = addresses,
-            allowCleartext = listOfNotNull(local, public).filter { !it.isHttps }.map { it.cleartextKey() }.toSet(),
-        )
+        val account = accountFor(s, local, public, user)
         // The way of a forgotten PIN: exactly this account, on the addresses it has. Anyone else changes nothing.
         if (s.unlockServerId != null && account.serverId != s.unlockServerId) {
             withContext(NonCancellable) { endSession(account, refresh) }
@@ -567,6 +575,21 @@ class SetupViewModel(
             stored
         }
         return if (saved) null else SetupError.SAVE_FAILED
+    }
+
+    private fun accountFor(s: SetupUiState, local: HttpUrl?, public: HttpUrl?, user: AbsUser): Account {
+        val addresses = ServerAddresses(
+            local, public,
+            if (s.ssidBinding && local != null) s.keptSsids + setOfNotNull(s.currentSsid) else emptySet(),
+        )
+        return Account(
+            serverId = Account.computeServerId(addresses, user.id),
+            userId = user.id,
+            username = user.username,
+            isAdmin = user.type == "admin" || user.type == "root",
+            addresses = addresses,
+            allowCleartext = listOfNotNull(local, public).filter { !it.isHttps }.map { it.cleartextKey() }.toSet(),
+        )
     }
 
     private fun fail(error: SetupError) = _state.update { it.copy(loading = false, error = error) }

@@ -1298,4 +1298,53 @@ class SetupViewModelTest {
         login.refreshGate = null
         assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover(local = null)))
     }
+
+    // --- Review F1: a session exchanged but not saved is ended at the server with its new token.
+
+    private val endedSessions = mutableListOf<Pair<Account, String>>()
+
+    private fun phoneVm(mode: SetupMode = SetupMode.SIGN_IN) = viewModels.own(
+        SetupViewModel(store, login, net, sync, oidc, bus, signOut, addProfile = { a, acc, ref ->
+            addFails?.let { throw it }
+            store.add(a, acc, ref)
+        }, mode = mode, endSession = { a, refresh -> endedSessions += a to refresh }),
+    )
+
+    @Test fun phone_saveFailsAfterTheExchange_theNewSessionIsEnded() = runBlocking {
+        signedInAsFabian()
+        addFails = IOException("disk full")
+        val v = phoneVm(SetupMode.ADD_PROFILE)
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover()))
+        val (account, refresh) = endedSessions.single()
+        assertEquals("the new token, not the handed-over one", "tv-ref", refresh)
+        assertEquals("https://abs.example.org/".toHttpUrl(), account.addresses.public)
+    }
+
+    @Test fun phone_serverTooOldButWithARefreshToken_theSessionIsEnded() = runBlocking {
+        login.refreshBehaviour = { ok(access = null, refresh = "tv-ref") }
+        val v = phoneVm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover()))
+        assertEquals(listOf("tv-ref"), endedSessions.map { it.second })
+    }
+
+    @Test fun phone_withoutARefreshToken_nothingToEnd() = runBlocking {
+        login.refreshBehaviour = { ok(access = null, refresh = null) }
+        val v = phoneVm()
+        assertEquals(HandoverReply.FAILED, v.signInFromPhone(handover()))
+        assertTrue(endedSessions.isEmpty())
+    }
+
+    @Test fun phone_success_endsNothing() = runBlocking {
+        val v = phoneVm()
+        assertEquals(HandoverReply.SIGNED_IN, v.signInFromPhone(handover()))
+        assertTrue(endedSessions.isEmpty())
+    }
+
+    @Test fun phone_refusedOrUnreachable_endsNothing() = runBlocking {
+        login.refreshBehaviour = refused(401)
+        assertEquals(HandoverReply.SIGN_IN_REFUSED, phoneVm().signInFromPhone(handover()))
+        login.refreshBehaviour = { throw IOException("timeout") }
+        assertEquals(HandoverReply.SERVER_UNREACHABLE, phoneVm().signInFromPhone(handover()))
+        assertTrue(endedSessions.isEmpty())
+    }
 }
