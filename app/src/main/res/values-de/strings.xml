@@ -1284,13 +1284,14 @@
     <string name="tvsetup_error_tv_cannot_reach_server">Der Fernseher erreicht den Server nicht.</string>
     <string name="tvsetup_error_tv_refused">Der Server lehnt die Anmeldung des Fernsehers ab.</string>
     <string name="tvsetup_error_declined_on_tv">Am Fernseher wurde abgebrochen oder nicht bestätigt.</string>
-    <string name="tvsetup_error_no_reply">Der Fernseher hat nicht geantwortet. Sieh am Fernseher nach, ob er angemeldet ist.</string>
+    <string name="tvsetup_error_no_reply">Der Fernseher hat nicht geantwortet. Die Anmeldung für den Fernseher wurde vorsichtshalber beendet. Ist der Fernseher trotzdem angemeldet, melde ihn in seinen Einstellungen ab und richte ihn neu ein.</string>
     <string name="tvsetup_error_failed">Das hat nicht geklappt.</string>
     <string name="tvsetup_done">Der Fernseher ist eingerichtet.</string>
     <string name="tvsetup_done_button">Fertig</string>
     <string name="tvsetup_again">Noch einmal scannen</string>
     <string name="tv_phone_confirm_title">Diesen Fernseher einrichten?</string>
     <string name="tv_phone_confirm_intro">Ein Handy möchte diesen Fernseher mit diesem Server einrichten:</string>
+    <string name="tv_setup_server">Server</string>
     <string name="tv_phone_confirm_not_encrypted">(unverschlüsselt)</string>
     <string name="tv_phone_confirm_advice">Hast du das nicht gerade selbst am Handy gestartet, brich ab.</string>
     <string name="tv_phone_confirm">Einrichten</string>

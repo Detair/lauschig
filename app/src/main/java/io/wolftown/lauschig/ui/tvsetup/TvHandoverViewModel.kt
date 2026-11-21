@@ -220,22 +220,49 @@ class TvHandoverViewModel(
     /**
      * Audiobookshelf logs out only the session whose current refresh token is sent, and whoever exchanged the handed-over
      * token [handed] has rotated it. For 10 minutes after a rotation the old token still yields the current one, without
-     * rotating again: so exchange it once more, then log out with what comes back. True only when both worked. If the
-     * exchange fails, a logout with [handed] still covers a token nobody exchanged, but nothing confirms it.
+     * rotating again: so exchange it once more and log out with what comes back. `/logout` answers 200 even when it deleted
+     * nothing, so each logout is checked by one more exchange of the token just logged out: refused (401/403) means gone.
+     * A new token means the session still lives (someone rotated in between): log that one out and check again, at most
+     * [END_ROUNDS] times. True only when a check said gone. If the first exchange fails, a logout with [handed] still
+     * covers a token nobody exchanged, but nothing confirms it. The tokens seen here are used for nothing else.
      */
     private suspend fun endSession(account: Account, baseUrl: HttpUrl, handed: String): Boolean {
-        val current = try {
-            loginClient.refresh(baseUrl, handed).user.refreshToken
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
+        var current = when (val first = exchange(baseUrl, handed)) {
+            is Exchange.Alive -> first.token
+            else -> {
+                logoutAt(account, baseUrl, handed)
+                return false
+            }
         }
-        if (current == null) {
-            logoutAt(account, baseUrl, handed)
-            return false
+        repeat(END_ROUNDS) {
+            logoutAt(account, baseUrl, current)
+            when (val check = exchange(baseUrl, current)) {
+                Exchange.Gone -> return true
+                is Exchange.Alive -> current = check.token
+                Exchange.Unknown -> return false
+            }
         }
-        return logoutAt(account, baseUrl, current)
+        return false
+    }
+
+    private sealed interface Exchange {
+        /** The server refused the token: its session no longer exists. */
+        data object Gone : Exchange
+        class Alive(val token: String) : Exchange {
+            override fun toString() = "Alive"
+        }
+        /** No answer, or one that says nothing about the session. */
+        data object Unknown : Exchange
+    }
+
+    private suspend fun exchange(baseUrl: HttpUrl, token: String): Exchange = try {
+        loginClient.refresh(baseUrl, token).user.refreshToken?.let { Exchange.Alive(it) } ?: Exchange.Unknown
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: HttpException) {
+        if (e.code() == 401 || e.code() == 403) Exchange.Gone else Exchange.Unknown
+    } catch (_: Exception) {
+        Exchange.Unknown
     }
 
     /** After a failure: a new scan, since the TV shows a new code (spec E16). */
@@ -271,6 +298,11 @@ class TvHandoverViewModel(
     /** The account's two addresses as the setup form writes them: the very text the TV will get. */
     private fun Account.servers(): Pair<String?, String?> =
         addresses.local?.let(ServerQr::plain) to addresses.public?.let(ServerQr::plain)
+
+    private companion object {
+        /** Logout-and-check rounds before the page says the session may be open. */
+        const val END_ROUNDS = 3
+    }
 
     /** Holds the typed password until the one login that uses it; a second [take] gets nothing. */
     private class OneShot(private var value: String?) {

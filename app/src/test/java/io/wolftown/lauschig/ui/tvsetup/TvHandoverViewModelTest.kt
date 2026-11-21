@@ -46,7 +46,12 @@ private class FakeLogin : LoginClient {
     override suspend fun status(baseUrl: HttpUrl): StatusResponse = throw IOException("not asked")
     /** The phone's own exchange of the handed-over token, only to end the TV's session (spec E19). */
     val refreshes = mutableListOf<Pair<HttpUrl, String>>()
-    var refreshBehaviour: (String) -> LoginResponse = { LoginResponse(AbsUser(USER_ID, "fabian", "user", "a2", CURRENT_REFRESH)) }
+    /** Tokens a logout really deleted: the server refuses them from then on, like Audiobookshelf. */
+    val loggedOut = mutableSetOf<String>()
+    var refreshBehaviour: (String) -> LoginResponse = { token ->
+        if (token in loggedOut) throw httpError(401)
+        LoginResponse(AbsUser(USER_ID, "fabian", "user", "a2", CURRENT_REFRESH))
+    }
     override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse {
         refreshes += baseUrl to refreshToken
         return refreshBehaviour(refreshToken)
@@ -95,7 +100,12 @@ class TvHandoverViewModelTest {
         TvHandoverViewModel(
             store, login,
             send = { c, h -> sent += c to h; sendResult() },
-            logoutAt = { a, url, r -> ended += Triple(a, url, r); logoutConfirms },
+            logoutAt = { a, url, r ->
+                ended += Triple(a, url, r)
+                // A logout that "worked" deletes the session; one that did not leaves it, though the server says 200 anyway.
+                if (logoutConfirms) login.loggedOut += r
+                true
+            },
             connection = { connection },
             hasHomeNetwork = { homeNetwork },
         ),
@@ -291,7 +301,7 @@ class TvHandoverViewModelTest {
         v.typedAndSent()
         assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
         assertTrue(sent.isEmpty())
-        assertEquals(listOf(LOCAL to "foreign-refresh"), login.refreshes)
+        assertEquals(listOf(LOCAL to "foreign-refresh", LOCAL to CURRENT_REFRESH), login.refreshes)
         assertEquals(listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
     }
 
@@ -319,22 +329,26 @@ class TvHandoverViewModelTest {
             ended.clear()
             sent.clear()
             login.refreshes.clear()
+            login.loggedOut.clear()
             sendResult = { result }
             val v = vm()
             v.typedAndSent()
             assertEquals(result.name, TvHandoverStep.Failed(error, sessionMayBeOpen = false), v.step.value)
-            assertEquals(result.name, listOf(LOCAL to TV_REFRESH), login.refreshes)
+            assertEquals(result.name, listOf(LOCAL to TV_REFRESH, LOCAL to CURRENT_REFRESH), login.refreshes)
             assertEquals(result.name, listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
             assertEquals(1, sent.size)
         }
     }
 
-    /** E19: a receiver that never exchanged the token: the phone exchanges it and logs out with the token it got back. */
-    @Test fun ending_exchangesFirst_thenLogsOutWithTheReturnedToken_confirmed() {
+    /**
+     * E19: a receiver that never exchanged the token: the phone exchanges it, logs out with the token it got back, and checks
+     * that one: refused means gone.
+     */
+    @Test fun ending_exchangesFirst_thenLogsOutWithTheReturnedToken_andTheCheckConfirmsIt() {
         sendResult = { SendResult.NO_REPLY }
         val v = vm()
         v.typedAndSent()
-        assertEquals(listOf(LOCAL to TV_REFRESH), login.refreshes)
+        assertEquals(listOf(LOCAL to TV_REFRESH, LOCAL to CURRENT_REFRESH), login.refreshes)
         assertEquals(listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
         assertEquals(TvHandoverStep.Failed(TvHandoverError.NO_REPLY, sessionMayBeOpen = false), v.step.value)
     }
@@ -366,13 +380,43 @@ class TvHandoverViewModelTest {
         assertEquals(TvHandoverStep.Failed(TvHandoverError.DECLINED_ON_TV, sessionMayBeOpen = true), v.step.value)
     }
 
-    @Test fun ending_aLogoutTheServerDidNotConfirm_mayBeOpen() {
+    /** `/logout` answers 200 even when it deleted nothing: the check keeps finding the session alive, three rounds, then may be open. */
+    @Test fun ending_aSessionThatStaysAlive_threeRounds_thenMayBeOpen() {
         sendResult = { SendResult.NOT_SENT }
         logoutConfirms = false
         val v = vm()
         v.typedAndSent()
-        assertEquals(1, ended.size)
+        assertEquals(3, ended.size)
+        assertEquals(4, login.refreshes.size)
         assertEquals(TvHandoverStep.Failed(TvHandoverError.TV_UNREACHABLE, sessionMayBeOpen = true), v.step.value)
+    }
+
+    /** Someone rotated in between: the check returns a new token once; that one is logged out and checked again. */
+    @Test fun ending_theCheckFindsANewTokenOnce_logsOutThatOne_thenConfirmed() {
+        sendResult = { SendResult.NOT_ACCEPTED }
+        val rotated = "rotated-by-someone"
+        login.refreshBehaviour = { token ->
+            when (token) {
+                TV_REFRESH -> LoginResponse(AbsUser(USER_ID, "fabian", "user", "a", CURRENT_REFRESH))
+                CURRENT_REFRESH -> if (CURRENT_REFRESH in login.loggedOut && rotated !in login.loggedOut) LoginResponse(AbsUser(USER_ID, "fabian", "user", "a", rotated)) else throw httpError(401)
+                else -> throw httpError(401)
+            }
+        }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(CURRENT_REFRESH, rotated), ended.map { it.third })
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.CODE_EXPIRED, sessionMayBeOpen = false), v.step.value)
+    }
+
+    @Test fun ending_theCheckUnreachable_mayBeOpen() {
+        sendResult = { SendResult.NOT_ACCEPTED }
+        login.refreshBehaviour = { token ->
+            if (token == TV_REFRESH) LoginResponse(AbsUser(USER_ID, "fabian", "user", "a", CURRENT_REFRESH)) else throw IOException("gone")
+        }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(CURRENT_REFRESH), ended.map { it.third })
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.CODE_EXPIRED, sessionMayBeOpen = true), v.step.value)
     }
 
     @Test fun ending_usesTheAddressOfTheLogin_evenIfTheConnectionMovedMeanwhile() {
@@ -382,7 +426,7 @@ class TvHandoverViewModelTest {
         v.typedAndSent()
         connection = ConnectionState.Online(PUBLIC, ConnectionState.Via.PUBLIC)
         gate.complete(SendResult.NOT_ACCEPTED)
-        assertEquals(listOf(LOCAL to TV_REFRESH), login.refreshes)
+        assertEquals(listOf(LOCAL to TV_REFRESH, LOCAL to CURRENT_REFRESH), login.refreshes)
         assertEquals(LOCAL, ended.single().second)
     }
 

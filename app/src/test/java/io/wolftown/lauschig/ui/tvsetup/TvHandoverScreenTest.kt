@@ -153,7 +153,7 @@ class TvHandoverScreenTest {
             TvHandoverError.TV_CANNOT_REACH_SERVER to "The TV cannot reach the server.",
             TvHandoverError.TV_REFUSED to "The server refused the TV's sign-in.",
             TvHandoverError.DECLINED_ON_TV to "The setup was cancelled or not confirmed on the TV.",
-            TvHandoverError.NO_REPLY to "The TV did not answer. Look at the TV to see whether it is signed in.",
+            TvHandoverError.NO_REPLY to "The TV did not answer. To be safe, the sign-in for the TV was ended. If the TV is signed in anyway, sign it out in its settings and set it up again.",
             TvHandoverError.FAILED to "That did not work.",
         )
         assertEquals(TvHandoverError.entries.toSet(), expected.keys)

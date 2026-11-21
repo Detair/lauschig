@@ -37,14 +37,23 @@ object HandoverFormat {
 
     private const val VERSION = 1
 
+    /**
+     * The longest server address a packet may carry, after normalisation. The TV shows each address in its question
+     * before it uses the packet; a very long one would push the warning and the buttons off the screen. A real server
+     * address is far shorter.
+     */
+    const val MAX_ADDRESS_LENGTH = 200
+
     private val json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
         encodeDefaults = true
     }
 
-    /** [PLAIN_SIZE] bytes; null when the JSON does not fit. */
+    /** [PLAIN_SIZE] bytes; null when the JSON does not fit, or an address is longer than the TV would take. */
     fun encode(handover: PhoneHandover): ByteArray? {
+        // The phone never sends what the TV would drop: measured the way decode measures it.
+        if (listOfNotNull(handover.local, handover.public).any { (ServerQr.serverAddress(it) ?: it).length > MAX_ADDRESS_LENGTH }) return null
         val bytes = json.encodeToString(PhoneHandover.serializer(), handover).toByteArray(Charsets.UTF_8)
         if (bytes.size > PLAIN_SIZE - 2) return null
         return ByteArray(PLAIN_SIZE).also {
@@ -83,8 +92,8 @@ object HandoverFormat {
         if (handover.refresh.isEmpty()) return null
         // The same rules as the server QR code: http(s), no user, no query, no fragment. The TV goes on with the
         // checked form of each address, not the text that came in.
-        val local = handover.local?.let { ServerQr.serverAddress(it) ?: return null }
-        val public = handover.public?.let { ServerQr.serverAddress(it) ?: return null }
+        val local = handover.local?.let { ServerQr.serverAddress(it)?.takeIf { a -> a.length <= MAX_ADDRESS_LENGTH } ?: return null }
+        val public = handover.public?.let { ServerQr.serverAddress(it)?.takeIf { a -> a.length <= MAX_ADDRESS_LENGTH } ?: return null }
         return PhoneHandover(handover.v, local, public, handover.refresh)
     }
 

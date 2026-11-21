@@ -35,6 +35,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -64,6 +66,8 @@ internal const val TAG_ERROR = "tvSetupError"
 internal const val TAG_SHOW_PASSWORD = "tvSetupShowPassword"
 internal const val TAG_CLEARTEXT_CONFIRM = "tvCleartextConfirm"
 internal const val TAG_CLEARTEXT_CANCEL = "tvCleartextCancel"
+internal const val TAG_FIXED_SERVER = "tvSetupFixedServer"
+internal const val TAG_FIXED_SERVER_PLAIN = "tvSetupFixedServerPlain"
 
 /**
  * The sign-in on a TV: first the code for the phone, then, on request, the phone's form without what a TV cannot do (SSO needs
@@ -204,6 +208,9 @@ fun TvSetupScreen(
                     imeAction = if (field == fields.last()) ImeAction.Done else ImeAction.Next, onImeAction = { next(field) },
                     placeholder = placeholder?.let { stringResource(it) }, keyboardType = type, shown = passwordShown,
                 )
+            // The address fields are hidden here, so the person would type a password without seeing where it goes: the
+            // account's addresses, read-only and not focusable, in the style of the TV's question about a phone's packet.
+            if (state.addressesFixed) FixedServers(listOf(state.local, state.public).filter { it.isNotBlank() })
             if (!state.addressesFixed) {
                 Field(SetupFocus.LOCAL, state.local, onLocal, R.string.setup_local_address, TAG_LOCAL, R.string.setup_local_placeholder, KeyboardType.Uri)
                 Field(SetupFocus.PUBLIC, state.public, onPublic, R.string.setup_public_address, TAG_PUBLIC, R.string.setup_public_placeholder, KeyboardType.Uri)
@@ -244,6 +251,22 @@ fun TvSetupScreen(
     }
 
     state.cleartextPrompt?.let { hosts -> CleartextDialog(hosts, onConfirmCleartext, onDismissCleartext) }
+}
+
+/** Where a sign-in with fixed addresses goes; an http:// address has the "not encrypted" line before it. */
+@Composable
+private fun FixedServers(addresses: List<String>) {
+    if (addresses.isEmpty()) return
+    val body = MaterialTheme.typography.bodyLarge
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.tv_setup_server), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        addresses.forEach { address ->
+            if (address.startsWith("http://", ignoreCase = true)) {
+                Text(stringResource(R.string.tv_phone_confirm_not_encrypted), style = body, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(TAG_FIXED_SERVER_PLAIN))
+            }
+            Text(address, style = body, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(TAG_FIXED_SERVER))
+        }
+    }
 }
 
 /** The phone's question about an unencrypted server, with the focus on the safe answer. */

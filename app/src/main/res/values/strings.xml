@@ -1284,13 +1284,14 @@
     <string name="tvsetup_error_tv_cannot_reach_server">The TV cannot reach the server.</string>
     <string name="tvsetup_error_tv_refused">The server refused the TV\'s sign-in.</string>
     <string name="tvsetup_error_declined_on_tv">The setup was cancelled or not confirmed on the TV.</string>
-    <string name="tvsetup_error_no_reply">The TV did not answer. Look at the TV to see whether it is signed in.</string>
+    <string name="tvsetup_error_no_reply">The TV did not answer. To be safe, the sign-in for the TV was ended. If the TV is signed in anyway, sign it out in its settings and set it up again.</string>
     <string name="tvsetup_error_failed">That did not work.</string>
     <string name="tvsetup_done">The TV is set up.</string>
     <string name="tvsetup_done_button">Done</string>
     <string name="tvsetup_again">Scan again</string>
     <string name="tv_phone_confirm_title">Set up this TV?</string>
     <string name="tv_phone_confirm_intro">A phone wants to set up this TV with this server:</string>
+    <string name="tv_setup_server">Server</string>
     <string name="tv_phone_confirm_not_encrypted">(not encrypted)</string>
     <string name="tv_phone_confirm_advice">If you did not just start this on your phone, cancel.</string>
     <string name="tv_phone_confirm">Set up</string>

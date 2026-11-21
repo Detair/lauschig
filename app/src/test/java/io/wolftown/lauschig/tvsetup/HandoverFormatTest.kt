@@ -150,4 +150,28 @@ class HandoverFormatTest {
     }
 
     private fun PhoneHandover.copyWithRefresh(refresh: String) = PhoneHandover(v, local, public, refresh)
+
+    /** An address of [length] characters, already in its normalised form. */
+    private fun address(length: Int): String {
+        val head = "https://abs.example.org/"
+        return head + "a".repeat(length - head.length)
+    }
+
+    /** The TV shows the addresses in its question: longer ones would push the warning and the buttons off the screen. */
+    @Test fun anAddressOf200Characters_passes_201_isRefused_onBothSides() {
+        assertEquals(200, address(200).length)
+        for (long in listOf(PhoneHandover(public = address(200), refresh = "r"), PhoneHandover(local = address(200), refresh = "r"))) {
+            assertEquals(long, HandoverFormat.decode(HandoverFormat.encode(long)!!))
+        }
+        assertNull("the phone does not send it", HandoverFormat.encode(PhoneHandover(public = address(201), refresh = "r")))
+        assertNull(HandoverFormat.encode(PhoneHandover(local = address(201), public = "https://abs.example.org", refresh = "r")))
+        assertNull("the TV does not take it", HandoverFormat.decode(block("""{"v":1,"public":"${address(201)}","refresh":"r"}""")))
+        assertNull(HandoverFormat.decode(block("""{"v":1,"local":"${address(201)}","public":"https://abs.example.org","refresh":"r"}""")))
+    }
+
+    /** Measured after normalisation: a trailing slash the TV drops does not count. */
+    @Test fun theLimit_countsTheNormalisedAddress() {
+        val withSlash = address(200) + "/"
+        assertEquals(PhoneHandover(public = address(200), refresh = "r"), HandoverFormat.decode(HandoverFormat.encode(PhoneHandover(public = withSlash, refresh = "r"))!!))
+    }
 }

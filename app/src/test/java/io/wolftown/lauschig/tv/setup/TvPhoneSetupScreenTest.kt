@@ -197,10 +197,12 @@ class TvPhoneSetupScreenTest {
         show(asking)
         rule.onNodeWithText(context.getString(R.string.tv_phone_confirm_title)).assertExists()
         val lines = rule.onAllNodesWithTag(TAG_PHONE_SERVER).fetchSemanticsNodes().map { it.config[SemanticsProperties.Text].joinToString() }
-        assertEquals(
-            listOf("http://192.168.1.20:13378 " + context.getString(R.string.tv_phone_confirm_not_encrypted), "https://abs.example.org"),
-            lines,
-        )
+        assertEquals(listOf("http://192.168.1.20:13378", "https://abs.example.org"), lines)
+        // The marker is its own line, above the http address it belongs to.
+        rule.onNodeWithTag(TAG_PHONE_SERVER_PLAIN).assertTextEquals(context.getString(R.string.tv_phone_confirm_not_encrypted))
+        val marker = rule.onNodeWithTag(TAG_PHONE_SERVER_PLAIN).fetchSemanticsNode().boundsInRoot
+        val addresses = rule.onAllNodesWithTag(TAG_PHONE_SERVER).fetchSemanticsNodes().map { it.boundsInRoot }
+        assertTrue(marker.bottom <= addresses[0].top + 1f)
         rule.onNodeWithTag(TAG_PHONE_QR).assertDoesNotExist()
         rule.onNodeWithTag(TAG_PHONE_NUMBER).assertDoesNotExist()
         rule.onNodeWithTag(TAG_PHONE_TYPE).assertDoesNotExist()
@@ -306,5 +308,19 @@ class TvPhoneSetupScreenTest {
         rule.waitForIdle()
         rule.onNodeWithText("form").assertExists()
         rule.onNodeWithTag(TAG_PHONE_QR).assertDoesNotExist()
+    }
+
+    /** Re-review N-A: two addresses as long as a packet allows must not push the marker, the advice or the buttons away. */
+    @Test fun confirming_twoLongAddresses_keepTheMarkerAndBothButtonsOnScreen() {
+        fun long(scheme: String) = "$scheme://abs.example.org/".let { it + "a".repeat(200 - it.length) }
+        show(TvPhoneSetupState.Confirming(listOf(TvPhoneServer(long("http"), encrypted = false), TvPhoneServer(long("https"), encrypted = true))))
+        rule.onNodeWithTag(TAG_PHONE_SERVER_PLAIN).assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.tv_phone_confirm_advice)).assertIsDisplayed()
+        rule.onNodeWithTag(TAG_PHONE_CONFIRM).assertIsDisplayed()
+        rule.onNodeWithTag(TAG_PHONE_CANCEL).assertIsDisplayed().assertIsFocused()
+        val root = rule.onRoot().getBoundsInRoot()
+        for (tag in listOf(TAG_PHONE_CONFIRM, TAG_PHONE_CANCEL)) {
+            assertTrue(tag, rule.onNodeWithTag(tag).getBoundsInRoot().bottom <= root.bottom - TvDimens.overscanVertical)
+        }
     }
 }

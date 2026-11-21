@@ -51,13 +51,17 @@ class HandoverListener internal constructor(
         withContext(Dispatchers.IO) {
             // The code carries a literal IPv4 address; anything else could not be scanned.
             if (bind !is Inet4Address) return@withContext ListenResult.Failed
-            // Tink registers HPKE lazily; on some devices, or with a class missing after shrinking, that throws. The page
-            // then says "failed" and the remote's form is still there, instead of the app crashing on the first page of setup.
+            // Tink registers HPKE lazily. Caught: GeneralSecurityException and RuntimeException (no provider, a device that
+            // cannot do it) and LinkageError (NoClassDefFoundError, VerifyError: a class missing or broken after
+            // shrinking). The page then says "failed" and the remote's form is still there, instead of the app crashing on
+            // the first page of setup. Other Errors (out of memory, stack overflow) are not about HPKE and stay fatal.
             var key: HandoverKey? = try {
                 newKey()
             } catch (_: GeneralSecurityException) {
                 return@withContext ListenResult.Failed
             } catch (_: RuntimeException) {
+                return@withContext ListenResult.Failed
+            } catch (_: LinkageError) {
                 return@withContext ListenResult.Failed
             }
             val server = try {

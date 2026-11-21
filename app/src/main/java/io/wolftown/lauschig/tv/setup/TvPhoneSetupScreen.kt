@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -40,6 +41,7 @@ internal const val TAG_PHONE_AGAIN = "tvPhoneAgain"
 internal const val TAG_PHONE_STATUS = "tvPhoneStatus"
 internal const val TAG_PHONE_PROGRESS = "tvPhoneProgress"
 internal const val TAG_PHONE_SERVER = "tvPhoneServer"
+internal const val TAG_PHONE_SERVER_PLAIN = "tvPhoneServerPlain"
 internal const val TAG_PHONE_CANCEL = "tvPhoneCancel"
 internal const val TAG_PHONE_CONFIRM = "tvPhoneConfirm"
 
@@ -118,11 +120,16 @@ fun TvPhoneSetupScreen(
                 is TvPhoneSetupState.Confirming -> {
                     Text(stringResource(R.string.tv_phone_confirm_intro), style = body)
                     val plain = stringResource(R.string.tv_phone_confirm_not_encrypted)
+                    // The marker goes on its own line before its address: cut short, an address must never lose it. Two lines per
+                    // address at most, so the advice and the buttons always stay on screen (the packet allows 200 characters).
                     state.servers.forEach { server ->
+                        if (!server.encrypted) Text(plain, style = body, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(TAG_PHONE_SERVER_PLAIN))
                         Text(
-                            if (server.encrypted) server.address else "${server.address} $plain",
+                            server.address,
                             style = body,
                             fontFamily = FontFamily.Monospace,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.testTag(TAG_PHONE_SERVER),
                         )
                     }
