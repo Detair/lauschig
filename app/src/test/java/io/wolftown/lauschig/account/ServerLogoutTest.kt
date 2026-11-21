@@ -157,4 +157,32 @@ class ServerLogoutTest {
         assertFalse(out.logout(account(server.url("/")), "refresh-1"))
         assertEquals(0, server.requestCount)
     }
+
+    // The TV's session (ui/tvsetup) is ended at the address it was made, whatever the connection is by then.
+
+    @Test fun logoutAt_postsToThatAddress_offlineToo() = runBlocking {
+        server.enqueue(ok)
+        val base = server.url("/")
+        assertTrue(profileLogout(ConnectionState.Offline) { error("no probe needed") }.logoutAt(account(base), base, "refresh-3"))
+        assertEquals("refresh-3", server.takeRequest().getHeader("x-refresh-token"))
+    }
+
+    @Test fun logoutAt_anAddressThatIsNotTheAccounts_getsNothing() = runBlocking {
+        val base = server.url("/")
+        val other = Account("aaaaaaaaaaaaaaaa", "u1", "fabian", false, ServerAddresses("http://192.168.1.99:13378/".toHttpUrl(), null), emptySet())
+        assertFalse(profileLogout(ConnectionState.Offline) { error("not asked") }.logoutAt(other, base, "refresh-3"))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun logoutAt_aRedirect_isNotFollowed_andIsFalse() = runBlocking {
+        val elsewhere = MockWebServer().also { it.start() }
+        try {
+            server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", elsewhere.url("/logout").toString()))
+            val base = server.url("/")
+            assertFalse(profileLogout(ConnectionState.Offline) { error("not asked") }.logoutAt(account(base), base, "refresh-3"))
+            assertEquals(0, elsewhere.requestCount)
+        } finally {
+            elsewhere.shutdown()
+        }
+    }
 }

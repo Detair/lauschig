@@ -32,6 +32,9 @@ import io.wolftown.lauschig.tv.TvTheme
 import io.wolftown.lauschig.ui.setup.SetupError
 import io.wolftown.lauschig.ui.setup.SetupUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -160,6 +163,27 @@ class TvSetupScreenTest {
         rule.onNodeWithTag(TAG_PUBLIC).assertDoesNotExist()
         rule.onNodeWithText(context.getString(R.string.setup_unlock_intro, "Anna")).assertExists()
         rule.onNodeWithTag(TAG_USERNAME).assertIsFocused()
+    }
+
+    /** Re-review N-D: with the address fields hidden, the form still shows where the password goes. */
+    @Test fun fixedAddresses_showTheServer_readOnly_withPlainHttpMarked() {
+        show(SetupUiState(unlockServerId = "s", unlockName = "Anna", local = "http://192.168.1.20:13378", public = "https://abs.example.org", username = "anna"))
+        rule.onNodeWithText(context.getString(R.string.tv_setup_server)).assertExists()
+        val shown = rule.onAllNodesWithTag(TAG_FIXED_SERVER).fetchSemanticsNodes().map { it.config[SemanticsProperties.Text].joinToString() }
+        assertEquals(listOf("http://192.168.1.20:13378", "https://abs.example.org"), shown)
+        rule.onAllNodesWithTag(TAG_FIXED_SERVER_PLAIN).assertCountEquals(1)
+        val marker = rule.onNodeWithTag(TAG_FIXED_SERVER_PLAIN).fetchSemanticsNode().boundsInRoot
+        assertTrue("the marker is above the http address", marker.bottom <= rule.onAllNodesWithTag(TAG_FIXED_SERVER).fetchSemanticsNodes()[0].boundsInRoot.top + 1f)
+        // Not a stop on the remote's way: the focus still goes to the password, the first empty field.
+        rule.onNodeWithTag(TAG_PASSWORD).assertIsFocused()
+        rule.onAllNodes(isFocused()).assertCountEquals(1)
+    }
+
+    @Test fun typedAddresses_showNoFixedServer() {
+        show(filled)
+        rule.onNodeWithTag(TAG_FIXED_SERVER).assertDoesNotExist()
+        rule.onNodeWithTag(TAG_FIXED_SERVER_PLAIN).assertDoesNotExist()
+        rule.onNodeWithText(context.getString(R.string.tv_setup_server)).assertDoesNotExist()
     }
 
     @Test fun theCleartextQuestion_namesTheHosts_andConfirms() {

@@ -30,6 +30,7 @@ import io.wolftown.lauschig.ui.adaptive.closeDetailPane
 import io.wolftown.lauschig.ui.browse.BrowseRoute
 import io.wolftown.lauschig.ui.collections.CollectionRoute
 import io.wolftown.lauschig.ui.connection.ConnectionStatusRoute
+import io.wolftown.lauschig.ui.tvsetup.TvHandoverRoute
 import io.wolftown.lauschig.ui.discover.DiscoverRoute
 import io.wolftown.lauschig.ui.downloads.DownloadsRoute
 import io.wolftown.lauschig.ui.library.LibraryRoute
@@ -74,6 +75,7 @@ fun AppNavHost(
                     onOpenCleanup = { navController.navigate(Cleanup) },
                     onOpenDownloads = { navController.navigate(Downloads) },
                     onOpenConnection = { navController.navigate(ConnectionStatus) },
+                    onOpenTvSetup = { navController.navigate(TvSetup) },
                     onOpenAdmin = { navController.navigate(ServerAdmin) },
                     onOpenNavigation = { navController.navigate(NavigationSettings) },
                     onOpenStats = { navController.navigate(Stats) },
@@ -83,6 +85,7 @@ fun AppNavHost(
         }
         composable<NavigationSettings> { ReadableWidth { NavigationSettingsRoute(onBack = { navController.popBackStack() }) } }
         composable<ConnectionStatus> { ReadableWidth { ConnectionStatusRoute(onBack = { navController.popBackStack() }) } }
+        composable<TvSetup> { ReadableWidth { TvHandoverRoute(onBack = { navController.popBackStack() }) } }
         composable<ServerAdmin> { ReadableWidth { ServerAdminRoute(onBack = { navController.popBackStack() }) } }
         composable<Downloads> {
             // An episode's details are its podcast's page.

@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -50,10 +51,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * The camera page of the setup form: shows what the camera sees and hands the text of the first QR code it finds to
  * [onCode], whatever that code is ([ServerQr.read] decides). The pictures stay in memory for the moment they are looked
  * at: none is stored or sent, and nothing here writes to the log. Without the camera permission (the form asks for it
- * before it opens this page) or without a usable camera it says so and can only be closed.
+ * before it opens this page) or without a usable camera it says so and can only be closed. [hint] and [noCameraHint]
+ * say where the code is and what else to do; „Fernseher einrichten“ scans a TV's code with the same page.
  */
 @Composable
-fun ServerQrScanner(onCode: (String) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun ServerQrScanner(
+    onCode: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    @StringRes hint: Int = R.string.server_qr_scan_hint,
+    @StringRes noCameraHint: Int = R.string.server_qr_scan_no_camera,
+) {
     val context = LocalContext.current
     val allowed = remember { ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED }
     var failed by remember { mutableStateOf(!allowed) }
@@ -69,7 +77,7 @@ fun ServerQrScanner(onCode: (String) -> Unit, onClose: () -> Unit, modifier: Mod
             }
             Box(Modifier.weight(1f))
             Text(
-                stringResource(if (failed) R.string.server_qr_scan_no_camera else R.string.server_qr_scan_hint),
+                stringResource(if (failed) noCameraHint else hint),
                 style = MaterialTheme.typography.bodyMedium, color = Color.White,
                 modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).padding(16.dp).testTag("qrScannerHint"),
             )

@@ -1,5 +1,6 @@
 package io.wolftown.lauschig.tv.setup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
@@ -25,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,10 +35,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
@@ -61,25 +66,70 @@ internal const val TAG_ERROR = "tvSetupError"
 internal const val TAG_SHOW_PASSWORD = "tvSetupShowPassword"
 internal const val TAG_CLEARTEXT_CONFIRM = "tvCleartextConfirm"
 internal const val TAG_CLEARTEXT_CANCEL = "tvCleartextCancel"
+internal const val TAG_FIXED_SERVER = "tvSetupFixedServer"
+internal const val TAG_FIXED_SERVER_PLAIN = "tvSetupFixedServerPlain"
 
 /**
- * The sign-in on a TV: the phone's form without what a TV cannot do (SSO needs a browser, the scan a camera, the Wi-Fi
- * binding a location permission). [onDone] after a successful sign-in.
+ * The sign-in on a TV: first the code for the phone, then, on request, the phone's form without what a TV cannot do (SSO needs
+ * a browser, the scan a camera, the Wi-Fi binding a location permission). The way of a forgotten PIN has the form only: there
+ * the account's own password counts. [onDone] after a successful sign-in.
  */
 @Composable
-fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel()) {
+fun TvSetupRoute(onDone: () -> Unit, viewModel: SetupViewModel = hiltViewModel(), phone: TvPhoneSetupViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.done) { if (state.done) onDone() }
-    TvSetupScreen(
-        state = state,
-        onLocal = viewModel::onLocalChanged,
-        onPublic = viewModel::onPublicChanged,
-        onUsername = viewModel::onUsernameChanged,
-        onPassword = viewModel::onPasswordChanged,
-        onLogin = viewModel::login,
-        onConfirmCleartext = viewModel::confirmCleartext,
-        onDismissCleartext = viewModel::dismissCleartext,
-    )
+    TvSetupPages(
+        // SetupViewModel takes unlockServerId from the route in its constructor, so its first state already says whether this
+        // is the way of a forgotten PIN: there the code page never composes, and no port opens, not even for a frame.
+        phoneFirst = !state.addressesFixed,
+        onShow = { phone.show(viewModel::signInFromPhone) },
+        onHide = phone::hide,
+        phonePage = { onType ->
+            val phoneState by phone.state.collectAsStateWithLifecycle()
+            TvPhoneSetupScreen(
+                phoneState, state.addProfile, onNewCode = phone::newCode, onType = onType, onConfirm = phone::confirm, onDecline = phone::decline,
+            )
+        },
+    ) {
+        TvSetupScreen(
+            state = state,
+            onLocal = viewModel::onLocalChanged,
+            onPublic = viewModel::onPublicChanged,
+            onUsername = viewModel::onUsernameChanged,
+            onPassword = viewModel::onPasswordChanged,
+            onLogin = viewModel::login,
+            onConfirmCleartext = viewModel::confirmCleartext,
+            onDismissCleartext = viewModel::dismissCleartext,
+        )
+    }
+}
+
+/**
+ * Which of the two pages shows. The choice is saved, so it survives a recreation. The code page's port is open only while it
+ * is on screen: [onShow] when it starts, [onHide] when it stops (the TV's Home button) or makes way for the form.
+ */
+@Composable
+internal fun TvSetupPages(
+    phoneFirst: Boolean,
+    onShow: () -> Unit,
+    onHide: () -> Unit,
+    phonePage: @Composable (onType: () -> Unit) -> Unit,
+    form: @Composable () -> Unit,
+) {
+    var typing by rememberSaveable { mutableStateOf(false) }
+    if (phoneFirst && !typing) {
+        val show by rememberUpdatedState(onShow)
+        val hide by rememberUpdatedState(onHide)
+        LifecycleStartEffect(Unit) {
+            show()
+            onStopOrDispose { hide() }
+        }
+        phonePage { typing = true }
+    } else {
+        // Back from the form leads to the code, not out of the sign-in.
+        BackHandler(enabled = phoneFirst) { typing = false }
+        form()
+    }
 }
 
 private enum class SetupFocus { LOCAL, PUBLIC, USERNAME, PASSWORD, LOGIN }
@@ -158,6 +208,9 @@ fun TvSetupScreen(
                     imeAction = if (field == fields.last()) ImeAction.Done else ImeAction.Next, onImeAction = { next(field) },
                     placeholder = placeholder?.let { stringResource(it) }, keyboardType = type, shown = passwordShown,
                 )
+            // The address fields are hidden here, so the person would type a password without seeing where it goes: the
+            // account's addresses, read-only and not focusable, in the style of the TV's question about a phone's packet.
+            if (state.addressesFixed) FixedServers(listOf(state.local, state.public).filter { it.isNotBlank() })
             if (!state.addressesFixed) {
                 Field(SetupFocus.LOCAL, state.local, onLocal, R.string.setup_local_address, TAG_LOCAL, R.string.setup_local_placeholder, KeyboardType.Uri)
                 Field(SetupFocus.PUBLIC, state.public, onPublic, R.string.setup_public_address, TAG_PUBLIC, R.string.setup_public_placeholder, KeyboardType.Uri)
@@ -198,6 +251,22 @@ fun TvSetupScreen(
     }
 
     state.cleartextPrompt?.let { hosts -> CleartextDialog(hosts, onConfirmCleartext, onDismissCleartext) }
+}
+
+/** Where a sign-in with fixed addresses goes; an http:// address has the "not encrypted" line before it. */
+@Composable
+private fun FixedServers(addresses: List<String>) {
+    if (addresses.isEmpty()) return
+    val body = MaterialTheme.typography.bodyLarge
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.tv_setup_server), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        addresses.forEach { address ->
+            if (address.startsWith("http://", ignoreCase = true)) {
+                Text(stringResource(R.string.tv_phone_confirm_not_encrypted), style = body, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag(TAG_FIXED_SERVER_PLAIN))
+            }
+            Text(address, style = body, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(TAG_FIXED_SERVER))
+        }
+    }
 }
 
 /** The phone's question about an unencrypted server, with the focus on the safe answer. */

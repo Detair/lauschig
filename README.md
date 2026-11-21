@@ -54,6 +54,9 @@ Version 0.7.0, in daily use on our own devices; not on Google Play yet (a closed
   setup, "Who is listening?" with an optional PIN, start page, library, search and a player with chapters, speed,
   sleep timer and "screen off". It has only run in the emulator so far; testers find a checklist in the
   [tester guide](docs/tester-anleitung.md) (German).
+- Set up a TV with the phone: the TV shows a QR code, the phone scans it and hands the TV a sign-in of its own,
+  encrypted and only over the local network, and the TV asks before it uses it. Your password goes only to your
+  server, never to the TV ([how it works](docs/tv-einrichtung-mit-dem-handy.md), German).
 
 The design spec and the phase plans (mostly German) live in [`docs/superpowers/specs/`](docs/superpowers/specs/) and [`docs/superpowers/plans/`](docs/superpowers/plans/).
 

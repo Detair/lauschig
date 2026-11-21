@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
@@ -78,6 +79,8 @@ data class SettingsUiState(
     val autoDeleteConfirm: AutoDeleteConfirm? = null,
     val playback: PlaybackPrefs = PlaybackPrefs(),
     val appearance: Appearance = Appearance(),
+    /** Someone is signed in: only then can a TV be set up with this phone. */
+    val signedIn: Boolean = false,
 )
 
 /** [count] downloads of [bytes] of the account [serverId] would go if [mode] were switched on there. */
@@ -146,6 +149,7 @@ class SettingsViewModel @Inject constructor(
         .combine(ui.appearance) { s, look -> s.copy(appearance = look) }
         .combine(serverId.flatMapLatest { download.autoDeleteFinished(it) }) { s, mode -> s.copy(autoDelete = mode) }
         .combine(autoDeleteConfirm) { s, c -> s.copy(autoDeleteConfirm = c) }
+        .combine(serverId) { s, id -> s.copy(signedIn = id != null) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setNextVolume(mode: NextVolumeMode) { viewModelScope.launch { app.setNextVolumeMode(mode) } }
@@ -214,6 +218,7 @@ fun SettingsRoute(
     onOpenNavigation: () -> Unit = {},
     onOpenStats: () -> Unit = {},
     onOpenProfiles: () -> Unit = {},
+    onOpenTvSetup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -231,6 +236,7 @@ fun SettingsRoute(
         storageSection = { DownloadLocationSection() },
         localSection = { io.wolftown.lauschig.local.LocalFoldersSection() },
         onOpenConnection = onOpenConnection,
+        onOpenTvSetup = onOpenTvSetup,
         linksSection = { io.wolftown.lauschig.links.LinksSection() },
         adminSection = { io.wolftown.lauschig.admin.AdminSettingsEntry(onOpenAdmin) },
         accountSection = { AccountSection(onOpenProfiles) },
@@ -267,6 +273,8 @@ fun SettingsScreen(
     /** Slot for the "on this device" folders (needs Hilt and the folder picker). */
     localSection: @Composable () -> Unit = {},
     onOpenConnection: () -> Unit = {},
+    /** „Fernseher einrichten“; the row is there only with [SettingsUiState.signedIn]. */
+    onOpenTvSetup: () -> Unit = {},
     /** Slot for the links hint (needs the system's link settings). */
     linksSection: @Composable () -> Unit = {},
     /** Slot for "Server-Verwaltung" (admins only; needs Hilt). */
@@ -344,6 +352,14 @@ fun SettingsScreen(
             supportingContent = { Text(stringResource(R.string.settings_connection_status_hint)) },
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenConnection).testTag("openConnection"),
         )
+        if (state.signedIn) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.tvsetup_title)) },
+                supportingContent = { Text(stringResource(R.string.tvsetup_entry_hint)) },
+                leadingContent = { Icon(Icons.Rounded.Tv, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenTvSetup).testTag("openTvSetup"),
+            )
+        }
         linksSection()
         adminSection()
 
