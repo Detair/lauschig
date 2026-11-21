@@ -261,4 +261,15 @@ class HandoverListenerTest {
             assertEquals(ListenResult.Failed, result)
         }
     }
+
+    /** Some devices, or a release build missing a class, cannot set up HPKE: the page must say "failed", not crash. */
+    @Test fun aKeyThatCannotBeMade_fails_withoutAPort() = runBlocking {
+        withTimeout(10_000) {
+            for (problem in listOf(java.security.GeneralSecurityException("no HPKE"), IllegalStateException("no provider"))) {
+                val listener = HandoverListener(HandoverLimits(), newKey = { throw problem }, afterAccept = {})
+                val result = listener.listen(LOOPBACK, { fail("no code without a key") }) { HandoverReply.SIGNED_IN }
+                assertEquals(problem.toString(), ListenResult.Failed, result)
+            }
+        }
+    }
 }

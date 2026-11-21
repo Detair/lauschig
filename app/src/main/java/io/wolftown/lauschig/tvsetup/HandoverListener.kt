@@ -11,6 +11,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
+import java.security.GeneralSecurityException
 import javax.inject.Inject
 
 /** The fixed limits of one code; tests shorten them. */
@@ -33,10 +34,12 @@ sealed interface ListenResult {
 /** The TV's end: one port, one key and at most one accepted packet per [listen]. */
 class HandoverListener internal constructor(
     private val limits: HandoverLimits,
+    // Lets a test stand in for a device where HPKE cannot be set up; the app always generates a real key.
+    private val newKey: () -> HandoverKey = { HandoverKey.generate() },
     // Lets a test cancel in the window between accepting a packet and signing in; the app never sets it.
     private val afterAccept: () -> Unit,
 ) {
-    constructor(limits: HandoverLimits) : this(limits, {})
+    constructor(limits: HandoverLimits) : this(limits, afterAccept = {})
 
     @Inject constructor() : this(HandoverLimits())
 
@@ -48,7 +51,15 @@ class HandoverListener internal constructor(
         withContext(Dispatchers.IO) {
             // The code carries a literal IPv4 address; anything else could not be scanned.
             if (bind !is Inet4Address) return@withContext ListenResult.Failed
-            var key: HandoverKey? = HandoverKey.generate()
+            // Tink registers HPKE lazily; on some devices, or with a class missing after shrinking, that throws. The page
+            // then says "failed" and the remote's form is still there, instead of the app crashing on the first page of setup.
+            var key: HandoverKey? = try {
+                newKey()
+            } catch (_: GeneralSecurityException) {
+                return@withContext ListenResult.Failed
+            } catch (_: RuntimeException) {
+                return@withContext ListenResult.Failed
+            }
             val server = try {
                 // Backlog 1: connections are taken one after the other anyway.
                 ServerSocket(0, 1, bind)
