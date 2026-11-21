@@ -16,7 +16,7 @@
 - **Kein selbst gebautes Krypto-Verfahren.** Verschlüsselt wird nur über Tinks öffentliche HPKE-Schnittstelle (`HybridEncrypt`/`HybridDecrypt`, `HpkeParameters`). Die genaue API steht in der eingebauten Bibliothek (`tink-android-1.24.0.jar` im Gradle-Cache); dort nachsehen, nicht raten.
 - **Geheimnisse:** Der private Schlüssel des Fernsehers lebt nur im Speicher und nur, solange ein Code gilt. Refresh-Token, Passwort, Schlüssel, Code-Text und Adressen stehen in keinem Log, keiner Fehlermeldung, keinem `toString()`, keinem `SavedStateHandle` und keiner Datei. Datenklassen mit Geheimnissen überschreiben `toString()`.
 - **Heimnetz:** Adressen des Fernsehers sind wörtliche IPv4-Adressen aus 10.0.0.0/8, 172.16.0.0/12 oder 192.168.0.0/16. Es wird nie ein Name aufgelöst. Das Handy sendet nur über ein Netz mit WLAN- oder Kabel-Transport, das kein VPN ist.
-- **Feste Werte:** Code gilt höchstens 5 Minuten · genau ein angenommenes Paket je Code · höchstens 20 abgelehnte Verbindungen je Code · Lesefrist je Verbindung 5 s insgesamt · Handy: Verbindungsaufbau 5 s, Warten auf Antwort 30 s · Klartextblock 2048 Bytes · Paket 2100 Bytes.
+- **Feste Werte:** Code gilt höchstens 5 Minuten · genau ein angenommenes Paket je Code · höchstens 20 abgelehnte Verbindungen je Code · Lesefrist je Verbindung 5 s insgesamt · Handy: Verbindungsaufbau 5 s, Warten auf Antwort 90 s · Fernseher: Rückfrage wartet höchstens 60 s · Klartextblock 2048 Bytes · Paket 2100 Bytes.
 - **Handy sonst unverändert,** TV-Regeln aus dem ersten Plan gelten weiter: jede TV-Seite zweigeteilt (`Tv…Screen(state, callbacks)` und `Tv…Route`), genau ein fokussiertes Element beim Betreten, alles mit Steuerkreuz und OK, Ränder aus `TvDimens`, kein Wachhalten des Bildschirms.
 - **Logik wird genutzt, nicht kopiert.** Die Anmeldung läuft über `SetupViewModel` und `LoginClient`.
 - **Texte:** jeder neue Text in `values/strings.xml` (Englisch) und `values-de/strings.xml`. Schlüssel am Fernseher mit Präfix `tv_`, am Handy mit Präfix `tvsetup_`. Kein Text nennt „RMAB“ oder „ReadMeABook“.
@@ -49,7 +49,9 @@ lauschig://tv?v=1&a=192.168.1.50&p=41234&k=<öffentlicher X25519-Schlüssel, 32 
 
 **Paket Handy → Fernseher** (genau 2100 Bytes): die vier ASCII-Bytes `LTV1`, dann der HPKE-Geheimtext (32 Bytes gekapselter Schlüssel + 2048 + 16).
 
-**Antwort Fernseher → Handy** (ein Byte, danach schließt der Fernseher): `1` angemeldet · `2` Paket nicht angenommen · `3` Fernseher erreicht den Server nicht · `4` Server lehnt die Sitzung ab · `5` anderer Fehler.
+**Antwort Fernseher → Handy** (ein Byte, danach schließt der Fernseher): `1` angemeldet · `2` Paket nicht angenommen · `3` Fernseher erreicht den Server nicht · `4` Server lehnt die Sitzung ab · `5` anderer Fehler · `6` am Fernseher abgelehnt oder nicht bestätigt.
+
+> **Nachtrag 2026-11-21:** Nach der Sicherheitsprüfung gelten zusätzlich E17 (neu), E19 (neu) und E20 bis E22 der Spec: Rückfrage am Fernseher vor der Anmeldung, Antwort `6`, Wartezeit des Handys 90 s, Anmeldung des Handys nur über die gerade verbundene Adresse, wirksames Beenden der Sitzung. Die Aufgabentexte unten zeigen den Stand davor.
 
 ## Review Focus
 
