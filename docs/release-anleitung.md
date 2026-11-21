@@ -118,7 +118,7 @@ gh workflow run Release --repo Detair/lauschig --ref main
 
 Das echte Release:
 ```bash
-git tag -a v0.7.0 -m "Lauschig 0.7.0" && git push origin v0.7.0
+git tag -a v0.8.0 -m "Lauschig 0.8.0" && git push origin v0.8.0
 ```
 ```bash
 gh run list --repo Detair/lauschig --workflow Release --limit 1
@@ -129,7 +129,7 @@ gh run rerun <Lauf-Nummer> --repo Detair/lauschig --failed
 ```
 Das `.aab` für Play herunterladen, wenn grün:
 ```bash
-gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.7.0
+gh run download --repo Detair/lauschig --name lauschig-release-aab --dir ~/lauschig-release/v0.8.0
 ```
 
 **Für jede weitere Version** muss `versionCode` in `app/build.gradle.kts` steigen und `versionName` angepasst werden, dazu kommt `docs/release-notes/v<version>.md`. Das mache ich beim nächsten Release mit.
@@ -192,8 +192,8 @@ Antworten stehen in `docs/play-store/data-safety.md`. Kurzfassung:
 1. Testen → **Interner Test** → Tab „Tester“ → „E-Mail-Liste erstellen“, Name „Familie“, die Google-Konten der Familie eintragen (die im Play Store des jeweiligen Handys angemeldet sind) → speichern, Liste anhaken.
 2. „Feedback-URL / E-Mail“: `https://github.com/Detair/lauschig/issues` oder deine Mail.
 3. Tab „Releases“ → „Neuen Release erstellen“. Bietet die Console den Schlüsselwechsel aus 6.5 schon jetzt an, mach ihn vorher.
-   - `.aab` aus `~/lauschig-release/v0.7.0/` hochladen.
-   - Release-Name: `0.7.0`, Versionshinweise (de-DE): *Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync, mehrere Profile.*
+   - `.aab` aus `~/lauschig-release/v0.8.0/` hochladen.
+   - Release-Name: `0.8.0`, Versionshinweise (de-DE): *Testversion: Bibliothek, Downloads, Offline-Wiedergabe, Fortschritts-Sync, mehrere Profile.*
    - Speichern → Überprüfen → **Einführung starten**.
 4. Unter „Tester“ den **Link zur Teilnahme** kopieren und der Familie schicken. Jeder öffnet ihn am Handy (mit dem eingetragenen Google-Konto), tippt „Tester werden“ und installiert dann über den Play-Store-Link.
 
@@ -212,7 +212,7 @@ Ohne dein Zutun signiert Play neue Apps mit Schlüsseln, die Google erzeugt. Dan
 2. **Schlüssel ändern** („Change key“) → **eine Kopie deines App-Signaturschlüssels bereitstellen** („Provide a copy of your app signing key“) und den Anweisungen folgen, mit `~/keys/lauschig-release.jks` und dem Alias `lauschig` aus Schritt 3.
 3. **Fragt die Console nach einem eigenen Upload-Schlüssel**, sag mir Bescheid. Google empfiehlt, Upload- und App-Signaturschlüssel zu trennen. Dann bekommt die CI einen zweiten Schlüssel nur fürs Hochladen.
 4. **Hybrid-Signatur prüfen:** Neue Apps nimmt Play automatisch in eine „quantensichere“ Hybrid-Signatur auf. Google dokumentiert nicht, wie sie mit einem eigenen Schlüssel zusammenspielt. Schau, was die Seite nach dem Wechsel anzeigt, und schick mir einen Screenshot.
-5. **Der eigentliche Beweis:** Auf einem Handy die Play-Version aus dem internen Test installieren, dann die GitHub-APK derselben oder einer höheren Version darüber (`adb install -r lauschig-0.7.0.apk`). Meldet Android „App nicht installiert“ oder adb `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, passen die Signaturen nicht. Am besten einmal auf Android 17 (dort prüft Android die neue Signatur v3.2) und einmal auf einem älteren Android. Erst danach sagen wir den Testern, dass sie ohne Neuinstallation wechseln können.
+5. **Der eigentliche Beweis:** Auf einem Handy die Play-Version aus dem internen Test installieren, dann die GitHub-APK derselben oder einer höheren Version darüber (`adb install -r lauschig-0.8.0.apk`). Meldet Android „App nicht installiert“ oder adb `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, passen die Signaturen nicht. Am besten einmal auf Android 17 (dort prüft Android die neue Signatur v3.2) und einmal auf einem älteren Android. Erst danach sagen wir den Testern, dass sie ohne Neuinstallation wechseln können.
 
 ### 6.6 Später: öffentliche Veröffentlichung
 Neue private Entwicklerkonten müssen vor der Produktion einen **geschlossenen Test** mit mindestens 12 Testern über 14 Tage durchführen (Stand meines Wissens – in der Console unter „Produktion“ steht die aktuelle Anforderung). Für die Familie ist das nicht nötig; der interne Test hat keine solche Hürde.
@@ -270,7 +270,7 @@ Treffer in Klasse 9 oder 41 mit gleichem oder sehr ähnlichem Namen → mir Besc
 - [ ] 2 Baseline Profile erzeugt (optional)
 - [ ] 3 Signaturschlüssel angelegt und an zwei Orten gesichert
 - [ ] 4 Vier GitHub-Secrets gesetzt
-- [ ] 5 Probelauf grün, Tag `v0.7.0` → GitHub-Release mit APK, signiertes `.aab` heruntergeladen
+- [ ] 5 Probelauf grün, Tag `v0.8.0` → GitHub-Release mit APK, signiertes `.aab` heruntergeladen
 - [ ] 6 Play Console: App, App-Inhalte, Store-Eintrag, interner Test, Familie eingeladen
 - [ ] 6.5 Eigener App-Signaturschlüssel in Play hinterlegt, Wechsel GitHub → Play auf einem Handy geprüft
 - [ ] 7 Markenprüfung ohne Konflikt

@@ -822,6 +822,12 @@
         <item quantity="other">%1$d Tage am Stück</item>
     </plurals>
     <string name="stats_card_open">Statistik öffnen</string>
+    <string-array name="whatsnew_0_8_0">
+        <item>Neu: Fernseher mit dem Handy einrichten. Am Handy: Einstellungen, „Fernseher einrichten“, Code am Fernseher scannen</item>
+        <item>Dein Passwort geht dabei nur an deinen Server, nie zum Fernseher. Der Fernseher bekommt eine eigene Anmeldung</item>
+        <item>Der Fernseher fragt nach, bevor er die Anmeldung übernimmt. Tippen mit der Fernbedienung geht weiterhin</item>
+        <item>Das geht im Heimnetz und mit Konten mit Passwort, noch nicht mit SSO</item>
+    </string-array>
     <string-array name="whatsnew_0_7_0">
         <item>Neu: Lauschig läuft auch auf Google TV und Android TV, mit eigener Oberfläche für die Fernbedienung</item>
         <item>Am Fernseher: Startseite, Bibliothek, Suche und ein Player mit Kapiteln, Tempo und Schlaf-Timer</item>
