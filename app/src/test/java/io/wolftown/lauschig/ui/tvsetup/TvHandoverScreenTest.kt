@@ -54,7 +54,7 @@ class TvHandoverScreenTest {
         rule.onNodeWithText("Set up TV").assertExists()
         rule.onNodeWithText("Scan the code the TV shows.").assertExists()
         rule.onNodeWithText("Then enter your password here.").assertExists()
-        rule.onNodeWithText("The TV gets its own sign-in. Your password stays on this phone.").assertExists()
+        rule.onNodeWithText("The TV gets its own sign-in. Your password goes only to your server, never to the TV.").assertExists()
         rule.onNodeWithTag("tvSetupScan").performClick()
         rule.onNodeWithContentDescription("Back").performClick()
         assertEquals(listOf("scan", "back"), calls)
@@ -113,6 +113,22 @@ class TvHandoverScreenTest {
         show(confirm.copy(working = true))
         rule.onNodeWithTag("tvSetupSend").assertIsNotEnabled()
         rule.onNodeWithText("Setting up the TV …").assertExists()
+        rule.onNodeWithText("Now confirm the setup on the TV.").assertExists()
+    }
+
+    @Test fun beforeSending_thereIsNoWordAboutTheTvsQuestion() {
+        show(confirm)
+        rule.onNodeWithTag("tvSetupConfirmOnTv").assertDoesNotExist()
+    }
+
+    @Test fun failed_withASessionThatMayBeOpen_saysSoCalmly() {
+        show(TvHandoverStep.Failed(TvHandoverError.NO_REPLY, sessionMayBeOpen = true))
+        rule.onNodeWithText("The app could not check whether the sign-in for the TV has ended.").assertExists()
+    }
+
+    @Test fun failed_withTheSessionEnded_saysNothingMore() {
+        show(TvHandoverStep.Failed(TvHandoverError.NO_REPLY))
+        rule.onNodeWithTag("tvSetupSessionMayBeOpen").assertDoesNotExist()
     }
 
     @Test fun aWrongPassword_isAnnounced() {
@@ -130,12 +146,13 @@ class TvHandoverScreenTest {
     @Test fun failed_saysWhy_andOffersANewScan() {
         val expected = mapOf(
             TvHandoverError.WRONG_PASSWORD to "The password is wrong.",
-            TvHandoverError.SERVER_UNREACHABLE to "The server cannot be reached. Check the connection and try again.",
+            TvHandoverError.SERVER_UNREACHABLE to "The app is not connected to the server right now. Check the connection and try again.",
             TvHandoverError.NO_HOME_NETWORK to "This phone is not on a home network by Wi-Fi or cable. Mobile data and VPN do not count.",
             TvHandoverError.TV_UNREACHABLE to "The phone cannot reach the TV. Phone and TV must be on the same home network. If the TV shows a new code, scan that one.",
             TvHandoverError.CODE_EXPIRED to "The TV did not take it. The code may have expired. Scan the new code.",
             TvHandoverError.TV_CANNOT_REACH_SERVER to "The TV cannot reach the server.",
             TvHandoverError.TV_REFUSED to "The server refused the TV's sign-in.",
+            TvHandoverError.DECLINED_ON_TV to "The setup was cancelled or not confirmed on the TV.",
             TvHandoverError.NO_REPLY to "The TV did not answer. Look at the TV to see whether it is signed in.",
             TvHandoverError.FAILED to "That did not work.",
         )

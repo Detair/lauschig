@@ -7,9 +7,11 @@ import io.wolftown.lauschig.connection.AddressResolver
 import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.connection.belongsTo
+import io.wolftown.lauschig.connection.isAddressOf
 import io.wolftown.lauschig.net.ApiProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -43,7 +45,7 @@ class ServerLogout(
     suspend fun logout(account: Account, refreshToken: String): Boolean {
         val online = connection() as? ConnectionState.Online ?: return false
         if (!online.belongsTo(account.addresses)) return false
-        return bounded { post(client, online, refreshToken) }
+        return bounded { post(client, online.baseUrl, refreshToken) }
     }
 
     /**
@@ -55,11 +57,20 @@ class ServerLogout(
         val online = (connection() as? ConnectionState.Online)?.takeIf { it.belongsTo(account.addresses) }
             ?: resolve(account.addresses) as? ConnectionState.Online
             ?: return@bounded false
-        post(profileClient(account).forLogout(), online, refreshToken)
+        post(profileClient(account).forLogout(), online.baseUrl, refreshToken)
     }
 
-    private suspend fun post(client: OkHttpClient, online: ConnectionState.Online, refreshToken: String): Boolean {
-        AbsClientFactory.retrofit(online.baseUrl, client).create(AuthApi::class.java).logout(refreshToken)
+    /**
+     * The same at one given address of [account]: the TV's session is ended where it was made (`ui/tvsetup`), not wherever
+     * the connection is by then. False without asking for an address that is not the account's.
+     */
+    suspend fun logoutAt(account: Account, baseUrl: HttpUrl, refreshToken: String): Boolean = bounded {
+        if (!baseUrl.isAddressOf(account.addresses)) return@bounded false
+        post(profileClient(account).forLogout(), baseUrl, refreshToken)
+    }
+
+    private suspend fun post(client: OkHttpClient, baseUrl: HttpUrl, refreshToken: String): Boolean {
+        AbsClientFactory.retrofit(baseUrl, client).create(AuthApi::class.java).logout(refreshToken)
         return true
     }
 

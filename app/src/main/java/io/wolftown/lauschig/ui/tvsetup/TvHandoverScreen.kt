@@ -106,6 +106,9 @@ fun TvHandoverScreen(
                 }
                 is TvHandoverStep.Failed -> {
                     AnnouncedLine(stringResource(errorText(step.reason)), tag = "tvSetupFailed", style = MaterialTheme.typography.titleMedium)
+                    if (step.sessionMayBeOpen) {
+                        Text(stringResource(R.string.tvsetup_session_may_be_open), modifier = Modifier.testTag("tvSetupSessionMayBeOpen"))
+                    }
                     Button(onClick = onAgain, modifier = Modifier.testTag("tvSetupAgain")) { Text(stringResource(R.string.tvsetup_again)) }
                 }
             }
@@ -156,6 +159,8 @@ private fun Confirm(step: TvHandoverStep.Confirm, onPassword: (String) -> Unit, 
             Text(stringResource(R.string.tvsetup_working), modifier = Modifier.padding(start = 8.dp))
         }
     }
+    // The TV asks before it uses the packet (spec E17); without this the phone would just seem to hang for up to a minute.
+    if (step.working) Text(stringResource(R.string.tvsetup_confirm_on_tv), modifier = Modifier.testTag("tvSetupConfirmOnTv"))
 }
 
 /** "48 21": the same two groups the TV shows. */
@@ -180,6 +185,7 @@ private fun errorText(error: TvHandoverError): Int = when (error) {
     TvHandoverError.CODE_EXPIRED -> R.string.tvsetup_error_code_expired
     TvHandoverError.TV_CANNOT_REACH_SERVER -> R.string.tvsetup_error_tv_cannot_reach_server
     TvHandoverError.TV_REFUSED -> R.string.tvsetup_error_tv_refused
+    TvHandoverError.DECLINED_ON_TV -> R.string.tvsetup_error_declined_on_tv
     TvHandoverError.NO_REPLY -> R.string.tvsetup_error_no_reply
     TvHandoverError.FAILED -> R.string.tvsetup_error_failed
 }

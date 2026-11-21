@@ -1239,6 +1239,7 @@
     <string name="tv_phone_step_open">Open Lauschig on your phone. Go to Settings, then “Set up TV”.</string>
     <string name="tv_phone_step_scan">Scan this code.</string>
     <string name="tv_phone_step_compare">Check that the number matches. Then enter your password on the phone.</string>
+    <string name="tv_phone_step_4">Confirm the setup here on the TV.</string>
     <string name="tv_phone_same_network">Your phone and TV must be on the same home network.</string>
     <string name="tv_phone_type">Type with the remote</string>
     <string name="tv_phone_new_code">New code</string>
@@ -1256,7 +1257,7 @@
     <string name="tvsetup_entry_hint">Sign in Lauschig on a TV with this phone</string>
     <string name="tvsetup_intro_scan">Scan the code the TV shows.</string>
     <string name="tvsetup_intro_password">Then enter your password here.</string>
-    <string name="tvsetup_intro_own">The TV gets its own sign-in. Your password stays on this phone.</string>
+    <string name="tvsetup_intro_own">The TV gets its own sign-in. Your password goes only to your server, never to the TV.</string>
     <string name="tvsetup_scan">Scan code</string>
     <string name="tvsetup_scan_hint">Point the camera at the code on the TV.</string>
     <string name="tvsetup_scan_no_camera">The camera cannot be used. Close this page and set up the TV with the remote.</string>
@@ -1273,13 +1274,16 @@
     <string name="tvsetup_sso_hint">Accounts that only sign in with SSO cannot set up a TV yet.</string>
     <string name="tvsetup_send">Set up TV</string>
     <string name="tvsetup_working">Setting up the TV …</string>
+    <string name="tvsetup_confirm_on_tv">Now confirm the setup on the TV.</string>
+    <string name="tvsetup_session_may_be_open">The app could not check whether the sign-in for the TV has ended.</string>
     <string name="tvsetup_error_wrong_password">The password is wrong.</string>
-    <string name="tvsetup_error_server_unreachable">The server cannot be reached. Check the connection and try again.</string>
+    <string name="tvsetup_error_server_unreachable">The app is not connected to the server right now. Check the connection and try again.</string>
     <string name="tvsetup_error_no_home_network">This phone is not on a home network by Wi-Fi or cable. Mobile data and VPN do not count.</string>
     <string name="tvsetup_error_tv_unreachable">The phone cannot reach the TV. Phone and TV must be on the same home network. If the TV shows a new code, scan that one.</string>
     <string name="tvsetup_error_code_expired">The TV did not take it. The code may have expired. Scan the new code.</string>
     <string name="tvsetup_error_tv_cannot_reach_server">The TV cannot reach the server.</string>
     <string name="tvsetup_error_tv_refused">The server refused the TV\'s sign-in.</string>
+    <string name="tvsetup_error_declined_on_tv">The setup was cancelled or not confirmed on the TV.</string>
     <string name="tvsetup_error_no_reply">The TV did not answer. Look at the TV to see whether it is signed in.</string>
     <string name="tvsetup_error_failed">That did not work.</string>
     <string name="tvsetup_done">The TV is set up.</string>

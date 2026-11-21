@@ -95,7 +95,7 @@ fun TvPhoneSetupScreen(
             val muted = MaterialTheme.colorScheme.onSurfaceVariant
             when (state) {
                 TvPhoneSetupState.Starting, is TvPhoneSetupState.Waiting -> {
-                    listOf(R.string.tv_phone_step_open, R.string.tv_phone_step_scan, R.string.tv_phone_step_compare).forEachIndexed { i, step ->
+                    listOf(R.string.tv_phone_step_open, R.string.tv_phone_step_scan, R.string.tv_phone_step_compare, R.string.tv_phone_step_4).forEachIndexed { i, step ->
                         Text("${i + 1}. " + stringResource(step), style = body)
                     }
                     Text(stringResource(R.string.tv_phone_same_network), style = body, color = muted)

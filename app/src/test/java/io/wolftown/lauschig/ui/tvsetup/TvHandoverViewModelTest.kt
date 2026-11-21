@@ -8,6 +8,7 @@ import io.wolftown.lauschig.absapi.auth.LoginResponse
 import io.wolftown.lauschig.absapi.auth.StatusResponse
 import io.wolftown.lauschig.account.Account
 import io.wolftown.lauschig.account.cleartextKey
+import io.wolftown.lauschig.connection.ConnectionState
 import io.wolftown.lauschig.connection.ServerAddresses
 import io.wolftown.lauschig.net.FakeAccountStore
 import io.wolftown.lauschig.serverqr.ServerQr
@@ -43,11 +44,20 @@ private class FakeLogin : LoginClient {
         return behaviour(baseUrl)
     }
     override suspend fun status(baseUrl: HttpUrl): StatusResponse = throw IOException("not asked")
-    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse = error("the phone never exchanges a token here")
+    /** The phone's own exchange of the handed-over token, only to end the TV's session (spec E19). */
+    val refreshes = mutableListOf<Pair<HttpUrl, String>>()
+    var refreshBehaviour: (String) -> LoginResponse = { LoginResponse(AbsUser(USER_ID, "fabian", "user", "a2", CURRENT_REFRESH)) }
+    override suspend fun refresh(baseUrl: HttpUrl, refreshToken: String): LoginResponse {
+        refreshes += baseUrl to refreshToken
+        return refreshBehaviour(refreshToken)
+    }
 }
 
 private const val USER_ID = "u1"
 private const val TV_REFRESH = "tv-refresh-token"
+private const val CURRENT_REFRESH = "current-refresh-token"
+private val LOCAL = "http://192.168.1.20:13378/".toHttpUrl()
+private val PUBLIC = "https://abs.example.org/abs/".toHttpUrl()
 private const val PASSWORD = "geheim-123"
 
 private fun httpError(code: Int) = HttpException(Response.error<Any>(code, "".toResponseBody()))
@@ -58,7 +68,11 @@ class TvHandoverViewModelTest {
     private val login = FakeLogin()
     private val sent = mutableListOf<Pair<TvSetupCode, PhoneHandover>>()
     private var sendResult: suspend () -> SendResult = { SendResult.SIGNED_IN }
-    private val ended = mutableListOf<Pair<Account, String>>()
+    /** Logouts: account, address, token. */
+    private val ended = mutableListOf<Triple<Account, HttpUrl, String>>()
+    private var logoutConfirms = true
+    private var connection: ConnectionState = ConnectionState.Online(LOCAL, ConnectionState.Via.LOCAL)
+    private var homeNetwork = true
     private val dispatcher = UnconfinedTestDispatcher()
     private val viewModels = TestViewModels()
 
@@ -66,8 +80,8 @@ class TvHandoverViewModelTest {
 
     private val account = Account(
         serverId = "s1", userId = USER_ID, username = "fabian", isAdmin = false,
-        addresses = ServerAddresses("http://192.168.1.20:13378/".toHttpUrl(), "https://abs.example.org/abs/".toHttpUrl()),
-        allowCleartext = setOf("http://192.168.1.20:13378/".toHttpUrl().cleartextKey()),
+        addresses = ServerAddresses(LOCAL, PUBLIC),
+        allowCleartext = setOf(LOCAL.cleartextKey()),
     )
 
     @Before fun setUp() {
@@ -78,7 +92,13 @@ class TvHandoverViewModelTest {
     @After fun tearDown() { viewModels.clear(); Dispatchers.resetMain() }
 
     private fun vm() = viewModels.own(
-        TvHandoverViewModel(store, login, send = { c, h -> sent += c to h; sendResult() }, endSession = { a, r -> ended += a to r }),
+        TvHandoverViewModel(
+            store, login,
+            send = { c, h -> sent += c to h; sendResult() },
+            logoutAt = { a, url, r -> ended += Triple(a, url, r); logoutConfirms },
+            connection = { connection },
+            hasHomeNetwork = { homeNetwork },
+        ),
     )
 
     private fun TvHandoverViewModel.scanned(text: String = code.text) {
@@ -156,41 +176,86 @@ class TvHandoverViewModelTest {
 
     // --- Confirm and send ---
 
+    private fun assertNoSession() {
+        assertTrue("nothing sent", sent.isEmpty())
+        assertTrue("no session ended", ended.isEmpty())
+        assertTrue("no exchange", login.refreshes.isEmpty())
+    }
+
     @Test fun nothingIsSent_withoutAPassword() {
         val v = vm()
         v.scanned()
         v.send()
         assertTrue(login.calls.isEmpty())
-        assertTrue(sent.isEmpty())
+        assertNoSession()
     }
 
-    @Test fun success_signsInAtTheLocalAddressFirst_sendsTheAccountsAddressesAndTheNewToken_andEndsNothing() {
+    @Test fun success_signsInWhereTheAppIsConnected_sendsTheAccountsAddressesAndTheNewToken_andEndsNothing() {
         val v = vm()
         v.typedAndSent()
-        assertEquals(listOf("http://192.168.1.20:13378/".toHttpUrl()), login.calls.map { it.first })
+        assertEquals(listOf(LOCAL), login.calls.map { it.first })
         assertEquals(LoginRequest("fabian", PASSWORD), login.calls.single().second)
         val (to, handover) = sent.single()
         assertEquals(code, to)
         assertEquals(PhoneHandover(local = "http://192.168.1.20:13378", public = "https://abs.example.org/abs", refresh = TV_REFRESH), handover)
         assertEquals(TvHandoverStep.Done, v.step.value)
-        assertTrue("no session is ended after the TV signed in", ended.isEmpty())
+        assertTrue("no exchange and no logout after the TV signed in", ended.isEmpty() && login.refreshes.isEmpty())
     }
 
-    @Test fun anUnreachableLocalAddress_fallsThroughToThePublicOne() {
-        login.behaviour = { url ->
-            if (url.isHttps) LoginResponse(AbsUser(USER_ID, "fabian", "user", "a", TV_REFRESH)) else throw IOException("no route")
-        }
+    /** E20: the password goes to the address the app is online through, even though a local one exists. */
+    @Test fun onlineViaPublic_signsInAtThePublicAddressOnly() {
+        connection = ConnectionState.Online(PUBLIC, ConnectionState.Via.PUBLIC)
         val v = vm()
         v.typedAndSent()
-        assertEquals(listOf("http://192.168.1.20:13378/".toHttpUrl(), "https://abs.example.org/abs/".toHttpUrl()), login.calls.map { it.first })
+        assertEquals(listOf(PUBLIC), login.calls.map { it.first })
         assertEquals(TvHandoverStep.Done, v.step.value)
     }
 
-    @Test fun anUnconfirmedHttpAddress_neverGetsThePassword() {
+    @Test fun onlineViaLocal_aFailedLogin_doesNotFallBackToThePublicAddress() {
+        login.behaviour = { throw IOException("no route") }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(LOCAL), login.calls.map { it.first })
+        assertEquals(TvHandoverError.SERVER_UNREACHABLE, (v.step.value as TvHandoverStep.Confirm).error)
+        assertNoSession()
+    }
+
+    @Test fun offline_noLogin_serverUnreachable() {
+        connection = ConnectionState.Offline
+        val v = vm()
+        v.typedAndSent()
+        assertTrue(login.calls.isEmpty())
+        val step = v.step.value as TvHandoverStep.Confirm
+        assertEquals(TvHandoverError.SERVER_UNREACHABLE, step.error)
+        assertEquals("", step.password)
+        assertNoSession()
+    }
+
+    @Test fun onlineAtAnotherServer_countsAsOffline() {
+        connection = ConnectionState.Online("https://other.example.org/".toHttpUrl(), ConnectionState.Via.PUBLIC)
+        val v = vm()
+        v.typedAndSent()
+        assertTrue(login.calls.isEmpty())
+        assertEquals(TvHandoverError.SERVER_UNREACHABLE, (v.step.value as TvHandoverStep.Confirm).error)
+    }
+
+    @Test fun anUnconfirmedHttpConnection_neverGetsThePassword() {
         store.acc.value = account.copy(allowCleartext = emptySet())
         val v = vm()
         v.typedAndSent()
-        assertEquals(listOf("https://abs.example.org/abs/".toHttpUrl()), login.calls.map { it.first })
+        assertTrue(login.calls.isEmpty())
+        assertNoSession()
+    }
+
+    @Test fun noHomeNetwork_noLoginAtAll() {
+        homeNetwork = false
+        val v = vm()
+        v.typedAndSent()
+        assertTrue(login.calls.isEmpty())
+        val step = v.step.value as TvHandoverStep.Confirm
+        assertEquals(TvHandoverError.NO_HOME_NETWORK, step.error)
+        assertEquals("", step.password)
+        assertNoSession()
     }
 
     @Test fun wrongPassword_staysAtConfirm_sendsNothing_andEmptiesTheField() {
@@ -203,33 +268,21 @@ class TvHandoverViewModelTest {
             assertEquals(TvHandoverError.WRONG_PASSWORD, step.error)
             assertEquals("", step.password)
             assertFalse(step.working)
-            assertEquals("a wrong password is final, the next address is not asked", 1, login.calls.size)
-            assertTrue(sent.isEmpty())
-            assertTrue(ended.isEmpty())
+            assertEquals(1, login.calls.size)
+            assertNoSession()
             // Typing again clears the error and may send again: the code is still the one scanned.
             v.onPassword("richtig")
             assertEquals(null, (v.step.value as TvHandoverStep.Confirm).error)
         }
     }
 
-    @Test fun unreachableServer_sendsNothing() {
-        login.behaviour = { throw IOException("offline") }
-        val v = vm()
-        v.typedAndSent()
-        val step = v.step.value as TvHandoverStep.Confirm
-        assertEquals(TvHandoverError.SERVER_UNREACHABLE, step.error)
-        assertEquals("", step.password)
-        assertEquals(2, login.calls.size)
-        assertTrue(sent.isEmpty())
-        assertTrue(ended.isEmpty())
-    }
-
-    @Test fun aServerError_triesTheNextAddress_andCountsAsUnreachable() {
+    @Test fun aServerError_isUnreachable_andSendsNothing() {
         login.behaviour = { throw httpError(500) }
         val v = vm()
         v.typedAndSent()
-        assertEquals(2, login.calls.size)
+        assertEquals(1, login.calls.size)
         assertEquals(TvHandoverError.SERVER_UNREACHABLE, (v.step.value as TvHandoverStep.Confirm).error)
+        assertNoSession()
     }
 
     @Test fun anotherUserInTheAnswer_endsThatSession_andSendsNothing() {
@@ -238,7 +291,8 @@ class TvHandoverViewModelTest {
         v.typedAndSent()
         assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
         assertTrue(sent.isEmpty())
-        assertEquals(listOf(account to "foreign-refresh"), ended)
+        assertEquals(listOf(LOCAL to "foreign-refresh"), login.refreshes)
+        assertEquals(listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
     }
 
     @Test fun anAnswerWithoutRefreshToken_sendsNothing_andHasNothingToEnd() {
@@ -246,33 +300,90 @@ class TvHandoverViewModelTest {
         val v = vm()
         v.typedAndSent()
         assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
-        assertTrue(sent.isEmpty())
-        assertTrue(ended.isEmpty())
+        assertNoSession()
     }
 
-    @Test fun everyOtherReply_endsTheNewSessionExactlyOnce_withThatToken_andSaysWhy() {
+    @Test fun everyOtherReply_endsTheNewSessionExactlyOnce_andSaysWhy() {
         val expected = mapOf(
             SendResult.NOT_ACCEPTED to TvHandoverError.CODE_EXPIRED,
             SendResult.SERVER_UNREACHABLE to TvHandoverError.TV_CANNOT_REACH_SERVER,
             SendResult.SIGN_IN_REFUSED to TvHandoverError.TV_REFUSED,
+            SendResult.DECLINED to TvHandoverError.DECLINED_ON_TV,
             SendResult.NO_HOME_NETWORK to TvHandoverError.NO_HOME_NETWORK,
             SendResult.NOT_SENT to TvHandoverError.TV_UNREACHABLE,
             SendResult.NO_REPLY to TvHandoverError.NO_REPLY,
             SendResult.FAILED to TvHandoverError.FAILED,
-            // TODO(tv-setup phone side): DECLINED gets its own error; FAILED until the phone page has a text for it.
-            SendResult.DECLINED to TvHandoverError.FAILED,
         )
         assertEquals("every result but SIGNED_IN is covered", SendResult.entries.toSet() - SendResult.SIGNED_IN, expected.keys)
         for ((result, error) in expected) {
             ended.clear()
             sent.clear()
+            login.refreshes.clear()
             sendResult = { result }
             val v = vm()
             v.typedAndSent()
-            assertEquals(result.name, TvHandoverStep.Failed(error), v.step.value)
-            assertEquals(result.name, listOf(account to TV_REFRESH), ended)
+            assertEquals(result.name, TvHandoverStep.Failed(error, sessionMayBeOpen = false), v.step.value)
+            assertEquals(result.name, listOf(LOCAL to TV_REFRESH), login.refreshes)
+            assertEquals(result.name, listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
             assertEquals(1, sent.size)
         }
+    }
+
+    /** E19: a receiver that never exchanged the token: the phone exchanges it and logs out with the token it got back. */
+    @Test fun ending_exchangesFirst_thenLogsOutWithTheReturnedToken_confirmed() {
+        sendResult = { SendResult.NO_REPLY }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(LOCAL to TV_REFRESH), login.refreshes)
+        assertEquals(listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.NO_REPLY, sessionMayBeOpen = false), v.step.value)
+    }
+
+    @Test fun ending_anExchangeRefused_stillLogsOutWithTheHandedToken_butMayBeOpen() {
+        sendResult = { SendResult.NOT_ACCEPTED }
+        login.refreshBehaviour = { throw httpError(401) }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(Triple(account, LOCAL, TV_REFRESH)), ended)
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.CODE_EXPIRED, sessionMayBeOpen = true), v.step.value)
+    }
+
+    @Test fun ending_serverUnreachable_stillTriesTheHandedToken_butMayBeOpen() {
+        sendResult = { SendResult.NOT_ACCEPTED }
+        login.refreshBehaviour = { throw IOException("gone") }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(Triple(account, LOCAL, TV_REFRESH)), ended)
+        assertEquals(true, (v.step.value as TvHandoverStep.Failed).sessionMayBeOpen)
+    }
+
+    @Test fun ending_anExchangeWithoutToken_triesTheHandedToken_butMayBeOpen() {
+        sendResult = { SendResult.DECLINED }
+        login.refreshBehaviour = { LoginResponse(AbsUser(USER_ID, "fabian", "user", "a2", null)) }
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(listOf(Triple(account, LOCAL, TV_REFRESH)), ended)
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.DECLINED_ON_TV, sessionMayBeOpen = true), v.step.value)
+    }
+
+    @Test fun ending_aLogoutTheServerDidNotConfirm_mayBeOpen() {
+        sendResult = { SendResult.NOT_SENT }
+        logoutConfirms = false
+        val v = vm()
+        v.typedAndSent()
+        assertEquals(1, ended.size)
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.TV_UNREACHABLE, sessionMayBeOpen = true), v.step.value)
+    }
+
+    @Test fun ending_usesTheAddressOfTheLogin_evenIfTheConnectionMovedMeanwhile() {
+        val gate = CompletableDeferred<SendResult>()
+        sendResult = { gate.await() }
+        val v = vm()
+        v.typedAndSent()
+        connection = ConnectionState.Online(PUBLIC, ConnectionState.Via.PUBLIC)
+        gate.complete(SendResult.NOT_ACCEPTED)
+        assertEquals(listOf(LOCAL to TV_REFRESH), login.refreshes)
+        assertEquals(LOCAL, ended.single().second)
     }
 
     @Test fun aSenderThatThrows_endsTheSession_andFails() {
@@ -280,7 +391,7 @@ class TvHandoverViewModelTest {
         val v = vm()
         v.typedAndSent()
         assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
-        assertEquals(listOf(account to TV_REFRESH), ended)
+        assertEquals(1, ended.size)
     }
 
     @Test fun whileSending_theFieldIsEmpty_andASecondTapSendsNothing() {
@@ -306,7 +417,7 @@ class TvHandoverViewModelTest {
         v.typedAndSent()
         v.viewModelScope.cancel()
         gate.complete(SendResult.NOT_ACCEPTED)
-        assertEquals(listOf(account to TV_REFRESH), ended)
+        assertEquals(listOf(Triple(account, LOCAL, CURRENT_REFRESH)), ended)
     }
 
     @Test fun leavingThePageWhileSending_endsNothing_whenTheTvSignedIn() {
@@ -316,7 +427,7 @@ class TvHandoverViewModelTest {
         v.typedAndSent()
         v.viewModelScope.cancel()
         gate.complete(SendResult.SIGNED_IN)
-        assertTrue(ended.isEmpty())
+        assertTrue(ended.isEmpty() && login.refreshes.isEmpty())
     }
 
     @Test fun noAccount_atSend_fails_withoutSigningIn() {
@@ -327,7 +438,19 @@ class TvHandoverViewModelTest {
         v.send()
         assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
         assertTrue(login.calls.isEmpty())
-        assertTrue(sent.isEmpty())
+        assertNoSession()
+    }
+
+    /** N4: the account the question named is the one used; another active account sends nothing. */
+    @Test fun anotherAccount_atSend_fails_withoutSigningIn() {
+        val v = vm()
+        v.scanned()
+        v.onPassword(PASSWORD)
+        store.acc.value = account.copy(serverId = "s2", userId = "u2", username = "matthias")
+        v.send()
+        assertEquals(TvHandoverStep.Failed(TvHandoverError.FAILED), v.step.value)
+        assertTrue(login.calls.isEmpty())
+        assertNoSession()
     }
 
     @Test fun again_startsOver() {
@@ -357,7 +480,7 @@ class TvHandoverViewModelTest {
         seen += TvHandoverStep.Confirm("4821", listOf("http://192.168.1.20:13378"), "fabian", password = PASSWORD)
         for (step in seen) {
             val text = step.toString()
-            for (secret in listOf(PASSWORD, TV_REFRESH, code.text, "192.168.1", "abs.example.org")) {
+            for (secret in listOf(PASSWORD, TV_REFRESH, CURRENT_REFRESH, code.text, "192.168.1", "abs.example.org")) {
                 assertFalse("$secret in $text", secret in text)
             }
         }

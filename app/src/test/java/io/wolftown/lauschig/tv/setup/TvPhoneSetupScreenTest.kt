@@ -93,6 +93,13 @@ class TvPhoneSetupScreenTest {
         assertEquals(1, types)
     }
 
+    /** The TV asks before it uses a packet (spec E17): the steps say so before anyone scans. */
+    @Test fun waiting_namesFourSteps_endingWithTheQuestionHere() {
+        show(waiting)
+        rule.onNodeWithText("3. " + context.getString(R.string.tv_phone_step_compare)).assertExists()
+        rule.onNodeWithText("4. Confirm the setup here on the TV.").assertExists()
+    }
+
     @Test fun theNumber_isReadDigitByDigit() {
         show(waiting)
         rule.onNodeWithTag(TAG_PHONE_NUMBER).assertContentDescriptionEquals(context.getString(R.string.tv_phone_number_description, "4 8 2 1"))
