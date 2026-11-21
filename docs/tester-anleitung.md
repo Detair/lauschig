@@ -1,6 +1,6 @@
 # Lauschig testen – Anleitung für Tester
 
-Stand: 2026-11-21. Teil A geht mit jeder Version ab 0.6.0. Teil B braucht Version 0.7.0 oder neuer. Der Abschnitt „Einrichten mit dem Handy“ braucht eine Version, die am Handy unter Einstellungen „Fernseher einrichten“ zeigt.
+Stand: 2026-11-21. Teil A geht mit jeder Version ab 0.6.0. Teil B braucht Version 0.7.0 oder neuer. Der Abschnitt „Einrichten mit dem Handy“ braucht Version 0.8.0 oder neuer, am Handy und am Fernseher.
 
 Fehler und Auffälligkeiten bitte als [Issue auf GitHub](https://github.com/Detair/lauschig/issues) melden oder direkt an Fabian. Hilfreich: Gerät, Android-Version, was du getan hast, was du erwartet hast, was passiert ist. Am Handy dazu das Diagnose-Log (Einstellungen → Über → Diagnose-Log teilen).
 
@@ -37,7 +37,7 @@ Die App ist noch nicht im Play Store. Am einfachsten:
 2. Im Downloader die Adresse der APK eingeben. Sie steht auf der [Release-Seite](https://github.com/Detair/lauschig/releases) unter „Assets“.
 3. Installieren, dann „Lauschig“ in der App-Reihe des Fernsehers öffnen.
 
-Mit einem Rechner geht es auch über `adb install lauschig-0.7.0.apk`.
+Mit einem Rechner geht es auch über `adb install lauschig-0.8.0.apk`.
 
 ### Was die App am Fernseher können soll
 
@@ -69,9 +69,9 @@ Bitte jede Zeile kurz beantworten. Die ersten Fragen kann kein Emulator beantwor
 | 14 | Wirkt etwas zu klein, abgeschnitten oder am Rand zu knapp? Bitte ein Foto. | |
 | 15 | Stockt etwas (Rollen durch die Bibliothek, Cover laden)? Stürzt die App ab? | |
 
-### Einrichten mit dem Handy
+### Einrichten mit dem Handy (ab Version 0.8.0)
 
-Du brauchst: den Fernseher, ein Android-Handy mit Lauschig und einem Konto mit Passwort (nicht SSO). Beide im selben Heimnetz.
+Du brauchst: den Fernseher, ein Android-Handy mit Lauschig und einem Konto mit Passwort (nicht SSO). Beide im selben Heimnetz, beide mit Version 0.8.0 oder neuer.
 
 1. Am Fernseher Lauschig öffnen. Die Einrichtung zeigt einen QR-Code und eine vierstellige Zahl.
 2. Am Handy: Einstellungen → „Fernseher einrichten“ → „Code scannen“.
