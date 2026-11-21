@@ -77,6 +77,7 @@ Du brauchst: den Fernseher, ein Android-Handy mit Lauschig und einem Konto mit P
 2. Am Handy: Einstellungen → „Fernseher einrichten“ → „Code scannen“.
 3. Die Kamera auf den Code richten.
 4. Am Handy die Zahl mit der am Fernseher vergleichen, das Passwort tippen und „Fernseher einrichten“ antippen.
+5. Am Fernseher erscheint „Diesen Fernseher einrichten?“ mit den Adressen des Servers. „Einrichten“ wählen.
 
 Wie das funktioniert, steht in [`tv-einrichtung-mit-dem-handy.md`](tv-einrichtung-mit-dem-handy.md).
 
@@ -85,9 +86,14 @@ Wie das funktioniert, steht in [`tv-einrichtung-mit-dem-handy.md`](tv-einrichtun
 | H1 | Scan aus Sofa-Entfernung: Erkennt das Handy den Code am Fernseher aus zwei bis drei Metern? Wie schnell ungefähr? | |
 | H2 | Ist die Zahl am Handy dieselbe wie am Fernseher? | |
 | H3 | Falsches Passwort: Sagt das Handy „Das Passwort stimmt nicht.“ und ist das Feld danach leer? Klappt es danach mit dem richtigen Passwort, ohne neu zu scannen? | |
-| H4 | Getrennte Netze: Handy nur im Mobilfunk (WLAN aus) oder Handy in einem Gast-WLAN. Was sagt das Handy? Erwartet: Es sendet nichts und nennt den Grund. | |
+| H4 | Nur Mobilfunk: am Handy WLAN aus, dann senden. Erwartet: „Das Handy ist nicht per WLAN oder Kabel im Heimnetz.“ Es geht nichts weg, auch keine Anmeldung am Server. | |
+| H4b | Gäste-WLAN: Handy im Gäste-WLAN, Fernseher im normalen Netz. Ein Gäste-WLAN zählt als Heimnetz, das Handy versucht es also. Was sagt es? Meist erwartet: „Das Handy erreicht den Fernseher nicht. …“ (wenn das Gäste-WLAN abgeschottet ist) oder „Die App ist gerade nicht mit dem Server verbunden. …“ | |
 | H5 | Abgelaufener Code: Code scannen, dann mehr als 5 Minuten warten oder am Fernseher „Neuer Code“ wählen, dann senden. Erwartet: Der Fernseher meldet sich nicht an. Das Handy sagt, dass der Code abgelaufen ist oder es den Fernseher nicht erreicht, und rät zum neuen Scan. | |
-| H6 | Erfolg: Zeigt der Fernseher die Startseite und das Handy „Der Fernseher ist eingerichtet.“? | |
+| H6 | Erfolg: Steht am Handy beim Senden „Bestätige die Einrichtung jetzt am Fernseher.“? Nach „Einrichten“ am Fernseher: Zeigt der Fernseher die Startseite und das Handy „Der Fernseher ist eingerichtet.“? | |
+| H7 | Rückfrage abbrechen: Am Fernseher „Abbrechen“ wählen. Erwartet am Handy: „Am Fernseher wurde abgebrochen oder nicht bestätigt.“ Am Fernseher: „Die Einrichtung wurde abgebrochen. Zum Server ging nichts.“ | |
+| H8 | Rückfrage mit Zurück beantworten. Erwartet: wie H7. | |
+| H9 | Rückfrage liegen lassen: eine Minute lang nichts drücken. Erwartet: wie H7, nach etwa 60 Sekunden. | |
+| H10 | Steht der Fokus auf der Rückfrage zuerst auf „Abbrechen“? Sind `http://`-Adressen als unverschlüsselt markiert? | |
 
 ### Bekannte Grenzen der ersten TV-Version
 
