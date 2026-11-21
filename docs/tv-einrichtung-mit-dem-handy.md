@@ -15,6 +15,7 @@ Der Fernseher zeigt einen QR-Code und eine vierstellige Zahl. Das Handy scannt d
 | Wohin das Passwort geht | nur an deinen Server, und nur an die Adresse, über die die App gerade verbunden ist |
 | Weg zum Fernseher | verschlüsselt und direkt im Heimnetz vom Handy zum Fernseher; kein Server dazwischen, nie über das Internet |
 | Rückfrage | Der Fernseher zeigt die Server-Adressen und fragt, bevor er etwas tut. Höchstens 60 Sekunden, der Fokus steht auf „Abbrechen“. |
+| Neu anmelden am Fernseher | Das Formular für „PIN vergessen“ und „neu anmelden“ zeigt die Adressen des Servers, nur zum Lesen. So siehst du, wohin das Passwort geht. |
 | Rechte der Anmeldung | alle Rechte des Kontos, bei einem Admin also Admin-Rechte |
 | Wer liest den Code | nur der Scanner in „Fernseher einrichten“; ein Link von außen öffnet nichts |
 | Wie lange gilt ein Code | höchstens 5 Minuten, und nur für ein einziges angenommenes Paket |
@@ -34,7 +35,7 @@ Begriffe:
 5. Das Handy fragt: „Diesen Fernseher (Zahl 48 21) mit dem Server … und dem Konto … einrichten?“
 6. **Die Zahl vergleichen.** Steht am Fernseher eine andere Zahl, hier abbrechen.
 7. Das Passwort des Kontos eintippen und „Fernseher einrichten“ antippen. Das Handy sagt jetzt: „Bestätige die Einrichtung jetzt am Fernseher.“
-8. Am Fernseher erscheint „Diesen Fernseher einrichten?“ mit den Adressen des Servers. Unverschlüsselte Adressen sind markiert. Prüfe sie und wähle „Einrichten“.
+8. Am Fernseher erscheint „Diesen Fernseher einrichten?“ mit den Adressen des Servers. Über einer unverschlüsselten Adresse steht eine eigene Zeile „(unverschlüsselt)“. Prüfe die Adressen und wähle „Einrichten“.
 9. Der Fernseher meldet sich an und zeigt die Startseite. Das Handy sagt „Der Fernseher ist eingerichtet.“
 10. Das Handy vergisst den Fernseher wieder. Es speichert nichts davon.
 
@@ -63,16 +64,21 @@ Darum macht das Handy, an derselben Adresse wie bei der Anmeldung:
 
 1. Es tauscht das übergebene Token selbst noch einmal und bekommt so das aktuelle Token der Sitzung.
 2. Es meldet die Sitzung mit diesem aktuellen Token ab.
-3. Klappt der Tausch nicht, meldet es trotzdem mit dem übergebenen Token ab. Das wirkt, wenn noch niemand getauscht hat.
+3. Es prüft das Abmelden: Es tauscht das eben abgemeldete Token noch einmal. Der Server antwortet dabei auf `/logout` immer mit „OK“, auch wenn er nichts gelöscht hat. Darum zählt erst diese Prüfung.
+   - Lehnt der Server das Token ab (401 oder 403), ist die Sitzung weg. Das Ende gilt als bestätigt.
+   - Gibt der Server ein neues Token zurück, lebt die Sitzung noch, zum Beispiel weil jemand dazwischen getauscht hat. Dann meldet das Handy dieses neue Token ab und prüft wieder. Höchstens drei Runden.
+   - Antwortet der Server nicht, ist nichts bestätigt.
+4. Klappt schon der erste Tausch nicht, meldet es trotzdem mit dem übergebenen Token ab. Das wirkt, wenn noch niemand getauscht hat. Bestätigt ist dann nichts.
 
-Nur wenn Tausch und Abmelden beide klappen, gilt die Sitzung als beendet. Sonst sagt das Handy zusätzlich: „Ob die Anmeldung für den Fernseher beendet ist, ließ sich nicht prüfen.“
+Nur wenn eine Prüfung „abgelehnt“ ergibt, gilt die Sitzung als beendet. Sonst sagt das Handy zusätzlich: „Ob die Anmeldung für den Fernseher beendet ist, ließ sich nicht prüfen.“ Die Tokens, die das Handy dabei sieht, nutzt es für nichts anderes und speichert sie nicht.
 
 Das Beenden gelingt nicht, wenn
 
-- ein fremder Empfänger das Token schon zweimal getauscht hat, oder
+- ein fremder Empfänger das Token schon zweimal getauscht hat,
+- jemand in allen drei Runden schneller tauscht, oder
 - der Server gerade nicht erreichbar ist.
 
-Das Handy macht das bei jeder Antwort außer „angemeldet“, auch wenn keine Antwort kommt. Hat sich der Fernseher doch angemeldet und nur die Antwort ging verloren, verliert er die Anmeldung dabei wieder. Dann scannst du noch einmal. Das ist so gewollt (E19).
+Das Handy macht das bei jeder Antwort außer „angemeldet“, auch wenn keine Antwort kommt. Hat sich der Fernseher doch angemeldet und nur die Antwort ging verloren, verliert er die Anmeldung dabei wieder (E19). Was dann zu tun ist, steht unten bei den bekannten Grenzen.
 
 ## Das Format
 
@@ -132,9 +138,10 @@ Regeln für den Klartext:
 
 1. `local` und `public` dürfen fehlen. Mindestens eine Adresse muss da sein.
 2. Eine Adresse steht so da wie im Einrichtungsformular: mit `http://` oder `https://`, mit Port und Pfad, ohne `/` am Ende. Es gelten dieselben Regeln wie beim [Server-QR-Code](server-qr-code.md): kein Benutzer in der Adresse, kein `?…`, kein `#…`.
-3. `refresh` ist nicht leer.
-4. Unbekannte Felder verwirft der Fernseher.
-5. Weil der Block immer 2048 Bytes hat, verrät die Länge des Pakets nichts über Token oder Adressen.
+3. Jede Adresse hat höchstens 200 Zeichen, gemessen nach dem Vereinheitlichen (zum Beispiel ohne `/` am Ende). Der Fernseher zeigt sie in seiner Rückfrage; eine längere würde den Hinweis und die Knöpfe vom Bildschirm schieben. Echte Server-Adressen sind viel kürzer. Das Handy schickt ein solches Paket gar nicht erst.
+4. `refresh` ist nicht leer.
+5. Unbekannte Felder verwirft der Fernseher.
+6. Weil der Block immer 2048 Bytes hat, verrät die Länge des Pakets nichts über Token oder Adressen.
 
 ### Die Antwort des Fernsehers
 
@@ -148,7 +155,7 @@ Ein Byte, danach schließt der Fernseher die Verbindung. Das Handy wartet höchs
 | `4` | Der Server lehnt die Anmeldung ab. | „Der Server lehnt die Anmeldung des Fernsehers ab.“ |
 | `5` | anderer Fehler | „Das hat nicht geklappt.“ |
 | `6` | Am Fernseher abgebrochen, Zurück gedrückt oder 60 Sekunden nicht bestätigt. Zum Server ging nichts. | „Am Fernseher wurde abgebrochen oder nicht bestätigt.“ |
-| keine | Verbindung bricht ab oder 90 s Stille | Am Fernseher nachsehen, ob er angemeldet ist. |
+| keine | Verbindung bricht ab oder 90 s Stille | „Der Fernseher hat nicht geantwortet. Die Anmeldung für den Fernseher wurde vorsichtshalber beendet. Ist der Fernseher trotzdem angemeldet, melde ihn in seinen Einstellungen ab und richte ihn neu ein.“ |
 
 Bei allem außer `1` versucht das Handy, die neue Sitzung zu beenden (siehe oben). Klappt das nicht nachweislich, steht unter dem Grund: „Ob die Anmeldung für den Fernseher beendet ist, ließ sich nicht prüfen.“
 
@@ -188,6 +195,7 @@ Beim Senden:
 | falsches Passwort (der Server antwortet 401 oder 403) | „Das Passwort stimmt nicht.“ Das Feld leert sich, der Code gilt weiter. | keine entsteht |
 | der Server meldet einen anderen Benutzer als den des Kontos | „Das hat nicht geklappt.“ Nichts geht zum Fernseher. | das Handy versucht, sie zu beenden |
 | der Server liefert kein Refresh-Token | „Das hat nicht geklappt.“ Nichts geht zum Fernseher. | keine, die das Handy beenden könnte |
+| eine Adresse des Kontos ist länger als 200 Zeichen | „Das Handy erreicht den Fernseher nicht. …“ (das Handy schickt das Paket nicht; eine eigene Meldung gibt es dafür nicht) | das Handy versucht, sie zu beenden |
 | der Fernseher ist nicht erreichbar, auch weil sein Code schon ersetzt ist und der Port zu | „Das Handy erreicht den Fernseher nicht. …“ mit dem Rat, einen neuen Code zu scannen | das Handy versucht, sie zu beenden |
 
 Der Fernseher liest je Verbindung bis zu 2100 Bytes, mehr nicht. Liefert die Verbindung in der Lesefrist weniger, beginnt das Paket nicht mit `LTV1`, lässt es sich nicht entschlüsseln oder verstößt der Klartext gegen eine Regel oben, antwortet er mit `2` und schließt die Verbindung.
@@ -215,7 +223,8 @@ Weitere Regeln:
 2. Der Code, das Passwort und das Token stehen in keinem Log, keiner Fehlermeldung und keiner Datei. Nach der Anmeldung am Server hält das Handy das Passwort nirgends mehr.
 3. Das Handy benutzt das Zugriffstoken der neuen Sitzung nie. Es reicht nur das Refresh-Token weiter und tauscht es höchstens, um die Sitzung zu beenden.
 4. Wird die Seite am Handy nach dem Tippen auf „Fernseher einrichten“ verlassen, läuft die Übergabe zu Ende. Eine fehlgeschlagene Übergabe versucht die Sitzung trotzdem zu beenden.
-5. Kein selbst gebautes Krypto-Verfahren: nur die öffentliche HPKE-Schnittstelle von Tink.
+5. Kein selbst gebautes Krypto-Verfahren: nur die öffentliche HPKE-Schnittstelle von Tink. Lässt sich HPKE auf einem Gerät nicht einrichten (auch wenn eine Klasse fehlt), zeigt der Fernseher „Das hat nicht geklappt“ und das Formular zum Tippen bleibt erreichbar.
+6. Das Formular am Fernseher für „PIN vergessen“ und „neu anmelden“ zeigt die Adressen des Servers, an den das Passwort geht. Eine `http://`-Adresse hat die Zeile „(unverschlüsselt)“ darüber.
 
 **Größtes Risiko:** ein fremder QR-Code, der sich als Fernseher ausgibt. Wer ihn scannt und das Passwort tippt, gibt einem fremden Gerät im Netz eine Sitzung des Kontos, mit allen seinen Rechten. Dagegen stehen:
 
@@ -233,8 +242,9 @@ Bekannte Grenzen:
 | SSO-Konten | Einrichten nur durch Tippen, und dort noch ohne SSO. |
 | Reine IPv6-Netze | Der Fernseher zeigt keinen Code. Einrichten geht nur durch Tippen. |
 | Ein Gerät im Netz stört | Es kann die Verbindungen zum Fernseher blockieren oder den Code verbrauchen. Dann bleibt das Tippen. |
-| Keine Antwort vom Fernseher | Das Handy beendet die Sitzung, wie oben beschrieben. Hatte sich der Fernseher doch angemeldet, verliert er die Anmeldung wieder. Dann noch einmal scannen. Geprüft am Quelltext von Audiobookshelf am 2026-11-20. |
+| Keine Antwort vom Fernseher | Das Handy beendet die Sitzung, wie oben beschrieben. Hatte sich der Fernseher doch angemeldet, verliert er die Anmeldung wieder. Er merkt das erst, wenn er neue Zugangsschlüssel braucht, nach etwa einer Stunde, und fragt dann nach einer neuen Anmeldung. Dieses Formular wird getippt. Darum: Ist der Fernseher trotzdem angemeldet, melde ihn in seinen Einstellungen ab und richte ihn neu ein. Dann zeigt er wieder die Seite mit dem Code. Das Verhalten des Servers ist geprüft am Quelltext von Audiobookshelf am 2026-11-20. |
 | Beenden nicht nachweisbar | Hat ein fremder Empfänger das Token schon zweimal getauscht oder ist der Server nicht erreichbar, bleibt die Sitzung vielleicht offen. Das Handy sagt es. |
+| Fremdes Paket zuerst | Die Rückfrage am Fernseher kann dein Paket nicht von einem fremden unterscheiden, das zuerst ankommt, während du am Handy noch tippst. Der einzige Hinweis ist die angezeigte Server-Adresse. Meldet das Handy danach, dass es den Fernseher nicht erreicht, obwohl der Fernseher angemeldet ist, melde den Fernseher ab. |
 | Cast | Ungeprüft: ob ein Gerät im Netz per Cast eine nachgemachte Code-Seite über die echte legen kann. Das braucht ein echtes Gerät. |
 | Android 17 | verlangt für Verbindungen im Heimnetz vielleicht eine eigene Berechtigung. Ungeprüft. |
 
