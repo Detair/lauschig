@@ -35,6 +35,13 @@ class WhatsNewResourcesTest {
         assertTrue(notes(Locale.US, release).any { it.startsWith("Achievements:") })
     }
 
+    /** A bare `"` in a string resource is dropped by Android; the English 0.8.0 note lost its quotes that way. */
+    @Test fun version080_keepsTheQuotesAroundTheSettingsEntry() {
+        val release = WHATS_NEW.first { it.versionName == "0.8.0" }
+        assertTrue(notes(Locale.US, release).first().contains("\"Set up TV\""))
+        assertTrue(notes(Locale.GERMANY, release).first().contains("„Fernseher einrichten“"))
+    }
+
     @Test fun everyRelease_hasGermanAndEnglishNotes_ofTheSameLength() {
         for (r in WHATS_NEW) {
             val de = notes(Locale.GERMANY, r)

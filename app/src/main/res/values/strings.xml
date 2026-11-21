@@ -823,7 +823,7 @@
     </plurals>
     <string name="stats_card_open">Open statistics</string>
     <string-array name="whatsnew_0_8_0">
-        <item>New: set up a TV with the phone. On the phone: Settings, "Set up TV", scan the code the TV shows</item>
+        <item>New: set up a TV with the phone. On the phone: Settings, \"Set up TV\", scan the code the TV shows</item>
         <item>Your password goes only to your server, never to the TV. The TV gets its own sign-in</item>
         <item>The TV asks before it uses the sign-in. Typing with the remote still works</item>
         <item>This works in the home network and for accounts with a password, not yet with SSO</item>
